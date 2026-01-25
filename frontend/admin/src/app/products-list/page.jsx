@@ -1,0 +1,330 @@
+"use client";
+import { useAdmin } from "@/context/AdminContext";
+import { deleteData, getData } from "@/utils/api";
+import { getImageUrl } from "@/utils/imageUtils";
+import { Button } from "@mui/material";
+import Checkbox from "@mui/material/Checkbox";
+import MenuItem from "@mui/material/MenuItem";
+import Rating from "@mui/material/Rating";
+import Select from "@mui/material/Select";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
+import TableRow from "@mui/material/TableRow";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { toast } from "react-hot-toast";
+import { FaRegTrashAlt } from "react-icons/fa";
+import { FiSearch } from "react-icons/fi";
+import { IoEyeOutline } from "react-icons/io5";
+import { RiEdit2Line } from "react-icons/ri";
+
+const label = { slotProps: { input: { "aria-label": "Checkbox demo" } } };
+
+const columns = [
+  { id: "ID", label: "ID", minWidth: 40 },
+  { id: "PRODUCT", label: "PRODUCT", minWidth: 300 },
+  { id: "CATEGORY", label: "CATEGORY", minWidth: 100 },
+  { id: "PRICE", label: "PRICE", minWidth: 100 },
+  { id: "STOCK", label: "STOCK", minWidth: 100 },
+  { id: "RATING", label: "RATING", minWidth: 100 },
+  { id: "ACTIONS", label: "ACTIONS", minWidth: 200 },
+];
+
+const ProductsList = () => {
+  const { token, isAuthenticated, loading } = useAdmin();
+  const router = useRouter();
+
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [category, setCategory] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchProducts();
+      fetchCategories();
+    }
+  }, [isAuthenticated, page, rowsPerPage, category]);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await getData("/api/categories", token);
+      if (response.success) {
+        setCategories(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch categories:", error);
+    }
+  };
+
+  const fetchProducts = async () => {
+    setIsLoading(true);
+    try {
+      let url = `/api/products?page=${page + 1}&limit=${rowsPerPage}`;
+      if (category) url += `&category=${category}`;
+      if (search) url += `&search=${search}`;
+
+      const response = await getData(url, token);
+      if (response.success) {
+        setProducts(response.data || []);
+        setTotalProducts(response.totalProducts || 0);
+      } else {
+        setProducts([]);
+        setTotalProducts(0);
+      }
+    } catch (error) {
+      console.error("Failed to fetch products:", error);
+      setProducts([]);
+      setTotalProducts(0);
+    }
+    setIsLoading(false);
+  };
+
+  const handleDeleteProduct = async (productId) => {
+    if (!confirm("Are you sure you want to delete this product?")) return;
+
+    try {
+      const response = await deleteData(`/api/products/${productId}`, token);
+      if (response.success) {
+        toast.success("Product deleted successfully");
+        fetchProducts();
+      } else {
+        toast.error(response.message || "Failed to delete product");
+      }
+    } catch (error) {
+      toast.error("Failed to delete product");
+    }
+  };
+
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(+event.target.value);
+    setPage(0);
+  };
+
+  const handleChangeCategory = (event) => {
+    setCategory(event.target.value);
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    fetchProducts();
+  };
+
+  if (loading || !isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <section className="w-full py-3 px-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-[18px] text-gray-700 font-[600]">Products</h2>
+        <Link href="/products-list/add-product">
+          <Button
+            className="!bg-blue-600 !text-white !px-4 !py-2 !rounded-md hover:!bg-blue-700"
+            size="small"
+          >
+            Add Product
+          </Button>
+        </Link>
+      </div>
+
+      <div className="w-full p-4 rounded-md shadow-md bg-white mt-3">
+        <div className="flex items-center justify-between mb-3 gap-4 flex-wrap">
+          <div className="col w-[200px]">
+            <h6 className="mb-1 text-[14px] text-gray-700">Category By</h6>
+            <Select
+              value={category}
+              onChange={handleChangeCategory}
+              displayEmpty
+              inputProps={{ "aria-label": "Without label" }}
+              size="small"
+              className="w-full"
+            >
+              <MenuItem value="">
+                <em>All Categories</em>
+              </MenuItem>
+              {categories.map((cat) => (
+                <MenuItem key={cat._id} value={cat._id}>
+                  {cat.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </div>
+
+          <form onSubmit={handleSearch} className="flex items-center gap-2">
+            <div className="relative">
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-md w-[300px] outline-none focus:border-blue-500"
+              />
+            </div>
+            <Button
+              type="submit"
+              className="!bg-blue-600 !text-white !px-4 !py-2 !rounded-md"
+            >
+              Search
+            </Button>
+          </form>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600"></div>
+          </div>
+        ) : products.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No products found. Add your first product!</p>
+          </div>
+        ) : (
+          <>
+            <TableContainer sx={{ maxHeight: 440 }}>
+              <Table stickyHeader aria-label="products table">
+                <TableHead>
+                  <TableRow>
+                    {columns.map((column) => (
+                      <TableCell
+                        key={column.id}
+                        align={column.align}
+                        style={{ minWidth: column.minWidth }}
+                      >
+                        {column.label}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {products.map((product, index) => (
+                    <TableRow key={product._id || index}>
+                      <TableCell>
+                        <Checkbox {...label} size="small" />
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="img p-1 bg-white rounded-md w-[50px] h-[70px] overflow-hidden">
+                            <img
+                              src={getImageUrl(product.images?.[0])}
+                              alt="product image"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+
+                          <div className="info">
+                            <h3 className="text-[13px] text-gray-800 font-[600]">
+                              {product.name?.substring(0, 30)}...
+                            </h3>
+                            <span className="text-gray-700 text-[13px]">
+                              {product.brand}
+                            </span>
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>{product.category?.name}</TableCell>
+
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-[#CB0000] text-[14px] font-[600]">
+                            ₹{product.price}
+                          </span>
+                          {product.oldPrice && (
+                            <span className="text-[#A4A4A4] text-[14px] font-[600] line-through">
+                              ₹{product.oldPrice}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <span
+                          className={`font-bold ${
+                            product.stock > 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {product.stock > 0 ? "Available" : "Out of Stock"}
+                        </span>
+                      </TableCell>
+
+                      <TableCell>
+                        <Rating
+                          name="read-only"
+                          value={product.rating || 0}
+                          readOnly
+                          size="small"
+                        />
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Link href={`/products-list/edit/${product._id}`}>
+                            <Button className="!w-[40px] !h-[40px] !min-w-[20px] !rounded-full !text-gray-900">
+                              <RiEdit2Line size={20} />
+                            </Button>
+                          </Link>
+
+                          <Link href={`/products-list/${product._id}`}>
+                            <Button className="!w-[40px] !h-[40px] !min-w-[20px] !rounded-full !text-gray-900">
+                              <IoEyeOutline size={20} />
+                            </Button>
+                          </Link>
+
+                          <Button
+                            className="!w-[40px] !h-[40px] !min-w-[20px] !rounded-full !text-red-600"
+                            onClick={() => handleDeleteProduct(product._id)}
+                          >
+                            <FaRegTrashAlt size={16} />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            <TablePagination
+              rowsPerPageOptions={[10, 25, 50]}
+              component="div"
+              count={totalProducts}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+            />
+          </>
+        )}
+      </div>
+    </section>
+  );
+};
+
+export default ProductsList;

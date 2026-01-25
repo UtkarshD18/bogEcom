@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --primary: #c1591c;
+  --secondary: #f3f4f6;
+}
+
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+::-webkit-scrollbar-thumb {
+  background: #c1591c;
+}
+::-webkit-scrollbar-track {
+  background: #fff;
+}
+
+.container {
+  width: 96%;
+  margin: auto;
+}
+
+.swiper-button-next,
+.swiper-button-prev {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px !important;
+  height: 50px !important;
+  background: #fff !important;
+  border-radius: 100% !important;
+  position: absolute !important;
+  top: 45% !important;
+  z-index: 99 !important;
+}
+.swiper-button-next svg,
+.swiper-button-prev svg {
+  color: #000 !important;
+  width: 15px !important;
+}
+.swiper-button-next:hover,
+.swiper-button-prev:hover {
+  background: var(--primary) !important;
+}
+.swiper-button-next:hover svg,
+.swiper-button-prev:hover svg {
+  color: #fff !important;
+}
+
+.swiper-button-next svg,
+.swipe-button-prev svg {
+  font-size: 25px !important;
+}
+
+.swiper-button-next {
+  right: 20px !important;
+}
+.swiper-button-prev {
+  left: 20px !important;
+}
+
+.MuiTabs-list button {
+  font-weight: 600 !important;
+}
+.MuiTabs-list .Mui-selected {
+  color: #c1591c !important;
+}
+.MuiTabs-indicator {
+  background-color: #c1591c !important;
+}
+
+.MuiTabScrollButton-root svg {
+  font-size: 20px !important;
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.btn-border-g {
+  border: 1px solid #c1591c !important;
+  font-weight: 600 !important;
+  color: #c1591c !important;
+  background-color: transparent !important;
+  padding: 8px 15px !important;
+  transition: all 0.3s ease !important;
+}
+
+.btn-border-g:hover {
+  background-color: #c1591c !important;
+  color: #fff !important;
+  border-color: #c1591c !important;
+}
+
+.btn-g {
+  border: 1px solid #c1591c !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  background: #c1591c !important;
+  padding: 8px 15px !important;
+  transition: all 0.3s ease !important;
+}
+.btn-g:hover {
+  background: #a34617 !important;
+  color: #fff !important;
+  border-color: #a34617 !important;
+}
+
+hr {
+  border-color: rgba(0, 0, 0, 1) !important;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+  background: #ccc !important;
+}
+
+.MuiFormGroup-root .MuiTypography-root {
+  font-size: 14px !important;
+}
+.Mui-checked .MuiSvgIcon-root {
+  fill: #c1591c !important;
+}
+.MuiFormGroup-root .MuiFormControlLabel-root .MuiCheckBox-root {
+  padding: 5px !important;
+  padding-left: 10px !important;
+}
+.MuiCheckbox-root {
+  padding: 5px !important;
+  padding-left: 0px !important;
+}
+.ratingFilter .MuiCheckBox-root {
+  padding-left: 0px !important;
+}
+.ReactCollapse--collapse {
+  transition: height 300ms;
+}
+
+.range-slider {
+  height: 5px !important;
+}
+.range-slider .range-slider__thumb,
+.range-slider .range-slider__range {
+  background: var(--primary) !important;
+}
+.range-slider .range-slider__thumb {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.MuiList-root li {
+  font-size: 14px !important;
+}
+
+.MuiPaginationItem-circular.Mui-selected {
+  background-color: #c1591c !important;
+  color: #fff !important;
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+#qtyDrop .MuiList-root {
+  max-height: 250px !important;
+  overflow-y: scroll !important;
+}
+#qtyDrop .MuiList-root::-webkit-scrollbar-thumb {
+  background: #ccc !important;
+}
+
+.react-international-phone-country-selector-button {
+  min-width: 50px !important;
+  max-width: 60px !important;
+  width: 100% !important;
+  padding: 0 4px !important;
+  overflow: hidden !important;
+}
+
+.react-international-phone-country-selector-button img {
+  max-width: 24px !important;
+  height: auto !important;
+}
+
+.react-international-phone-input-container {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.react-international-phone-input-container .react-international-phone-input {
+  width: 100% !important;
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+  min-height: 40px !important;
+  padding: 8px 12px !important;
+}
+
+.react-international-phone-input-container
+  .react-international-phone-input:focus {
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+}
+
+.react-international-phone-country-selector-dropdown {
+  z-index: 1000 !important;
+  border: 0px !important;
+  box-shadow: none !important;
+}
+.react-international-phone-country-selector-dropdown li {
+  padding: 7px 10px !important;
+}
+
+.myAcc .active::before {
+  content: "";
+  width: 3px;
+  height: 100%;
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  background: #c1591c !important;
+}
+
+.myAcc .active svg {
+  color: #c1591c !important;
+}
