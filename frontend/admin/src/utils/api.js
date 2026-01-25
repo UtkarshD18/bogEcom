@@ -220,3 +220,27 @@ export const deleteData = async (URL, token = null) => {
     return { error: true, message: error.message };
   }
 };
+
+export const getDashboardStats = async (token) => {
+  try {
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    if (token && typeof token === "string") {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${apiUrl}/orders/admin/dashboard-stats`, {
+      method: "GET",
+      headers,
+      credentials: "include",
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("getDashboardStats error:", error);
+    return { error: true, message: error.message };
+  }
+};

@@ -1,27 +1,109 @@
 "use client";
-import { ArrowLeft } from "lucide-react";
+import { MyContext } from "@/context/ThemeProvider";
+import { AlertCircle, ArrowLeft, Loader } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useContext, useEffect, useState } from "react";
+
+const API_URL =
+  (process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_APP_API_URL ||
+    "http://localhost:8000") + "/api";
 
 const Orders = () => {
+  const router = useRouter();
+  const context = useContext(MyContext);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Fetch orders from localStorage
-    try {
-      const savedOrders = JSON.parse(localStorage.getItem("orders") || "[]");
-      setOrders(
-        savedOrders.sort(
-          (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
-        ),
-      );
-    } catch (error) {
-      console.error("Error loading orders:", error);
-    } finally {
-      setLoading(false);
+    const fetchOrders = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Check if user is logged in
+        const token =
+          localStorage.getItem("token") ||
+          document.cookie
+            .split("; ")
+            .find((row) => row.startsWith("accessToken="))
+            ?.split("=")[1];
+
+        if (!token) {
+          setError("Please log in to view your orders");
+          setTimeout(() => router.push("/login?redirect=/my-orders"), 2000);
+          return;
+        }
+
+        // Fetch orders from API
+        const response = await fetch(`${API_URL}/orders/user/my-orders`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            setError("Session expired. Please log in again.");
+            setTimeout(() => router.push("/login?redirect=/my-orders"), 2000);
+            return;
+          }
+          throw new Error(`Failed to fetch orders: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success && Array.isArray(data.data)) {
+          setOrders(data.data);
+        } else {
+          setOrders([]);
+        }
+      } catch (err) {
+        console.error("Error fetching orders:", err);
+        setError(err.message || "Failed to load orders. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOrders();
+  }, [router]);
+
+  // Helper function to get status badge color
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "delivered":
+        return "bg-green-100 text-green-800";
+      case "shipped":
+        return "bg-blue-100 text-blue-800";
+      case "confirmed":
+        return "bg-yellow-100 text-yellow-800";
+      case "pending":
+        return "bg-gray-100 text-gray-800";
+      case "cancelled":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
     }
-  }, []);
+  };
+
+  const getPaymentStatusColor = (status) => {
+    switch (status) {
+      case "paid":
+        return "bg-green-100 text-green-800";
+      case "pending":
+        return "bg-yellow-100 text-yellow-800";
+      case "failed":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
 
   return (
     <>
@@ -52,16 +134,35 @@ const Orders = () => {
             </div>
           </div>
 
-          {/* Orders List */}
+          {/* Loading State */}
           {loading ? (
             <div className="text-center py-12">
-              <p className="text-gray-500">Loading orders...</p>
+              <div className="flex justify-center mb-4">
+                <Loader className="w-8 h-8 text-orange-600 animate-spin" />
+              </div>
+              <p className="text-gray-500">Loading your orders...</p>
+            </div>
+          ) : error && orders.length === 0 ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+              <div className="flex justify-center mb-4">
+                <AlertCircle className="w-12 h-12 text-red-500" />
+              </div>
+              <p className="text-red-800 font-medium mb-2">{error}</p>
+              <p className="text-red-600 text-sm mb-4">
+                {error.includes("Please log in") && "Redirecting to login..."}
+              </p>
+              <Link
+                href="/login"
+                className="inline-block bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700"
+              >
+                Login
+              </Link>
             </div>
           ) : orders.length === 0 ? (
             <div className="bg-white rounded-lg shadow p-12 text-center">
               <p className="text-gray-500 mb-4">No orders found</p>
               <Link
-                href="/"
+                href="/products"
                 className="inline-block bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700"
               >
                 Start Shopping
@@ -71,8 +172,8 @@ const Orders = () => {
             <div className="space-y-6">
               {orders.map((order) => (
                 <div
-                  key={order.id}
-                  className="bg-white rounded-lg shadow-md overflow-hidden"
+                  key={order._id}
+                  className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow"
                 >
                   {/* Order Header */}
                   <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
@@ -80,25 +181,47 @@ const Orders = () => {
                       <div>
                         <p className="text-sm text-gray-600">Order ID</p>
                         <p className="text-lg font-semibold text-gray-900">
-                          #{order.id}
+                          #{order._id?.substring(0, 8) || "N/A"}
                         </p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-600">Date</p>
                         <p className="text-lg font-semibold text-gray-900">
-                          {new Date(order.createdAt).toLocaleDateString()}
+                          {new Date(order.createdAt).toLocaleDateString(
+                            "en-IN",
+                            {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            },
+                          )}
                         </p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-600">Status</p>
-                        <span className="inline-block mt-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                          {order.paymentStatus || "Completed"}
+                        <p className="text-sm text-gray-600">Order Status</p>
+                        <span
+                          className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.order_status)}`}
+                        >
+                          {order.order_status?.charAt(0).toUpperCase() +
+                            order.order_status?.slice(1) || "Pending"}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Payment Status</p>
+                        <span
+                          className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${getPaymentStatusColor(order.payment_status)}`}
+                        >
+                          {order.payment_status?.charAt(0).toUpperCase() +
+                            order.payment_status?.slice(1) || "Pending"}
                         </span>
                       </div>
                       <div>
                         <p className="text-sm text-gray-600">Total</p>
                         <p className="text-lg font-semibold text-orange-600">
-                          ₹{order.total?.toFixed(2)}
+                          ₹
+                          {Number(order.totalAmt || 0).toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                          })}
                         </p>
                       </div>
                     </div>
@@ -107,24 +230,30 @@ const Orders = () => {
                   {/* Order Items */}
                   <div className="px-6 py-4">
                     <p className="text-sm font-semibold text-gray-900 mb-3">
-                      Items
+                      Items ({order.products?.length || 0})
                     </p>
                     <div className="space-y-2">
-                      {order.items?.map((item, idx) => (
+                      {order.products?.map((item, idx) => (
                         <div
                           key={idx}
                           className="flex justify-between items-center text-sm py-2 border-b border-gray-100 last:border-0"
                         >
                           <div>
                             <p className="text-gray-900 font-medium">
-                              {item.name}
+                              {item.productTitle || "Product"}
                             </p>
-                            <p className="text-gray-600">
-                              Qty: {item.quantity}
+                            <p className="text-gray-600 text-xs">
+                              Qty: {item.quantity} × ₹
+                              {Number(item.price || 0).toLocaleString("en-IN")}
                             </p>
                           </div>
                           <p className="text-gray-900 font-medium">
-                            ₹{(item.price * item.quantity).toFixed(2)}
+                            ₹
+                            {Number(
+                              item.price * item.quantity || 0,
+                            ).toLocaleString("en-IN", {
+                              minimumFractionDigits: 2,
+                            })}
                           </p>
                         </div>
                       ))}
@@ -132,20 +261,27 @@ const Orders = () => {
                   </div>
 
                   {/* Delivery Address */}
-                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                    <p className="text-sm font-semibold text-gray-900 mb-2">
-                      Delivery Address
-                    </p>
-                    <div className="text-sm text-gray-700">
-                      <p className="font-medium">{order.address?.name}</p>
-                      <p>{order.address?.address}</p>
-                      <p>
-                        {order.address?.city}, {order.address?.state} -{" "}
-                        {order.address?.pincode}
+                  {order.delivery_address && (
+                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                      <p className="text-sm font-semibold text-gray-900 mb-2">
+                        Delivery Address
                       </p>
-                      <p>Phone: {order.address?.phone}</p>
+                      <div className="text-sm text-gray-700">
+                        <p className="font-medium">
+                          {order.delivery_address?.name || "N/A"}
+                        </p>
+                        <p>{order.delivery_address?.address || ""}</p>
+                        <p>
+                          {order.delivery_address?.city || ""},{" "}
+                          {order.delivery_address?.state || ""} -{" "}
+                          {order.delivery_address?.pincode || ""}
+                        </p>
+                        <p className="text-xs">
+                          Phone: {order.delivery_address?.phone || "N/A"}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Order Summary */}
                   <div className="px-6 py-4 bg-white border-t border-gray-200">
@@ -153,33 +289,46 @@ const Orders = () => {
                       <div className="flex justify-between">
                         <span className="text-gray-600">Subtotal:</span>
                         <span className="text-gray-900">
-                          ₹{order.subtotal?.toFixed(2)}
+                          ₹
+                          {Number(order.totalAmt || 0).toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                          })}
                         </span>
                       </div>
-                      {order.discount > 0 && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Discount:</span>
-                          <span className="text-green-600">
-                            -₹{order.discount?.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Discount:</span>
+                        <span className="text-green-600">
+                          -₹
+                          {Number(order.discount || 0).toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Tax:</span>
                         <span className="text-gray-900">
-                          ₹{order.tax?.toFixed(2)}
+                          ₹
+                          {Number(order.tax || 0).toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                          })}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Shipping:</span>
                         <span className="text-gray-900">
-                          ₹{order.shipping?.toFixed(2)}
+                          ₹
+                          {Number(order.shipping || 0).toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                          })}
                         </span>
                       </div>
                       <div className="flex justify-between pt-2 border-t border-gray-200 font-semibold">
                         <span>Total:</span>
                         <span className="text-orange-600">
-                          ₹{order.total?.toFixed(2)}
+                          ₹
+                          {Number(order.totalAmt || 0).toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                          })}
                         </span>
                       </div>
                     </div>
@@ -192,8 +341,16 @@ const Orders = () => {
                         Payment Details
                       </p>
                       <div className="text-xs text-gray-600 space-y-1">
-                        <p>Payment ID: {order.paymentId}</p>
-                        <p>Order ID: {order.orderId}</p>
+                        <p>
+                          Payment ID:{" "}
+                          <span className="font-mono">{order.paymentId}</span>
+                        </p>
+                        <p>
+                          Razorpay Order ID:{" "}
+                          <span className="font-mono">
+                            {order.razorpayOrderId || "N/A"}
+                          </span>
+                        </p>
                       </div>
                     </div>
                   )}

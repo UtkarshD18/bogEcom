@@ -485,9 +485,18 @@ export const verifyPayment = async (req, res) => {
  */
 export const getUserOrders = async (req, res) => {
   try {
-    const userId = req.user?.id || req.query.userId;
+    // req.user is set directly to the ID string by auth middleware
+    const userId = req.user || req.query.userId;
+
+    console.log("getUserOrders Debug:", {
+      reqUser: req.user,
+      queryUserId: req.query.userId,
+      finalUserId: userId,
+      hasUserId: !!userId,
+    });
 
     if (!userId) {
+      console.log("❌ No userId provided - returning 400");
       return res.status(400).json({
         error: true,
         success: false,
@@ -495,11 +504,12 @@ export const getUserOrders = async (req, res) => {
       });
     }
 
+    console.log("✓ Fetching orders for userId:", userId);
     const orders = await OrderModel.find({ user: userId })
-      .populate("delivery_address")
       .sort({ createdAt: -1 })
       .lean();
 
+    console.log("✓ Found", orders.length, "orders");
     res.status(200).json({
       error: false,
       success: true,
@@ -590,6 +600,103 @@ export const handleRazorpayWebhook = async (req, res) => {
       error: true,
       success: false,
       message: "Webhook processing failed",
+    });
+  }
+};
+
+/**
+ * Create Test Order (For Development/Testing - Admin Only)
+ * @route POST /api/orders/test/create
+ * @description Creates a mock order for testing without Razorpay
+ * Only works in development mode or for admins
+ */
+export const createTestOrder = async (req, res) => {
+  try {
+    // Security check - only allow in development
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({
+        error: true,
+        success: false,
+        message: "Test orders not allowed in production",
+      });
+    }
+
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "userId is required",
+      });
+    }
+
+    // Verify user exists
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Get some products for the test order
+    const products = await ProductModel.find().limit(3);
+    if (products.length === 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "No products found in database. Please seed products first.",
+      });
+    }
+
+    // Create order items from products
+    const orderProducts = products.map((product) => ({
+      productId: product._id.toString(),
+      productTitle: product.name,
+      quantity: Math.floor(Math.random() * 3) + 1,
+      price: product.price,
+      image: product.image,
+      subTotal: product.price * (Math.floor(Math.random() * 3) + 1),
+    }));
+
+    const totalAmount = orderProducts.reduce(
+      (sum, item) => sum + item.subTotal,
+      0,
+    );
+
+    // Create test order with "paid" status
+    const testOrder = new OrderModel({
+      user: userId,
+      products: orderProducts,
+      totalAmt: totalAmount,
+      payment_status: "paid", // Mark as paid for testing
+      order_status: "confirmed", // Mark as confirmed
+      paymentId: `TEST_${Date.now()}`, // Test payment ID
+      razorpayOrderId: `TEST_ORDER_${Date.now()}`,
+      // Note: delivery_address is optional (default: null)
+      // Don't include it since it's an ObjectId reference to address model
+    });
+
+    await testOrder.save();
+
+    console.log("✓ Test order created:", testOrder._id);
+
+    res.status(201).json({
+      error: false,
+      success: true,
+      message: "Test order created successfully",
+      orderId: testOrder._id,
+      order: testOrder,
+    });
+  } catch (error) {
+    console.error("Test order creation error:", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to create test order",
+      error: error.message,
     });
   }
 };

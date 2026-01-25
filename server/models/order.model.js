@@ -141,7 +141,7 @@ orderSchema.index({ payment_status: 1, order_status: 1 });
 orderSchema.index({ paymentId: 1 });
 
 // Pre-save hook for validation
-orderSchema.pre("save", function (next) {
+orderSchema.pre("save", async function () {
   // Ensure totalAmt is always a number
   if (typeof this.totalAmt !== "number" || this.totalAmt < 0) {
     throw new Error("Total amount must be a non-negative number");
@@ -151,8 +151,6 @@ orderSchema.pre("save", function (next) {
   if (!this.products || this.products.length === 0) {
     throw new Error("Order must have at least one product");
   }
-
-  next();
 });
 
 const OrderModel = mongoose.model("order", orderSchema);

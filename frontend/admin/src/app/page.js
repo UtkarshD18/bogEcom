@@ -1,4 +1,5 @@
 "use client";
+import AdminDashboard from "@/app/components/DashboardBoxes/AdminDashboard";
 import { useAdmin } from "@/context/AdminContext";
 import { getData } from "@/utils/api";
 import Link from "next/link";
@@ -207,6 +208,14 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Production Dashboard with Charts & Real Data */}
+        <div className="mb-8">
+          <h2 className="text-xl font-bold text-gray-800 mb-4">
+            Analytics & Reports
+          </h2>
+          <AdminDashboard />
         </div>
 
         {/* Menu Grid */}

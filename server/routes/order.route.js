@@ -1,6 +1,7 @@
 import express from "express";
 import {
   createOrder,
+  createTestOrder,
   getAllOrders,
   getDashboardStats,
   getOrderById,
@@ -38,6 +39,11 @@ router.post("/verify-payment", optionalAuth, verifyPayment);
 
 // Get user's orders
 router.get("/user/my-orders", optionalAuth, getUserOrders);
+
+// ==================== TEST ROUTES (Development Only) ====================
+
+// Create test order (for testing without Razorpay)
+router.post("/test/create", createTestOrder);
 
 // ==================== ADMIN ROUTES ====================
 
