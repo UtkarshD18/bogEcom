@@ -1,4 +1,6 @@
+import { deleteFromCloudinary } from "../config/cloudinary.js";
 import BlogModel from "../models/blog.model.js";
+import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
 
 /**
  * Get all published blogs (public)
@@ -228,6 +230,16 @@ export const updateBlog = async (req, res) => {
       });
     }
 
+    // Clean up old image if being replaced
+    if (image && blog.image !== image) {
+      const oldPublicId = extractPublicIdFromUrl(blog.image);
+      if (oldPublicId) {
+        deleteFromCloudinary(oldPublicId).catch((err) => {
+          console.warn("Failed to delete old blog image:", oldPublicId, err);
+        });
+      }
+    }
+
     // Update fields
     if (title) blog.title = title;
     if (content) blog.content = content;
@@ -272,6 +284,16 @@ export const deleteBlog = async (req, res) => {
         success: false,
         message: "Blog not found",
       });
+    }
+
+    // Clean up image from Cloudinary
+    if (blog.image) {
+      const publicId = extractPublicIdFromUrl(blog.image);
+      if (publicId) {
+        deleteFromCloudinary(publicId).catch((err) => {
+          console.warn("Failed to delete blog image:", publicId, err);
+        });
+      }
     }
 
     res.status(200).json({

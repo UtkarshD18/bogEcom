@@ -1,5 +1,5 @@
 "use client";
-import AdminDashboard from "@/app/components/DashboardBoxes/AdminDashboard";
+import AdminDashboardComponent from "@/app/components/DashboardBoxes/AdminDashboard";
 import { useAdmin } from "@/context/AdminContext";
 import { getData } from "@/utils/api";
 import Link from "next/link";
@@ -41,10 +41,7 @@ export default function AdminDashboard() {
 
   const fetchStats = async () => {
     try {
-      const response = await getData(
-        "/api/orders/admin/dashboard-stats",
-        token,
-      );
+      const response = await getData("/api/statistics/dashboard", token);
       if (response.success) {
         setStats(response.data);
       }
@@ -215,7 +212,7 @@ export default function AdminDashboard() {
           <h2 className="text-xl font-bold text-gray-800 mb-4">
             Analytics & Reports
           </h2>
-          <AdminDashboard />
+          <AdminDashboardComponent />
         </div>
 
         {/* Menu Grid */}

@@ -1,13 +1,36 @@
 "use client";
 
+import { MyContext } from "@/context/ThemeContext";
 import { Button } from "@mui/material";
 import { useRouter } from "next/navigation";
+import { useContext, useEffect, useState } from "react";
 import { AiOutlineCheck } from "react-icons/ai";
 
 export default function MembershipCTA() {
   const router = useRouter();
+  const themeContext = useContext(MyContext);
+  const flavor = themeContext?.flavor || {
+    color: "#c1591c",
+    glass: "rgba(193,89,28,0.08)",
+  };
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
+
   return (
-    <section className="bg-linear-to-r from-orange-600 to-orange-700 py-16 my-12">
+    <section
+      data-theme-color
+      style={{
+        background: `linear-gradient(135deg, ${flavor.color} 0%, #fff 100%)`,
+        padding: "64px 16px",
+        margin: "48px 0",
+        transition: "background 0.6s ease",
+      }}
+    >
       <div className="container mx-auto px-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           {/* Left - Text Content */}
@@ -47,7 +70,7 @@ export default function MembershipCTA() {
               onClick={() => router.push("/membership")}
               sx={{
                 backgroundColor: "white",
-                color: "#c1591c",
+                color: flavor.color,
                 fontWeight: "bold",
                 px: 4,
                 py: 1.5,
@@ -63,7 +86,17 @@ export default function MembershipCTA() {
 
           {/* Right - Benefits Grid */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white bg-opacity-90 p-6 rounded-lg text-gray-900 border border-white border-opacity-30 hover:bg-opacity-100 transition-all duration-300 shadow-lg">
+            <div
+              style={{
+                background: `${flavor.glass}`,
+                backdropFilter: "blur(12px)",
+                padding: "24px",
+                borderRadius: "16px",
+                color: "#333",
+                border: `1px solid ${flavor.color}40`,
+              }}
+              className="hover:scale-105 transition-transform duration-300 shadow-lg"
+            >
               <div className="text-4xl mb-3">💰</div>
               <h3 className="text-xl font-bold mb-2 text-gray-900">
                 Save ₹2000+
@@ -72,21 +105,51 @@ export default function MembershipCTA() {
                 Annually with member discounts
               </p>
             </div>
-            <div className="bg-white bg-opacity-90 p-6 rounded-lg text-gray-900 border border-white border-opacity-30 hover:bg-opacity-100 transition-all duration-300 shadow-lg">
+            <div
+              style={{
+                background: `${flavor.glass}`,
+                backdropFilter: "blur(12px)",
+                padding: "24px",
+                borderRadius: "16px",
+                color: "#333",
+                border: `1px solid ${flavor.color}40`,
+              }}
+              className="hover:scale-105 transition-transform duration-300 shadow-lg"
+            >
               <div className="text-4xl mb-3">📦</div>
               <h3 className="text-xl font-bold mb-2 text-gray-900">
                 Free Shipping
               </h3>
               <p className="text-gray-700 text-sm">On all your orders</p>
             </div>
-            <div className="bg-white bg-opacity-90 p-6 rounded-lg text-gray-900 border border-white border-opacity-30 hover:bg-opacity-100 transition-all duration-300 shadow-lg">
+            <div
+              style={{
+                background: `${flavor.glass}`,
+                backdropFilter: "blur(12px)",
+                padding: "24px",
+                borderRadius: "16px",
+                color: "#333",
+                border: `1px solid ${flavor.color}40`,
+              }}
+              className="hover:scale-105 transition-transform duration-300 shadow-lg"
+            >
               <div className="text-4xl mb-3">🎧</div>
               <h3 className="text-xl font-bold mb-2 text-gray-900">
                 24/7 Support
               </h3>
               <p className="text-gray-700 text-sm">Dedicated member hotline</p>
             </div>
-            <div className="bg-white bg-opacity-90 p-6 rounded-lg text-gray-900 border border-white border-opacity-30 hover:bg-opacity-100 transition-all duration-300 shadow-lg">
+            <div
+              style={{
+                background: `${flavor.glass}`,
+                backdropFilter: "blur(12px)",
+                padding: "24px",
+                borderRadius: "16px",
+                color: "#333",
+                border: `1px solid ${flavor.color}40`,
+              }}
+              className="hover:scale-105 transition-transform duration-300 shadow-lg"
+            >
               <div className="text-4xl mb-3">🚀</div>
               <h3 className="text-xl font-bold mb-2 text-gray-900">
                 Early Access

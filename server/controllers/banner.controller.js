@@ -1,4 +1,6 @@
+import { deleteFromCloudinary } from "../config/cloudinary.js";
 import BannerModel from "../models/banner.model.js";
+import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
 
 /**
  * Banner Controller
@@ -226,19 +228,43 @@ export const updateBanner = async (req, res) => {
     delete updateData.clickCount;
     delete updateData.viewCount;
 
-    const banner = await BannerModel.findByIdAndUpdate(
-      id,
-      { $set: updateData },
-      { new: true, runValidators: true },
-    );
-
-    if (!banner) {
+    // Fetch existing banner to check for image changes
+    const existingBanner = await BannerModel.findById(id);
+    if (!existingBanner) {
       return res.status(404).json({
         error: true,
         success: false,
         message: "Banner not found",
       });
     }
+
+    // Clean up old images if they're being replaced
+    if (updateData.image && existingBanner.image !== updateData.image) {
+      const oldPublicId = extractPublicIdFromUrl(existingBanner.image);
+      if (oldPublicId) {
+        deleteFromCloudinary(oldPublicId).catch((err) => {
+          console.warn("Failed to delete old banner image:", oldPublicId, err);
+        });
+      }
+    }
+
+    if (
+      updateData.mobileImage &&
+      existingBanner.mobileImage !== updateData.mobileImage
+    ) {
+      const oldPublicId = extractPublicIdFromUrl(existingBanner.mobileImage);
+      if (oldPublicId) {
+        deleteFromCloudinary(oldPublicId).catch((err) => {
+          console.warn("Failed to delete old mobile image:", oldPublicId, err);
+        });
+      }
+    }
+
+    const banner = await BannerModel.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true },
+    );
 
     res.status(200).json({
       error: false,
@@ -247,6 +273,7 @@ export const updateBanner = async (req, res) => {
       data: banner,
     });
   } catch (error) {
+    console.error("Error updating banner:", error);
     res.status(500).json({
       error: true,
       success: false,
@@ -272,12 +299,32 @@ export const deleteBanner = async (req, res) => {
       });
     }
 
+    // Clean up images from Cloudinary
+    if (banner.image) {
+      const publicId = extractPublicIdFromUrl(banner.image);
+      if (publicId) {
+        deleteFromCloudinary(publicId).catch((err) => {
+          console.warn("Failed to delete banner image:", publicId, err);
+        });
+      }
+    }
+
+    if (banner.mobileImage) {
+      const publicId = extractPublicIdFromUrl(banner.mobileImage);
+      if (publicId) {
+        deleteFromCloudinary(publicId).catch((err) => {
+          console.warn("Failed to delete mobile image:", publicId, err);
+        });
+      }
+    }
+
     res.status(200).json({
       error: false,
       success: true,
       message: "Banner deleted successfully",
     });
   } catch (error) {
+    console.error("Error deleting banner:", error);
     res.status(500).json({
       error: true,
       success: false,

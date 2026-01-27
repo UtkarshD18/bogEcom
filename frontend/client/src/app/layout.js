@@ -1,12 +1,6 @@
-import ErrorBoundary from "@/components/ErrorBoundary";
-import Footer from "@/components/Footer";
-import Header from "@/components/Header";
-import { CartProvider } from "@/context/CartContext";
-import { ProductProvider } from "@/context/ProductContext";
 import ThemeProvider from "@/context/ThemeContext";
-import { WishlistProvider } from "@/context/WishlistContext";
 import { Inter } from "next/font/google";
-import { Toaster } from "react-hot-toast";
+import ClientLayout from "./ClientLayout";
 import "./globals.css";
 
 const inter = Inter({
@@ -46,27 +40,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={`${inter.className}`}>
         <ThemeProvider>
-          <ProductProvider>
-            <CartProvider>
-              <WishlistProvider>
-                <ErrorBoundary>
-                  <Toaster
-                    position="top-right"
-                    toastOptions={{
-                      duration: 3000,
-                      style: {
-                        background: "#333",
-                        color: "#fff",
-                      },
-                    }}
-                  />
-                  <Header />
-                  <div className="pt-[140px] md:pt-[160px]">{children}</div>
-                  <Footer />
-                </ErrorBoundary>
-              </WishlistProvider>
-            </CartProvider>
-          </ProductProvider>
+          <ClientLayout inter={inter}>{children}</ClientLayout>
         </ThemeProvider>
       </body>
     </html>

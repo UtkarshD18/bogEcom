@@ -226,17 +226,21 @@ export const getDashboardStats = async (token) => {
     const headers = {
       "Content-Type": "application/json",
     };
-
     if (token && typeof token === "string") {
       headers["Authorization"] = `Bearer ${token}`;
     }
-
-    const response = await fetch(`${apiUrl}/orders/admin/dashboard-stats`, {
+    const response = await fetch(`${apiUrl}/api/statistics/dashboard`, {
       method: "GET",
       headers,
       credentials: "include",
     });
-
+    if (!response.ok) {
+      // Not status 200, return error
+      return {
+        error: true,
+        message: `Request failed with status ${response.status}`,
+      };
+    }
     const data = await response.json();
     return data;
   } catch (error) {

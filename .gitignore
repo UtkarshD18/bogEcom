@@ -76,3 +76,4 @@ next-env.d.ts
 .cache
 .tmp
 .temp
+.aider*

@@ -17,7 +17,6 @@ import {
   MdOutlineSettings,
   MdOutlineShoppingBag,
 } from "react-icons/md";
-import Nav from "./Nav";
 import Search from "./Search";
 
 const Header = () => {
@@ -161,13 +160,11 @@ const Header = () => {
     >
       {/* ================= TOP HEADER ================= */}
       <div className="w-full">
-        {/* Decorative Top Line Gradient */}
-        <div className="h-[3px] w-full bg-gradient-to-r from-[#c1591c] via-[#d06a2d] to-[#c1591c]" />
-
+        {/* Removed Decorative Top Line Gradient */}
         <div className="w-full px-4 md:px-6 py-3">
-          <div className="flex items-center justify-between">
-            {/* 1. LEFT: LOGO - Leftmost position */}
-            <div className="flex-shrink-0">
+          <div className="flex items-center justify-between gap-8">
+            {/* LOGO */}
+            <div className="shrink-0 pr-8">
               <Link
                 href="/"
                 className="block group"
@@ -181,8 +178,8 @@ const Header = () => {
                 <div className="relative transition-transform duration-300 group-hover:scale-105">
                   <Image
                     src="/logo.png"
-                    width={140}
-                    height={45}
+                    width={200}
+                    height={65}
                     alt="Buy One Gram"
                     priority
                     className="object-contain"
@@ -190,14 +187,42 @@ const Header = () => {
                 </div>
               </Link>
             </div>
-
-            {/* 2. CENTER: SEARCH BAR */}
-            <div className="hidden md:flex flex-1 justify-center max-w-xl mx-auto px-4">
-              <div className="w-full relative group">
-                {/* Glow effect */}
-                <div className="absolute -inset-1 bg-gradient-to-r from-[#c1591c]/10 to-[#d06a2d]/10 rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
-
-                {/* Search Input Container */}
+            {/* NAVIGATION + SEARCHBAR in one line */}
+            <div className="flex flex-1 items-center gap-8">
+              <nav className="flex gap-6">
+                <Link
+                  href="/"
+                  className="font-semibold text-base text-[#c1591c] px-2 py-1 rounded-lg hover:bg-[#f5c16c]/20 transition"
+                >
+                  Home
+                </Link>
+                <Link
+                  href="/products"
+                  className="font-semibold text-base text-gray-700 px-2 py-1 rounded-lg hover:bg-[#f5c16c]/20 transition"
+                >
+                  Products
+                </Link>
+                <Link
+                  href="/membership"
+                  className="font-semibold text-base text-gray-700 px-2 py-1 rounded-lg hover:bg-[#f5c16c]/20 transition"
+                >
+                  Membership
+                </Link>
+                <Link
+                  href="/blogs"
+                  className="font-semibold text-base text-gray-700 px-2 py-1 rounded-lg hover:bg-[#f5c16c]/20 transition"
+                >
+                  Blogs
+                </Link>
+                <Link
+                  href="/about-us"
+                  className="font-semibold text-base text-gray-700 px-2 py-1 rounded-lg hover:bg-[#f5c16c]/20 transition"
+                >
+                  About Us
+                </Link>
+              </nav>
+              <div className="w-full max-w-md relative group">
+                <div className="absolute -inset-1 bg-linear-to-r from-[#c1591c]/10 to-[#d06a2d]/10 rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                 <div className="relative bg-white shadow-sm border border-gray-200 rounded-full overflow-hidden transition-all duration-300 focus-within:shadow-md focus-within:border-[#c1591c]/50">
                   <div className="h-11 flex items-center">
                     <Search />
@@ -205,9 +230,8 @@ const Header = () => {
                 </div>
               </div>
             </div>
-
-            {/* 3. RIGHT: ACTIONS (Icons + Login Button) */}
-            <div className="flex items-center justify-end flex-shrink-0 gap-6">
+            {/* ACTIONS (Icons + Login Button) */}
+            <div className="flex items-center justify-end shrink-0 gap-6">
               {/* Wishlist Icon */}
               <Link
                 href="/my-list"
@@ -223,7 +247,6 @@ const Header = () => {
                   className="text-gray-600 group-hover:text-red-500 transition-colors"
                 />
               </Link>
-
               {/* Cart Icon */}
               <Link
                 href="/cart"
@@ -239,7 +262,6 @@ const Header = () => {
                   className="text-gray-700 group-hover:text-[#c1591c] transition-colors"
                 />
               </Link>
-
               {/* Login / Register OR User Profile */}
               {!isMounted ? (
                 <div className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 bg-white/60 px-5 py-2.5 rounded-full border border-gray-200/50 shadow-sm ml-2">
@@ -265,7 +287,7 @@ const Header = () => {
                 <div className="relative">
                   <button
                     onClick={handleClick}
-                    className="hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full bg-gradient-to-r from-[#c1591c]/10 to-[#d06a2d]/10 border border-[#c1591c]/30 hover:border-[#c1591c]/60 hover:shadow-md transition-all duration-200 group"
+                    className="hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full bg-linear-to-r from-[#c1591c]/10 to-[#d06a2d]/10 border border-[#c1591c]/30 hover:border-[#c1591c]/60 hover:shadow-md transition-all duration-200 group"
                   >
                     {userPhoto ? (
                       <img
@@ -279,7 +301,7 @@ const Header = () => {
                       />
                     ) : null}
                     <div
-                      className={`flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-[#c1591c] to-[#d06a2d] text-white ${userPhoto ? "hidden" : "flex"}`}
+                      className={`flex items-center justify-center w-8 h-8 rounded-full bg-linear-to-br from-[#c1591c] to-[#d06a2d] text-white ${userPhoto ? "hidden" : "flex"}`}
                     >
                       <FaUser size={14} />
                     </div>
@@ -287,7 +309,7 @@ const Header = () => {
                       <span className="text-xs font-medium text-gray-500 leading-none">
                         Profile
                       </span>
-                      <span className="text-sm font-semibold text-gray-800 truncate max-w-[100px]">
+                      <span className="text-sm font-semibold text-gray-800 truncate max-w-25">
                         {userName}
                       </span>
                     </div>
@@ -305,7 +327,7 @@ const Header = () => {
                       {/* Menu */}
                       <div className="absolute right-0 mt-3 w-64 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-40 animate-in fade-in slide-in-from-top-2">
                         {/* User Info Header */}
-                        <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-transparent">
+                        <div className="px-4 py-3 border-b border-gray-100 bg-linear-to-r from-gray-50 to-transparent">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                             Account
                           </p>
@@ -402,10 +424,7 @@ const Header = () => {
         </div>
       </div>
 
-      {/* ================= NAVBAR ================= */}
-      <div className="border-t border-gray-200/60 bg-white/40 backdrop-blur-md">
-        <Nav />
-      </div>
+      {/* NAVBAR removed as redundant. Navigation is handled in header. */}
     </div>
   );
 };

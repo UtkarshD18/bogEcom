@@ -18,6 +18,7 @@ import homeSlideRouter from "./routes/homeSlide.route.js";
 import membershipRouter from "./routes/membership.route.js";
 import orderRouter from "./routes/order.route.js";
 import productRouter from "./routes/product.route.js";
+import statisticsRouter from "./routes/statistics.route.js";
 import uploadRouter from "./routes/upload.route.js";
 import userRouter from "./routes/user.route.js";
 import wishlistRouter from "./routes/wishlist.route.js";
@@ -101,6 +102,7 @@ app.use("/api/cart", generalLimiter, cartRouter);
 app.use("/api/wishlist", generalLimiter, wishlistRouter);
 app.use("/api/upload", uploadLimiter, uploadRouter);
 app.use("/api/membership", paymentLimiter, membershipRouter);
+app.use("/api/statistics", authLimiter, statisticsRouter);
 
 // 404 handler
 app.use((req, res, next) => {

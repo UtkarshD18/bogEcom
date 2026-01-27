@@ -1,11 +1,18 @@
 "use client";
 
 import ProductItem from "@/components/ProductItem";
-import Sidebar from "@/components/Sidebar";
+// import Sidebar from "@/components/Sidebar";
 import { fetchDataFromApi } from "@/utils/api";
-import { Button, CircularProgress, Pagination } from "@mui/material";
+import {
+  Button,
+  CircularProgress,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Pagination,
+  Select,
+} from "@mui/material";
 import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
@@ -14,6 +21,9 @@ const ProductPageContent = () => {
   const [sortBy, setSortBy] = useState("Name, A to Z");
   const [anchorEl, setAnchorEl] = useState(null);
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [priceRange, setPriceRange] = useState([0, 3000]);
   const [loading, setLoading] = useState(true);
   const [totalProducts, setTotalProducts] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -21,6 +31,30 @@ const ProductPageContent = () => {
   const searchParams = useSearchParams();
 
   const open = Boolean(anchorEl);
+
+  // Fetch categories from API
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetchDataFromApi("/api/categories");
+        if (response?.error !== true) {
+          setCategories(response?.data || response?.categories || []);
+        }
+      } catch (error) {
+        setCategories([]);
+      }
+    };
+    fetchCategories();
+    // Set selected category from URL
+    const categoryParam = searchParams.get("category");
+    if (categoryParam) setSelectedCategory(categoryParam);
+    // Set price range from URL
+    const minPrice = searchParams.get("minPrice");
+    const maxPrice = searchParams.get("maxPrice");
+    if (minPrice && maxPrice) {
+      setPriceRange([parseInt(minPrice), parseInt(maxPrice)]);
+    }
+  }, [searchParams]);
 
   // Fetch products from API (admin-managed products)
   const fetchProducts = async () => {
@@ -58,6 +92,12 @@ const ProductPageContent = () => {
       if (category) {
         params.append("category", category);
       }
+
+      // Price filter from URL
+      const minPrice = searchParams.get("minPrice");
+      const maxPrice = searchParams.get("maxPrice");
+      if (minPrice) params.append("minPrice", minPrice);
+      if (maxPrice) params.append("maxPrice", maxPrice);
 
       const response = await fetchDataFromApi(
         `/api/products?${params.toString()}`,
@@ -110,13 +150,9 @@ const ProductPageContent = () => {
   return (
     <section className="py-5 bg-white min-h-screen">
       <div className="container mx-auto px-4 flex gap-4">
-        <div className="sidebarWrapper hidden lg:block lg:w-72 flex-shrink-0 relative z-10">
-          <Sidebar />
-        </div>
-
         <div className="rightContent flex-1 min-w-0 relative z-0">
           <div className="top strip w-full bg-[#f1f1f1] p-2 rounded-md h-12 flex items-center justify-between px-4 relative z-0">
-            <span className="text-[15px] text-gray-700 font-[600]">
+            <span className="text-[15px] text-gray-700 font-semibold">
               {loading ? "Loading..." : `There are ${totalProducts} Products.`}
               {searchParams.get("search") && (
                 <span className="ml-2 text-[#c1591c]">
@@ -125,11 +161,87 @@ const ProductPageContent = () => {
               )}
             </span>
 
-            <div className="flex items-center gap-3">
-              <span className="text-[15px] text-gray-700 font-[600] hidden sm:block">
+            <div className="flex items-center gap-4 flex-wrap">
+              {/* Category Dropdown Filter */}
+              <FormControl
+                size="small"
+                sx={{ minWidth: 180, background: "white", mr: 1 }}
+              >
+                <InputLabel id="category-select-label" shrink>
+                  Category
+                </InputLabel>
+                <Select
+                  labelId="category-select-label"
+                  id="category-select"
+                  value={selectedCategory}
+                  label="Category"
+                  onChange={(e) => {
+                    setSelectedCategory(e.target.value);
+                    const params = new URLSearchParams(searchParams.toString());
+                    if (e.target.value) {
+                      params.set("category", e.target.value);
+                    } else {
+                      params.delete("category");
+                    }
+                    window.location.href = `/products?${params.toString()}`;
+                  }}
+                  displayEmpty
+                  notched
+                  renderValue={(selected) =>
+                    selected
+                      ? categories.find(
+                          (cat) => (cat.slug || cat._id || cat.id) === selected,
+                        )?.name || "Category"
+                      : "All Categories"
+                  }
+                >
+                  <MenuItem value="">All Categories</MenuItem>
+                  {categories.map((cat) => (
+                    <MenuItem
+                      key={cat._id || cat.id || cat.slug}
+                      value={cat.slug || cat._id || cat.id}
+                    >
+                      {cat.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {/* Price Range Dropdown Filter */}
+              <FormControl
+                size="small"
+                sx={{ minWidth: 150, background: "white", mr: 1 }}
+              >
+                <InputLabel id="price-range-select-label">
+                  Price Range
+                </InputLabel>
+                <Select
+                  labelId="price-range-select-label"
+                  id="price-range-select"
+                  value={`${priceRange[0]}-${priceRange[1]}`}
+                  label="Price Range"
+                  onChange={(e) => {
+                    const [min, max] = e.target.value.split("-").map(Number);
+                    setPriceRange([min, max]);
+                    const params = new URLSearchParams(searchParams.toString());
+                    params.set("minPrice", min);
+                    params.set("maxPrice", max);
+                    window.location.href = `/products?${params.toString()}`;
+                  }}
+                >
+                  <MenuItem value="0-3000">All Prices</MenuItem>
+                  <MenuItem value="0-499">Under ₹500</MenuItem>
+                  <MenuItem value="500-999">₹500 - ₹999</MenuItem>
+                  <MenuItem value="1000-1999">₹1000 - ₹1999</MenuItem>
+                  <MenuItem value="2000-3000">₹2000 - ₹3000</MenuItem>
+                </Select>
+              </FormControl>
+              {/* Sort Dropdown */}
+              <span
+                className="text-[15px] text-gray-700 font-semibold hidden sm:block"
+                style={{ marginRight: 8 }}
+              >
                 Sort By
               </span>
-
               <div className="relative">
                 <Button
                   sx={{
@@ -138,6 +250,7 @@ const ProductPageContent = () => {
                     textTransform: "capitalize",
                     fontSize: "14px",
                     padding: "4px 12px",
+                    minWidth: 120,
                     "&:hover": {
                       backgroundColor: "#f5f5f5",
                     },
@@ -146,7 +259,6 @@ const ProductPageContent = () => {
                 >
                   {sortBy}
                 </Button>
-
                 <Menu
                   anchorEl={anchorEl}
                   open={open}
@@ -260,9 +372,7 @@ const ProductPageContent = () => {
 const ProductPageLoading = () => (
   <section className="py-5 bg-white min-h-screen">
     <div className="container mx-auto px-4 flex gap-4">
-      <div className="sidebarWrapper hidden lg:block lg:w-72 flex-shrink-0">
-        <div className="bg-gray-100 animate-pulse h-64 rounded-lg" />
-      </div>
+      {/* Sidebar skeleton removed: no sidebar in new UI */}
       <div className="rightContent flex-1 min-w-0">
         <div className="flex items-center justify-center py-20">
           <CircularProgress style={{ color: "#c1591c" }} />

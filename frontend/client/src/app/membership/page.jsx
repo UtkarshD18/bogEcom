@@ -2,7 +2,22 @@
 
 import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState as useReactState, useState } from "react";
+// For theme sync
+const getFlavor = () => {
+  if (typeof window !== "undefined") {
+    const flavor = window.localStorage.getItem("selectedFlavor");
+    if (flavor) {
+      try {
+        return JSON.parse(flavor);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+};
+const DEFAULT_FLAVOR = { color: "#c1591c", glass: "rgba(193,89,28,0.08)" };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -11,7 +26,18 @@ export default function MembershipPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [membershipStatus, setMembershipStatus] = useState(null);
   const [activePlan, setActivePlan] = useState(null);
+  const [flavor, setFlavor] = useReactState(getFlavor() || DEFAULT_FLAVOR);
   const router = useRouter();
+  // Sync flavor with theme changes
+  useEffect(() => {
+    const updateFlavor = () => {
+      const f = getFlavor();
+      setFlavor(f || DEFAULT_FLAVOR);
+    };
+    window.addEventListener("flavorChange", updateFlavor);
+    updateFlavor();
+    return () => window.removeEventListener("flavorChange", updateFlavor);
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -99,6 +125,9 @@ export default function MembershipPage() {
             maxWidth: 700,
             margin: "0 auto",
             fontWeight: 500,
+            background: `linear-gradient(135deg, ${flavor.color} 0%, #fff 100%)`,
+            borderRadius: 24,
+            boxShadow: `0 8px 32px 0 ${flavor.glass || "rgba(193,89,28,0.08)"}`,
           }}
         >
           {activePlan?.description ||
@@ -107,7 +136,7 @@ export default function MembershipPage() {
         {isMemberActive && (
           <div
             style={{
-              marginTop: 20,
+              background: `linear-gradient(135deg, ${flavor.color} 0%, ${flavor.glass || "#ffe8db"} 100%)`,
               padding: "12px 24px",
               background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
               color: "#fff",
@@ -186,7 +215,7 @@ export default function MembershipPage() {
             style={{
               background: "linear-gradient(135deg, #fff5f0 0%, #ffe8db 100%)",
               borderRadius: 20,
-              padding: 28,
+              border: `2px solid ${flavor.color}`,
               boxShadow: "0 4px 20px rgba(255, 107, 53, 0.1)",
               border: "2px solid #ff6b35",
             }}
@@ -212,7 +241,7 @@ export default function MembershipPage() {
             style={{
               background: "linear-gradient(135deg, #fff5f0 0%, #ffe8db 100%)",
               borderRadius: 20,
-              padding: 28,
+              border: `2px solid ${flavor.color}`,
               boxShadow: "0 4px 20px rgba(255, 107, 53, 0.1)",
               border: "2px solid #ff6b35",
             }}
@@ -238,7 +267,7 @@ export default function MembershipPage() {
             style={{
               background: "linear-gradient(135deg, #fff5f0 0%, #ffe8db 100%)",
               borderRadius: 20,
-              padding: 28,
+              border: `2px solid ${flavor.color}`,
               boxShadow: "0 4px 20px rgba(255, 107, 53, 0.1)",
               border: "2px solid #ff6b35",
             }}
@@ -264,7 +293,7 @@ export default function MembershipPage() {
               background: "linear-gradient(135deg, #fff5f0 0%, #ffe8db 100%)",
               borderRadius: 20,
               padding: 28,
-              boxShadow: "0 4px 20px rgba(255, 107, 53, 0.1)",
+              border: `2px solid ${flavor.color}`,
               border: "2px solid #ff6b35",
             }}
           >
@@ -289,7 +318,7 @@ export default function MembershipPage() {
             style={{
               background: "linear-gradient(135deg, #fff5f0 0%, #ffe8db 100%)",
               borderRadius: 20,
-              padding: 28,
+              border: `2px solid ${flavor.color}`,
               boxShadow: "0 4px 20px rgba(255, 107, 53, 0.1)",
               border: "2px solid #ff6b35",
             }}
@@ -316,9 +345,13 @@ export default function MembershipPage() {
             <div style={{ marginBottom: 20 }}>
               <span
                 style={{
+                  border: `2px solid ${flavor.color}`,
                   fontSize: "2.5rem",
                   fontWeight: 800,
                   color: "#c1591c",
+                  padding: "8px 24px",
+                  borderRadius: "16px",
+                  display: "inline-block",
                 }}
               >
                 ₹{activePlan.price}

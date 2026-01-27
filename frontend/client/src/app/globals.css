@@ -7,6 +7,28 @@
   --secondary: #f3f4f6;
 }
 
+/* Global theme transitions */
+* {
+  transition:
+    background-color 0.6s ease,
+    color 0.6s ease;
+}
+
+html,
+body {
+  background: linear-gradient(135deg, #4b2e2b 0%, #fff 100%);
+  transition: background 0.6s ease !important;
+}
+
+/* Liquid glass effect for themed elements */
+[data-theme-color],
+.themed-section,
+.flavor-btn {
+  backdrop-filter: blur(12px);
+  background-clip: padding-box;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 ::-webkit-scrollbar {
   width: 8px !important;
   height: 8px !important;

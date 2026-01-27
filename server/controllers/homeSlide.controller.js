@@ -1,4 +1,6 @@
+import { deleteFromCloudinary } from "../config/cloudinary.js";
 import HomeSlideModel from "../models/homeSlide.model.js";
+import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
 
 /**
  * Home Slide Controller
@@ -201,19 +203,43 @@ export const updateSlide = async (req, res) => {
 
     delete updateData._id;
 
-    const slide = await HomeSlideModel.findByIdAndUpdate(
-      id,
-      { $set: updateData },
-      { new: true, runValidators: true },
-    );
-
-    if (!slide) {
+    // Fetch existing slide to check for image changes
+    const existingSlide = await HomeSlideModel.findById(id);
+    if (!existingSlide) {
       return res.status(404).json({
         error: true,
         success: false,
         message: "Slide not found",
       });
     }
+
+    // Clean up old images if they're being replaced
+    if (updateData.image && existingSlide.image !== updateData.image) {
+      const oldPublicId = extractPublicIdFromUrl(existingSlide.image);
+      if (oldPublicId) {
+        deleteFromCloudinary(oldPublicId).catch((err) => {
+          console.warn("Failed to delete old slide image:", oldPublicId, err);
+        });
+      }
+    }
+
+    if (
+      updateData.mobileImage &&
+      existingSlide.mobileImage !== updateData.mobileImage
+    ) {
+      const oldPublicId = extractPublicIdFromUrl(existingSlide.mobileImage);
+      if (oldPublicId) {
+        deleteFromCloudinary(oldPublicId).catch((err) => {
+          console.warn("Failed to delete old mobile image:", oldPublicId, err);
+        });
+      }
+    }
+
+    const slide = await HomeSlideModel.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true },
+    );
 
     res.status(200).json({
       error: false,
@@ -222,6 +248,7 @@ export const updateSlide = async (req, res) => {
       data: slide,
     });
   } catch (error) {
+    console.error("Error updating slide:", error);
     res.status(500).json({
       error: true,
       success: false,
@@ -247,12 +274,32 @@ export const deleteSlide = async (req, res) => {
       });
     }
 
+    // Clean up images from Cloudinary
+    if (slide.image) {
+      const publicId = extractPublicIdFromUrl(slide.image);
+      if (publicId) {
+        deleteFromCloudinary(publicId).catch((err) => {
+          console.warn("Failed to delete slide image:", publicId, err);
+        });
+      }
+    }
+
+    if (slide.mobileImage) {
+      const publicId = extractPublicIdFromUrl(slide.mobileImage);
+      if (publicId) {
+        deleteFromCloudinary(publicId).catch((err) => {
+          console.warn("Failed to delete mobile image:", publicId, err);
+        });
+      }
+    }
+
     res.status(200).json({
       error: false,
       success: true,
       message: "Slide deleted successfully",
     });
   } catch (error) {
+    console.error("Error deleting slide:", error);
     res.status(500).json({
       error: true,
       success: false,
