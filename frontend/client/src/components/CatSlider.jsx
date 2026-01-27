@@ -86,7 +86,7 @@ const CatSlider = () => {
             {categories.map((category) => (
               <SwiperSlide key={category._id}>
                 <Link
-                  href={`/products?category=${category.slug}`}
+                  href={`/products?category=${category._id}`}
                   className="group block bg-white rounded-2xl p-4 text-center shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-[#c1591c]/20"
                 >
                   {category.image ? (
