@@ -1,6 +1,6 @@
 "use client";
 import AccountSidebar from "@/components/AccountSiderbar";
-import AddressBox from "@/components/AddressBox";
+import AddressBox from "./addressBox";
 import { Button } from "@mui/material";
 
 const Address = () => {

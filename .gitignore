@@ -52,7 +52,7 @@ ehthumbs.db
 *.swo
 .vscode/*
 !.vscode/extensions.json
-
+.continue/
 # =====================================
 # TypeScript
 # =====================================
