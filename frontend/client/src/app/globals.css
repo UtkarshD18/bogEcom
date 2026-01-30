@@ -5,24 +5,74 @@
   --foreground: #171717;
   --primary: #c1591c;
   --secondary: #f3f4f6;
+
+  /* Header Height Variable for consistent spacing */
+  --header-height: 85px;
+  --header-height-mobile: 100px; /* Includes mobile search bar: header + margin + search */
+
+  /* Flavor Theme Variables - Default: Creamy */
+  --flavor-color: #f5c16c;
+  --flavor-hover: #e5a84d;
+  --flavor-light: #fdf5e6;
+  --flavor-glass: rgba(245, 193, 108, 0.15);
+  --flavor-card-bg: #fffbf5;
+  --flavor-badge: #d4a84b;
+  --flavor-surface: #fff8ed;
+  --flavor-surface-hover: #fff3e0;
+  --flavor-gradient: linear-gradient(
+    135deg,
+    #fdf5e6 0%,
+    #fff8ed 50%,
+    #ffffff 100%
+  );
+  --flavor-page-bg: linear-gradient(
+    180deg,
+    var(--flavor-light) 0%,
+    #ffffff 100%
+  );
 }
 
 /* Global theme transitions */
 * {
   transition:
-    background-color 0.6s ease,
-    color 0.6s ease;
+    background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html,
 body {
-  background: linear-gradient(135deg, #4b2e2b 0%, #fff 100%);
-  transition: background 0.6s ease !important;
+  background: var(--flavor-page-bg);
+  transition: background 0.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Responsive header height for mobile devices */
+@media (max-width: 768px) {
+  :root {
+    --header-height: var(--header-height-mobile, 110px);
+  }
+}
+
+/* Themed sections automatically pick up flavor */
+.themed-section {
+  background: var(--flavor-gradient);
+}
+
+.themed-card {
+  background: var(--flavor-card-bg);
+  border: 1px solid color-mix(in srgb, var(--flavor-color) 15%, transparent);
+}
+
+.themed-card:hover {
+  border-color: color-mix(in srgb, var(--flavor-color) 30%, transparent);
+  box-shadow: 0 8px 24px
+    color-mix(in srgb, var(--flavor-color) 10%, transparent);
 }
 
 /* Liquid glass effect for themed elements */
 [data-theme-color],
-.themed-section,
 .flavor-btn {
   backdrop-filter: blur(12px);
   background-clip: padding-box;
@@ -34,10 +84,10 @@ body {
   height: 8px !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c1591c;
+  background: var(--flavor-color, #c1591c);
 }
 ::-webkit-scrollbar-track {
-  background: #fff;
+  background: var(--flavor-surface, #fff8ed);
 }
 
 .container {
@@ -52,24 +102,26 @@ body {
   justify-content: center;
   width: 50px !important;
   height: 50px !important;
-  background: #fff !important;
+  background: var(--flavor-card-bg, #fffbf5) !important;
   border-radius: 100% !important;
   position: absolute !important;
   top: 45% !important;
   z-index: 99 !important;
+  border: 1px solid var(--flavor-color, #c1591c) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
 }
 .swiper-button-next svg,
 .swiper-button-prev svg {
-  color: #000 !important;
+  color: var(--flavor-color, #c1591c) !important;
   width: 15px !important;
 }
 .swiper-button-next:hover,
 .swiper-button-prev:hover {
-  background: var(--primary) !important;
+  background: var(--flavor-color, #c1591c) !important;
 }
 .swiper-button-next:hover svg,
 .swiper-button-prev:hover svg {
-  color: #fff !important;
+  color: var(--flavor-card-bg, #fffbf5) !important;
 }
 
 .swiper-button-next svg,

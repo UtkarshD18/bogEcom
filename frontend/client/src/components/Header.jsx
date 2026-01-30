@@ -10,7 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
 import { FaRegHeart, FaUser } from "react-icons/fa";
-import { IoCartOutline } from "react-icons/io5";
+import { IoCartOutline, IoCloseOutline, IoMenuOutline } from "react-icons/io5";
 import {
   MdLogout,
   MdOutlineLocationOn,
@@ -28,12 +28,35 @@ const Header = () => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
   const context = useContext(MyContext);
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
 
   const open = Boolean(anchorEl);
+
+  // ============ MOBILE MENU: Auto-close on scroll ============
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    let lastScrollY = window.scrollY;
+
+    const handleScrollClose = () => {
+      const currentScrollY = window.scrollY;
+      // Close menu if user scrolls more than 10px in any direction
+      if (Math.abs(currentScrollY - lastScrollY) > 10) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    // Add listener with passive for better performance
+    window.addEventListener("scroll", handleScrollClose, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleScrollClose);
+    };
+  }, [mobileMenuOpen]);
 
   // Function to check login status
   const checkLoginStatus = () => {
@@ -152,19 +175,38 @@ const Header = () => {
   return (
     // Header Container
     <div
-      className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 ${
-        scrolled
-          ? "bg-white/80 backdrop-blur-xl shadow-md border-b border-white/20"
-          : "bg-white/60 backdrop-blur-lg border-b border-transparent"
+      className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 backdrop-blur-xl ${
+        scrolled ? "shadow-md border-b" : "border-b border-transparent"
       }`}
+      style={{
+        backgroundColor: scrolled
+          ? `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 85%, transparent)`
+          : `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)`,
+        borderColor: scrolled
+          ? `color-mix(in srgb, var(--flavor-color, #f5c16c) 20%, transparent)`
+          : "transparent",
+      }}
     >
       {/* ================= TOP HEADER ================= */}
       <div className="w-full">
         {/* Removed Decorative Top Line Gradient */}
-        <div className="w-full px-4 md:px-6 py-3">
-          <div className="flex items-center justify-between gap-8">
+        <div className="w-full px-3 sm:px-4 md:px-6 py-1">
+          <div className="flex items-center justify-between gap-4 md:gap-8">
+            {/* Mobile Menu Button */}
+            <button
+              className="md:hidden p-2 text-gray-700 hover:text-[#c1591c] transition-colors"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? (
+                <IoCloseOutline size={26} />
+              ) : (
+                <IoMenuOutline size={26} />
+              )}
+            </button>
+
             {/* LOGO */}
-            <div className="shrink-0 pr-8">
+            <div className="shrink-0 md:pr-6 flex items-center">
               <Link
                 href="/"
                 className="block group"
@@ -175,21 +217,22 @@ const Header = () => {
                   }
                 }}
               >
-                <div className="relative transition-transform duration-300 group-hover:scale-105">
+                <div className="relative transition-transform duration-300 group-hover:scale-105 flex items-center">
                   <Image
                     src="/logo.png"
-                    width={200}
-                    height={65}
+                    width={120}
+                    height={36}
                     alt="Buy One Gram"
                     priority
-                    className="object-contain"
+                    className="object-contain mix-blend-multiply w-[90px] sm:w-[100px] md:w-[120px]"
+                    style={{ background: "transparent" }}
                   />
                 </div>
               </Link>
             </div>
             {/* NAVIGATION + SEARCHBAR in one line */}
-            <div className="flex flex-1 items-center gap-8">
-              <nav className="flex gap-6">
+            <div className="hidden md:flex flex-1 items-center gap-6">
+              <nav className="flex items-center gap-5">
                 <Link
                   href="/"
                   className="font-semibold text-base text-[#c1591c] px-2 py-1 rounded-lg hover:bg-[#f5c16c]/20 transition"
@@ -221,24 +264,37 @@ const Header = () => {
                   About Us
                 </Link>
               </nav>
-              <div className="w-full max-w-md relative group">
+              <div className="w-full max-w-sm relative group">
                 <div className="absolute -inset-1 bg-linear-to-r from-[#c1591c]/10 to-[#d06a2d]/10 rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
-                <div className="relative bg-white shadow-sm border border-gray-200 rounded-full overflow-hidden transition-all duration-300 focus-within:shadow-md focus-within:border-[#c1591c]/50">
-                  <div className="h-11 flex items-center">
+                <div
+                  className="relative shadow-sm border rounded-full overflow-hidden transition-all duration-300 focus-within:shadow-md"
+                  style={{
+                    backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+                    borderColor:
+                      "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+                  }}
+                >
+                  <div className="h-10 flex items-center">
                     <Search />
                   </div>
                 </div>
               </div>
             </div>
             {/* ACTIONS (Icons + Login Button) */}
-            <div className="flex items-center justify-end shrink-0 gap-6">
+            <div className="flex items-center justify-end shrink-0 gap-5">
               {/* Wishlist Icon */}
               <Link
                 href="/my-list"
                 className="relative group p-2 transition-transform hover:scale-110"
+                aria-label="Wishlist"
               >
                 {wishlistCount > 0 && (
-                  <div className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm ring-2 ring-white">
+                  <div
+                    className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm"
+                    style={{
+                      boxShadow: "0 0 0 2px var(--flavor-card-bg, #fffbf5)",
+                    }}
+                  >
                     {wishlistCount > 99 ? "99+" : wishlistCount}
                   </div>
                 )}
@@ -246,14 +302,32 @@ const Header = () => {
                   size={22}
                   className="text-gray-600 group-hover:text-red-500 transition-colors"
                 />
+                {/* Custom Tooltip */}
+                <span
+                  className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 text-xs font-medium text-gray-700 backdrop-blur-lg rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none"
+                  style={{
+                    backgroundColor:
+                      "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 90%, transparent)",
+                    border:
+                      "1px solid color-mix(in srgb, var(--flavor-color, #f5c16c) 20%, transparent)",
+                  }}
+                >
+                  Wishlist
+                </span>
               </Link>
               {/* Cart Icon */}
               <Link
                 href="/cart"
                 className="relative group p-2 transition-transform hover:scale-110"
+                aria-label="Cart"
               >
                 {cartCount > 0 && (
-                  <div className="absolute -top-1.5 -right-1.5 bg-[#c1591c] text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm ring-2 ring-white">
+                  <div
+                    className="absolute -top-1.5 -right-1.5 bg-[#c1591c] text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm"
+                    style={{
+                      boxShadow: "0 0 0 2px var(--flavor-card-bg, #fffbf5)",
+                    }}
+                  >
                     {cartCount > 99 ? "99+" : cartCount}
                   </div>
                 )}
@@ -261,14 +335,42 @@ const Header = () => {
                   size={26}
                   className="text-gray-700 group-hover:text-[#c1591c] transition-colors"
                 />
+                {/* Custom Tooltip */}
+                <span
+                  className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 text-xs font-medium text-gray-700 backdrop-blur-lg rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none"
+                  style={{
+                    backgroundColor:
+                      "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 90%, transparent)",
+                    border:
+                      "1px solid color-mix(in srgb, var(--flavor-color, #f5c16c) 20%, transparent)",
+                  }}
+                >
+                  Cart
+                </span>
               </Link>
               {/* Login / Register OR User Profile */}
               {!isMounted ? (
-                <div className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 bg-white/60 px-5 py-2.5 rounded-full border border-gray-200/50 shadow-sm ml-2">
+                <div
+                  className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2"
+                  style={{
+                    backgroundColor:
+                      "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)",
+                    border:
+                      "1px solid color-mix(in srgb, var(--flavor-color, #f5c16c) 20%, transparent)",
+                  }}
+                >
                   <span className="text-gray-400">...</span>
                 </div>
               ) : !isLoggedIn ? (
-                <div className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 bg-white/60 px-5 py-2.5 rounded-full border border-gray-200/50 shadow-sm ml-2 hover:shadow-md transition-all">
+                <div
+                  className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2 hover:shadow-md transition-all"
+                  style={{
+                    backgroundColor:
+                      "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)",
+                    border:
+                      "1px solid color-mix(in srgb, var(--flavor-color, #f5c16c) 20%, transparent)",
+                  }}
+                >
                   <Link
                     href="/login"
                     className="hover:text-[#c1591c] transition-colors"
@@ -325,7 +427,14 @@ const Header = () => {
                       />
 
                       {/* Menu */}
-                      <div className="absolute right-0 mt-3 w-64 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-40 animate-in fade-in slide-in-from-top-2">
+                      <div
+                        className="absolute right-0 mt-3 w-64 rounded-xl shadow-xl border py-2 z-40 animate-in fade-in slide-in-from-top-2"
+                        style={{
+                          backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+                          borderColor:
+                            "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+                        }}
+                      >
                         {/* User Info Header */}
                         <div className="px-4 py-3 border-b border-gray-100 bg-linear-to-r from-gray-50 to-transparent">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -416,15 +525,139 @@ const Header = () => {
           </div>
 
           {/* Mobile Search (Below header on small screens) */}
-          <div className="md:hidden mt-3">
-            <div className="bg-white rounded-full shadow-sm border border-gray-200 overflow-hidden h-10 flex items-center">
+          <div className="md:hidden mt-2">
+            <div
+              className="rounded-full shadow-sm border overflow-hidden h-9 flex items-center"
+              style={{
+                backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+                borderColor:
+                  "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+              }}
+            >
               <Search />
             </div>
           </div>
         </div>
       </div>
 
-      {/* NAVBAR removed as redundant. Navigation is handled in header. */}
+      {/* ============ MOBILE DROPDOWN MENU ============ */}
+      {/* Backdrop - Mobile only */}
+      <div
+        className={`md:hidden fixed inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ${
+          mobileMenuOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
+        }`}
+        style={{ zIndex: 9997 }}
+        onClick={() => setMobileMenuOpen(false)}
+        aria-hidden="true"
+      />
+
+      {/* Dropdown Panel - Mobile only */}
+      <div
+        className={`md:hidden fixed left-0 right-0 transition-all duration-300 ease-out ${
+          mobileMenuOpen
+            ? "translate-y-0 opacity-100 pointer-events-auto"
+            : "-translate-y-4 opacity-0 pointer-events-none"
+        }`}
+        style={{
+          top: "calc(var(--header-height, 100px) - 8px)",
+          zIndex: 9998,
+        }}
+      >
+        <div
+          className="mx-3 rounded-2xl shadow-xl border overflow-hidden"
+          style={{
+            backgroundColor: "rgba(255, 251, 245, 0.98)",
+            borderColor: "rgba(245, 193, 108, 0.3)",
+            boxShadow:
+              "0 10px 40px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(193, 89, 28, 0.08)",
+          }}
+        >
+          {/* Navigation Links */}
+          <nav className="py-2">
+            {[
+              { name: "Home", href: "/", icon: "🏠" },
+              { name: "Products", href: "/products", icon: "🛒" },
+              { name: "Membership", href: "/membership", icon: "⭐" },
+              { name: "Blogs", href: "/blogs", icon: "📝" },
+              { name: "About Us", href: "/about-us", icon: "ℹ️" },
+            ].map((item, index) => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className="flex items-center gap-3 mx-2 px-4 py-3 rounded-xl text-[15px] font-semibold text-gray-700 hover:bg-[#f5c16c]/15 hover:text-[#c1591c] active:bg-[#f5c16c]/25 transition-all duration-200"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <span className="text-lg w-6 text-center">{item.icon}</span>
+                <span>{item.name}</span>
+              </Link>
+            ))}
+          </nav>
+
+          {/* Divider */}
+          <div className="mx-4 border-t border-gray-200/60" />
+
+          {/* Auth Section */}
+          <div className="p-3">
+            {!isLoggedIn ? (
+              <div className="flex gap-2">
+                <Link
+                  href="/login"
+                  className="flex-1 py-2.5 text-center text-[14px] font-bold text-[#c1591c] border-2 border-[#c1591c] rounded-xl hover:bg-[#c1591c] hover:text-white active:scale-[0.98] transition-all duration-200"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Login
+                </Link>
+                <Link
+                  href="/register"
+                  className="flex-1 py-2.5 text-center text-[14px] font-bold text-white rounded-xl active:scale-[0.98] transition-all duration-200"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #c1591c 0%, #d06a2d 100%)",
+                  }}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Register
+                </Link>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50/80">
+                {userPhoto ? (
+                  <img
+                    src={userPhoto}
+                    alt="Profile"
+                    className="w-10 h-10 rounded-full object-cover ring-2 ring-[#f5c16c]/50"
+                  />
+                ) : (
+                  <div
+                    className="flex items-center justify-center w-10 h-10 rounded-full text-white"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #c1591c 0%, #d06a2d 100%)",
+                    }}
+                  >
+                    <FaUser size={14} />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] font-bold text-gray-900 truncate">
+                    {userName}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{userEmail}</p>
+                </div>
+                <Link
+                  href="/my-account"
+                  className="px-3 py-1.5 text-xs font-bold text-[#c1591c] border border-[#c1591c]/50 rounded-lg hover:bg-[#c1591c] hover:text-white transition-all"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Account
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

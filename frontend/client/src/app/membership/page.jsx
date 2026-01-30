@@ -97,7 +97,7 @@ export default function MembershipPage() {
     <main
       style={{
         maxWidth: 1000,
-        margin: "120px auto 3rem auto",
+        margin: "0 auto 3rem auto",
         padding: "2.5rem 1.5rem 2.5rem 1.5rem",
         fontFamily: "Inter, system-ui, sans-serif",
         position: "relative",

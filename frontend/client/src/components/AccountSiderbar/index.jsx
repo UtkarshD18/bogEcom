@@ -176,7 +176,10 @@ const AccountSidebar = () => {
   };
 
   return (
-    <aside className="accountSidebar w-[100%] bg-white shadow-md rounded-md">
+    <aside
+      className="accountSidebar w-[100%] shadow-md rounded-md"
+      style={{ backgroundColor: "var(--flavor-card-bg, #fffbf5)" }}
+    >
       <div className="profileSection py-5 pb-0">
         {/* Profile Image with Upload */}
         <div className="profileImg w-[100px] h-[100px] rounded-full overflow-hidden m-auto relative group cursor-pointer">

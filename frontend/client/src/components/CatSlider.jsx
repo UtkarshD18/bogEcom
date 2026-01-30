@@ -1,10 +1,11 @@
 "use client";
 import FlavorSwitcherBar from "./FlavorSwitcherBar";
 
+import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Navigation } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 
@@ -14,6 +15,8 @@ import "swiper/css/navigation";
 const CatSlider = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const context = useContext(MyContext);
+  const flavor = context?.flavor || FLAVORS.creamy;
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -35,13 +38,17 @@ const CatSlider = () => {
 
   if (loading) {
     return (
-      <div className="catSlider py-6 bg-white">
+      <div
+        className="catSlider py-6 transition-all duration-500"
+        style={{ background: flavor.gradient }}
+      >
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-4 overflow-hidden">
             {[...Array(6)].map((_, i) => (
               <div
                 key={i}
-                className="min-w-37.5 h-35 bg-gray-200 animate-pulse rounded-xl"
+                className="min-w-37.5 h-35 animate-pulse rounded-xl"
+                style={{ backgroundColor: flavor.glass }}
               />
             ))}
           </div>
@@ -57,15 +64,22 @@ const CatSlider = () => {
   return (
     <div>
       <FlavorSwitcherBar />
-      <section className="catSlider py-8 bg-linear-to-b from-gray-50 to-white">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-800">
+      <section
+        className="catSlider py-4 sm:py-6 md:py-8 transition-all duration-500"
+        style={{ background: flavor.gradient }}
+      >
+        <div className="max-w-7xl mx-auto px-3 sm:px-4">
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
+            <h2
+              className="text-lg sm:text-xl md:text-2xl font-bold transition-colors duration-300"
+              style={{ color: flavor.color }}
+            >
               Shop by Category
             </h2>
             <Link
               href="/products"
-              className="text-[#c1591c] font-semibold text-sm hover:underline"
+              className="font-semibold text-sm transition-colors duration-300 hover:underline"
+              style={{ color: flavor.color }}
             >
               View All
             </Link>
@@ -87,10 +101,25 @@ const CatSlider = () => {
               <SwiperSlide key={category._id}>
                 <Link
                   href={`/products?category=${category._id}`}
-                  className="group block bg-white rounded-2xl p-4 text-center shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-[#c1591c]/20"
+                  className="group block rounded-2xl p-4 text-center shadow-sm hover:shadow-lg transition-all duration-300 border"
+                  style={{
+                    backgroundColor: flavor.cardBg,
+                    borderColor: `${flavor.color}20`,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = `${flavor.color}40`;
+                    e.currentTarget.style.boxShadow = `0 8px 24px ${flavor.color}15`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = `${flavor.color}20`;
+                    e.currentTarget.style.boxShadow = "";
+                  }}
                 >
                   {category.image ? (
-                    <div className="w-16 h-16 mx-auto mb-3 rounded-full overflow-hidden bg-gray-100">
+                    <div
+                      className="w-16 h-16 mx-auto mb-3 rounded-full overflow-hidden transition-all duration-300"
+                      style={{ backgroundColor: flavor.glass }}
+                    >
                       <img
                         src={getImageUrl(category.image)}
                         alt={category.name}
@@ -100,8 +129,17 @@ const CatSlider = () => {
                   ) : (
                     <div className="text-4xl mb-3">{category.icon || "🥜"}</div>
                   )}
-                  <p className="text-sm font-semibold text-gray-700 group-hover:text-[#c1591c] transition-colors">
-                    {category.name}
+                  <p
+                    className="text-sm font-semibold text-gray-700 transition-colors duration-300"
+                    style={{}}
+                  >
+                    <span className="group-hover:hidden">{category.name}</span>
+                    <span
+                      className="hidden group-hover:inline"
+                      style={{ color: flavor.color }}
+                    >
+                      {category.name}
+                    </span>
                   </p>
                 </Link>
               </SwiperSlide>

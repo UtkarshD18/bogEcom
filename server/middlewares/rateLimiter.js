@@ -4,13 +4,13 @@ import rateLimit from "express-rate-limit";
  * Rate Limiting Configuration
  *
  * Prevents abuse and brute-force attacks on sensitive endpoints.
- * Adjust limits based on expected traffic patterns.
+ * PRODUCTION-READY: Properly configured limits for security.
  */
 
-// General API rate limit - 100 requests per 15 minutes
+// General API rate limit - 100 requests per 15 minutes per IP
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000,
+  max: 100, // Limit each IP to 100 requests per windowMs
   message: {
     error: true,
     success: false,
@@ -18,13 +18,14 @@ export const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === "development", // Skip in dev
+  // Don't skip in development for testing purposes
+  skip: () => false,
 });
 
-// Auth rate limit - 5 attempts per 15 minutes (stricter for login/register)
+// Auth rate limit - 10 attempts per 15 minutes (stricter for login/register)
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: 10, // Strict limit for auth endpoints
   message: {
     error: true,
     success: false,
@@ -33,12 +34,14 @@ export const authLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for logout endpoint
+  skip: (req) => req.path === "/logout",
 });
 
-// Payment rate limit - 10 requests per minute
+// Payment rate limit - 10 requests per minute (prevent payment abuse)
 export const paymentLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 200,
+  max: 10,
   message: {
     error: true,
     success: false,
@@ -51,7 +54,7 @@ export const paymentLimiter = rateLimit({
 // Upload rate limit - 20 uploads per 10 minutes
 export const uploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 200,
+  max: 20,
   message: {
     error: true,
     success: false,

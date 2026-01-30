@@ -37,7 +37,7 @@ const Search = ({
       {/* Search Icon */}
       <IoSearchOutline
         size={18}
-        className={`absolute left-4 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors duration-300 ${
+        className={`absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors duration-300 ${
           isFocused ? "text-[#c1591c]" : "text-gray-400"
         }`}
       />
@@ -50,13 +50,16 @@ const Search = ({
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         placeholder={placeholder}
-        className={`w-full py-3 pl-12 pr-12 text-sm font-medium rounded-full outline-none transition-all duration-300 ${
+        className={`w-full py-2.5 sm:py-3 pl-10 sm:pl-12 pr-10 sm:pr-12 text-xs sm:text-sm font-medium rounded-full outline-none transition-all duration-300 ${
           isFocused
-            ? "bg-white border border-[#c1591c]/30 shadow-[0_4px_12px_rgba(0,0,0,0.05)]"
-            : "bg-gray-100 border border-transparent hover:bg-gray-50"
+            ? "border border-[#c1591c]/30 shadow-[0_4px_12px_rgba(0,0,0,0.05)]"
+            : "border border-transparent"
         }`}
         style={{
           fontFamily: "'Inter', system-ui, sans-serif",
+          backgroundColor: isFocused
+            ? "var(--flavor-card-bg, #fffbf5)"
+            : "color-mix(in srgb, var(--flavor-light, #fdf5e6) 50%, transparent)",
         }}
       />
 

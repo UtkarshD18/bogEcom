@@ -50,13 +50,11 @@ userRouter.get("/user-details", auth, async (req, res) => {
     }
     res.json({ error: false, success: true, data: user });
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        error: true,
-        success: false,
-        message: "Failed to get user details",
-      });
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to get user details",
+    });
   }
 });
 

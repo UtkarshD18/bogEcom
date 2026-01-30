@@ -1,55 +1,28 @@
 "use client";
 import AccountSidebar from "@/components/AccountSiderbar";
-import { MyContext } from "@/context/ThemeProvider";
+import AddressBox from "@/components/AddressBox";
 import { Button } from "@mui/material";
-import { useContext } from "react";
-import { FiPlus } from "react-icons/fi";
 
-import AddressBox from "./addressBox";
 const Address = () => {
-  const context = useContext(MyContext);
-
   return (
     <section className="bg-gray-100 py-8">
       <div className="container flex gap-5">
-        {/* Sidebar */}
         <div className="w-[20%]">
           <AccountSidebar />
         </div>
 
-        {/* Center Content */}
-        <div className="flex-1 flex justify-center">
-          <div className="bg-white shadow-md rounded-md mb-5 w-[70%]">
-            <div className="p-4 flex items-center justify-between border-b border-[rgba(0,0,0,0.2)]">
-              <div>
+        <div className="wrapper w-[75%]">
+          <div className="bg-white shadow-md rounded-md mb-5">
+            <div className="p-4 flex items-center justify-between border-b-[1px] border-[rgba(0,0,0,0.2)">
+              <div className="info">
                 <h4 className="text-[20px] font-[500] text-gray-700">
-                  Address
+                  My Addresses
                 </h4>
-                <p className="text-[16px] text-gray-500">
-                  Manage your Addresses
-                </p>
+                <p className="text-[16px] text-gray-500">Manage your addresses</p>
               </div>
-
-              <Button
-                variant="outlined"
-                className="!capitalize !font-[600] !px-5"
-                sx={{
-                  borderColor: "#c1591c",
-                  color: "#c1591c",
-                  "&:hover": {
-                    backgroundColor: "#c1591c",
-                    color: "#ffffff",
-                    borderColor: "#c1591c",
-                  },
-                }}
-                onClick={() => context.isOpenAddressPanel(true)}
-              >
-                <FiPlus size={20} className="mr-1" />
-                Add Address
-              </Button>
+              <Button className="btn-g px-5">Add New Address</Button>
             </div>
-            <div className="flex flex-col gap-3 p-5">
-              <AddressBox />
+            <div className=" p-5 grid grid-cols-3 gap-5">
               <AddressBox />
               <AddressBox />
               <AddressBox />
@@ -60,5 +33,4 @@ const Address = () => {
     </section>
   );
 };
-
 export default Address;

@@ -27,9 +27,17 @@ const Nav = () => {
     <nav
       className={`top-0 z-30 w-full transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
         scrolled
-          ? "py-3 bg-white/70 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-b border-white/20"
+          ? "py-3 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-b"
           : "py-4 bg-transparent backdrop-blur-sm border-b border-transparent"
       }`}
+      style={{
+        backgroundColor: scrolled
+          ? `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 80%, transparent)`
+          : "transparent",
+        borderColor: scrolled
+          ? `color-mix(in srgb, var(--flavor-color, #f5c16c) 20%, transparent)`
+          : "transparent",
+      }}
     >
       <div className="container mx-auto flex items-center justify-center">
         <ul className="flex items-center gap-2 px-2">

@@ -6,22 +6,52 @@ import toast from "react-hot-toast";
 
 export const MyContext = createContext();
 
-const FLAVORS = {
+// Enhanced flavor palettes with background, accent, hover, and light variants
+export const FLAVORS = {
+  creamy: {
+    name: "Creamy",
+    color: "#F5C16C",
+    hover: "#E5A84D",
+    light: "#FDF5E6",
+    glass: "rgba(245,193,108,0.15)",
+    gradient: "linear-gradient(135deg, #FDF5E6 0%, #FFF8ED 50%, #FFFFFF 100%)",
+    cardBg: "#FFFBF5",
+    badge: "#D4A84B",
+  },
   chocolate: {
     name: "Chocolate",
     color: "#4B2E2B",
-    glass: "rgba(75,46,43,0.6)",
+    hover: "#3A2321",
+    light: "#F5EFED",
+    glass: "rgba(75,46,43,0.15)",
+    gradient: "linear-gradient(135deg, #F5EFED 0%, #FAF7F6 50%, #FFFFFF 100%)",
+    cardBg: "#FBF8F7",
+    badge: "#6B4A47",
   },
-  creamy: { name: "Creamy", color: "#F5C16C", glass: "rgba(245,193,108,0.6)" },
   millets: {
     name: "Millets",
-    color: "#A3C16C",
-    glass: "rgba(163,193,108,0.6)",
+    color: "#6B8E23",
+    hover: "#556B2F",
+    light: "#F5F8EC",
+    glass: "rgba(107,142,35,0.15)",
+    gradient: "linear-gradient(135deg, #F5F8EC 0%, #FAFCF5 50%, #FFFFFF 100%)",
+    cardBg: "#FAFCF7",
+    badge: "#7A9E32",
   },
-  nutty: { name: "Nutty", color: "#D9A066", glass: "rgba(217,160,102,0.6)" },
+  nutty: {
+    name: "Nutty",
+    color: "#D9A066",
+    hover: "#C48B4F",
+    light: "#FDF7F0",
+    glass: "rgba(217,160,102,0.15)",
+    gradient: "linear-gradient(135deg, #FDF7F0 0%, #FFF9F3 50%, #FFFFFF 100%)",
+    cardBg: "#FFFAF5",
+    badge: "#C9904D",
+  },
 };
 
-const DEFAULT_FLAVOR = FLAVORS.chocolate;
+// Default flavor is Creamy
+const DEFAULT_FLAVOR = FLAVORS.creamy;
 
 const ThemeProvider = ({ children }) => {
   const [isOpenAddressBox, setIsOpenAddressBox] = useState(false);
@@ -40,10 +70,22 @@ const ThemeProvider = ({ children }) => {
     const savedFlavor = localStorage.getItem("selectedFlavor");
     if (savedFlavor) {
       try {
-        setFlavor(JSON.parse(savedFlavor));
+        const parsed = JSON.parse(savedFlavor);
+        // Match with our FLAVORS object to get full palette
+        const flavorKey = Object.keys(FLAVORS).find(
+          (key) => FLAVORS[key].name === parsed.name,
+        );
+        const resolvedFlavor = flavorKey ? FLAVORS[flavorKey] : DEFAULT_FLAVOR;
+        setFlavor(resolvedFlavor);
+        applyThemeToDOM(resolvedFlavor);
       } catch {
         setFlavor(DEFAULT_FLAVOR);
+        applyThemeToDOM(DEFAULT_FLAVOR);
       }
+    } else {
+      // Set default flavor in localStorage on first visit
+      localStorage.setItem("selectedFlavor", JSON.stringify(DEFAULT_FLAVOR));
+      applyThemeToDOM(DEFAULT_FLAVOR);
     }
     setMounted(true);
 
@@ -63,8 +105,13 @@ const ThemeProvider = ({ children }) => {
   useEffect(() => {
     const handleFlavorChange = (event) => {
       const newFlavor = event.detail;
-      setFlavor(newFlavor);
-      applyThemeToDOM(newFlavor);
+      // Match with our FLAVORS object to get full palette
+      const flavorKey = Object.keys(FLAVORS).find(
+        (key) => FLAVORS[key].name === newFlavor.name,
+      );
+      const fullFlavor = flavorKey ? FLAVORS[flavorKey] : newFlavor;
+      setFlavor(fullFlavor);
+      applyThemeToDOM(fullFlavor);
     };
 
     window.addEventListener("themeChange", handleFlavorChange);
@@ -74,22 +121,25 @@ const ThemeProvider = ({ children }) => {
   const applyThemeToDOM = (themeColor) => {
     if (typeof window === "undefined") return;
 
-    // Update body background
-    document.body.style.background = `linear-gradient(135deg, ${themeColor.color} 0%, #fff 100%)`;
+    const root = document.documentElement;
 
-    // Update main wrapper sections
-    const wrappers = document.querySelectorAll(
-      ".sliderWrapper, .catSlider, .banners, .mainWrapper",
+    // Set CSS variables for global theming
+    root.style.setProperty("--flavor-color", themeColor.color);
+    root.style.setProperty("--flavor-hover", themeColor.hover);
+    root.style.setProperty("--flavor-light", themeColor.light);
+    root.style.setProperty("--flavor-glass", themeColor.glass);
+    root.style.setProperty("--flavor-card-bg", themeColor.cardBg);
+    root.style.setProperty("--flavor-badge", themeColor.badge);
+    root.style.setProperty("--flavor-gradient", themeColor.gradient);
+    root.style.setProperty("--flavor-surface", themeColor.cardBg);
+    root.style.setProperty(
+      "--flavor-page-bg",
+      `linear-gradient(180deg, ${themeColor.light} 0%, #FFFFFF 100%)`,
     );
-    wrappers.forEach((el) => {
-      el.style.background = `linear-gradient(135deg, ${themeColor.color} 0%, #fff 100%)`;
-    });
+    root.style.setProperty("--primary", themeColor.color);
 
-    // Update themed sections
-    const themedSections = document.querySelectorAll("[data-theme-color]");
-    themedSections.forEach((el) => {
-      el.style.background = `linear-gradient(135deg, ${themeColor.color} 0%, #fff 100%)`;
-    });
+    // Update body background
+    document.body.style.background = `linear-gradient(180deg, ${themeColor.light} 0%, #FFFFFF 100%)`;
   };
 
   const setSelectedFlavor = (newFlavor) => {

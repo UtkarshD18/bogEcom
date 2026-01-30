@@ -5,6 +5,7 @@ import ProductZoom from "@/components/ProductZoom";
 import QtyBox from "@/components/QtyBox";
 import { MyContext } from "@/context/ThemeProvider";
 import { fetchDataFromApi } from "@/utils/api";
+import { sanitizeHTML } from "@/utils/sanitize";
 import {
   Alert,
   Button,
@@ -208,10 +209,10 @@ const ProductDetailPage = () => {
     product.images || (product.image ? [product.image] : ["/product_1.png"]);
 
   return (
-    <section className="py-8 bg-gray-50 min-h-screen">
-      <div className="container">
+    <section className="py-4 sm:py-8 bg-gray-50 min-h-screen">
+      <div className="container px-3 sm:px-4">
         {/* Breadcrumb */}
-        <nav className="flex items-center gap-2 text-sm text-gray-500 mb-6">
+        <nav className="flex items-center gap-2 text-xs sm:text-sm text-gray-500 mb-4 sm:mb-6 overflow-x-auto whitespace-nowrap pb-2">
           <Link href="/" className="hover:text-[#c1591c]">
             Home
           </Link>
@@ -237,8 +238,8 @@ const ProductDetailPage = () => {
         </nav>
 
         {/* Main Product Section */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 md:p-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm p-4 sm:p-6 md:p-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
             {/* Product Images */}
             <div className="relative">
               {discount > 0 && (
@@ -259,7 +260,7 @@ const ProductDetailPage = () => {
               )}
 
               {/* Title */}
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-3">
                 {product.name || product.title}
               </h1>
 
@@ -277,12 +278,12 @@ const ProductDetailPage = () => {
               </div>
 
               {/* Price */}
-              <div className="flex items-center gap-4 mb-6">
-                <span className="text-3xl font-extrabold text-gray-900">
+              <div className="flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 flex-wrap">
+                <span className="text-2xl sm:text-3xl font-extrabold text-gray-900">
                   ₹{product.price || product.salePrice}
                 </span>
                 {(product.originalPrice || product.regularPrice) && (
-                  <span className="text-xl text-gray-400 line-through">
+                  <span className="text-lg sm:text-xl text-gray-400 line-through">
                     ₹{product.originalPrice || product.regularPrice}
                   </span>
                 )}
@@ -472,7 +473,9 @@ const ProductDetailPage = () => {
               <div className="prose max-w-none text-gray-600">
                 {product.description ? (
                   <div
-                    dangerouslySetInnerHTML={{ __html: product.description }}
+                    dangerouslySetInnerHTML={{
+                      __html: sanitizeHTML(product.description),
+                    }}
                   />
                 ) : (
                   <p>

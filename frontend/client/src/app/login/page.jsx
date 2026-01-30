@@ -192,12 +192,18 @@ const LoginForm = () => {
             );
           }
         } catch (backendError) {
-          console.warn(
-            "Backend registration failed, using client-only auth:",
-            backendError,
-          );
+          console.error("Backend registration failed:", backendError.message);
 
-          // Fallback: Save to cookies anyway (client-only)
+          // SECURITY: Do not create fake tokens - require backend authentication
+          context?.alertBox(
+            "error",
+            "Authentication service unavailable. Please try again later.",
+          );
+          setGoogleLoading(false);
+          return;
+
+          // Removed insecure fallback that used fake token
+          /* REMOVED FOR SECURITY:
           cookies.set("accessToken", token || "google-token", { expires: 7 });
           cookies.set("userName", user.displayName || "Google User", {
             expires: 7,
@@ -211,15 +217,7 @@ const LoginForm = () => {
             email: user.email,
           });
 
-          context?.alertBox(
-            "success",
-            "Google Sign-In successful! (Client-only mode)",
-          );
-
-          setTimeout(() => {
-            router.push("/");
-            window.dispatchEvent(new Event("loginSuccess"));
-          }, 100);
+          */
         }
       })
       .catch((error) => {

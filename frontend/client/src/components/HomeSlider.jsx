@@ -56,10 +56,7 @@ const HomeSlider = () => {
   }, [homeSlides]);
 
   return (
-    <section
-      className="relative w-full h-[85vh] min-h-[600px] overflow-hidden bg-black p-0"
-      style={{ marginTop: "120px" }}
-    >
+    <section className="relative w-full h-[60vh] md:h-[85vh] min-h-[400px] md:min-h-[600px] overflow-hidden bg-black p-0 mt-[100px] md:mt-[120px]">
       <Swiper
         speed={1000}
         spaceBetween={0}
@@ -109,29 +106,29 @@ const HomeSlider = () => {
             <div className="absolute inset-0 flex items-center justify-center md:justify-start px-6 md:px-20 lg:px-32">
               <div className="max-w-xl w-full">
                 {/* Glass Container */}
-                <div className="relative overflow-hidden rounded-[2rem] border border-white/20 bg-white/10 p-8 md:p-12 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] backdrop-blur-xl transition-all duration-500 hover:bg-white/15 group">
+                <div className="relative overflow-hidden rounded-[1.5rem] md:rounded-[2rem] border border-white/20 bg-white/10 p-5 md:p-8 lg:p-12 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] backdrop-blur-xl transition-all duration-500 hover:bg-white/15 group">
                   {/* Shimmer Effect on Card */}
                   <div className="absolute -top-1/2 -left-1/2 w-[200%] h-[200%] bg-gradient-to-b from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none rotate-45" />
 
-                  <div className="relative z-10 space-y-6">
-                    <span className="inline-block px-3 py-1 text-xs font-semibold tracking-widest uppercase text-white/90 bg-black/20 rounded-full border border-white/10 backdrop-blur-md">
+                  <div className="relative z-10 space-y-3 sm:space-y-6">
+                    <span className="inline-block px-2 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs font-semibold tracking-widest uppercase text-white/90 bg-black/20 rounded-full border border-white/10 backdrop-blur-md">
                       Buy One Gram
                     </span>
 
                     <div className="space-y-2">
-                      <h2 className="text-4xl md:text-6xl font-bold text-white tracking-tight leading-tight drop-shadow-sm">
+                      <h2 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight leading-tight drop-shadow-sm">
                         {slide.title}
                       </h2>
-                      <p className="text-lg md:text-xl text-white/80 font-medium leading-relaxed">
+                      <p className="text-sm sm:text-base md:text-lg lg:text-xl text-white/80 font-medium leading-relaxed">
                         {slide.subtitle}
                       </p>
                     </div>
 
                     <Link
                       href={slide.link}
-                      className="group/btn relative mt-4 inline-flex items-center gap-2 overflow-hidden rounded-full bg-white px-8 py-3.5 text-black transition-all hover:bg-white/90 hover:scale-105 active:scale-95"
+                      className="group/btn relative mt-2 sm:mt-4 inline-flex items-center gap-2 overflow-hidden rounded-full bg-white px-5 sm:px-8 py-2.5 sm:py-3.5 text-black transition-all hover:bg-white/90 hover:scale-105 active:scale-95"
                     >
-                      <span className="relative font-bold text-sm tracking-wide">
+                      <span className="relative font-bold text-xs sm:text-sm tracking-wide">
                         {slide.cta}
                       </span>
                       <svg

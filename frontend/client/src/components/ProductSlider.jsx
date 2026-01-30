@@ -1,7 +1,8 @@
 "use client";
 
+import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Autoplay, Navigation, Pagination } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import ProductItem from "./ProductItem";
@@ -13,6 +14,8 @@ import "swiper/css/pagination";
 const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const context = useContext(MyContext);
+  const flavor = context?.flavor || FLAVORS.creamy;
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -46,7 +49,8 @@ const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
         {[...Array(5)].map((_, i) => (
           <div
             key={i}
-            className="min-w-[200px] h-[300px] bg-gray-200 animate-pulse rounded-lg"
+            className="min-w-50 h-75 animate-pulse rounded-lg"
+            style={{ backgroundColor: flavor.glass }}
           />
         ))}
       </div>
@@ -60,7 +64,12 @@ const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
   return (
     <div className="productSlider py-5">
       {title && (
-        <h3 className="text-xl font-bold text-gray-800 mb-4">{title}</h3>
+        <h3
+          className="text-xl font-bold mb-4 transition-colors duration-300"
+          style={{ color: flavor.color }}
+        >
+          {title}
+        </h3>
       )}
       <Swiper
         modules={[Navigation, Pagination, Autoplay]}

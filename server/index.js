@@ -71,7 +71,14 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
-app.use(morgan("dev"));
+
+// Logging: Use 'combined' format in production, 'dev' in development
+if (process.env.NODE_ENV === "production") {
+  app.use(morgan("combined")); // Apache-style logs for production
+} else {
+  app.use(morgan("dev")); // Colored concise output for development
+}
+
 app.use(
   helmet({
     crossOriginResourcePolicy: false,

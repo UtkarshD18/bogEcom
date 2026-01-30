@@ -34,10 +34,10 @@ const CartItems = ({ item }) => {
   };
 
   return (
-    <div className="p-5 border-b-[1px] border-[rgba(0,0,0,0.1)] flex items-center justify-between hover:bg-gray-50 transition-colors">
-      <div className="flex items-center gap-4 flex-1">
+    <div className="p-3 sm:p-5 border-b-[1px] border-[rgba(0,0,0,0.1)] flex flex-col sm:flex-row items-start sm:items-center justify-between hover:bg-gray-50 transition-colors gap-3 sm:gap-0">
+      <div className="flex items-center gap-3 sm:gap-4 flex-1 w-full">
         <Link href={`/product/${productId}`} className="shrink-0">
-          <div className="w-20 h-20 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden">
             <img
               src={productImage}
               alt={productName}
@@ -47,36 +47,36 @@ const CartItems = ({ item }) => {
         </Link>
         <div className="flex-1 min-w-0">
           <Link href={`/product/${productId}`}>
-            <h3 className="text-[16px] text-gray-800 font-[500] hover:text-[#c1591c] transition-colors line-clamp-2">
+            <h3 className="text-[14px] sm:text-[16px] text-gray-800 font-[500] hover:text-[#c1591c] transition-colors line-clamp-2">
               {productName}
             </h3>
           </Link>
-          <p className="text-[14px] text-gray-500 mt-1">
+          <p className="text-[12px] sm:text-[14px] text-gray-500 mt-1">
             ₹{price.toLocaleString()} × {quantity}
           </p>
-          <p className="text-[15px] text-[#c1591c] font-semibold mt-1">
+          <p className="text-[14px] sm:text-[15px] text-[#c1591c] font-semibold mt-1">
             ₹{itemTotal.toLocaleString()}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto justify-between sm:justify-end">
         {/* Quantity Controls */}
         <div className="flex items-center border border-gray-300 rounded-md">
           <button
             onClick={handleDecrement}
             disabled={loading || quantity <= 1}
-            className="px-3 py-2 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-2 sm:px-3 py-1.5 sm:py-2 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             −
           </button>
-          <span className="px-4 py-2 border-l border-r border-gray-300 min-w-[50px] text-center font-medium">
+          <span className="px-3 sm:px-4 py-1.5 sm:py-2 border-l border-r border-gray-300 min-w-[40px] sm:min-w-[50px] text-center font-medium text-sm sm:text-base">
             {quantity}
           </span>
           <button
             onClick={handleIncrement}
             disabled={loading}
-            className="px-3 py-2 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-2 sm:px-3 py-1.5 sm:py-2 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             +
           </button>
@@ -86,7 +86,7 @@ const CartItems = ({ item }) => {
         <button
           onClick={handleRemove}
           disabled={loading}
-          className="text-red-500 text-2xl hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="text-red-500 text-xl sm:text-2xl hover:text-red-700 hover:bg-red-50 p-1.5 sm:p-2 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           title="Remove item"
         >
           <MdDeleteOutline />

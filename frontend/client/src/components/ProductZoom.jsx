@@ -31,7 +31,14 @@ const ProductZoom = ({
   return (
     <div className="w-full">
       {/* Main Product Image */}
-      <div className="border border-gray-200 rounded-2xl p-4 overflow-hidden bg-white shadow-sm">
+      <div
+        className="border rounded-2xl p-4 overflow-hidden shadow-sm"
+        style={{
+          backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+          borderColor:
+            "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+        }}
+      >
         <Swiper
           ref={bigSliderRef}
           className="productBigSlider"
@@ -63,11 +70,18 @@ const ProductZoom = ({
               <SwiperSlide key={index}>
                 <div
                   onClick={() => goToSlide(index)}
-                  className={`cursor-pointer border rounded-lg p-2 transition-all duration-300 bg-white ${
+                  className={`cursor-pointer border rounded-lg p-2 transition-all duration-300 ${
                     activeIndex === index
                       ? "border-[#c1591c] shadow-md"
-                      : "border-gray-200 hover:border-gray-300"
+                      : "hover:border-gray-300"
                   }`}
+                  style={{
+                    backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+                    borderColor:
+                      activeIndex === index
+                        ? "#c1591c"
+                        : "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+                  }}
                 >
                   <img
                     src={img}

@@ -80,7 +80,10 @@ const SetBackupPassword = ({ onSuccess, userProvider }) => {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+    <div
+      className="rounded-lg shadow-md p-6 mb-6"
+      style={{ backgroundColor: "var(--flavor-card-bg, #fffbf5)" }}
+    >
       <div className="flex items-center gap-3 mb-4">
         <MdSecurity className="text-blue-500 text-2xl" />
         <div>

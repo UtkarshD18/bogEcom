@@ -194,6 +194,31 @@ const Register = () => {
 
   const validateValue = Object.values(formFields).every((el) => el);
 
+  // Password strength validation
+  const validatePassword = (password) => {
+    const minLength = 8;
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumbers = /\d/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+    const errors = [];
+    if (password.length < minLength)
+      errors.push(`at least ${minLength} characters`);
+    if (!hasUpperCase) errors.push("one uppercase letter");
+    if (!hasLowerCase) errors.push("one lowercase letter");
+    if (!hasNumbers) errors.push("one number");
+
+    return {
+      isValid:
+        password.length >= minLength &&
+        hasUpperCase &&
+        hasLowerCase &&
+        hasNumbers,
+      errors: errors,
+    };
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -210,6 +235,17 @@ const Register = () => {
     }
     if (formFields.password === "") {
       context.alertBox("error", "Password is required");
+      setIsLoading(false);
+      return false;
+    }
+
+    // Validate password strength
+    const passwordValidation = validatePassword(formFields.password);
+    if (!passwordValidation.isValid) {
+      context.alertBox(
+        "error",
+        `Password must contain ${passwordValidation.errors.join(", ")}`,
+      );
       setIsLoading(false);
       return false;
     }

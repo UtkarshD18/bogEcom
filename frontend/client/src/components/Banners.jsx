@@ -1,13 +1,16 @@
 "use client";
 
+import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { getBannerImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 
 const Banners = () => {
   const [banners, setBanners] = useState([]);
   const [loading, setLoading] = useState(true);
+  const context = useContext(MyContext);
+  const flavor = context?.flavor || FLAVORS.creamy;
 
   useEffect(() => {
     const fetchBanners = async () => {
@@ -28,13 +31,17 @@ const Banners = () => {
 
   if (loading) {
     return (
-      <section className="banners py-6">
+      <section
+        className="banners py-6 transition-all duration-500"
+        style={{ background: flavor.gradient }}
+      >
         <div className="max-w-7xl mx-auto px-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[1, 2].map((i) => (
               <div
                 key={i}
-                className="h-48 bg-gray-200 animate-pulse rounded-xl"
+                className="h-48 animate-pulse rounded-xl"
+                style={{ backgroundColor: flavor.glass }}
               />
             ))}
           </div>
@@ -48,7 +55,10 @@ const Banners = () => {
   }
 
   return (
-    <section className="banners py-8 bg-gradient-to-b from-white to-gray-50">
+    <section
+      className="banners py-8 transition-all duration-500"
+      style={{ background: flavor.gradient }}
+    >
       <div className="max-w-7xl mx-auto px-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {banners.map((banner) => {

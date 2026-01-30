@@ -1,15 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { FLAVORS, MyContext } from "@/context/ThemeContext";
+import { useContext, useEffect, useState } from "react";
 
-const FLAVORS = [
-  { name: "Chocolate", color: "#4B2E2B", glass: "rgba(75,46,43,0.6)" },
-  { name: "Creamy", color: "#F5C16C", glass: "rgba(245,193,108,0.6)" },
-  { name: "Millets", color: "#A3C16C", glass: "rgba(163,193,108,0.6)" },
-  { name: "Nutty", color: "#D9A066", glass: "rgba(217,160,102,0.6)" },
+// Convert FLAVORS object to array for mapping
+const FLAVORS_ARRAY = [
+  FLAVORS.creamy,
+  FLAVORS.chocolate,
+  FLAVORS.millets,
+  FLAVORS.nutty,
 ];
 
 export default function FlavorSwitcherBar() {
-  const [selected, setSelected] = useState(FLAVORS[0].name);
+  const context = useContext(MyContext);
+  const [selected, setSelected] = useState(FLAVORS.creamy.name);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -19,8 +22,11 @@ export default function FlavorSwitcherBar() {
         const flavor = JSON.parse(saved);
         setSelected(flavor.name);
       } catch {
-        setSelected(FLAVORS[0].name);
+        setSelected(FLAVORS.creamy.name);
       }
+    } else {
+      // Default to Creamy
+      setSelected(FLAVORS.creamy.name);
     }
     setMounted(true);
   }, []);
@@ -29,14 +35,15 @@ export default function FlavorSwitcherBar() {
     setSelected(flavor.name);
     localStorage.setItem("selectedFlavor", JSON.stringify(flavor));
     window.dispatchEvent(new CustomEvent("themeChange", { detail: flavor }));
-    document.body.style.background = `linear-gradient(135deg, ${flavor.color} 0%, #fff 100%)`;
-    const mainWrappers = document.querySelectorAll(
-      ".sliderWrapper, .catSlider, .banners, [data-theme-color]",
-    );
-    mainWrappers.forEach((el) => {
-      el.style.background = `linear-gradient(135deg, ${flavor.color} 0%, #fff 100%)`;
-    });
+
+    // Update context if available
+    if (context?.setSelectedFlavor) {
+      context.setSelectedFlavor(flavor);
+    }
   };
+
+  const currentFlavor =
+    FLAVORS_ARRAY.find((f) => f.name === selected) || FLAVORS.creamy;
 
   if (!mounted) return null;
 
@@ -46,26 +53,47 @@ export default function FlavorSwitcherBar() {
         width: "100%",
         display: "flex",
         justifyContent: "center",
-        margin: "32px 0 16px 0",
+        padding: "24px 16px",
+        background: currentFlavor.gradient,
         zIndex: 20,
+        transition: "background 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
       }}
     >
       <style>{`
-        .flavor-btn { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden; }
-        .flavor-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important; }
+        .flavor-btn { 
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+          position: relative; 
+          overflow: hidden; 
+        }
+        .flavor-btn:hover { 
+          transform: translateY(-2px); 
+          box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important; 
+        }
+        .flavor-btn::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+          pointer-events: none;
+        }
       `}</style>
       <div
         style={{
           display: "flex",
-          gap: "32px",
-          background: "rgba(0,0,0,0.08)",
-          borderRadius: "32px",
-          padding: "18px 32px",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+          gap: "12px",
+          background: `${currentFlavor.cardBg}`,
+          borderRadius: "20px",
+          padding: "10px 20px",
+          boxShadow: `0 4px 20px ${currentFlavor.color}15`,
           backdropFilter: "blur(12px)",
+          border: `2px solid ${currentFlavor.color}20`,
+          transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
         }}
       >
-        {FLAVORS.map((flavor) => (
+        {FLAVORS_ARRAY.map((flavor) => (
           <button
             key={flavor.name}
             className="flavor-btn"
@@ -73,15 +101,18 @@ export default function FlavorSwitcherBar() {
             style={{
               background:
                 selected === flavor.name ? flavor.color : flavor.glass,
-              color: selected === flavor.name ? "#fff" : "#4B2E2B",
-              fontWeight: "bold",
-              fontSize: "1.1rem",
-              border: selected === flavor.name ? "2px solid #fff" : "none",
-              borderRadius: "16px",
-              padding: "12px 32px",
+              color: selected === flavor.name ? "#fff" : flavor.color,
+              fontWeight: "600",
+              fontSize: "0.95rem",
+              border:
+                selected === flavor.name
+                  ? "2px solid rgba(255,255,255,0.5)"
+                  : "2px solid transparent",
+              borderRadius: "12px",
+              padding: "10px 24px",
               boxShadow:
                 selected === flavor.name
-                  ? "0 6px 20px rgba(0,0,0,0.15)"
+                  ? `0 4px 16px ${flavor.color}40`
                   : "none",
               outline: "none",
               cursor: "pointer",

@@ -60,9 +60,14 @@ const QtyBox = ({
 
   return (
     <div
-      className={`flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white ${sizes[size]} ${
+      className={`flex items-center border rounded-lg overflow-hidden ${sizes[size]} ${
         disabled ? "opacity-50 cursor-not-allowed" : ""
       }`}
+      style={{
+        backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+        borderColor:
+          "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+      }}
     >
       {/* Decrease Button */}
       <button
