@@ -1,15 +1,7 @@
 "use client";
 import AccountSidebar from "@/components/AccountSiderbar";
 import { Button, Switch } from "@mui/material";
-import { useEffect, useState } from "react";
-import {
-  FiBell,
-  FiGlobe,
-  FiMail,
-  FiMoon,
-  FiShield,
-  FiSmartphone,
-} from "react-icons/fi";
+import { useState } from "react";
 
 const Settings = () => {
   const [settings, setSettings] = useState({
@@ -22,206 +14,130 @@ const Settings = () => {
     language: "en",
   });
 
-  const [saved, setSaved] = useState(false);
-
   const handleToggle = (key) => {
     setSettings((prev) => ({
       ...prev,
       [key]: !prev[key],
     }));
-    setSaved(false);
   };
-
-  const handleSave = () => {
-    // Save to localStorage for now
-    localStorage.setItem("userSettings", JSON.stringify(settings));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  useEffect(() => {
-    // Load settings from localStorage
-    const savedSettings = localStorage.getItem("userSettings");
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings));
-    }
-  }, []);
 
   return (
-    <section className="bg-gray-100 py-8 min-h-screen">
+    <section className="bg-gray-100 py-8">
       <div className="container flex gap-5">
         <div className="w-[20%]">
           <AccountSidebar />
         </div>
 
         <div className="wrapper w-[75%]">
-          {/* Page Header */}
-          <div className="bg-gradient-to-r from-[#c1591c] to-[#d06a2d] text-white rounded-lg p-6 mb-6 shadow-lg">
-            <h1 className="text-2xl font-bold mb-1">Settings</h1>
-            <p className="text-white/80">
-              Manage your account preferences and notifications
-            </p>
-          </div>
-
           {/* Notifications Section */}
-          <div className="bg-white shadow-md rounded-lg mb-5 overflow-hidden">
-            <div className="p-4 border-b border-gray-100 bg-gray-50">
-              <div className="flex items-center gap-3">
-                <FiBell className="text-[#c1591c]" size={22} />
-                <h4 className="text-lg font-semibold text-gray-800">
-                  Notifications
-                </h4>
-              </div>
+          <div className="bg-white shadow-md rounded-md mb-5">
+            <div className="p-4 border-b-[1px] border-[rgba(0,0,0,0.2)]">
+              <h4 className="text-[20px] font-[500] text-gray-700">
+                Notifications
+              </h4>
             </div>
             <div className="p-5 space-y-4">
-              <div className="flex items-center justify-between py-2 border-b border-gray-50">
-                <div className="flex items-center gap-3">
-                  <FiMail className="text-gray-400" size={18} />
-                  <div>
-                    <p className="font-medium text-gray-700">
-                      Email Notifications
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Receive updates via email
-                    </p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="text-[16px] font-[500] text-gray-700">
+                    Email Notifications
+                  </h5>
+                  <p className="text-[14px] text-gray-500">
+                    Receive email notifications for orders and updates
+                  </p>
                 </div>
                 <Switch
                   checked={settings.emailNotifications}
                   onChange={() => handleToggle("emailNotifications")}
-                  sx={{
-                    "& .MuiSwitch-switchBase.Mui-checked": {
-                      color: "#c1591c",
-                    },
-                    "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
-                      backgroundColor: "#c1591c",
-                    },
-                  }}
+                  color="warning"
                 />
               </div>
 
-              <div className="flex items-center justify-between py-2 border-b border-gray-50">
-                <div className="flex items-center gap-3">
-                  <FiSmartphone className="text-gray-400" size={18} />
-                  <div>
-                    <p className="font-medium text-gray-700">
-                      Push Notifications
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Browser push notifications
-                    </p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="text-[16px] font-[500] text-gray-700">
+                    Push Notifications
+                  </h5>
+                  <p className="text-[14px] text-gray-500">
+                    Receive push notifications on your device
+                  </p>
                 </div>
                 <Switch
                   checked={settings.pushNotifications}
                   onChange={() => handleToggle("pushNotifications")}
-                  sx={{
-                    "& .MuiSwitch-switchBase.Mui-checked": {
-                      color: "#c1591c",
-                    },
-                    "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
-                      backgroundColor: "#c1591c",
-                    },
-                  }}
+                  color="warning"
                 />
               </div>
 
-              <div className="flex items-center justify-between py-2 border-b border-gray-50">
-                <div className="flex items-center gap-3">
-                  <FiBell className="text-gray-400" size={18} />
-                  <div>
-                    <p className="font-medium text-gray-700">Order Updates</p>
-                    <p className="text-sm text-gray-500">
-                      Get notified about order status
-                    </p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="text-[16px] font-[500] text-gray-700">
+                    Order Updates
+                  </h5>
+                  <p className="text-[14px] text-gray-500">
+                    Get notified about your order status changes
+                  </p>
                 </div>
                 <Switch
                   checked={settings.orderUpdates}
                   onChange={() => handleToggle("orderUpdates")}
-                  sx={{
-                    "& .MuiSwitch-switchBase.Mui-checked": {
-                      color: "#c1591c",
-                    },
-                    "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
-                      backgroundColor: "#c1591c",
-                    },
-                  }}
+                  color="warning"
                 />
               </div>
 
-              <div className="flex items-center justify-between py-2">
-                <div className="flex items-center gap-3">
-                  <FiMail className="text-gray-400" size={18} />
-                  <div>
-                    <p className="font-medium text-gray-700">
-                      Promotional Emails
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Receive offers and deals
-                    </p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="text-[16px] font-[500] text-gray-700">
+                    Promotional Emails
+                  </h5>
+                  <p className="text-[14px] text-gray-500">
+                    Receive emails about deals and offers
+                  </p>
                 </div>
                 <Switch
                   checked={settings.promotionalEmails}
                   onChange={() => handleToggle("promotionalEmails")}
-                  sx={{
-                    "& .MuiSwitch-switchBase.Mui-checked": {
-                      color: "#c1591c",
-                    },
-                    "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
-                      backgroundColor: "#c1591c",
-                    },
-                  }}
+                  color="warning"
                 />
               </div>
             </div>
           </div>
 
-          {/* Preferences Section */}
-          <div className="bg-white shadow-md rounded-lg mb-5 overflow-hidden">
-            <div className="p-4 border-b border-gray-100 bg-gray-50">
-              <div className="flex items-center gap-3">
-                <FiGlobe className="text-[#c1591c]" size={22} />
-                <h4 className="text-lg font-semibold text-gray-800">
-                  Preferences
-                </h4>
-              </div>
+          {/* Appearance Section */}
+          <div className="bg-white shadow-md rounded-md mb-5">
+            <div className="p-4 border-b-[1px] border-[rgba(0,0,0,0.2)]">
+              <h4 className="text-[20px] font-[500] text-gray-700">
+                Appearance
+              </h4>
             </div>
             <div className="p-5 space-y-4">
-              <div className="flex items-center justify-between py-2 border-b border-gray-50">
-                <div className="flex items-center gap-3">
-                  <FiMoon className="text-gray-400" size={18} />
-                  <div>
-                    <p className="font-medium text-gray-700">Dark Mode</p>
-                    <p className="text-sm text-gray-500">Use dark theme</p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="text-[16px] font-[500] text-gray-700">
+                    Dark Mode
+                  </h5>
+                  <p className="text-[14px] text-gray-500">
+                    Toggle dark mode for better viewing at night
+                  </p>
                 </div>
                 <Switch
                   checked={settings.darkMode}
                   onChange={() => handleToggle("darkMode")}
-                  sx={{
-                    "& .MuiSwitch-switchBase.Mui-checked": {
-                      color: "#c1591c",
-                    },
-                    "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
-                      backgroundColor: "#c1591c",
-                    },
-                  }}
+                  color="warning"
                 />
               </div>
 
-              <div className="flex items-center justify-between py-2">
-                <div className="flex items-center gap-3">
-                  <FiGlobe className="text-gray-400" size={18} />
-                  <div>
-                    <p className="font-medium text-gray-700">Language</p>
-                    <p className="text-sm text-gray-500">
-                      Select preferred language
-                    </p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="text-[16px] font-[500] text-gray-700">
+                    Language
+                  </h5>
+                  <p className="text-[14px] text-gray-500">
+                    Select your preferred language
+                  </p>
                 </div>
                 <select
+                  className="border border-gray-300 rounded-md px-3 py-2"
                   value={settings.language}
                   onChange={(e) =>
                     setSettings((prev) => ({
@@ -229,82 +145,49 @@ const Settings = () => {
                       language: e.target.value,
                     }))
                   }
-                  className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#c1591c]/50 text-gray-700"
                 >
                   <option value="en">English</option>
-                  <option value="hi">हिंदी</option>
-                  <option value="es">Español</option>
+                  <option value="hi">Hindi</option>
+                  <option value="te">Telugu</option>
+                  <option value="ta">Tamil</option>
                 </select>
               </div>
             </div>
           </div>
 
           {/* Security Section */}
-          <div className="bg-white shadow-md rounded-lg mb-5 overflow-hidden">
-            <div className="p-4 border-b border-gray-100 bg-gray-50">
-              <div className="flex items-center gap-3">
-                <FiShield className="text-[#c1591c]" size={22} />
-                <h4 className="text-lg font-semibold text-gray-800">
-                  Security
-                </h4>
-              </div>
+          <div className="bg-white shadow-md rounded-md mb-5">
+            <div className="p-4 border-b-[1px] border-[rgba(0,0,0,0.2)]">
+              <h4 className="text-[20px] font-[500] text-gray-700">
+                Security
+              </h4>
             </div>
             <div className="p-5 space-y-4">
-              <div className="flex items-center justify-between py-2">
-                <div className="flex items-center gap-3">
-                  <FiShield className="text-gray-400" size={18} />
-                  <div>
-                    <p className="font-medium text-gray-700">
-                      Two-Factor Authentication
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Add extra security to your account
-                    </p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="text-[16px] font-[500] text-gray-700">
+                    Two-Factor Authentication
+                  </h5>
+                  <p className="text-[14px] text-gray-500">
+                    Add an extra layer of security to your account
+                  </p>
                 </div>
                 <Switch
                   checked={settings.twoFactorAuth}
                   onChange={() => handleToggle("twoFactorAuth")}
-                  sx={{
-                    "& .MuiSwitch-switchBase.Mui-checked": {
-                      color: "#c1591c",
-                    },
-                    "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
-                      backgroundColor: "#c1591c",
-                    },
-                  }}
+                  color="warning"
                 />
               </div>
             </div>
           </div>
 
           {/* Save Button */}
-          <div className="flex justify-end gap-4">
-            {saved && (
-              <span className="text-green-600 font-medium py-2">
-                ✓ Settings saved!
-              </span>
-            )}
-            <Button
-              variant="contained"
-              onClick={handleSave}
-              sx={{
-                backgroundColor: "#c1591c",
-                "&:hover": { backgroundColor: "#a84d18" },
-                textTransform: "none",
-                fontWeight: 600,
-                px: 4,
-                py: 1.5,
-                borderRadius: 2,
-              }}
-            >
-              Save Settings
-            </Button>
+          <div className="flex justify-end">
+            <Button className="btn-g px-8">Save Changes</Button>
           </div>
         </div>
       </div>
     </section>
   );
 };
-
 export default Settings;

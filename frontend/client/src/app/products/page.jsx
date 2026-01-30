@@ -148,11 +148,11 @@ const ProductPageContent = () => {
   };
 
   return (
-    <section className="py-5 bg-white min-h-screen">
-      <div className="container mx-auto px-4 flex gap-4">
+    <section className="py-3 sm:py-5 bg-white min-h-screen">
+      <div className="container mx-auto px-3 sm:px-4 flex gap-4">
         <div className="rightContent flex-1 min-w-0 relative z-0">
-          <div className="top strip w-full bg-[#f1f1f1] p-2 rounded-md h-12 flex items-center justify-between px-4 relative z-0">
-            <span className="text-[15px] text-gray-700 font-semibold">
+          <div className="top strip w-full bg-[#f1f1f1] p-2 rounded-md min-h-[48px] flex flex-col sm:flex-row items-start sm:items-center justify-between px-3 sm:px-4 relative z-0 gap-2 sm:gap-0">
+            <span className="text-[13px] sm:text-[15px] text-gray-700 font-semibold">
               {loading ? "Loading..." : `There are ${totalProducts} Products.`}
               {searchParams.get("search") && (
                 <span className="ml-2 text-[#c1591c]">
@@ -161,11 +161,15 @@ const ProductPageContent = () => {
               )}
             </span>
 
-            <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2 sm:gap-4 flex-wrap w-full sm:w-auto">
               {/* Category Dropdown Filter */}
               <FormControl
                 size="small"
-                sx={{ minWidth: 180, background: "white", mr: 1 }}
+                sx={{
+                  minWidth: { xs: 120, sm: 180 },
+                  background: "white",
+                  mr: { xs: 0, sm: 1 },
+                }}
               >
                 <InputLabel id="category-select-label" shrink>
                   Category
@@ -209,7 +213,11 @@ const ProductPageContent = () => {
               {/* Price Range Dropdown Filter */}
               <FormControl
                 size="small"
-                sx={{ minWidth: 150, background: "white", mr: 1 }}
+                sx={{
+                  minWidth: { xs: 100, sm: 150 },
+                  background: "white",
+                  mr: { xs: 0, sm: 1 },
+                }}
               >
                 <InputLabel id="price-range-select-label">
                   Price Range
@@ -289,7 +297,7 @@ const ProductPageContent = () => {
           ) : products.length > 0 ? (
             <>
               {/* Products Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 py-5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4 py-3 sm:py-5">
                 {products.map((product) => (
                   <ProductItem
                     key={product._id || product.id}

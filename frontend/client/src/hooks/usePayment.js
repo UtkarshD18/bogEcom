@@ -123,15 +123,17 @@ export const usePayment = () => {
 
             console.log("✅ Payment verified successfully");
 
-            // Save to localStorage for client-side sync
+            // Save minimal order info to localStorage for client-side sync
+            // SECURITY: Do not store payment signature client-side
             const completedOrder = {
-              ...paymentDetails,
               id: orderId,
               paymentId: response.razorpay_payment_id,
               orderId: response.razorpay_order_id,
-              signature: response.razorpay_signature,
+              // signature intentionally omitted for security
               paymentStatus: "completed",
               createdAt: new Date().toISOString(),
+              itemCount: paymentDetails.items?.length || 0,
+              totalAmount: paymentDetails.totalAmount,
             };
 
             const existingOrders = JSON.parse(

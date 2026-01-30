@@ -7,6 +7,8 @@ import jwt from "jsonwebtoken";
  * Useful for endpoints that work for both guests and authenticated users.
  */
 const optionalAuth = async (req, res, next) => {
+  const isProduction = process.env.NODE_ENV === "production";
+
   try {
     let token = null;
 
@@ -26,27 +28,22 @@ const optionalAuth = async (req, res, next) => {
       token = req.cookies.accessToken;
     }
 
-    console.log("optionalAuth Debug:", {
-      hasAuthHeader: !!req.headers?.authorization,
-      hasCookie: !!req.cookies?.accessToken,
-      hasToken: !!token,
-      tokenPreview: token ? token.substring(0, 30) : "none",
-    });
-
     if (token && typeof token === "string" && token.length > 0) {
       const decode = jwt.verify(token, process.env.SECRET_KEY_ACCESS_TOKEN);
       if (decode && decode.id) {
         req.user = decode.id;
-        console.log("✓ optionalAuth: User authenticated with ID:", decode.id);
+        if (!isProduction) {
+          console.log("✓ optionalAuth: User authenticated");
+        }
       }
-    } else {
-      console.log("! optionalAuth: No valid token - continuing as guest");
     }
 
     next();
   } catch (error) {
-    console.log("! optionalAuth: Token verification failed:", error.message);
-    // Token invalid or expired - continue as guest
+    // Token invalid or expired - continue as guest (silent failure)
+    if (!isProduction) {
+      console.log("! optionalAuth: Continuing as guest");
+    }
     next();
   }
 };

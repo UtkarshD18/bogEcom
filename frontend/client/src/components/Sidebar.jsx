@@ -98,9 +98,15 @@ const Sidebar = () => {
   };
 
   return (
-    <aside className="flex flex-col gap-5 sticky top-[140px] z-10">
+    <aside
+      className="flex flex-col gap-5 sticky z-10"
+      style={{ top: "calc(var(--header-height, 60px) + 20px)" }}
+    >
       {/* Category Filter */}
-      <div className="box bg-white rounded-lg p-4 shadow-sm relative z-20">
+      <div
+        className="box rounded-lg p-4 shadow-sm relative z-20"
+        style={{ backgroundColor: "var(--flavor-card-bg, #fffbf5)" }}
+      >
         <div className="flex items-center justify-between">
           <h3 className="text-[16px] font-[600] text-gray-700 mb-2">
             Shop by Categories
@@ -201,7 +207,10 @@ const Sidebar = () => {
       </div>
 
       {/* Price Filter */}
-      <div className="box bg-white rounded-lg p-4 shadow-sm">
+      <div
+        className="box rounded-lg p-4 shadow-sm"
+        style={{ backgroundColor: "var(--flavor-card-bg, #fffbf5)" }}
+      >
         <h3 className="text-[16px] font-[600] text-gray-700 mb-4">
           Filter by Price
         </h3>

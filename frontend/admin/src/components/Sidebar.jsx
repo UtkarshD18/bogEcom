@@ -74,7 +74,7 @@ const Sidebar = () => {
       {/* Logo */}
       <div className="p-4 border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2">
-          <img src="/logo.png" alt="Logo" className="h-10" />
+          <img src="/logo.jpeg" alt="Logo" className="h-10" />
         </Link>
       </div>
 

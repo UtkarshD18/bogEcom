@@ -1,6 +1,6 @@
 "use client";
 
-import { MyContext } from "@/context/ThemeContext";
+import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { Button } from "@mui/material";
 import { useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
@@ -9,10 +9,7 @@ import { AiOutlineCheck } from "react-icons/ai";
 export default function MembershipCTA() {
   const router = useRouter();
   const themeContext = useContext(MyContext);
-  const flavor = themeContext?.flavor || {
-    color: "#c1591c",
-    glass: "rgba(193,89,28,0.08)",
-  };
+  const flavor = themeContext?.flavor || FLAVORS.creamy;
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -25,10 +22,10 @@ export default function MembershipCTA() {
     <section
       data-theme-color
       style={{
-        background: `linear-gradient(135deg, ${flavor.color} 0%, #fff 100%)`,
+        background: `linear-gradient(135deg, ${flavor.color} 0%, ${flavor.light} 100%)`,
         padding: "64px 16px",
         margin: "48px 0",
-        transition: "background 0.6s ease",
+        transition: "background 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
       }}
     >
       <div className="container mx-auto px-4">

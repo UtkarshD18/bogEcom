@@ -372,7 +372,12 @@ const ProductDetails = ({
                   {reviews.map((review) => (
                     <div
                       key={review.id}
-                      className="bg-white rounded-xl p-5 border border-gray-100"
+                      className="rounded-xl p-5 border"
+                      style={{
+                        backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+                        borderColor:
+                          "color-mix(in srgb, var(--flavor-color, #f5c16c) 20%, transparent)",
+                      }}
                     >
                       <div className="flex items-start gap-4">
                         <FaUserCircle className="text-gray-300" size={40} />

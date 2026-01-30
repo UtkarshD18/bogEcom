@@ -2,30 +2,15 @@ import jwt from "jsonwebtoken";
 
 const auth = async (req, res, next) => {
   let token = null;
+  const isProduction = process.env.NODE_ENV === "production";
+
   try {
-    // Debug: log raw headers
-    const authHeader = req.headers.authorization;
-    const headerPreview = authHeader
-      ? (typeof authHeader === "string"
-          ? authHeader.substring(0, 50)
-          : String(authHeader).substring(0, 50)) + "..."
-      : "none";
-
-    console.log("Auth Raw Headers:", {
-      authHeader: headerPreview,
-      authHeaderType: typeof authHeader,
-      cookie: req.headers.cookie
-        ? req.headers.cookie.substring(0, 50) + "..."
-        : "none",
-    });
-
     // Try Authorization header first (Bearer token)
     if (req.headers?.authorization) {
       let authHeaderValue = req.headers.authorization;
 
       // If authorization header is an object (shouldn't happen, but handle it)
       if (typeof authHeaderValue === "object") {
-        console.warn("Authorization header is an object, converting to string");
         authHeaderValue = String(authHeaderValue);
       }
 
@@ -51,17 +36,14 @@ const auth = async (req, res, next) => {
       token = null;
     }
 
-    // Debug logging
-    console.log("Auth Debug:", {
-      hasCookie: !!req.cookies?.accessToken,
-      hasHeader: !!req.headers?.authorization,
-      hasToken: !!token,
-      tokenLength: token ? token.length : 0,
-      tokenType: token ? typeof token : "null",
-      tokenPreview: token ? token.substring(0, 30) : "none",
-      method: req.method,
-      url: req.url,
-    });
+    // Debug logging only in development
+    if (!isProduction) {
+      console.log("Auth Debug:", {
+        hasToken: !!token,
+        method: req.method,
+        url: req.url,
+      });
+    }
 
     if (!token || typeof token !== "string" || token.length === 0) {
       return res.status(401).json({
@@ -71,7 +53,7 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // Verify token exists and is not empty
+    // Verify secret key exists
     const secretKey = process.env.SECRET_KEY_ACCESS_TOKEN;
     if (!secretKey) {
       console.error("SECRET_KEY_ACCESS_TOKEN is not defined");
@@ -94,13 +76,11 @@ const auth = async (req, res, next) => {
     req.user = decode.id;
     next();
   } catch (error) {
-    console.error("Auth middleware error:", error.message);
-    console.error("Error details:", {
-      tokenType: token ? typeof token : "null",
-      tokenLength: token ? token.length : 0,
-      tokenPreview: token ? token.substring(0, 30) : "none",
-      errorName: error.name,
-    });
+    // Log error details only in development
+    if (!isProduction) {
+      console.error("Auth middleware error:", error.message);
+    }
+
     if (error.name === "TokenExpiredError") {
       return res.status(401).json({
         message: "Token expired, please login again",

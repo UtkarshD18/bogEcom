@@ -7,11 +7,54 @@ import generateAccessToken from "../utils/generateAccessToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
 import VerificationEmail from "../utils/verifyEmailTemplate.js";
 
+/**
+ * Validate password strength
+ * @param {string} password
+ * @returns {{ isValid: boolean, message: string }}
+ */
+function validatePassword(password) {
+  const minLength = 8;
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumbers = /\d/.test(password);
+
+  if (password.length < minLength) {
+    return {
+      isValid: false,
+      message: `Password must be at least ${minLength} characters`,
+    };
+  }
+  if (!hasUpperCase || !hasLowerCase) {
+    return {
+      isValid: false,
+      message: "Password must contain both uppercase and lowercase letters",
+    };
+  }
+  if (!hasNumbers) {
+    return {
+      isValid: false,
+      message: "Password must contain at least one number",
+    };
+  }
+  return { isValid: true, message: "" };
+}
+
+/**
+ * Validate email format
+ * @param {string} email
+ * @returns {boolean}
+ */
+function isValidEmail(email) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
 export async function registerUserController(req, res) {
   try {
     let user;
     const { name, email, password } = req.body;
-    console.log(name, email, password);
+
+    // Input validation
     if (!name || !email || !password) {
       return res.status(400).json({
         message: "All fields are required",
@@ -20,9 +63,31 @@ export async function registerUserController(req, res) {
       });
     }
 
-    user = await UserModel.findOne({ email: email });
+    // Validate email format
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        message: "Please provide a valid email address",
+        error: true,
+        success: false,
+      });
+    }
+
+    // Validate password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        message: passwordValidation.message,
+        error: true,
+        success: false,
+      });
+    }
+
+    // Sanitize name (remove potential XSS)
+    const sanitizedName = name.trim().replace(/<[^>]*>/g, "");
+
+    user = await UserModel.findOne({ email: email.toLowerCase().trim() });
     if (user) {
-      return res.json({
+      return res.status(400).json({
         message: "User already exists",
         error: true,
         success: false,
@@ -32,9 +97,9 @@ export async function registerUserController(req, res) {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     user = new UserModel({
-      email: email,
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
-      name: name,
+      name: sanitizedName,
       otp: verifyCode,
 
       otpExpires: Date.now() + 600000,

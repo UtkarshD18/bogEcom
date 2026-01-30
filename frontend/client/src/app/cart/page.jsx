@@ -64,17 +64,17 @@ const Cart = () => {
   }
 
   return (
-    <section className="bg-gray-100 py-8 min-h-[60vh]">
-      <div className="container mx-auto px-4">
-        <div className="flex flex-col lg:flex-row w-full gap-8 items-start">
+    <section className="bg-gray-100 py-4 sm:py-8 min-h-[60vh]">
+      <div className="container mx-auto px-3 sm:px-4">
+        <div className="flex flex-col lg:flex-row w-full gap-4 sm:gap-8 items-start">
           {/* Cart Items */}
-          <div className="col1 bg-white rounded-lg shadow-md flex-1">
-            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+          <div className="col1 bg-white rounded-lg shadow-md flex-1 w-full">
+            <div className="p-3 sm:p-5 border-b border-gray-200 flex items-center justify-between">
               <div>
-                <h2 className="text-xl text-gray-800 font-semibold">
+                <h2 className="text-lg sm:text-xl text-gray-800 font-semibold">
                   Shopping Cart
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">
                   {cartCount} {cartCount === 1 ? "item" : "items"} in your cart
                 </p>
               </div>
@@ -129,7 +129,10 @@ const Cart = () => {
 
           {/* Cart Summary */}
           <div className="col2 w-full lg:w-[350px]">
-            <div className="bg-white rounded-lg shadow-md sticky top-[160px]">
+            <div
+              className="bg-white rounded-lg shadow-md sticky"
+              style={{ top: "calc(var(--header-height, 60px) + 20px)" }}
+            >
               <div className="p-5 border-b border-gray-200">
                 <h2 className="text-xl text-gray-800 font-semibold">
                   Order Summary
