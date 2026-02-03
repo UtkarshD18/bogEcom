@@ -4,7 +4,7 @@ import { useAdmin } from "@/context/AdminContext";
 import { getData } from "@/utils/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   FiGrid,
   FiImage,
@@ -27,6 +27,18 @@ export default function AdminDashboard() {
   });
   const [loadingStats, setLoadingStats] = useState(true);
 
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await getData("/api/statistics/dashboard", token);
+      if (response.success) {
+        setStats(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch stats:", error);
+    }
+    setLoadingStats(false);
+  }, [token]);
+
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.push("/login");
@@ -37,19 +49,7 @@ export default function AdminDashboard() {
     if (isAuthenticated && token) {
       fetchStats();
     }
-  }, [isAuthenticated, token]);
-
-  const fetchStats = async () => {
-    try {
-      const response = await getData("/api/statistics/dashboard", token);
-      if (response.success) {
-        setStats(response.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch stats:", error);
-    }
-    setLoadingStats(false);
-  };
+  }, [isAuthenticated, token, fetchStats]);
 
   if (loading) {
     return (

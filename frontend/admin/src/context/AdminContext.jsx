@@ -1,7 +1,13 @@
 "use client";
 import { getData, postData } from "@/utils/api";
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
 const AdminContext = createContext();
 
@@ -11,12 +17,15 @@ export const AdminProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const router = useRouter();
 
-  useEffect(() => {
-    // Check for existing session on mount
-    checkAdminSession();
-  }, []);
+  const logout = useCallback(() => {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminUser");
+    setAdmin(null);
+    setToken(null);
+    router.push("/login");
+  }, [router]);
 
-  const checkAdminSession = async () => {
+  const checkAdminSession = useCallback(async () => {
     try {
       const storedToken = localStorage.getItem("adminToken");
       const storedAdmin = localStorage.getItem("adminUser");
@@ -72,7 +81,12 @@ export const AdminProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [logout]);
+
+  useEffect(() => {
+    // Check for existing session on mount
+    checkAdminSession();
+  }, [checkAdminSession]);
 
   const login = async (email, password) => {
     try {
@@ -123,14 +137,6 @@ export const AdminProvider = ({ children }) => {
       console.error("Login error:", error);
       return { error: true, message: "Login failed. Please try again." };
     }
-  };
-
-  const logout = () => {
-    localStorage.removeItem("adminToken");
-    localStorage.removeItem("adminUser");
-    setAdmin(null);
-    setToken(null);
-    router.push("/login");
   };
 
   const value = {

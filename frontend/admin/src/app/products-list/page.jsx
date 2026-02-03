@@ -16,7 +16,7 @@ import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FaRegTrashAlt } from "react-icons/fa";
 import { FiSearch } from "react-icons/fi";
@@ -48,20 +48,7 @@ const ProductsList = () => {
   const [totalProducts, setTotalProducts] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchProducts();
-      fetchCategories();
-    }
-  }, [isAuthenticated, page, rowsPerPage, category]);
-
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       const response = await getData("/api/categories", token);
       if (response.success) {
@@ -70,9 +57,9 @@ const ProductsList = () => {
     } catch (error) {
       console.error("Failed to fetch categories:", error);
     }
-  };
+  }, [token]);
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
       let url = `/api/products?page=${page + 1}&limit=${rowsPerPage}`;
@@ -93,7 +80,27 @@ const ProductsList = () => {
       setTotalProducts(0);
     }
     setIsLoading(false);
-  };
+  }, [page, rowsPerPage, category, search, token]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchProducts();
+      fetchCategories();
+    }
+  }, [
+    isAuthenticated,
+    page,
+    rowsPerPage,
+    category,
+    fetchProducts,
+    fetchCategories,
+  ]);
 
   const handleDeleteProduct = async (productId) => {
     if (!confirm("Are you sure you want to delete this product?")) return;

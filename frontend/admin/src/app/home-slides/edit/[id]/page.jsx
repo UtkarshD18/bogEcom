@@ -5,7 +5,7 @@ import { getData, putData, uploadFile } from "@/utils/api";
 import { Button } from "@mui/material";
 import Switch from "@mui/material/Switch";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { IoMdClose } from "react-icons/io";
 
@@ -26,19 +26,7 @@ const EditHomeSlide = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && token && slideId) {
-      fetchSlide();
-    }
-  }, [isAuthenticated, token, slideId]);
-
-  const fetchSlide = async () => {
+  const fetchSlide = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await getData(`/api/home-slides/${slideId}`, token);
@@ -64,7 +52,19 @@ const EditHomeSlide = () => {
       router.push("/home-slides");
     }
     setIsLoading(false);
-  };
+  }, [slideId, token, router]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && token && slideId) {
+      fetchSlide();
+    }
+  }, [isAuthenticated, token, slideId, fetchSlide]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];

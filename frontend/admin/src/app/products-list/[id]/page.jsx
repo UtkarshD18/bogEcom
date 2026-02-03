@@ -5,7 +5,7 @@ import { Button } from "@mui/material";
 import Rating from "@mui/material/Rating";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { IoArrowBack } from "react-icons/io5";
 import { RiEdit2Line } from "react-icons/ri";
 
@@ -19,19 +19,7 @@ const ViewProduct = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState(0);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && token && productId) {
-      fetchProduct();
-    }
-  }, [isAuthenticated, token, productId]);
-
-  const fetchProduct = async () => {
+  const fetchProduct = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await getData(`/api/products/${productId}`, token);
@@ -45,7 +33,19 @@ const ViewProduct = () => {
       router.push("/products-list");
     }
     setIsLoading(false);
-  };
+  }, [productId, token, router]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && token && productId) {
+      fetchProduct();
+    }
+  }, [isAuthenticated, token, productId, fetchProduct]);
 
   if (loading || !isAuthenticated || isLoading) {
     return (

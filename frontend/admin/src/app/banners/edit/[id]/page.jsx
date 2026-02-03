@@ -7,7 +7,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Switch from "@mui/material/Switch";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { IoMdClose } from "react-icons/io";
 
@@ -26,19 +26,7 @@ const EditBanner = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && token && bannerId) {
-      fetchBanner();
-    }
-  }, [isAuthenticated, token, bannerId]);
-
-  const fetchBanner = async () => {
+  const fetchBanner = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await getData(`/api/banners/${bannerId}`, token);
@@ -62,7 +50,19 @@ const EditBanner = () => {
       router.push("/banners");
     }
     setIsLoading(false);
-  };
+  }, [bannerId, token, router]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && token && bannerId) {
+      fetchBanner();
+    }
+  }, [isAuthenticated, token, bannerId, fetchBanner]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];

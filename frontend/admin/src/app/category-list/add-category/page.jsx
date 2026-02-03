@@ -6,7 +6,7 @@ import { Button } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { IoMdClose } from "react-icons/io";
 
@@ -20,19 +20,7 @@ const AddCategory = () => {
   const [images, setImages] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && token) {
-      fetchCategories();
-    }
-  }, [isAuthenticated, token]);
-
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       const response = await getData("/api/categories", token);
       if (response.success) {
@@ -45,7 +33,19 @@ const AddCategory = () => {
     } catch (error) {
       console.error("Failed to fetch categories:", error);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      fetchCategories();
+    }
+  }, [isAuthenticated, token, fetchCategories]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];

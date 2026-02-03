@@ -22,10 +22,10 @@ export const generalLimiter = rateLimit({
   skip: () => false,
 });
 
-// Auth rate limit - 10 attempts per 15 minutes (stricter for login/register)
+// Auth rate limit - 50 attempts per 15 minutes (reasonable for admin development)
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10, // Strict limit for auth endpoints
+  max: 50, // More reasonable limit for development and admin usage
   message: {
     error: true,
     success: false,

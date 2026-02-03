@@ -8,7 +8,7 @@ import Rating from "@mui/material/Rating";
 import Select from "@mui/material/Select";
 import Switch from "@mui/material/Switch";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { IoMdClose } from "react-icons/io";
 
@@ -37,19 +37,7 @@ const AddProduct = () => {
   const [subCategories, setSubCategories] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && token) {
-      fetchCategories();
-    }
-  }, [isAuthenticated, token]);
-
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       const response = await getData("/api/categories", token);
       if (response.success) {
@@ -62,7 +50,19 @@ const AddProduct = () => {
     } catch (error) {
       console.error("Failed to fetch categories:", error);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      fetchCategories();
+    }
+  }, [isAuthenticated, token, fetchCategories]);
 
   const fetchSubCategories = async (parentId) => {
     try {

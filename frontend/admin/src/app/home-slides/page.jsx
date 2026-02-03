@@ -11,7 +11,7 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FaRegTrashAlt } from "react-icons/fa";
 import { IoEyeOutline } from "react-icons/io5";
@@ -30,19 +30,7 @@ const HomeSlides = () => {
   const [slides, setSlides] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchSlides();
-    }
-  }, [isAuthenticated]);
-
-  const fetchSlides = async () => {
+  const fetchSlides = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await getData("/api/home-slides/admin/all", token);
@@ -56,7 +44,19 @@ const HomeSlides = () => {
       setSlides([]);
     }
     setIsLoading(false);
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchSlides();
+    }
+  }, [isAuthenticated, fetchSlides]);
 
   const handleDeleteSlide = async (slideId) => {
     if (!confirm("Are you sure you want to delete this slide?")) return;

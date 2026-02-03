@@ -24,7 +24,7 @@ import {
   Tooltip,
 } from "@mui/material";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   FiSearch,
   FiShield,
@@ -53,19 +53,7 @@ export default function UserManagement() {
   const [dialogType, setDialogType] = useState(""); // "role", "status", "delete"
   const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && token) {
-      fetchUsers();
-    }
-  }, [isAuthenticated, token, pagination.page, pagination.limit, roleFilter]);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams({
@@ -88,7 +76,26 @@ export default function UserManagement() {
       console.error("Failed to fetch users:", error);
     }
     setIsLoading(false);
-  };
+  }, [pagination.page, pagination.limit, search, roleFilter, token]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      fetchUsers();
+    }
+  }, [
+    isAuthenticated,
+    token,
+    pagination.page,
+    pagination.limit,
+    roleFilter,
+    fetchUsers,
+  ]);
 
   const handleSearch = (e) => {
     e.preventDefault();

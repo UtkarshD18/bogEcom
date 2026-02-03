@@ -9,7 +9,7 @@ import Rating from "@mui/material/Rating";
 import Select from "@mui/material/Select";
 import Switch from "@mui/material/Switch";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { IoMdClose } from "react-icons/io";
 
@@ -42,20 +42,24 @@ const EditProduct = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
+  const fetchSubCategories = useCallback(
+    async (parentId) => {
+      try {
+        const response = await getData("/api/categories", token);
+        if (response.success) {
+          const subs = (response.data || []).filter(
+            (cat) => cat.parent && cat.parent._id === parentId,
+          );
+          setSubCategories(subs);
+        }
+      } catch (error) {
+        console.error("Failed to fetch subcategories:", error);
+      }
+    },
+    [token],
+  );
 
-  useEffect(() => {
-    if (isAuthenticated && token && productId) {
-      fetchCategories();
-      fetchProduct();
-    }
-  }, [isAuthenticated, token, productId]);
-
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       const response = await getData("/api/categories", token);
       if (response.success) {
@@ -67,23 +71,9 @@ const EditProduct = () => {
     } catch (error) {
       console.error("Failed to fetch categories:", error);
     }
-  };
+  }, [token]);
 
-  const fetchSubCategories = async (parentId) => {
-    try {
-      const response = await getData("/api/categories", token);
-      if (response.success) {
-        const subs = (response.data || []).filter(
-          (cat) => cat.parent && cat.parent._id === parentId,
-        );
-        setSubCategories(subs);
-      }
-    } catch (error) {
-      console.error("Failed to fetch subcategories:", error);
-    }
-  };
-
-  const fetchProduct = async () => {
+  const fetchProduct = useCallback(async () => {
     if (!productId || !token) {
       console.log("Missing productId or token:", { productId, token: !!token });
       return;
@@ -129,7 +119,20 @@ const EditProduct = () => {
       toast.error("Failed to load product");
     }
     setIsLoading(false);
-  };
+  }, [productId, token, fetchSubCategories]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && token && productId) {
+      fetchCategories();
+      fetchProduct();
+    }
+  }, [isAuthenticated, token, productId, fetchCategories, fetchProduct]);
 
   const handleCategoryChange = (e) => {
     const catId = e.target.value;

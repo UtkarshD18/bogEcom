@@ -9,7 +9,7 @@ import {
   Switch,
   TextField,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { FaEdit, FaPlus, FaStar, FaTrash } from "react-icons/fa";
 
@@ -31,21 +31,21 @@ export default function MembershipPage() {
     isActive: false,
   });
 
-  const fetchPlans = async () => {
+  const fetchPlans = useCallback(async () => {
     const res = await getData("/api/membership/admin/plans", token);
     if (res.success) {
       setPlans(res.data);
     } else {
       console.error("Failed to fetch plans:", res.message);
     }
-  };
+  }, [token]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     const res = await getData("/api/membership/admin/stats", token);
     if (res.success) {
       setStats(res.data);
     }
-  };
+  }, [token]);
 
   useEffect(() => {
     // Wait for token to be available from AdminContext
@@ -56,7 +56,7 @@ export default function MembershipPage() {
       setLoading(false);
     };
     init();
-  }, [token]);
+  }, [token, fetchPlans, fetchStats]);
 
   const resetForm = () => {
     setFormData({

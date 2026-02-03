@@ -11,7 +11,7 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FaRegTrashAlt } from "react-icons/fa";
 import { IoEyeOutline } from "react-icons/io5";
@@ -31,19 +31,7 @@ const Banners = () => {
   const [banners, setBanners] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchBanners();
-    }
-  }, [isAuthenticated]);
-
-  const fetchBanners = async () => {
+  const fetchBanners = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await getData("/api/banners/admin/all", token);
@@ -57,7 +45,19 @@ const Banners = () => {
       setBanners([]);
     }
     setIsLoading(false);
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchBanners();
+    }
+  }, [isAuthenticated, fetchBanners]);
 
   const handleDeleteBanner = async (bannerId) => {
     if (!confirm("Are you sure you want to delete this banner?")) return;

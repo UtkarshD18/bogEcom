@@ -6,7 +6,7 @@ import { Button } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { IoMdClose } from "react-icons/io";
 
@@ -24,20 +24,7 @@ const EditCategory = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingCategory, setIsLoadingCategory] = useState(true);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && token && categoryId) {
-      fetchCategories();
-      fetchCategoryDetails();
-    }
-  }, [isAuthenticated, token, categoryId]);
-
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       const response = await getData("/api/categories", token);
       if (response.success) {
@@ -50,9 +37,9 @@ const EditCategory = () => {
     } catch (error) {
       console.error("Failed to fetch categories:", error);
     }
-  };
+  }, [token, categoryId]);
 
-  const fetchCategoryDetails = async () => {
+  const fetchCategoryDetails = useCallback(async () => {
     setIsLoadingCategory(true);
     try {
       const response = await getData(`/api/categories/${categoryId}`, token);
@@ -74,7 +61,26 @@ const EditCategory = () => {
       router.push("/category-list");
     }
     setIsLoadingCategory(false);
-  };
+  }, [categoryId, token, router]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && token && categoryId) {
+      fetchCategories();
+      fetchCategoryDetails();
+    }
+  }, [
+    isAuthenticated,
+    token,
+    categoryId,
+    fetchCategories,
+    fetchCategoryDetails,
+  ]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];

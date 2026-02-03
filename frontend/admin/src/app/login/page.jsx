@@ -279,7 +279,7 @@ const Login = () => {
 
           <div className="flex items-center justify-between my-3">
             <span className="text-[15px] text-gray-800">
-              Don't have an account?
+              Don&apos;t have an account?
             </span>
             <Link
               href={"/register"}

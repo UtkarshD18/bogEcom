@@ -1,7 +1,7 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MdSave } from "react-icons/md";
 
 const EditBlog = () => {
@@ -18,19 +18,7 @@ const EditBlog = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated && id) {
-      fetchBlogDetails();
-    }
-  }, [isAuthenticated, id]);
-
-  const fetchBlogDetails = async () => {
+  const fetchBlogDetails = useCallback(async () => {
     try {
       setIsLoading(true);
       const response = await fetch(
@@ -59,7 +47,19 @@ const EditBlog = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [id, token]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && id) {
+      fetchBlogDetails();
+    }
+  }, [isAuthenticated, id, fetchBlogDetails]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

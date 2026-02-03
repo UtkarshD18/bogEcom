@@ -1,7 +1,7 @@
 "use client";
 
 import axios from "axios";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -41,11 +41,7 @@ export default function StatisticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchAllStats();
-  }, [period]);
-
-  const fetchAllStats = async () => {
+  const fetchAllStats = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -98,7 +94,11 @@ export default function StatisticsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [period]);
+
+  useEffect(() => {
+    fetchAllStats();
+  }, [period, fetchAllStats]);
 
   if (loading) {
     return <LoadingSpinner />;

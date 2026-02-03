@@ -3,7 +3,7 @@ import { useAdmin } from "@/context/AdminContext";
 import { deleteData, getData } from "@/utils/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FiEdit2, FiTrash2 } from "react-icons/fi";
 import { MdOutlineArticle } from "react-icons/md";
@@ -14,19 +14,7 @@ const BlogsPage = () => {
   const [blogs, setBlogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, loading, router]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchBlogs();
-    }
-  }, [isAuthenticated, token]);
-
-  const fetchBlogs = async () => {
+  const fetchBlogs = useCallback(async () => {
     try {
       setIsLoading(true);
 
@@ -51,7 +39,19 @@ const BlogsPage = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchBlogs();
+    }
+  }, [isAuthenticated, token, fetchBlogs]);
 
   const handleDelete = async (blogId) => {
     if (!confirm("Are you sure you want to delete this blog?")) {
