@@ -15,7 +15,7 @@ import {
 import { PiImageSquare } from "react-icons/pi";
 import { RiCoupon2Line, RiVipCrownLine } from "react-icons/ri";
 import { RxDashboard } from "react-icons/rx";
-import { TbBrandProducthunt, TbUsers } from "react-icons/tb";
+import { TbBrandProducthunt, TbShare, TbUsers } from "react-icons/tb";
 
 const Sidebar = () => {
   const { logout, admin } = useAdmin();
@@ -56,6 +56,11 @@ const Sidebar = () => {
       name: "Coupons",
       icon: <RiCoupon2Line size={22} />,
       href: "/coupons",
+    },
+    {
+      name: "Influencers",
+      icon: <TbShare size={22} />,
+      href: "/influencers",
     },
     {
       name: "Banners",

@@ -2,6 +2,7 @@
 
 import PaymentUnavailableModal from "@/components/PaymentUnavailableModal";
 import { useCart } from "@/context/CartContext";
+import { useReferral } from "@/context/ReferralContext";
 import { useSettings } from "@/context/SettingsContext";
 import { MyContext } from "@/context/ThemeProvider";
 import {
@@ -47,6 +48,7 @@ const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
  * Mobile-first, production-ready checkout with:
  * - PhonePe payment modal (payments temporarily unavailable)
  * - Coupon validation (backend)
+ * - Influencer/Referral tracking (automatic discount)
  * - Affiliate tracking
  * - Save order for later
  */
@@ -54,6 +56,13 @@ const Checkout = () => {
   const context = useContext(MyContext);
   const { cartItems, cartTotal, clearCart } = useCart();
   const router = useRouter();
+
+  // Get referral/influencer data from context
+  const {
+    referralCode,
+    referralData,
+    calculateDiscount: calculateReferralDiscount,
+  } = useReferral();
 
   // Get settings from context
   const {
@@ -163,6 +172,7 @@ const Checkout = () => {
   // Debug log settings
   console.log("[Checkout] Tax Settings:", taxSettings);
   console.log("[Checkout] Shipping Settings:", shippingSettings);
+  console.log("[Checkout] Referral Code:", referralCode);
 
   // Calculate totals using normalized item data and backend settings
   const subtotal = (cartItems || []).reduce((sum, item) => {
@@ -176,8 +186,20 @@ const Checkout = () => {
   // Tax calculation from context settings
   const tax = calculateTax(subtotal);
 
-  const discountAmount = appliedCoupon?.discountAmount || 0;
-  const total = Math.max(0, subtotal + shipping + tax - discountAmount);
+  // Referral/Influencer discount (applied FIRST, calculated on subtotal)
+  // Note: Backend will recalculate this for security - this is for display only
+  const referralDiscount = referralCode
+    ? calculateReferralDiscount(subtotal)
+    : 0;
+
+  // Coupon discount (applied SECOND, on amount after referral discount)
+  const couponDiscount = appliedCoupon?.discountAmount || 0;
+
+  // Total discount
+  const totalDiscount = referralDiscount + couponDiscount;
+
+  // Final total
+  const total = Math.max(0, subtotal + shipping + tax - totalDiscount);
 
   // Fetch addresses from database
   const fetchAddresses = useCallback(async () => {
@@ -463,9 +485,13 @@ const Checkout = () => {
               addressType: selectedAddrObj.addressType,
             }
           : null,
+        // Coupon details
         couponCode: appliedCoupon?.code || null,
-        discountAmount: discountAmount,
+        discountAmount: couponDiscount,
         finalAmount: total,
+        // Influencer/Referral tracking - backend recalculates for security
+        influencerCode: referralCode || null,
+        // Legacy affiliate tracking
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
         notes: orderNotes,
@@ -891,18 +917,28 @@ const Checkout = () => {
                       {shipping === 0 ? "FREE" : `₹${shipping}`}
                     </span>
                   </div>
-                  {discountAmount > 0 && (
+                  {couponDiscount > 0 && (
                     <div className="flex justify-between text-green-600 font-medium">
                       <span className="flex items-center gap-2">
                         <FiTag className="w-4 h-4" />
                         Coupon Discount ({appliedCoupon?.code})
                       </span>
-                      <span>-₹{discountAmount.toFixed(0)}</span>
+                      <span>-₹{couponDiscount.toFixed(0)}</span>
+                    </div>
+                  )}
+                  {/* Referral/Influencer Discount */}
+                  {referralDiscount > 0 && (
+                    <div className="flex justify-between text-purple-600 font-medium">
+                      <span className="flex items-center gap-2">
+                        <HiOutlineFire className="w-4 h-4" />
+                        Referral Discount ({referralCode})
+                      </span>
+                      <span>-₹{referralDiscount.toFixed(0)}</span>
                     </div>
                   )}
                   <div className="border-t border-gray-200 pt-3">
                     {/* Show original total crossed out when discount applied */}
-                    {discountAmount > 0 && (
+                    {totalDiscount > 0 && (
                       <div className="flex justify-between text-gray-400 text-sm mb-1">
                         <span>Original Total</span>
                         <span className="line-through">
@@ -912,15 +948,15 @@ const Checkout = () => {
                     )}
                     <div className="flex justify-between font-bold text-gray-800">
                       <span className="text-lg">
-                        {discountAmount > 0 ? "You Pay" : "Total"}
+                        {totalDiscount > 0 ? "You Pay" : "Total"}
                       </span>
                       <div className="text-right">
                         <span className="text-xl text-emerald-600">
                           ₹{total.toFixed(0)}
                         </span>
-                        {discountAmount > 0 && (
+                        {totalDiscount > 0 && (
                           <p className="text-xs text-green-600 font-normal">
-                            You save ₹{discountAmount.toFixed(0)}!
+                            You save ₹{totalDiscount.toFixed(0)}!
                           </p>
                         )}
                       </div>
@@ -928,8 +964,21 @@ const Checkout = () => {
                   </div>
                 </div>
 
-                {/* Affiliate Tracking Badge */}
-                {affiliateData && (
+                {/* Referral Applied Badge */}
+                {referralCode && (
+                  <div className="mt-4 bg-purple-50 rounded-lg p-3 text-sm text-purple-700 flex items-center gap-2">
+                    <HiOutlineFire className="w-4 h-4" />
+                    <span>
+                      Referral code <strong>{referralCode}</strong> applied!
+                      {referralData?.discountType === "PERCENT"
+                        ? ` (${referralData?.discountValue}% off)`
+                        : ` (₹${referralData?.discountValue} off)`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Legacy Affiliate Tracking Badge */}
+                {affiliateData && !referralCode && (
                   <div className="mt-4 bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
                     Referral: {affiliateData.code}
                   </div>

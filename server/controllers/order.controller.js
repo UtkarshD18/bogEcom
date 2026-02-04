@@ -7,6 +7,11 @@ import {
   syncOrderStatus,
   syncOrderToFirestore,
 } from "../utils/orderFirestoreSync.js";
+import {
+  calculateInfluencerCommission,
+  calculateReferralDiscount,
+  updateInfluencerStats,
+} from "./influencer.controller.js";
 import { sendOrderUpdateNotification } from "./notification.controller.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
@@ -676,6 +681,13 @@ export const createTestOrder = async (req, res) => {
  * @route POST /api/orders/save-for-later
  * @description Creates a mock order with pending_payment status when payments are unavailable
  * This is used during the PhonePe onboarding phase
+ *
+ * Discount Application Order:
+ * 1. Calculate subtotal from products
+ * 2. Apply influencer discount FIRST (if valid referral code)
+ * 3. Apply coupon discount SECOND (on amount after influencer discount)
+ * 4. Calculate final amount
+ * 5. Calculate influencer commission from final amount
  */
 export const saveOrderForLater = async (req, res) => {
   try {
@@ -684,10 +696,11 @@ export const saveOrderForLater = async (req, res) => {
       totalAmt,
       delivery_address,
       couponCode,
-      discountAmount,
-      finalAmount,
+      discountAmount: clientDiscountAmount,
+      finalAmount: clientFinalAmount,
       affiliateCode,
       affiliateSource,
+      influencerCode,
       notes,
     } = req.body;
 
@@ -728,11 +741,65 @@ export const saveOrderForLater = async (req, res) => {
       validDeliveryAddress = delivery_address;
     }
 
+    // ==================== BACKEND DISCOUNT CALCULATION ====================
+    // All discounts are calculated server-side for security
+
+    const originalPrice = Number(totalAmt);
+    let workingAmount = originalPrice;
+    let influencerDiscount = 0;
+    let influencerData = null;
+    let influencerCommission = 0;
+    let couponDiscount = Number(clientDiscountAmount) || 0;
+
+    // Step 1: Apply influencer discount FIRST (if referral code provided)
+    if (influencerCode) {
+      const referralResult = await calculateReferralDiscount(
+        influencerCode,
+        originalPrice,
+      );
+      if (referralResult.influencer) {
+        influencerDiscount = referralResult.discount;
+        influencerData = referralResult.influencer;
+        workingAmount = originalPrice - influencerDiscount;
+        console.log(
+          `✓ Influencer discount applied: ₹${influencerDiscount} (code: ${influencerCode})`,
+        );
+      }
+    }
+
+    // Step 2: Coupon discount applies on amount AFTER influencer discount
+    // Coupon validation should be done client-side via /api/coupons/validate
+    // Here we just apply the discount amount sent from client
+    // For security, you could re-validate the coupon here if needed
+    if (couponCode && couponDiscount > 0) {
+      // Ensure coupon discount doesn't exceed working amount
+      couponDiscount = Math.min(couponDiscount, workingAmount);
+      workingAmount = workingAmount - couponDiscount;
+      console.log(
+        `✓ Coupon discount applied: ₹${couponDiscount} (code: ${couponCode})`,
+      );
+    }
+
+    // Step 3: Calculate final amount (minimum ₹1)
+    const finalAmount = Math.max(Math.round(workingAmount * 100) / 100, 1);
+    const totalDiscount = influencerDiscount + couponDiscount;
+
+    // Step 4: Calculate influencer commission from FINAL amount (what customer pays)
+    if (influencerData) {
+      influencerCommission = await calculateInfluencerCommission(
+        influencerData._id,
+        finalAmount,
+      );
+      console.log(
+        `✓ Influencer commission calculated: ₹${influencerCommission}`,
+      );
+    }
+
     // Create saved order with pending_payment status
     const savedOrder = new OrderModel({
       user: userId,
       products: sanitizedProducts,
-      totalAmt: Number(totalAmt),
+      totalAmt: originalPrice,
       delivery_address: validDeliveryAddress,
       order_status: "pending_payment",
       payment_status: "unavailable",
@@ -740,13 +807,21 @@ export const saveOrderForLater = async (req, res) => {
 
       // Coupon details
       couponCode: couponCode || null,
-      discountAmount: Number(discountAmount) || 0,
-      discount: Number(discountAmount) || 0,
-      finalAmount: Number(finalAmount) || Number(totalAmt),
+      discountAmount: couponDiscount,
+      discount: totalDiscount,
+      finalAmount: finalAmount,
 
-      // Affiliate tracking
-      affiliateCode: affiliateCode || null,
-      affiliateSource: affiliateSource || null,
+      // Influencer/Referral tracking
+      influencerId: influencerData?._id || null,
+      influencerCode: influencerData?.code || null,
+      influencerDiscount: influencerDiscount,
+      influencerCommission: influencerCommission,
+      commissionPaid: false,
+      originalPrice: originalPrice,
+
+      // Legacy affiliate tracking (kept for backwards compatibility)
+      affiliateCode: influencerCode || affiliateCode || null,
+      affiliateSource: affiliateSource || (influencerCode ? "referral" : null),
 
       // Flags
       isSavedOrder: true,
@@ -756,6 +831,16 @@ export const saveOrderForLater = async (req, res) => {
     await savedOrder.save();
 
     console.log("✓ Order saved for later:", savedOrder._id);
+
+    // Update influencer statistics
+    if (influencerData) {
+      await updateInfluencerStats(
+        influencerData._id,
+        finalAmount,
+        influencerCommission,
+      );
+      console.log(`✓ Updated influencer stats for: ${influencerData.code}`);
+    }
 
     // SYNC: Mirror order to Firestore for real-time client updates
     syncOrderToFirestore(savedOrder, "create").catch((err) =>
@@ -771,9 +856,16 @@ export const saveOrderForLater = async (req, res) => {
         orderId: savedOrder._id,
         orderStatus: savedOrder.order_status,
         paymentStatus: savedOrder.payment_status,
-        totalAmount: savedOrder.totalAmt,
-        finalAmount: savedOrder.finalAmount,
+        // Price breakdown
+        originalAmount: originalPrice,
+        influencerDiscount: influencerDiscount,
+        couponDiscount: couponDiscount,
+        totalDiscount: totalDiscount,
+        finalAmount: finalAmount,
+        // Applied discounts
         couponApplied: !!savedOrder.couponCode,
+        influencerApplied: !!savedOrder.influencerCode,
+        influencerCode: savedOrder.influencerCode,
         affiliateTracked: !!savedOrder.affiliateCode,
       },
     });

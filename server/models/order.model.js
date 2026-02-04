@@ -164,6 +164,51 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ==================== INFLUENCER TRACKING ====================
+
+    // Reference to influencer who referred this order
+    influencerId: {
+      type: mongoose.Schema.ObjectId,
+      ref: "Influencer",
+      default: null,
+      index: true,
+    },
+
+    // Influencer code used (denormalized for historical tracking)
+    influencerCode: {
+      type: String,
+      default: null,
+    },
+
+    // Discount applied from influencer referral
+    influencerDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // Commission owed to influencer for this order
+    influencerCommission: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // Whether commission has been paid out
+    commissionPaid: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Original price before any discounts
+    originalPrice: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // ==================== END INFLUENCER TRACKING ====================
+
     // Saved order flag (for pending payment orders)
     isSavedOrder: {
       type: Boolean,
