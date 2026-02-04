@@ -60,10 +60,23 @@ export default function FlavorSwitcherBar() {
       }}
     >
       <style>{`
+        .flavor-bar {
+          display: flex;
+          gap: 12px;
+          background: ${currentFlavor.cardBg};
+          border-radius: 20px;
+          padding: 10px 20px;
+          box-shadow: 0 4px 20px ${currentFlavor.color}15;
+          backdrop-filter: blur(12px);
+          border: 2px solid ${currentFlavor.color}20;
+          transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+          align-items: center;
+        }
         .flavor-btn { 
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
           position: relative; 
           overflow: hidden; 
+          white-space: nowrap;
         }
         .flavor-btn:hover { 
           transform: translateY(-2px); 
@@ -79,20 +92,23 @@ export default function FlavorSwitcherBar() {
           background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 50%);
           pointer-events: none;
         }
+        @media (max-width: 640px) {
+          .flavor-bar {
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 16px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+          }
+          .flavor-bar::-webkit-scrollbar { display: none; }
+          .flavor-btn {
+            font-size: 0.85rem !important;
+            padding: 8px 14px !important;
+          }
+        }
       `}</style>
-      <div
-        style={{
-          display: "flex",
-          gap: "12px",
-          background: `${currentFlavor.cardBg}`,
-          borderRadius: "20px",
-          padding: "10px 20px",
-          boxShadow: `0 4px 20px ${currentFlavor.color}15`,
-          backdropFilter: "blur(12px)",
-          border: `2px solid ${currentFlavor.color}20`,
-          transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
-        }}
-      >
+      <div className="flavor-bar">
         {FLAVORS_ARRAY.map((flavor) => (
           <button
             key={flavor.name}

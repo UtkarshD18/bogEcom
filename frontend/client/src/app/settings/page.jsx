@@ -1,7 +1,8 @@
 "use client";
 import AccountSidebar from "@/components/AccountSiderbar";
-import { Button, Switch } from "@mui/material";
-import { useState } from "react";
+import { Button, CircularProgress, Switch } from "@mui/material";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 
 const Settings = () => {
   const [settings, setSettings] = useState({
@@ -9,10 +10,54 @@ const Settings = () => {
     pushNotifications: false,
     orderUpdates: true,
     promotionalEmails: false,
-    darkMode: false,
-    twoFactorAuth: false,
-    language: "en",
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // Fetch settings from backend on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/user/settings`,
+          {
+            method: "GET",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        );
+
+        // If not authenticated or server error, just use defaults
+        if (!response.ok) {
+          console.log("Could not fetch settings, using defaults");
+          setLoading(false);
+          return;
+        }
+
+        const data = await response.json();
+        if (data.success && data.data) {
+          setSettings({
+            emailNotifications:
+              data.data.notificationSettings?.emailNotifications ?? true,
+            pushNotifications:
+              data.data.notificationSettings?.pushNotifications ?? false,
+            orderUpdates: data.data.notificationSettings?.orderUpdates ?? true,
+            promotionalEmails:
+              data.data.notificationSettings?.promotionalEmails ?? false,
+          });
+        }
+      } catch (error) {
+        // Network error or server not running - use defaults silently
+        console.log("Settings API unavailable, using defaults:", error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, []);
 
   const handleToggle = (key) => {
     setSettings((prev) => ({
@@ -20,6 +65,58 @@ const Settings = () => {
       [key]: !prev[key],
     }));
   };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/user/settings`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            notificationSettings: {
+              emailNotifications: settings.emailNotifications,
+              pushNotifications: settings.pushNotifications,
+              orderUpdates: settings.orderUpdates,
+              promotionalEmails: settings.promotionalEmails,
+            },
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("Settings saved successfully!");
+      } else {
+        throw new Error(data.message || "Failed to save settings");
+      }
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      toast.error(error.message || "Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="bg-gray-100 py-8">
+        <div className="container flex gap-5">
+          <div className="w-[20%]">
+            <AccountSidebar />
+          </div>
+          <div className="wrapper w-[75%] flex items-center justify-center min-h-[400px]">
+            <CircularProgress color="warning" />
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="bg-gray-100 py-8">
@@ -103,87 +200,19 @@ const Settings = () => {
             </div>
           </div>
 
-          {/* Appearance Section */}
-          <div className="bg-white shadow-md rounded-md mb-5">
-            <div className="p-4 border-b-[1px] border-[rgba(0,0,0,0.2)]">
-              <h4 className="text-[20px] font-[500] text-gray-700">
-                Appearance
-              </h4>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h5 className="text-[16px] font-[500] text-gray-700">
-                    Dark Mode
-                  </h5>
-                  <p className="text-[14px] text-gray-500">
-                    Toggle dark mode for better viewing at night
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.darkMode}
-                  onChange={() => handleToggle("darkMode")}
-                  color="warning"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <h5 className="text-[16px] font-[500] text-gray-700">
-                    Language
-                  </h5>
-                  <p className="text-[14px] text-gray-500">
-                    Select your preferred language
-                  </p>
-                </div>
-                <select
-                  className="border border-gray-300 rounded-md px-3 py-2"
-                  value={settings.language}
-                  onChange={(e) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      language: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="en">English</option>
-                  <option value="hi">Hindi</option>
-                  <option value="te">Telugu</option>
-                  <option value="ta">Tamil</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Security Section */}
-          <div className="bg-white shadow-md rounded-md mb-5">
-            <div className="p-4 border-b-[1px] border-[rgba(0,0,0,0.2)]">
-              <h4 className="text-[20px] font-[500] text-gray-700">
-                Security
-              </h4>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h5 className="text-[16px] font-[500] text-gray-700">
-                    Two-Factor Authentication
-                  </h5>
-                  <p className="text-[14px] text-gray-500">
-                    Add an extra layer of security to your account
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.twoFactorAuth}
-                  onChange={() => handleToggle("twoFactorAuth")}
-                  color="warning"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Save Button */}
           <div className="flex justify-end">
-            <Button className="btn-g px-8">Save Changes</Button>
+            <Button
+              className="btn-g px-8"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <CircularProgress size={20} color="inherit" />
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
           </div>
         </div>
       </div>

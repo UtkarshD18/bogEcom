@@ -7,10 +7,11 @@ import rateLimit from "express-rate-limit";
  * PRODUCTION-READY: Properly configured limits for security.
  */
 
-// General API rate limit - 100 requests per 15 minutes per IP
+// General API rate limit - 500 requests per 15 minutes per IP
+// Increased for SPA with multiple parallel requests
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 500, // Limit each IP to 500 requests per windowMs
   message: {
     error: true,
     success: false,
@@ -20,6 +21,19 @@ export const generalLimiter = rateLimit({
   legacyHeaders: false,
   // Don't skip in development for testing purposes
   skip: () => false,
+});
+
+// Admin rate limit - Higher limit for admin panel operations
+export const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000, // Admin needs more requests for bulk operations
+  message: {
+    error: true,
+    success: false,
+    message: "Too many admin requests. Please wait a moment.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Auth rate limit - 50 attempts per 15 minutes (reasonable for admin development)

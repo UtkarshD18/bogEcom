@@ -66,7 +66,7 @@ const QtyBox = ({
       style={{
         backgroundColor: "var(--flavor-card-bg, #fffbf5)",
         borderColor:
-          "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+          "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
       }}
     >
       {/* Decrease Button */}
@@ -74,7 +74,7 @@ const QtyBox = ({
         type="button"
         onClick={handleDecrease}
         disabled={qty <= min || disabled}
-        className={`${buttonSizes[size]} flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-[#c1591c] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600`}
+        className={`${buttonSizes[size]} flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-[#059669] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600`}
       >
         <FiMinus size={size === "sm" ? 12 : size === "md" ? 14 : 16} />
       </button>
@@ -95,7 +95,7 @@ const QtyBox = ({
         type="button"
         onClick={handleIncrease}
         disabled={qty >= max || disabled}
-        className={`${buttonSizes[size]} flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-[#c1591c] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600`}
+        className={`${buttonSizes[size]} flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-[#059669] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600`}
       >
         <FiPlus size={size === "sm" ? 12 : size === "md" ? 14 : 16} />
       </button>

@@ -66,13 +66,13 @@ const MyAccount = () => {
                   setIsOpenChangePassworrdBox(!isOpenChangePasswordBox)
                 }
                 sx={{
-                  borderColor: "#c1591c !important",
-                  color: "#c1591c !important",
+                  borderColor: "#059669 !important",
+                  color: "#059669 !important",
                   backgroundColor: "transparent !important",
                   "&:hover": {
-                    backgroundColor: "#c1591c !important",
+                    backgroundColor: "#059669 !important",
                     color: "#fff !important",
-                    borderColor: "#c1591c !important",
+                    borderColor: "#059669 !important",
                   },
                 }}
               >

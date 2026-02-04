@@ -85,6 +85,8 @@ const Orders = () => {
         return "bg-yellow-100 text-yellow-800";
       case "pending":
         return "bg-gray-100 text-gray-800";
+      case "pending_payment":
+        return "bg-orange-100 text-orange-800";
       case "cancelled":
         return "bg-red-100 text-red-800";
       default:
@@ -98,11 +100,22 @@ const Orders = () => {
         return "bg-green-100 text-green-800";
       case "pending":
         return "bg-yellow-100 text-yellow-800";
+      case "unavailable":
+        return "bg-orange-100 text-orange-800";
       case "failed":
         return "bg-red-100 text-red-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
+  };
+
+  // Format status for display
+  const formatStatus = (status) => {
+    if (!status) return "Unknown";
+    return status
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
   };
 
   return (
@@ -202,8 +215,7 @@ const Orders = () => {
                         <span
                           className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.order_status)}`}
                         >
-                          {order.order_status?.charAt(0).toUpperCase() +
-                            order.order_status?.slice(1) || "Pending"}
+                          {formatStatus(order.order_status) || "Pending"}
                         </span>
                       </div>
                       <div>
@@ -211,8 +223,7 @@ const Orders = () => {
                         <span
                           className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${getPaymentStatusColor(order.payment_status)}`}
                         >
-                          {order.payment_status?.charAt(0).toUpperCase() +
-                            order.payment_status?.slice(1) || "Pending"}
+                          {formatStatus(order.payment_status) || "Pending"}
                         </span>
                       </div>
                       <div>
@@ -354,6 +365,29 @@ const Orders = () => {
                       </div>
                     </div>
                   )}
+
+                  {/* View Order Details Link */}
+                  <div className="px-6 py-4 bg-white border-t border-gray-200 flex justify-end">
+                    <Link
+                      href={`/orders/${order._id}`}
+                      className="inline-flex items-center px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors"
+                    >
+                      View Order Details
+                      <svg
+                        className="ml-2 w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </Link>
+                  </div>
                 </div>
               ))}
             </div>

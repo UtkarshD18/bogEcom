@@ -9,12 +9,14 @@ import {
   forgotPasswordController,
   getAllUsers,
   getUserDetails,
+  getUserSettings,
   loginUserController,
   logoutController,
   registerUserController,
   resendOTPController,
   setBackupPassword,
   updateUserRole,
+  updateUserSettings,
   updateUserStatus,
   verifyEmailController,
   verifyForgotPasswordOTPController,
@@ -37,6 +39,10 @@ userRouter.post("/authWithGoogle", authWithGoogle);
 userRouter.post("/google-login", authWithGoogle); // Alias for compatibility
 userRouter.post("/google-register", authWithGoogle); // Alias for registration
 userRouter.post("/set-backup-password", auth, setBackupPassword); // Protected route for Google users
+
+// User settings routes
+userRouter.get("/settings", auth, getUserSettings);
+userRouter.put("/settings", auth, updateUserSettings);
 
 // Get current user details (for session verification)
 userRouter.get("/user-details", auth, async (req, res) => {

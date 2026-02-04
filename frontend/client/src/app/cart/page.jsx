@@ -22,7 +22,7 @@ const Cart = () => {
     return (
       <section className="bg-gray-100 py-8 min-h-[60vh]">
         <div className="container mx-auto px-4 flex items-center justify-center">
-          <CircularProgress style={{ color: "#c1591c" }} />
+          <CircularProgress style={{ color: "#059669" }} />
         </div>
       </section>
     );
@@ -43,7 +43,7 @@ const Cart = () => {
             <Link href="/products">
               <Button
                 sx={{
-                  backgroundColor: "#c1591c",
+                  backgroundColor: "#059669",
                   color: "white",
                   textTransform: "none",
                   fontWeight: 600,
@@ -111,8 +111,8 @@ const Cart = () => {
                 <Button
                   variant="outlined"
                   sx={{
-                    borderColor: "#c1591c",
-                    color: "#c1591c",
+                    borderColor: "#059669",
+                    color: "#059669",
                     textTransform: "none",
                     fontWeight: 500,
                     "&:hover": {
@@ -165,7 +165,7 @@ const Cart = () => {
 
                 <div className="border-t pt-4 flex items-center justify-between text-lg font-bold text-gray-800">
                   <span>Total</span>
-                  <span className="text-[#c1591c]">
+                  <span className="text-[#059669]">
                     ₹{total.toLocaleString()}
                   </span>
                 </div>
@@ -177,7 +177,7 @@ const Cart = () => {
                     fullWidth
                     disabled={loading || cartItems.length === 0}
                     sx={{
-                      backgroundColor: "#c1591c",
+                      backgroundColor: "#059669",
                       color: "white",
                       textTransform: "none",
                       fontWeight: 600,

@@ -53,8 +53,8 @@ const Nav = () => {
                   className={`relative px-5 py-2.5 text-[14px] font-medium rounded-full transition-all duration-300 ease-out active:scale-95
                     ${
                       isActive
-                        ? "bg-[#c1591c]/15 text-[#c1591c] font-bold shadow-sm"
-                        : "text-neutral-600 hover:bg-[#c1591c] hover:text-white hover:shadow-lg"
+                        ? "bg-[#059669]/15 text-[#059669] font-bold shadow-sm"
+                        : "text-neutral-600 hover:bg-[#059669] hover:text-white hover:shadow-lg"
                     }
                   `}
                 >

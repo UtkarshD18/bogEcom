@@ -20,12 +20,14 @@ export const getCart = async (req, res) => {
     if (userId) {
       cart = await CartModel.findOne({ user: userId }).populate({
         path: "items.product",
-        select: "name price originalPrice images thumbnail stock isActive",
+        select:
+          "name price originalPrice images thumbnail stock isActive demandStatus",
       });
     } else if (sessionId) {
       cart = await CartModel.findOne({ sessionId }).populate({
         path: "items.product",
-        select: "name price originalPrice images thumbnail stock isActive",
+        select:
+          "name price originalPrice images thumbnail stock isActive demandStatus",
       });
     }
 
@@ -183,7 +185,7 @@ export const addToCart = async (req, res) => {
     // Populate and return
     await cart.populate({
       path: "items.product",
-      select: "name price originalPrice images thumbnail stock",
+      select: "name price originalPrice images thumbnail stock demandStatus",
     });
 
     res.status(200).json({
@@ -283,7 +285,7 @@ export const updateCartItem = async (req, res) => {
 
     await cart.populate({
       path: "items.product",
-      select: "name price originalPrice images thumbnail stock",
+      select: "name price originalPrice images thumbnail stock demandStatus",
     });
 
     res.status(200).json({

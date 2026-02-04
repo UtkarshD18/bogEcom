@@ -837,3 +837,106 @@ export async function deleteUser(req, res) {
     });
   }
 }
+
+// Get user settings
+export async function getUserSettings(req, res) {
+  try {
+    const userId = req.user._id;
+
+    const user = await UserModel.findById(userId).select(
+      "notificationSettings preferences",
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: true,
+        message: "User not found",
+      });
+    }
+
+    // Return settings with defaults if not set
+    const settings = {
+      notificationSettings: user.notificationSettings || {
+        emailNotifications: true,
+        pushNotifications: false,
+        orderUpdates: true,
+        promotionalEmails: false,
+      },
+      preferences: user.preferences || {
+        darkMode: false,
+        language: "en",
+      },
+    };
+
+    return res.json({
+      success: true,
+      error: false,
+      data: settings,
+    });
+  } catch (error) {
+    console.error("Get user settings error:", error);
+    return res.status(500).json({
+      success: false,
+      error: true,
+      message: error.message || error,
+    });
+  }
+}
+
+// Update user settings
+export async function updateUserSettings(req, res) {
+  try {
+    const userId = req.user._id;
+    const { notificationSettings, preferences } = req.body;
+
+    const updateData = {};
+
+    if (notificationSettings) {
+      updateData.notificationSettings = {
+        emailNotifications: notificationSettings.emailNotifications ?? true,
+        pushNotifications: notificationSettings.pushNotifications ?? false,
+        orderUpdates: notificationSettings.orderUpdates ?? true,
+        promotionalEmails: notificationSettings.promotionalEmails ?? false,
+      };
+    }
+
+    if (preferences) {
+      updateData.preferences = {
+        darkMode: preferences.darkMode ?? false,
+        language: preferences.language ?? "en",
+      };
+    }
+
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { $set: updateData },
+      { new: true },
+    ).select("notificationSettings preferences");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: true,
+        message: "User not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      error: false,
+      message: "Settings updated successfully",
+      data: {
+        notificationSettings: user.notificationSettings,
+        preferences: user.preferences,
+      },
+    });
+  } catch (error) {
+    console.error("Update user settings error:", error);
+    return res.status(500).json({
+      success: false,
+      error: true,
+      message: error.message || error,
+    });
+  }
+}

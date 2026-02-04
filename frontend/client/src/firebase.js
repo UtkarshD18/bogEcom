@@ -1,4 +1,6 @@
 import { initializeApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -20,3 +22,6 @@ if (process.env.NODE_ENV === "development") {
 }
 
 export const firebaseApp = initializeApp(firebaseConfig);
+
+// Initialize Firestore for real-time order updates
+export const db = getFirestore(firebaseApp);

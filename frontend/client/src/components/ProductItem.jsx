@@ -26,7 +26,6 @@ import {
  * @param {number} props.discount - Discount percentage
  * @param {number} props.rating - Product rating (0-5)
  * @param {string} props.image - Product image URL
- * @param {boolean} props.inStock - Stock status
  * @param {Object} props.product - Full product object for cart/wishlist
  */
 const ProductItem = ({
@@ -38,7 +37,6 @@ const ProductItem = ({
   discount = 30,
   rating = 4.5,
   image = "/product_1.png",
-  inStock = true,
   product = null,
 }) => {
   const [isAddingToCart, setIsAddingToCart] = useState(false);
@@ -73,7 +71,7 @@ const ProductItem = ({
     e.preventDefault();
     e.stopPropagation();
 
-    if (!inStock || isAddingToCart) return;
+    if (isAddingToCart) return;
 
     setIsAddingToCart(true);
     try {
@@ -135,13 +133,6 @@ const ProductItem = ({
             </span>
           )}
 
-          {/* Out of Stock Badge */}
-          {!inStock && (
-            <span className="absolute top-3 left-3 bg-gray-900/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm z-10">
-              Out of Stock
-            </span>
-          )}
-
           {/* Wishlist Button */}
           <button
             onClick={handleWishlistClick}
@@ -165,9 +156,7 @@ const ProductItem = ({
           <img
             src={getImageUrl(image)}
             alt={name}
-            className={`h-full w-full object-contain mix-blend-multiply p-4 transition-transform duration-500 ease-in-out group-hover:scale-110 ${
-              !inStock ? "opacity-50 grayscale" : ""
-            }`}
+            className="h-full w-full object-contain mix-blend-multiply p-4 transition-transform duration-500 ease-in-out group-hover:scale-110"
           />
         </div>
 
@@ -221,25 +210,21 @@ const ProductItem = ({
             {/* Add Button - themed */}
             <button
               onClick={handleAddToCart}
-              disabled={!inStock || isAddingToCart}
+              disabled={isAddingToCart}
               className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wide transition-all duration-300 active:scale-95"
               style={{
-                backgroundColor: alreadyInCart
-                  ? "#16a34a"
-                  : inStock
-                    ? flavor.color
-                    : "#d1d5db",
-                color: alreadyInCart || inStock ? "#ffffff" : "#6b7280",
-                cursor: inStock ? "pointer" : "not-allowed",
+                backgroundColor: alreadyInCart ? "#16a34a" : flavor.color,
+                color: "#ffffff",
+                cursor: "pointer",
               }}
               onMouseEnter={(e) => {
-                if (inStock && !alreadyInCart) {
+                if (!alreadyInCart) {
                   e.currentTarget.style.backgroundColor = flavor.hover;
                   e.currentTarget.style.boxShadow = `0 4px 12px ${flavor.color}40`;
                 }
               }}
               onMouseLeave={(e) => {
-                if (inStock && !alreadyInCart) {
+                if (!alreadyInCart) {
                   e.currentTarget.style.backgroundColor = flavor.color;
                   e.currentTarget.style.boxShadow = "none";
                 }

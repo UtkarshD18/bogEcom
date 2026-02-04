@@ -8,7 +8,7 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import { useRef, useState } from "react";
 import { FaHeart, FaRegHeart, FaShare, FaUserCircle } from "react-icons/fa";
-import { HiOutlineLightningBolt } from "react-icons/hi";
+import { HiOutlineFire, HiOutlineLightningBolt } from "react-icons/hi";
 import { IoCartOutline } from "react-icons/io5";
 import ProductZoom from "./ProductZoom";
 import QtyBox from "./QtyBox";
@@ -30,7 +30,7 @@ const ProductDetails = ({
     rating: 4.5,
     reviewCount: 128,
     images: ["/product_1.png", "/product_1.png", "/product_1.png"],
-    inStock: true,
+    demandStatus: "NORMAL",
     description:
       "Fuel your day the natural way with Buy One Gram Peanut Butter crafted from 100% premium roasted peanuts and absolutely nothing else. No added sugar, no palm oil, no preservatives—just pure, protein-packed goodness in every spoon.",
     features: [
@@ -167,7 +167,7 @@ const ProductDetails = ({
             </p>
 
             {/* Brand */}
-            <span className="text-xs font-bold uppercase tracking-wider text-[#c1591c] bg-[#c1591c]/10 px-3 py-1 rounded-full">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#059669] bg-[#059669]/10 px-3 py-1 rounded-full">
               {product.brand}
             </span>
 
@@ -186,7 +186,7 @@ const ProductDetails = ({
               />
               <span
                 onClick={scrollToReviews}
-                className="text-sm text-gray-600 cursor-pointer hover:text-[#c1591c] underline transition-colors"
+                className="text-sm text-gray-600 cursor-pointer hover:text-[#059669] underline transition-colors"
               >
                 {product.reviewCount} Reviews
               </span>
@@ -209,17 +209,17 @@ const ProductDetails = ({
               )}
             </div>
 
-            {/* Stock Status */}
+            {/* Demand Status Badge */}
             <div className="mt-4">
-              <span
-                className={`text-sm font-semibold px-3 py-1 rounded-full ${
-                  product.inStock
-                    ? "bg-green-100 text-green-700"
-                    : "bg-red-100 text-red-700"
-                }`}
-              >
-                {product.inStock ? "In Stock" : "Out of Stock"}
-              </span>
+              {product.demandStatus === "HIGH" ? (
+                <span className="inline-flex items-center gap-1.5 bg-red-100 text-red-700 text-sm font-bold px-3 py-1.5 rounded-full">
+                  <HiOutlineFire size={16} /> High Demand
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-sm font-medium px-3 py-1.5 rounded-full">
+                  Available
+                </span>
+              )}
             </div>
 
             {/* Description */}
@@ -235,7 +235,7 @@ const ProductDetails = ({
                     key={index}
                     className="flex items-center gap-2 text-sm text-gray-700"
                   >
-                    <span className="w-2 h-2 rounded-full bg-[#c1591c]" />
+                    <span className="w-2 h-2 rounded-full bg-[#059669]" />
                     {feature}
                   </li>
                 ))}
@@ -248,11 +248,11 @@ const ProductDetails = ({
 
               <Button
                 onClick={handleAddToCart}
-                disabled={loadingCart || !product.inStock}
+                disabled={loadingCart}
                 className={`!px-8 !py-3 !rounded-xl !font-bold !text-white !normal-case ${
-                  loadingCart || !product.inStock
+                  loadingCart
                     ? "!bg-gray-400"
-                    : "!bg-gray-900 hover:!bg-[#c1591c]"
+                    : "!bg-gray-900 hover:!bg-[#059669]"
                 }`}
               >
                 {loadingCart ? (
@@ -267,7 +267,6 @@ const ProductDetails = ({
 
               <Button
                 onClick={handleBuyNow}
-                disabled={!product.inStock}
                 variant="outlined"
                 className="!px-8 !py-3 !rounded-xl !font-bold !border-gray-900 !text-gray-900 !normal-case hover:!bg-gray-100"
               >
@@ -314,7 +313,7 @@ const ProductDetails = ({
                 onClick={() => setIsActiveTab(index)}
                 className={`px-6 py-3 font-semibold text-sm transition-colors ${
                   isActiveTab === index
-                    ? "text-[#c1591c] border-b-2 border-[#c1591c]"
+                    ? "text-[#059669] border-b-2 border-[#059669]"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
@@ -360,7 +359,7 @@ const ProductDetails = ({
                     />
                     <Button
                       type="submit"
-                      className="!bg-[#c1591c] !text-white !px-6 !py-2 !rounded-lg !normal-case !font-semibold"
+                      className="!bg-[#059669] !text-white !px-6 !py-2 !rounded-lg !normal-case !font-semibold"
                     >
                       Submit Review
                     </Button>
@@ -376,7 +375,7 @@ const ProductDetails = ({
                       style={{
                         backgroundColor: "var(--flavor-card-bg, #fffbf5)",
                         borderColor:
-                          "color-mix(in srgb, var(--flavor-color, #f5c16c) 20%, transparent)",
+                          "color-mix(in srgb, var(--flavor-color, #a7f3d0) 20%, transparent)",
                       }}
                     >
                       <div className="flex items-start gap-4">

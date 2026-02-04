@@ -1,8 +1,8 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData } from "@/utils/api";
+import { deleteData, getData, patchData } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
-import { Button } from "@mui/material";
+import { Button, Chip } from "@mui/material";
 import Checkbox from "@mui/material/Checkbox";
 import MenuItem from "@mui/material/MenuItem";
 import Rating from "@mui/material/Rating";
@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FaRegTrashAlt } from "react-icons/fa";
 import { FiSearch } from "react-icons/fi";
+import { HiOutlineFire } from "react-icons/hi";
 import { IoEyeOutline } from "react-icons/io5";
 import { RiEdit2Line } from "react-icons/ri";
 
@@ -30,7 +31,7 @@ const columns = [
   { id: "PRODUCT", label: "PRODUCT", minWidth: 300 },
   { id: "CATEGORY", label: "CATEGORY", minWidth: 100 },
   { id: "PRICE", label: "PRICE", minWidth: 100 },
-  { id: "STOCK", label: "STOCK", minWidth: 100 },
+  { id: "DEMAND", label: "DEMAND STATUS", minWidth: 120 },
   { id: "RATING", label: "RATING", minWidth: 100 },
   { id: "ACTIONS", label: "ACTIONS", minWidth: 200 },
 ];
@@ -115,6 +116,25 @@ const ProductsList = () => {
       }
     } catch (error) {
       toast.error("Failed to delete product");
+    }
+  };
+
+  const handleToggleDemand = async (productId, currentStatus) => {
+    const newStatus = currentStatus === "HIGH" ? "NORMAL" : "HIGH";
+    try {
+      const response = await patchData(
+        `/api/products/${productId}/demand`,
+        { demandStatus: newStatus },
+        token,
+      );
+      if (response.success) {
+        toast.success(`Demand status updated to ${newStatus}`);
+        fetchProducts();
+      } else {
+        toast.error(response.message || "Failed to update demand status");
+      }
+    } catch (error) {
+      toast.error("Failed to update demand status");
     }
   };
 
@@ -270,15 +290,31 @@ const ProductsList = () => {
                       </TableCell>
 
                       <TableCell>
-                        <span
-                          className={`font-bold ${
-                            product.stock > 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {product.stock > 0 ? "Available" : "Out of Stock"}
-                        </span>
+                        <Chip
+                          icon={
+                            product.demandStatus === "HIGH" ? (
+                              <HiOutlineFire />
+                            ) : null
+                          }
+                          label={
+                            product.demandStatus === "HIGH"
+                              ? "High Demand"
+                              : "Normal"
+                          }
+                          size="small"
+                          color={
+                            product.demandStatus === "HIGH"
+                              ? "error"
+                              : "default"
+                          }
+                          onClick={() =>
+                            handleToggleDemand(
+                              product._id,
+                              product.demandStatus,
+                            )
+                          }
+                          sx={{ cursor: "pointer" }}
+                        />
                       </TableCell>
 
                       <TableCell>

@@ -5,10 +5,10 @@
 
 :root {
   /* ========== PRIMARY COLORS ========== */
-  --color-primary: #c1591c; /* Main brand color (orange) */
-  --color-primary-light: #d06a2d; /* Lighter primary */
-  --color-primary-dark: #a04815; /* Darker primary */
-  --color-primary-rgb: 193, 89, 28; /* RGB for opacity usage */
+  --color-primary: #059669; /* Main brand color (emerald green) */
+  --color-primary-light: #10b981; /* Lighter primary */
+  --color-primary-dark: #047857; /* Darker primary */
+  --color-primary-rgb: 5, 150, 105; /* RGB for opacity usage */
 
   /* ========== SECONDARY COLORS ========== */
   --color-secondary: #02b290; /* Accent color (teal/green) */

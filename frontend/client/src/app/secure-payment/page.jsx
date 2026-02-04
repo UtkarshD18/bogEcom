@@ -87,7 +87,7 @@ const SecurePayment = () => {
                 key={index}
                 className="bg-white rounded-xl p-8 shadow-md text-center hover:shadow-lg transition-shadow"
               >
-                <div className="w-16 h-16 bg-[#c1591c]/10 rounded-full flex items-center justify-center mx-auto mb-4 text-[#c1591c]">
+                <div className="w-16 h-16 bg-[#059669]/10 rounded-full flex items-center justify-center mx-auto mb-4 text-[#059669]">
                   {feature.icon}
                 </div>
                 <h3 className="text-xl font-bold text-gray-800 mb-3">
@@ -190,7 +190,7 @@ const SecurePayment = () => {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/contact"
-              className="inline-block px-8 py-3 bg-[#c1591c] text-white font-semibold rounded-lg hover:bg-[#a04a17] transition-colors"
+              className="inline-block px-8 py-3 bg-[#059669] text-white font-semibold rounded-lg hover:bg-[#047857] transition-colors"
             >
               Contact Support
             </Link>

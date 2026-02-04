@@ -68,14 +68,21 @@ const orderSchema = new mongoose.Schema(
     // Status Tracking
     payment_status: {
       type: String,
-      enum: ["pending", "paid", "failed"],
+      enum: ["pending", "paid", "failed", "unavailable"],
       default: "pending",
       index: true,
     },
 
     order_status: {
       type: String,
-      enum: ["pending", "confirmed", "shipped", "delivered", "cancelled"],
+      enum: [
+        "pending",
+        "pending_payment",
+        "confirmed",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ],
       default: "pending",
       index: true,
     },
@@ -83,7 +90,7 @@ const orderSchema = new mongoose.Schema(
     // Delivery Information
     delivery_address: {
       type: mongoose.Schema.ObjectId,
-      ref: "address",
+      ref: "Address",
       default: null,
     },
 
@@ -117,6 +124,53 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    // ==================== NEW FIELDS FOR PHONEPE INTEGRATION ====================
+
+    // Payment method tracking (for future PhonePe integration)
+    paymentMethod: {
+      type: String,
+      enum: ["RAZORPAY", "PHONEPE", "COD", "PENDING"],
+      default: "PENDING",
+    },
+
+    // Coupon/Discount tracking
+    couponCode: {
+      type: String,
+      default: null,
+    },
+
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    finalAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // Affiliate/Referral tracking
+    affiliateCode: {
+      type: String,
+      default: null,
+    },
+
+    affiliateSource: {
+      type: String,
+      enum: ["influencer", "campaign", "referral", "organic", null],
+      default: null,
+    },
+
+    // Saved order flag (for pending payment orders)
+    isSavedOrder: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ==================== END NEW FIELDS ====================
 
     // Metadata
     failureReason: {

@@ -6,8 +6,11 @@ import {
   getDashboardStats,
   getOrderById,
   getOrderStats,
+  getPaymentGatewayStatus,
+  getUserOrderById,
   getUserOrders,
-  handleRazorpayWebhook,
+  handlePhonePeWebhook,
+  saveOrderForLater,
   updateOrderStatus,
   verifyPayment,
 } from "../controllers/order.controller.js";
@@ -22,23 +25,35 @@ const router = express.Router();
  *
  * Admin routes for managing orders
  * User routes for creating and viewing orders
+ * PhonePe integration in progress - payments temporarily disabled
  */
 
 // ==================== WEBHOOKS ====================
 
-// Razorpay webhook (must be before other routes)
-router.post("/webhook/razorpay", handleRazorpayWebhook);
+// PhonePe webhook (placeholder - will be activated when PhonePe integration is complete)
+router.post("/webhook/phonepe", handlePhonePeWebhook);
+
+// ==================== PUBLIC ROUTES ====================
+
+// Check payment gateway status (PhonePe transition phase)
+router.get("/payment-status", getPaymentGatewayStatus);
 
 // ==================== USER ROUTES ====================
 
 // Create order (checkout)
 router.post("/", optionalAuth, createOrder);
 
+// Save order for later (when payment is unavailable)
+router.post("/save-for-later", optionalAuth, saveOrderForLater);
+
 // Verify payment
 router.post("/verify-payment", optionalAuth, verifyPayment);
 
 // Get user's orders
 router.get("/user/my-orders", optionalAuth, getUserOrders);
+
+// Get user's single order by ID (with ownership check)
+router.get("/user/order/:orderId", auth, getUserOrderById);
 
 // ==================== TEST ROUTES (Development Only) ====================
 

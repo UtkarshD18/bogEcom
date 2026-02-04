@@ -158,7 +158,7 @@ export default function MembershipCheckoutPage() {
           name: cookies.get("userName") || "",
         },
         theme: {
-          color: "#c1591c",
+          color: "#059669",
         },
         modal: {
           ondismiss: function () {
@@ -238,7 +238,7 @@ export default function MembershipCheckoutPage() {
           style={{
             marginTop: 20,
             padding: "12px 24px",
-            background: "#c1591c",
+            background: "#059669",
             color: "#fff",
             border: "none",
             borderRadius: 8,
@@ -278,14 +278,14 @@ export default function MembershipCheckoutPage() {
           borderRadius: 16,
           padding: 32,
           boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-          border: "2px solid #ff6b35",
+          border: "2px solid #059669",
         }}
       >
         <h2
           style={{
             fontSize: "1.5rem",
             fontWeight: 700,
-            color: "#c1591c",
+            color: "#059669",
             marginBottom: 16,
           }}
         >
@@ -384,7 +384,7 @@ export default function MembershipCheckoutPage() {
             padding: "16px",
             background: isProcessing
               ? "#ccc"
-              : "linear-gradient(135deg, #ff6b35 0%, #c1591c 100%)",
+              : "linear-gradient(135deg, #059669 0%, #059669 100%)",
             color: "#fff",
             fontWeight: 700,
             fontSize: "1.1rem",

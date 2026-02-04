@@ -10,25 +10,40 @@
 >   - Admin: `3001` (set in `frontend/admin/package.json`)
 > - **Never commit your actual `.env` or `.env.local` files.** Only `.env.example` is tracked for onboarding and documentation.
 
-**Production-Ready Full-Stack E-Commerce Solution with Razorpay Payment Integration**
+**Production-Ready Full-Stack E-Commerce Solution with PhonePe Payment Integration**
 
 ![Production Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
-![Version](https://img.shields.io/badge/Version-1.0.0-blue)
+![Version](https://img.shields.io/badge/Version-1.2.0-blue)
 ![Last Audit](https://img.shields.io/badge/Last%20Audit-January%202026-orange)
+![Payment](https://img.shields.io/badge/Payment-PhonePe%20Onboarding-yellow)
 
 ---
 
 ## 🚨 Production Readiness Status
 
-| Component         | Status   | Notes                          |
-| ----------------- | -------- | ------------------------------ |
-| Backend API       | ✅ Ready | All endpoints functional       |
-| Client Frontend   | ✅ Ready | All pages working              |
-| Admin Panel       | ✅ Ready | Full CRUD operations           |
-| Razorpay Payment  | ✅ Ready | Signature verification working |
-| Cloudinary Upload | ✅ Ready | Images upload correctly        |
-| Authentication    | ✅ Ready | JWT + Google OAuth             |
-| Cart/Wishlist     | ✅ Ready | API + localStorage fallback    |
+| Component          | Status        | Notes                             |
+| ------------------ | ------------- | --------------------------------- |
+| Backend API        | ✅ Ready      | All endpoints functional          |
+| Client Frontend    | ✅ Ready      | All pages working                 |
+| Admin Panel        | ✅ Ready      | Full CRUD operations              |
+| PhonePe Payment    | 🟡 Onboarding | Awaiting activation               |
+| Coupon System      | ✅ Ready      | Backend validation with affiliate |
+| Affiliate Tracking | ✅ Ready      | URL params + coupon integration   |
+| Cloudinary Upload  | ✅ Ready      | Images upload correctly           |
+| Authentication     | ✅ Ready      | JWT + Google OAuth                |
+| Cart/Wishlist      | ✅ Ready      | API + localStorage fallback       |
+| Push Notifications | ✅ Ready      | FCM for offers + order updates    |
+
+### ⚠️ PhonePe Payment Gateway Status
+
+> **Current Status:** PhonePe integration is in **onboarding phase**. Payments are temporarily unavailable.
+>
+> **Checkout Behavior:**
+>
+> - Clicking "Pay Now" displays a professional modal explaining the situation
+> - Users can optionally "Save Order" to create a pending order for later payment
+> - No actual payment processing occurs until PhonePe activation is complete
+> - Set `PHONEPE_ENABLED=true` in server `.env` when activated
 
 ### Quick Start Commands
 
@@ -57,10 +72,12 @@ cd frontend/admin && npm install && npm run dev
 6. [Running the Application](#running-the-application)
 7. [API Documentation](#api-documentation)
 8. [Payment Gateway Setup](#payment-gateway-setup)
-9. [Database Schema](#database-schema)
-10. [Features & Workflows](#features--workflows)
-11. [Deployment Guide](#deployment-guide)
-12. [Troubleshooting](#troubleshooting)
+9. [Coupon System](#coupon-system)
+10. [Affiliate Tracking](#affiliate-tracking)
+11. [Database Schema](#database-schema)
+12. [Features & Workflows](#features--workflows)
+13. [Deployment Guide](#deployment-guide)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -69,7 +86,7 @@ cd frontend/admin && npm install && npm run dev
 **Healthy One Gram** is a premium e-commerce platform specializing in health-conscious food products. The platform features:
 
 - ✅ **Multi-Role System**: Admin, Client, Guest checkout
-- ✅ **Razorpay Payment Integration**: Real-time order processing
+- ✅ **PhonePe Payment Integration**: (Onboarding in progress)
 - ✅ **Real-time Order Tracking**: Admin dashboard with live notifications
 - ✅ **Responsive Design**: Mobile-first, optimized UI
 - ✅ **Blog Management**: Admin-controlled content
@@ -146,7 +163,8 @@ bogEcom/
 │   │   ├── banner.model.js
 │   │   ├── homeSlide.model.js
 │   │   ├── blog.model.js
-│   │   └── coupon.model.js
+│   │   ├── coupon.model.js
+│   │   └── settings.model.js       # ⭐ Admin Settings (NEW)
 │   ├── routes/
 │   │   ├── order.route.js          # ⭐ Payment Routes
 │   │   ├── product.route.js
@@ -156,6 +174,7 @@ bogEcom/
 │   │   ├── wishlist.route.js
 │   │   ├── banner.route.js
 │   │   ├── homeSlide.route.js
+│   │   ├── settings.route.js       # ⭐ Settings Routes (NEW)
 │   │   ├── blog.route.js
 │   │   └── upload.route.js
 │   ├── middlewares/
@@ -177,7 +196,8 @@ bogEcom/
 │   │   │   │   ├── products/
 │   │   │   │   ├── checkout/       # ⭐ Checkout Page
 │   │   │   │   ├── cart/           # ⭐ Cart Page
-│   │   │   │   ├── my-orders/      # ⭐ Orders Page
+│   │   │   │   ├── my-orders/      # ⭐ Orders List Page
+│   │   │   │   ├── orders/[orderId]/ # ⭐ Order Details Page (NEW)
 │   │   │   │   ├── login/
 │   │   │   │   ├── register/
 │   │   │   │   ├── my-account/
@@ -320,6 +340,9 @@ CLOUDINARY_API_SECRET=your_api_secret
 RAZORPAY_KEY_ID=rzp_test_xxxxx_or_rzp_live_xxxxx
 RAZORPAY_KEY_SECRET=your_razorpay_secret_key
 RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
+
+# PhonePe (Payment Gateway - set to true when activated)
+PHONEPE_ENABLED=false
 
 # Frontend URLs
 FRONTEND_URL=http://localhost:3000,http://localhost:3001
@@ -582,7 +605,50 @@ Response: 200
 
 ---
 
-#### **4. Razorpay Webhook** (Production Only)
+#### **4. Get Single Order Details**
+
+```http
+GET /api/orders/user/order/:orderId
+Authorization: Bearer {accessToken}
+
+Response: 200
+{
+  "error": false,
+  "success": true,
+  "data": {
+    "_id": "507f1f77bcf86cd799439013",
+    "user": "507f1f77bcf86cd799439000",
+    "products": [...],
+    "delivery_address": {...},
+    "paymentId": "pay_IluGWxBm9U8zJ8",
+    "payment_status": "paid",         // paid, pending, unavailable, failed
+    "order_status": "confirmed",      // pending_payment, confirmed, shipped, delivered, cancelled
+    "subTotal": 600,
+    "tax": 30,
+    "shipping": 50,
+    "discountAmount": 0,
+    "totalAmt": 680,
+    "couponCode": null,
+    "affiliateCode": null,
+    "paymentMethod": "razorpay",
+    "createdAt": "2026-01-25T10:30:00Z"
+  }
+}
+```
+
+**Status Codes:**
+
+- `200` ✅ Order fetched
+- `401` ❌ Not authenticated
+- `403` ❌ Not authorized (not your order)
+- `404` ❌ Order not found
+- `500` ❌ Server error
+
+**Flow:** User clicks "View Order Details" → Fetch order → Display full details with pending payment notice (if applicable)
+
+---
+
+#### **5. Razorpay Webhook** (Production Only)
 
 ```http
 POST /api/orders/webhook/razorpay
@@ -893,6 +959,141 @@ Response: 200
 - [ ] Configure database backups
 - [ ] Setup logging & monitoring
 
+### **PhonePe Activation**
+
+When PhonePe onboarding is complete:
+
+1. Set `PHONEPE_ENABLED=true` in server `.env`
+2. Add PhonePe credentials:
+   ```env
+   PHONEPE_MERCHANT_ID=your_merchant_id
+   PHONEPE_SALT_KEY=your_salt_key
+   PHONEPE_SALT_INDEX=1
+   ```
+3. Restart the server
+4. The checkout modal will automatically switch to active payment mode
+
+---
+
+## 🎟️ Coupon System
+
+### **Overview**
+
+Backend-validated coupon system with support for:
+
+- Percentage and fixed amount discounts
+- Minimum order requirements
+- Usage limits (total and per-user)
+- Expiration dates
+- Affiliate/influencer tracking
+
+### **API Endpoints**
+
+| Method | Endpoint                    | Access | Description                     |
+| ------ | --------------------------- | ------ | ------------------------------- |
+| POST   | `/api/coupons/validate`     | Public | Validate and calculate discount |
+| GET    | `/api/coupons/admin/all`    | Admin  | List all coupons                |
+| POST   | `/api/coupons/admin/create` | Admin  | Create new coupon               |
+| PUT    | `/api/coupons/admin/:id`    | Admin  | Update coupon                   |
+| DELETE | `/api/coupons/admin/:id`    | Admin  | Delete coupon                   |
+
+### **Coupon Validation Request**
+
+```javascript
+POST /api/coupons/validate
+{
+  "code": "SAVE20",
+  "orderAmount": 1500
+}
+
+// Response
+{
+  "success": true,
+  "data": {
+    "code": "SAVE20",
+    "discountType": "percentage",
+    "discountValue": 20,
+    "discountAmount": 300,
+    "finalAmount": 1200,
+    "isAffiliateCoupon": false
+  }
+}
+```
+
+### **Coupon Schema**
+
+```javascript
+{
+  code: String,              // Unique, uppercase
+  discountType: String,      // "percentage" | "fixed"
+  discountValue: Number,
+  minOrderAmount: Number,
+  maxDiscountAmount: Number,
+  usageLimit: Number,
+  usedCount: Number,
+  perUserLimit: Number,
+  expiresAt: Date,
+  isActive: Boolean,
+  isAffiliate: Boolean,      // For affiliate tracking
+  affiliateSource: String,   // "influencer" | "campaign" | "referral"
+  createdBy: ObjectId
+}
+```
+
+---
+
+## 🔗 Affiliate Tracking
+
+### **Overview**
+
+Track referrals and affiliate sales through URL parameters and coupon codes.
+
+### **URL Parameters**
+
+The system automatically captures these URL parameters:
+
+| Parameter   | Example                 | Source Type |
+| ----------- | ----------------------- | ----------- |
+| `ref`       | `?ref=JOHN2024`         | referral    |
+| `affiliate` | `?affiliate=PARTNER123` | influencer  |
+| `campaign`  | `?campaign=SUMMER_SALE` | campaign    |
+
+### **How It Works**
+
+1. **User clicks affiliate link:** `https://yoursite.com?ref=INFLUENCER_CODE`
+2. **Code is stored:** Saved in localStorage with 30-day expiry
+3. **User shops:** Code persists across sessions
+4. **At checkout:** Affiliate data is attached to order
+5. **Coupon integration:** Affiliate coupons also set tracking
+
+### **Client Usage**
+
+```javascript
+import {
+  initAffiliateTracking,
+  getStoredAffiliateData,
+} from "@/utils/affiliateTracking";
+
+// On page load (automatically captures URL params)
+initAffiliateTracking();
+
+// At checkout
+const affiliateData = getStoredAffiliateData();
+// { code: 'JOHN2024', source: 'referral', timestamp: 1705..., fromUrl: true }
+```
+
+### **Order Integration**
+
+Orders include affiliate data:
+
+```javascript
+{
+  affiliateCode: "JOHN2024",
+  affiliateSource: "referral",  // "influencer" | "campaign" | "referral" | "organic"
+  // ... other order fields
+}
+```
+
 ---
 
 ## 💾 Database Schema
@@ -912,11 +1113,25 @@ Response: 200
       subTotal: Number
     }
   ],
-  paymentId: String,                 // Razorpay Payment ID
-  payment_status: String,            // "pending" | "paid" | "failed"
-  order_status: String,              // "pending" | "confirmed" | "shipped" | "delivered" | "cancelled"
+  paymentId: String,                 // Razorpay/PhonePe Payment ID
+  paymentMethod: String,             // "RAZORPAY" | "PHONEPE" | "COD" | "PENDING"
+  payment_status: String,            // "pending" | "paid" | "failed" | "unavailable"
+  order_status: String,              // "pending" | "pending_payment" | "confirmed" | "shipped" | "delivered" | "cancelled"
   delivery_address: ObjectId,        // Reference to Address
   totalAmt: Number,
+
+  // Coupon & Discount
+  couponCode: String,
+  discountAmount: Number,
+  finalAmount: Number,
+
+  // Affiliate Tracking
+  affiliateCode: String,
+  affiliateSource: String,           // "influencer" | "campaign" | "referral" | "organic"
+
+  // Mock Order Support
+  isSavedOrder: Boolean,             // true if saved during PhonePe onboarding
+
   createdAt: Date,
   updatedAt: Date
 }
@@ -966,7 +1181,121 @@ Response: 200
 
 ---
 
-## 🔄 Features & Workflows
+## � Push Notifications System
+
+### **Overview**
+
+The platform uses Firebase Cloud Messaging (FCM) for push notifications with strict separation between offer and order notifications.
+
+| Notification Type | Target         | Trigger                    | Content         |
+| ----------------- | -------------- | -------------------------- | --------------- |
+| Offer/Coupon      | Guests + Users | Admin creates coupon       | Discount offers |
+| Order Update      | Users ONLY     | Admin updates order status | Order status    |
+
+### **Privacy & Security Rules**
+
+- ✅ **Offer notifications do NOT require login**
+- ✅ **Order notifications require login**
+- ✅ Guests only receive promotional notifications
+- ✅ No personal data in offer notifications
+- ✅ Backend-only notification sending
+- ✅ Tokens stored anonymously for guests
+
+### **Automatic Admin → Notification Flow**
+
+```
+Admin creates/activates coupon
+   ↓
+Coupon saved in MongoDB
+   ↓
+Backend detects: isActive === true
+   ↓
+Backend calls sendOfferNotification(coupon)
+   ↓
+FCM sends to all guest + user tokens
+   ↓
+Users receive push notification
+```
+
+### **Order Update Notification Flow**
+
+```
+Admin updates order status
+   ↓
+updateOrderStatus(orderId, newStatus)
+   ↓
+Backend fetches user tokens (userId match)
+   ↓
+sendOrderUpdateNotification(order, newStatus)
+   ↓
+User receives order status notification
+```
+
+### **Frontend Permission Flow**
+
+```
+Guest visits site
+   ↓
+After delay, show Offer Popup
+   ↓
+User copies coupon code
+   ↓
+Prompt for notification permission
+   ↓
+On grant: Register service worker
+   ↓
+Get FCM token
+   ↓
+POST /api/notifications/register
+   ↓
+Token stored with userType="guest"
+```
+
+### **API Endpoints**
+
+| Method | Endpoint                            | Auth  | Description               |
+| ------ | ----------------------------------- | ----- | ------------------------- |
+| POST   | /api/notifications/register         | None  | Register FCM token        |
+| DELETE | /api/notifications/unregister       | None  | Unregister token          |
+| GET    | /api/notifications/admin/stats      | Admin | Get notification stats    |
+| POST   | /api/notifications/admin/send-offer | Admin | Manual offer notification |
+
+### **Environment Variables**
+
+Add to `server/.env`:
+
+```bash
+# Firebase Admin SDK (for backend push notifications)
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_CLIENT_EMAIL=your-service-account-email
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+```
+
+Add to `frontend/client/.env.local`:
+
+```bash
+# Firebase VAPID Key (for web push)
+NEXT_PUBLIC_FIREBASE_VAPID_KEY=your-vapid-key
+```
+
+### **MongoDB Collection: NotificationTokens**
+
+```javascript
+{
+  token: String (unique, FCM token),
+  userId: ObjectId | null,
+  userType: "guest" | "user",
+  isActive: Boolean,
+  platform: "web" | "android" | "ios",
+  failureCount: Number,
+  lastUsedAt: Date,
+  createdAt: Date
+}
+```
+
+---
+
+## �🔄 Features & Workflows
 
 ### **1. Complete Order Flow**
 
@@ -1065,6 +1394,36 @@ Client fetches: GET /api/orders/user/my-orders
    ↓
 Displays in My Orders page
 ```
+
+### **6. Order Details Page (NEW)**
+
+```
+User clicks "View Order Details" in My Orders
+   ↓
+Navigate to /orders/{orderId}
+   ↓
+Frontend calls: GET /api/orders/user/order/:orderId
+   ↓
+Backend verifies:
+- User is authenticated
+- User owns this order (userId matches)
+   ↓
+If order_status = "pending_payment" AND payment_status = "unavailable":
+- Show yellow notice: "Payment Pending"
+- Explain PhonePe onboarding status
+- Show "Retry Payment" button (currently disabled)
+   ↓
+Display full order details:
+- Order ID, date
+- Items with quantities and prices
+- Subtotal, discount, tax, shipping
+- Grand total
+- Delivery address
+- Order status timeline
+- Payment details
+```
+
+**Note:** "Retry Payment" button currently shows a modal explaining that payment gateway is under onboarding. Once PhonePe is activated, this will initiate a real payment flow.
 
 ---
 

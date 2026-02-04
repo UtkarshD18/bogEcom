@@ -16,9 +16,9 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
+import { HiOutlineFire } from "react-icons/hi";
 import { IoMdCart, IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
 import { MdLocalShipping, MdPolicy, MdVerified } from "react-icons/md";
-import { TbTruckReturn } from "react-icons/tb";
 
 /**
  * Product Detail Page
@@ -167,7 +167,7 @@ const ProductDetailPage = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <CircularProgress style={{ color: "#c1591c" }} />
+        <CircularProgress style={{ color: "#059669" }} />
       </div>
     );
   }
@@ -196,7 +196,7 @@ const ProductDetailPage = () => {
           The product you're looking for doesn't exist or has been removed.
         </p>
         <Link href="/products">
-          <Button variant="contained" style={{ backgroundColor: "#c1591c" }}>
+          <Button variant="contained" style={{ backgroundColor: "#059669" }}>
             Browse Products
           </Button>
         </Link>
@@ -213,11 +213,11 @@ const ProductDetailPage = () => {
       <div className="container px-3 sm:px-4">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-xs sm:text-sm text-gray-500 mb-4 sm:mb-6 overflow-x-auto whitespace-nowrap pb-2">
-          <Link href="/" className="hover:text-[#c1591c]">
+          <Link href="/" className="hover:text-[#059669]">
             Home
           </Link>
           <span>/</span>
-          <Link href="/products" className="hover:text-[#c1591c]">
+          <Link href="/products" className="hover:text-[#059669]">
             Products
           </Link>
           <span>/</span>
@@ -225,7 +225,7 @@ const ProductDetailPage = () => {
             <>
               <Link
                 href={`/products?category=${product.category._id || product.category}`}
-                className="hover:text-[#c1591c]"
+                className="hover:text-[#059669]"
               >
                 {product.category.name || product.categoryName || "Category"}
               </Link>
@@ -254,7 +254,7 @@ const ProductDetailPage = () => {
             <div className="flex flex-col">
               {/* Brand */}
               {product.brand && (
-                <p className="text-xs font-bold uppercase tracking-wider text-[#c1591c] mb-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#059669] mb-2">
                   {product.brand}
                 </p>
               )}
@@ -296,6 +296,26 @@ const ProductDetailPage = () => {
                 )}
               </div>
 
+              {/* High Traffic Alert Banner - Prominent notice for high demand products */}
+              {product.demandStatus === "HIGH" && (
+                <div className="mb-6 p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-amber-100 rounded-lg">
+                      <HiOutlineFire className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-amber-800 text-sm">
+                        High Traffic Product
+                      </h4>
+                      <p className="text-amber-700 text-sm mt-0.5">
+                        This product is in high demand. Stock availability may
+                        vary. Your order will be confirmed once processed.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Short Description */}
               {product.shortDescription && (
                 <p className="text-gray-600 mb-6 leading-relaxed">
@@ -303,23 +323,18 @@ const ProductDetailPage = () => {
                 </p>
               )}
 
-              {/* Stock Status */}
+              {/* Demand Status Badge */}
               <div className="flex items-center gap-2 mb-6">
-                {product.inStock !== false && product.stock !== 0 ? (
-                  <>
-                    <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-                    <span className="text-green-600 font-medium">
-                      In Stock{" "}
-                      {product.stock ? `(${product.stock} available)` : ""}
-                    </span>
-                  </>
+                {product.demandStatus === "HIGH" ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold bg-red-100 text-red-600">
+                    <HiOutlineFire className="w-4 h-4" />
+                    High Demand
+                  </span>
                 ) : (
-                  <>
-                    <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-                    <span className="text-red-600 font-medium">
-                      Out of Stock
-                    </span>
-                  </>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold bg-green-100 text-green-600">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    Available
+                  </span>
                 )}
               </div>
 
@@ -339,10 +354,9 @@ const ProductDetailPage = () => {
                   size="large"
                   startIcon={<IoMdCart />}
                   onClick={handleAddToCart}
-                  disabled={product.inStock === false || product.stock === 0}
                   sx={{
-                    backgroundColor: "#c1591c",
-                    "&:hover": { backgroundColor: "#a04a17" },
+                    backgroundColor: "#059669",
+                    "&:hover": { backgroundColor: "#047857" },
                     padding: "12px 32px",
                     borderRadius: "12px",
                     fontWeight: "bold",
@@ -380,7 +394,7 @@ const ProductDetailPage = () => {
               {/* Features */}
               <div className="grid grid-cols-2 gap-4 py-6 border-t border-b border-gray-100">
                 <div className="flex items-center gap-3">
-                  <MdLocalShipping className="text-2xl text-[#c1591c]" />
+                  <MdLocalShipping className="text-2xl text-[#059669]" />
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">
                       Free Delivery
@@ -389,18 +403,18 @@ const ProductDetailPage = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <TbTruckReturn className="text-2xl text-[#c1591c]" />
+                  <MdVerified className="text-2xl text-[#059669]" />
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">
-                      Easy Returns
+                      Quality Products
                     </p>
                     <p className="text-xs text-gray-500">
-                      7 days return policy
+                      Fresh & authentic items
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <MdVerified className="text-2xl text-[#c1591c]" />
+                  <MdVerified className="text-2xl text-[#059669]" />
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">
                       100% Authentic
@@ -409,7 +423,7 @@ const ProductDetailPage = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <MdPolicy className="text-2xl text-[#c1591c]" />
+                  <MdPolicy className="text-2xl text-[#059669]" />
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">
                       Secure Payment
@@ -433,7 +447,7 @@ const ProductDetailPage = () => {
                     <span className="font-medium">Category:</span>{" "}
                     <Link
                       href={`/products?category=${product.category._id || product.category}`}
-                      className="text-[#c1591c] hover:underline"
+                      className="text-[#059669] hover:underline"
                     >
                       {product.category.name ||
                         product.categoryName ||
@@ -456,7 +470,7 @@ const ProductDetailPage = () => {
                 onClick={() => setActiveTab(tab)}
                 className={`px-6 py-3 font-semibold text-sm capitalize transition-colors ${
                   activeTab === tab
-                    ? "text-[#c1591c] border-b-2 border-[#c1591c]"
+                    ? "text-[#059669] border-b-2 border-[#059669]"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
@@ -525,10 +539,6 @@ const ProductDetailPage = () => {
                   <strong>Free Shipping:</strong> On orders above ₹499.
                 </p>
                 <p>
-                  <strong>Returns:</strong> Easy 7-day return policy for all
-                  products.
-                </p>
-                <p>
                   <strong>Packaging:</strong> Eco-friendly packaging to ensure
                   product safety.
                 </p>
@@ -555,7 +565,7 @@ const ProductDetailPage = () => {
                   discount={item.discount || 0}
                   rating={item.rating || 4.5}
                   image={item.image || item.images?.[0] || "/product_1.png"}
-                  inStock={item.inStock !== false}
+                  product={item}
                 />
               ))}
             </div>

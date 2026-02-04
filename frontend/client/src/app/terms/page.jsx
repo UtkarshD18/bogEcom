@@ -146,7 +146,7 @@ export default function TermsPage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="text-green-600">✓</span>
-                  <span>Request refunds within 7 days</span>
+                  <span>Get help with your orders</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="text-green-600">✓</span>

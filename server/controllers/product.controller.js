@@ -38,17 +38,108 @@ export const getProducts = async (req, res) => {
     // Build filter object
     const filter = { isActive: true };
 
-    // Text search
-    if (search) {
-      filter.$text = { $search: search };
+    // Debug: Count all products first
+    const totalAllProducts = await ProductModel.countDocuments({});
+    const totalActiveProducts = await ProductModel.countDocuments({
+      isActive: true,
+    });
+    console.log(
+      "[Product Search] Total products in DB:",
+      totalAllProducts,
+      "Active:",
+      totalActiveProducts,
+    );
+
+    // Text search - supports 1+ character partial matching with regex
+    if (search && search.trim().length >= 1) {
+      const searchTerm = search.trim();
+
+      // Sanitize search term to prevent ReDoS attacks
+      // Escape special regex characters
+      const sanitizedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const searchRegex = new RegExp(sanitizedTerm, "i");
+
+      console.log(
+        "[Product Search] Searching for:",
+        searchTerm,
+        "Regex:",
+        searchRegex,
+      );
+
+      // Find categories matching the search term to include products in those categories
+      const matchingCategories = await CategoryModel.find({
+        name: { $regex: searchRegex },
+      })
+        .select("_id")
+        .lean();
+      const categoryIds = matchingCategories.map((c) => c._id);
+
+      console.log(
+        "[Product Search] Matching categories:",
+        matchingCategories.length,
+      );
+
+      // Build search conditions
+      const searchConditions = [
+        { name: { $regex: searchRegex } },
+        { brand: { $regex: searchRegex } },
+        { tags: { $elemMatch: { $regex: searchRegex } } },
+      ];
+
+      // Add category match if any categories match the search
+      if (categoryIds.length > 0) {
+        searchConditions.push({ category: { $in: categoryIds } });
+      }
+
+      // For longer queries, also search description
+      if (searchTerm.length >= 3) {
+        searchConditions.push({ description: { $regex: searchRegex } });
+      }
+
+      filter.$or = searchConditions;
+
+      console.log("[Product Search] Filter:", JSON.stringify(filter));
+
+      // Debug: Test the name search directly
+      const nameMatchTest = await ProductModel.find({
+        name: { $regex: searchRegex },
+        isActive: true,
+      })
+        .select("name")
+        .limit(5)
+        .lean();
+      console.log(
+        "[Product Search] Direct name match test:",
+        nameMatchTest.map((p) => p.name),
+      );
     }
 
-    // Category filter
+    // Category filter - support both ObjectId and slug
     if (category) {
-      if (category.includes(",")) {
-        filter.category = { $in: category.split(",") };
+      // Check if it's a valid ObjectId
+      const mongoose = (await import("mongoose")).default;
+      const isValidObjectId = mongoose.Types.ObjectId.isValid(category);
+
+      if (isValidObjectId) {
+        if (category.includes(",")) {
+          filter.category = { $in: category.split(",") };
+        } else {
+          filter.category = category;
+        }
       } else {
-        filter.category = category;
+        // It's a slug - look up the category by slug
+        const categoryDoc = await CategoryModel.findOne({ slug: category });
+        if (categoryDoc) {
+          filter.category = categoryDoc._id;
+        } else {
+          // Try to find by name (case-insensitive)
+          const categoryByName = await CategoryModel.findOne({
+            name: { $regex: new RegExp(`^${category}$`, "i") },
+          });
+          if (categoryByName) {
+            filter.category = categoryByName._id;
+          }
+        }
       }
     }
 
@@ -102,6 +193,11 @@ export const getProducts = async (req, res) => {
         .lean(),
       ProductModel.countDocuments(filter),
     ]);
+
+    console.log("[Product Search] Found:", totalProducts, "products");
+    if (search && products.length > 0) {
+      console.log("[Product Search] First result:", products[0]?.name);
+    }
 
     const totalPages = Math.ceil(totalProducts / Number(limit));
 
@@ -280,6 +376,7 @@ export const createProduct = async (req, res) => {
       tags,
       isFeatured,
       isNewArrival,
+      demandStatus,
       specifications,
       ingredients,
       freeShipping,
@@ -329,6 +426,7 @@ export const createProduct = async (req, res) => {
       tags: tags || [],
       isFeatured: isFeatured || false,
       isNewArrival: isNewArrival || false,
+      demandStatus: demandStatus || "NORMAL",
       specifications,
       ingredients,
       freeShipping: freeShipping || false,
@@ -669,6 +767,54 @@ export const deleteReview = async (req, res) => {
   }
 };
 
+/**
+ * Update product demand status (Admin only)
+ * @route PATCH /api/products/:id/demand
+ */
+export const updateDemandStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { demandStatus } = req.body;
+
+    // Validate demandStatus
+    if (!demandStatus || !["NORMAL", "HIGH"].includes(demandStatus)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid demandStatus. Must be 'NORMAL' or 'HIGH'",
+      });
+    }
+
+    const product = await ProductModel.findByIdAndUpdate(
+      id,
+      { demandStatus },
+      { new: true, runValidators: true },
+    );
+
+    if (!product) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    res.status(200).json({
+      error: false,
+      success: true,
+      message: `Product demand status updated to ${demandStatus}`,
+      data: product,
+    });
+  } catch (error) {
+    console.error("Update demand status error:", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to update demand status",
+    });
+  }
+};
+
 export default {
   getProducts,
   getProductById,
@@ -681,4 +827,5 @@ export default {
   updateStock,
   addReview,
   deleteReview,
+  updateDemandStatus,
 };

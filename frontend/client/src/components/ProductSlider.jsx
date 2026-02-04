@@ -96,7 +96,6 @@ const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
               discount={product.discount}
               rating={product.rating}
               image={product.thumbnail || product.images?.[0]}
-              inStock={product.stock > 0}
               product={product}
             />
           </SwiperSlide>

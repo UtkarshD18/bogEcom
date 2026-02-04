@@ -1,16 +1,22 @@
-import crypto from "crypto";
-import Razorpay from "razorpay";
 import MembershipPlanModel from "../models/membershipPlan.model.js";
 import UserModel from "../models/user.model.js";
 
-// Initialize Razorpay
-let razorpay = null;
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-  razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET,
-  });
-}
+// ==================== PAYMENT PROVIDER CONFIGURATION ====================
+
+/**
+ * Payment Provider Constant
+ * Currently: PhonePe (onboarding in progress)
+ */
+const PAYMENT_PROVIDER = "PHONEPE";
+
+/**
+ * Check if payment gateway is enabled
+ * Currently returns false - PhonePe onboarding in progress
+ * Set PHONEPE_ENABLED=true in .env when PhonePe is activated
+ */
+const isPaymentEnabled = () => {
+  return process.env.PHONEPE_ENABLED === "true";
+};
 
 /**
  * Membership Controller
@@ -99,75 +105,28 @@ export const getMembershipStatus = async (req, res) => {
 // ==================== USER ENDPOINTS ====================
 
 /**
- * Create membership order (initiates Razorpay payment)
+ * Create membership order (PhonePe - onboarding in progress)
  * @route POST /api/membership/create-order
  */
 export const createMembershipOrder = async (req, res) => {
   try {
-    const userId = req.user;
-    const { planId } = req.body;
-
-    if (!razorpay) {
+    // Check if payments are enabled (PhonePe onboarding)
+    if (!isPaymentEnabled()) {
       return res.status(503).json({
         error: true,
         success: false,
-        message: "Payment service is not configured",
+        message:
+          "Membership payments are temporarily unavailable. PhonePe onboarding is in progress.",
+        paymentProvider: PAYMENT_PROVIDER,
       });
     }
 
-    // Get the plan
-    const plan = planId
-      ? await MembershipPlanModel.findById(planId)
-      : await MembershipPlanModel.findOne({ isActive: true });
-
-    if (!plan) {
-      return res.status(404).json({
-        error: true,
-        success: false,
-        message: "Membership plan not found",
-      });
-    }
-
-    // Check if user already has active membership
-    const user = await UserModel.findById(userId);
-    if (
-      user.isMember &&
-      user.membershipExpiry &&
-      new Date() < new Date(user.membershipExpiry)
-    ) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "You already have an active membership",
-        data: { expiry: user.membershipExpiry },
-      });
-    }
-
-    // Create Razorpay order
-    const razorpayOrder = await razorpay.orders.create({
-      amount: Math.round(plan.price * 100), // Amount in paise
-      currency: "INR",
-      receipt: `membership_${userId}_${Date.now()}`,
-      payment_capture: 1,
-      notes: {
-        userId: userId.toString(),
-        planId: plan._id.toString(),
-        type: "membership",
-      },
-    });
-
-    res.status(201).json({
-      error: false,
-      success: true,
-      message: "Membership order created",
-      data: {
-        orderId: razorpayOrder.id,
-        amount: plan.price,
-        currency: "INR",
-        planId: plan._id,
-        planName: plan.name,
-        keyId: process.env.RAZORPAY_KEY_ID,
-      },
+    // TODO: PhonePe integration will be implemented here
+    return res.status(503).json({
+      error: true,
+      success: false,
+      message: "PhonePe integration coming soon for memberships.",
+      paymentProvider: PAYMENT_PROVIDER,
     });
   } catch (error) {
     console.error("Error creating membership order:", error);
@@ -180,80 +139,28 @@ export const createMembershipOrder = async (req, res) => {
 };
 
 /**
- * Verify membership payment
+ * Verify membership payment (PhonePe - onboarding in progress)
  * @route POST /api/membership/verify-payment
  */
 export const verifyMembershipPayment = async (req, res) => {
   try {
-    const userId = req.user;
-    const { razorpayPaymentId, razorpayOrderId, razorpaySignature, planId } =
-      req.body;
-
-    if (!razorpayPaymentId || !razorpayOrderId || !razorpaySignature) {
-      return res.status(400).json({
+    // Check if payments are enabled (PhonePe onboarding)
+    if (!isPaymentEnabled()) {
+      return res.status(503).json({
         error: true,
         success: false,
-        message: "Payment details are required",
+        message:
+          "Membership payment verification unavailable. PhonePe onboarding in progress.",
+        paymentProvider: PAYMENT_PROVIDER,
       });
     }
 
-    // Verify signature
-    const hmac = crypto.createHmac("sha256", process.env.RAZORPAY_KEY_SECRET);
-    hmac.update(`${razorpayOrderId}|${razorpayPaymentId}`);
-    const generatedSignature = hmac.digest("hex");
-
-    if (generatedSignature !== razorpaySignature) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Payment verification failed",
-      });
-    }
-
-    // Get plan
-    const plan = await MembershipPlanModel.findById(planId);
-    if (!plan) {
-      return res.status(404).json({
-        error: true,
-        success: false,
-        message: "Membership plan not found",
-      });
-    }
-
-    // Calculate expiry date
-    let expiryDate = new Date();
-    switch (plan.durationUnit) {
-      case "months":
-        expiryDate.setMonth(expiryDate.getMonth() + plan.duration);
-        break;
-      case "years":
-        expiryDate.setFullYear(expiryDate.getFullYear() + plan.duration);
-        break;
-      default:
-        expiryDate.setDate(expiryDate.getDate() + plan.duration);
-    }
-
-    // Update user membership
-    const user = await UserModel.findByIdAndUpdate(
-      userId,
-      {
-        isMember: true,
-        membershipPlan: plan._id,
-        membershipExpiry: expiryDate,
-        membershipPaymentId: razorpayPaymentId,
-      },
-      { new: true },
-    ).populate("membershipPlan", "name benefits");
-
-    res.status(200).json({
-      error: false,
-      success: true,
-      message: "Membership activated successfully!",
-      data: {
-        isMember: user.isMember,
-        membershipPlan: user.membershipPlan,
-        membershipExpiry: user.membershipExpiry,
-      },
+    // TODO: PhonePe callback verification will be implemented here
+    return res.status(503).json({
+      error: true,
+      success: false,
+      message: "PhonePe verification coming soon.",
+      paymentProvider: PAYMENT_PROVIDER,
     });
   } catch (error) {
     console.error("Error verifying membership payment:", error);

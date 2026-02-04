@@ -6,9 +6,14 @@ import { usePathname } from "next/navigation";
 import { IoIosLogOut } from "react-icons/io";
 import { IoBagCheckOutline } from "react-icons/io5";
 import { LiaImageSolid } from "react-icons/lia";
-import { MdOutlineArticle, MdOutlineCategory } from "react-icons/md";
+import {
+  MdInfoOutline,
+  MdOutlineArticle,
+  MdOutlineCategory,
+  MdSettings,
+} from "react-icons/md";
 import { PiImageSquare } from "react-icons/pi";
-import { RiVipCrownLine } from "react-icons/ri";
+import { RiCoupon2Line, RiVipCrownLine } from "react-icons/ri";
 import { RxDashboard } from "react-icons/rx";
 import { TbBrandProducthunt, TbUsers } from "react-icons/tb";
 
@@ -48,6 +53,11 @@ const Sidebar = () => {
       href: "/orders",
     },
     {
+      name: "Coupons",
+      icon: <RiCoupon2Line size={22} />,
+      href: "/coupons",
+    },
+    {
       name: "Banners",
       icon: <PiImageSquare size={22} />,
       href: "/banners",
@@ -61,6 +71,16 @@ const Sidebar = () => {
       name: "Membership",
       icon: <RiVipCrownLine size={22} />,
       href: "/membership",
+    },
+    {
+      name: "About Us",
+      icon: <MdInfoOutline size={22} />,
+      href: "/about-page",
+    },
+    {
+      name: "Settings",
+      icon: <MdSettings size={22} />,
+      href: "/settings",
     },
   ];
 

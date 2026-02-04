@@ -25,6 +25,7 @@ const AddProduct = () => {
   const [oldPrice, setOldPrice] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
   const [isNewArrival, setIsNewArrival] = useState(false);
+  const [demandStatus, setDemandStatus] = useState("NORMAL");
   const [stock, setStock] = useState("");
   const [brand, setBrand] = useState("");
   const [discount, setDiscount] = useState("");
@@ -160,6 +161,7 @@ const AddProduct = () => {
         originalPrice: oldPrice ? Number(oldPrice) : undefined,
         isFeatured,
         isNewArrival,
+        demandStatus,
         stock: stock ? Number(stock) : 0,
         brand,
         discount: discount ? Number(discount) : 0,
@@ -451,6 +453,29 @@ const AddProduct = () => {
                   {isNewArrival ? "Yes" : "No"}
                 </span>
               </div>
+            </div>
+
+            <div className="col flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                🔥 High Demand Status
+              </span>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={demandStatus === "HIGH"}
+                  onChange={(e) =>
+                    setDemandStatus(e.target.checked ? "HIGH" : "NORMAL")
+                  }
+                  color="warning"
+                />
+                <span
+                  className={`text-sm ${demandStatus === "HIGH" ? "text-orange-600 font-medium" : "text-gray-600"}`}
+                >
+                  {demandStatus === "HIGH" ? "High Demand" : "Normal"}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500">
+                Shows "High Traffic" badge on this product
+              </p>
             </div>
           </div>
 

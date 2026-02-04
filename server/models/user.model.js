@@ -105,6 +105,18 @@ const userSchema = mongoose.Schema(
       type: String,
       default: null,
     },
+    // Notification Settings
+    notificationSettings: {
+      emailNotifications: { type: Boolean, default: true },
+      pushNotifications: { type: Boolean, default: false },
+      orderUpdates: { type: Boolean, default: true },
+      promotionalEmails: { type: Boolean, default: false },
+    },
+    // Appearance Settings
+    preferences: {
+      darkMode: { type: Boolean, default: false },
+      language: { type: String, default: "en" },
+    },
   },
   { timestamps: true },
 );

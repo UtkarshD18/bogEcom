@@ -197,7 +197,6 @@ const ProductRow = ({
                 discount={product.discount}
                 rating={product.rating}
                 image={product.thumbnail || product.images?.[0]}
-                inStock={product.stock > 0}
                 product={product}
               />
             </div>

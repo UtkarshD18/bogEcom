@@ -1,26 +1,37 @@
-import crypto from "crypto";
-import Razorpay from "razorpay";
+import mongoose from "mongoose";
 import CategoryModel from "../models/category.model.js";
 import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
 import UserModel from "../models/user.model.js";
+import {
+  syncOrderStatus,
+  syncOrderToFirestore,
+} from "../utils/orderFirestoreSync.js";
+import { sendOrderUpdateNotification } from "./notification.controller.js";
 
-// Check if Razorpay credentials are configured
-const isRazorpayConfigured = () => {
-  return !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
+// ==================== PAYMENT PROVIDER CONFIGURATION ====================
+
+/**
+ * Payment Provider Constant
+ * Currently: PhonePe (onboarding in progress)
+ */
+const PAYMENT_PROVIDER = "PHONEPE";
+
+/**
+ * Check if payment gateway is enabled
+ * Currently returns false - PhonePe onboarding in progress
+ * Set PHONEPE_ENABLED=true in .env when PhonePe is activated
+ */
+const isPaymentEnabled = () => {
+  return process.env.PHONEPE_ENABLED === "true";
 };
 
-// Initialize Razorpay only if credentials are present
-let razorpay = null;
-if (isRazorpayConfigured()) {
-  razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET,
-  });
-  console.log("✓ Razorpay initialized successfully");
+// Log payment status on server start
+if (isPaymentEnabled()) {
+  console.log(`✓ Payment gateway enabled: ${PAYMENT_PROVIDER}`);
 } else {
-  console.warn(
-    "⚠ Razorpay credentials not configured - payment features disabled",
+  console.log(
+    `⚠ Payments disabled - ${PAYMENT_PROVIDER} onboarding in progress`,
   );
 }
 
@@ -83,6 +94,74 @@ export const getAllOrders = async (req, res) => {
       success: false,
       message: "Failed to fetch orders",
       details: error.message,
+    });
+  }
+};
+
+/**
+ * Get user's own order by ID (User)
+ * @route GET /api/orders/user/order/:orderId
+ * @description Users can only view their own orders - returns 403 if not owner
+ */
+export const getUserOrderById = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user?.id || req.user;
+
+    // Must be authenticated
+    if (!userId) {
+      return res.status(401).json({
+        error: true,
+        success: false,
+        message: "Authentication required to view order details",
+      });
+    }
+
+    // Validate orderId format
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid order ID format",
+      });
+    }
+
+    // Find order
+    const order = await OrderModel.findById(orderId)
+      .populate("user", "name email avatar mobile")
+      .populate("delivery_address");
+
+    if (!order) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Authorization check - user can only view their own orders
+    const orderUserId = order.user?._id?.toString() || order.user?.toString();
+    if (orderUserId !== userId?.toString()) {
+      return res.status(403).json({
+        error: true,
+        success: false,
+        message: "You are not authorized to view this order",
+      });
+    }
+
+    res.status(200).json({
+      error: false,
+      success: true,
+      data: order,
+    });
+  } catch (error) {
+    console.error("Error fetching user order:", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to fetch order",
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
@@ -176,6 +255,19 @@ export const updateOrderStatus = async (req, res) => {
         message: "Order not found",
       });
     }
+
+    // AUTO-TRIGGER: Send order update notification to user
+    // Only for logged-in users (guests don't get order notifications)
+    if (order.user) {
+      sendOrderUpdateNotification(order, order_status).catch((err) =>
+        console.error("Failed to send order update notification:", err.message),
+      );
+    }
+
+    // SYNC: Mirror order status to Firestore for real-time client updates
+    syncOrderStatus(id, order_status).catch((err) =>
+      console.error("Failed to sync order status to Firestore:", err.message),
+    );
 
     res.status(200).json({
       error: false,
@@ -307,73 +399,37 @@ export const getDashboardStats = async (req, res) => {
 // ==================== USER ENDPOINTS ====================
 
 /**
- * Create order (User - for checkout)
+ * Create order with payment (User - for checkout)
  * @route POST /api/orders
  * @body { products, totalAmt, delivery_address }
+ * @note PhonePe integration pending - use saveOrderForLater instead
  */
 export const createOrder = async (req, res) => {
   try {
-    const { products, totalAmt, delivery_address } = req.body;
-    const userId = req.user?.id || req.body.userId;
-
-    // Check if Razorpay is configured
-    if (!razorpay) {
+    // Check if payments are enabled (PhonePe onboarding)
+    if (!isPaymentEnabled()) {
       return res.status(503).json({
         error: true,
         success: false,
-        message: "Payment service is not configured. Please contact support.",
+        message:
+          "Online payments are temporarily unavailable. PhonePe onboarding is in progress. Please use 'Save Order for Later' option.",
+        paymentProvider: PAYMENT_PROVIDER,
+        alternativeEndpoint: "/api/orders/save-for-later",
       });
     }
 
-    // Validate required fields
-    if (!products || products.length === 0) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Products are required",
-      });
-    }
+    // TODO: PhonePe integration will be implemented here
+    // When PHONEPE_ENABLED=true in .env, this will:
+    // 1. Create PhonePe payment request
+    // 2. Return payment URL for redirect
+    // 3. Handle callback on payment completion
 
-    if (!totalAmt || totalAmt <= 0) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Total amount must be greater than 0",
-      });
-    }
-
-    // Step 1: Create Razorpay order
-    const razorpayOrder = await razorpay.orders.create({
-      amount: Math.round(totalAmt * 100), // Amount in paise
-      currency: "INR",
-      receipt: `order_${Date.now()}`,
-      payment_capture: 1, // Auto-capture payment
-    });
-
-    // Step 2: Create order in database
-    const newOrder = new OrderModel({
-      user: userId || null,
-      products,
-      totalAmt,
-      delivery_address: delivery_address || null,
-      order_status: "pending",
-      payment_status: "pending",
-      paymentId: razorpayOrder.id, // Razorpay Order ID
-    });
-
-    const savedOrder = await newOrder.save();
-
-    res.status(201).json({
-      error: false,
-      success: true,
-      message: "Order created successfully",
-      data: {
-        orderId: savedOrder._id,
-        razorpayOrderId: razorpayOrder.id,
-        amount: totalAmt,
-        currency: "INR",
-        keyId: process.env.RAZORPAY_KEY_ID,
-      },
+    return res.status(503).json({
+      error: true,
+      success: false,
+      message:
+        "PhonePe integration coming soon. Please use 'Save Order for Later' option.",
+      paymentProvider: PAYMENT_PROVIDER,
     });
   } catch (error) {
     console.error("Error creating order:", error);
@@ -388,84 +444,34 @@ export const createOrder = async (req, res) => {
 };
 
 /**
- * Verify payment and confirm order (User)
+ * Verify payment callback (User)
  * @route POST /api/orders/verify-payment
- * @body { orderId, razorpayPaymentId, razorpayOrderId, razorpaySignature }
+ * @note PhonePe integration pending - currently returns 503
  */
 export const verifyPayment = async (req, res) => {
   try {
-    const { orderId, razorpayPaymentId, razorpayOrderId, razorpaySignature } =
-      req.body;
-
-    // Check if Razorpay is configured
-    if (!isRazorpayConfigured()) {
+    // Check if payments are enabled (PhonePe onboarding)
+    if (!isPaymentEnabled()) {
       return res.status(503).json({
         error: true,
         success: false,
-        message: "Payment service is not configured. Please contact support.",
+        message:
+          "Payment verification unavailable. PhonePe onboarding in progress.",
+        paymentProvider: PAYMENT_PROVIDER,
       });
     }
 
-    // Validate required fields
-    if (
-      !orderId ||
-      !razorpayPaymentId ||
-      !razorpayOrderId ||
-      !razorpaySignature
-    ) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "All payment details are required",
-      });
-    }
+    // TODO: PhonePe callback verification will be implemented here
+    // When PHONEPE_ENABLED=true in .env, this will:
+    // 1. Verify PhonePe callback signature
+    // 2. Confirm payment status with PhonePe API
+    // 3. Update order status accordingly
 
-    // Step 1: Verify signature on server-side
-    const hmac = crypto.createHmac("sha256", process.env.RAZORPAY_KEY_SECRET);
-    const body = `${razorpayOrderId}|${razorpayPaymentId}`;
-    hmac.update(body);
-    const generatedSignature = hmac.digest("hex");
-
-    if (generatedSignature !== razorpaySignature) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Payment verification failed - Invalid signature",
-      });
-    }
-
-    // Step 2: Fetch order from database
-    const order = await OrderModel.findById(orderId);
-    if (!order) {
-      return res.status(404).json({
-        error: true,
-        success: false,
-        message: "Order not found",
-      });
-    }
-
-    // Step 3: Update order status
-    order.paymentId = razorpayPaymentId;
-    order.payment_status = "paid";
-    order.order_status = "confirmed";
-    await order.save();
-
-    // Step 4: Fetch updated order with relations
-    const updatedOrder = await OrderModel.findById(orderId)
-      .populate("user", "name email")
-      .populate("delivery_address");
-
-    res.status(200).json({
-      error: false,
-      success: true,
-      message: "Payment verified and order confirmed",
-      data: {
-        orderId: updatedOrder._id,
-        orderStatus: updatedOrder.order_status,
-        paymentStatus: updatedOrder.payment_status,
-        paymentId: updatedOrder.paymentId,
-        totalAmount: updatedOrder.totalAmt,
-      },
+    return res.status(503).json({
+      error: true,
+      success: false,
+      message: "PhonePe verification coming soon.",
+      paymentProvider: PAYMENT_PROVIDER,
     });
   } catch (error) {
     console.error("Error verifying payment:", error);
@@ -527,75 +533,38 @@ export const getUserOrders = async (req, res) => {
 };
 
 /**
- * Razorpay Webhook Handler
- * @route POST /api/orders/webhook/razorpay
- * Webhook for payment.authorized and payment.failed events
+ * PhonePe Webhook Handler (Placeholder)
+ * @route POST /api/orders/webhook/phonepe
+ * @note Will handle PhonePe payment callbacks when integration is complete
  */
-export const handleRazorpayWebhook = async (req, res) => {
+export const handlePhonePeWebhook = async (req, res) => {
   try {
-    const event = req.body;
-
-    // Verify webhook signature
-    const razorpaySignature = req.headers["x-razorpay-signature"];
-    const body = JSON.stringify(event);
-
-    const hmac = crypto.createHmac(
-      "sha256",
-      process.env.RAZORPAY_WEBHOOK_SECRET,
-    );
-    hmac.update(body);
-    const generatedSignature = hmac.digest("hex");
-
-    if (generatedSignature !== razorpaySignature) {
-      console.warn("Webhook signature verification failed");
-      return res.status(400).json({
+    // Check if payments are enabled
+    if (!isPaymentEnabled()) {
+      console.log("PhonePe webhook received but payments are disabled");
+      return res.status(503).json({
         error: true,
         success: false,
-        message: "Invalid webhook signature",
+        message: "PhonePe integration not yet active",
       });
     }
 
-    // Handle payment events
-    if (event.event === "payment.authorized") {
-      const paymentId = event.payload.payment.entity.id;
-      const orderId = event.payload.payment.entity.notes.order_id;
+    // TODO: PhonePe webhook handling will be implemented here
+    // When PHONEPE_ENABLED=true in .env, this will:
+    // 1. Verify PhonePe webhook signature using X-VERIFY header
+    // 2. Decode base64 response from PhonePe
+    // 3. Update order status based on payment result
+    // 4. Handle SUCCESS, FAILURE, PENDING states
 
-      // Update order with payment ID
-      await OrderModel.findByIdAndUpdate(
-        orderId,
-        {
-          paymentId: paymentId,
-          payment_status: "paid",
-          order_status: "confirmed",
-        },
-        { new: true },
-      );
+    console.log("PhonePe webhook placeholder - integration pending");
 
-      console.log(`✅ Payment authorized for order: ${orderId}`);
-    } else if (event.event === "payment.failed") {
-      const orderId = event.payload.payment.entity.notes.order_id;
-
-      // Mark order as payment failed
-      await OrderModel.findByIdAndUpdate(
-        orderId,
-        {
-          payment_status: "failed",
-          order_status: "cancelled",
-        },
-        { new: true },
-      );
-
-      console.log(`❌ Payment failed for order: ${orderId}`);
-    }
-
-    // Send 200 OK to Razorpay
     res.status(200).json({
       error: false,
       success: true,
-      message: "Webhook processed",
+      message: "Webhook acknowledged (placeholder)",
     });
   } catch (error) {
-    console.error("Webhook processing error:", error);
+    console.error("PhonePe webhook error:", error);
     res.status(500).json({
       error: true,
       success: false,
@@ -607,7 +576,7 @@ export const handleRazorpayWebhook = async (req, res) => {
 /**
  * Create Test Order (For Development/Testing - Admin Only)
  * @route POST /api/orders/test/create
- * @description Creates a mock order for testing without Razorpay
+ * @description Creates a mock order for testing without payment gateway
  * Only works in development mode or for admins
  */
 export const createTestOrder = async (req, res) => {
@@ -674,7 +643,6 @@ export const createTestOrder = async (req, res) => {
       payment_status: "paid", // Mark as paid for testing
       order_status: "confirmed", // Mark as confirmed
       paymentId: `TEST_${Date.now()}`, // Test payment ID
-      razorpayOrderId: `TEST_ORDER_${Date.now()}`,
       // Note: delivery_address is optional (default: null)
       // Don't include it since it's an ObjectId reference to address model
     });
@@ -697,6 +665,157 @@ export const createTestOrder = async (req, res) => {
       success: false,
       message: "Failed to create test order",
       error: error.message,
+    });
+  }
+};
+
+// ==================== PHONEPE TRANSITION ENDPOINTS ====================
+
+/**
+ * Save Order for Later Payment (PhonePe Pre-Approval Phase)
+ * @route POST /api/orders/save-for-later
+ * @description Creates a mock order with pending_payment status when payments are unavailable
+ * This is used during the PhonePe onboarding phase
+ */
+export const saveOrderForLater = async (req, res) => {
+  try {
+    const {
+      products,
+      totalAmt,
+      delivery_address,
+      couponCode,
+      discountAmount,
+      finalAmount,
+      affiliateCode,
+      affiliateSource,
+      notes,
+    } = req.body;
+
+    const userId = req.user?.id || req.user || req.body.userId || null;
+
+    // Validate required fields
+    if (!products || products.length === 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Products are required",
+      });
+    }
+
+    if (!totalAmt || totalAmt <= 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Total amount must be greater than 0",
+      });
+    }
+
+    // Validate and sanitize products - ensure all required fields exist
+    const sanitizedProducts = products.map((p) => ({
+      productId: String(p.productId || p._id || "unknown"),
+      productTitle: String(p.productTitle || p.name || "Product"),
+      quantity: Number(p.quantity) || 1,
+      price: Number(p.price) || 0,
+      image: String(p.image || ""),
+      subTotal:
+        Number(p.subTotal) ||
+        (Number(p.price) || 0) * (Number(p.quantity) || 1),
+    }));
+
+    // Validate delivery_address - only use if it's a valid MongoDB ObjectId
+    let validDeliveryAddress = null;
+    if (delivery_address && mongoose.Types.ObjectId.isValid(delivery_address)) {
+      validDeliveryAddress = delivery_address;
+    }
+
+    // Create saved order with pending_payment status
+    const savedOrder = new OrderModel({
+      user: userId,
+      products: sanitizedProducts,
+      totalAmt: Number(totalAmt),
+      delivery_address: validDeliveryAddress,
+      order_status: "pending_payment",
+      payment_status: "unavailable",
+      paymentMethod: "PENDING",
+
+      // Coupon details
+      couponCode: couponCode || null,
+      discountAmount: Number(discountAmount) || 0,
+      discount: Number(discountAmount) || 0,
+      finalAmount: Number(finalAmount) || Number(totalAmt),
+
+      // Affiliate tracking
+      affiliateCode: affiliateCode || null,
+      affiliateSource: affiliateSource || null,
+
+      // Flags
+      isSavedOrder: true,
+      notes: notes || "Order saved - awaiting payment gateway activation",
+    });
+
+    await savedOrder.save();
+
+    console.log("✓ Order saved for later:", savedOrder._id);
+
+    // SYNC: Mirror order to Firestore for real-time client updates
+    syncOrderToFirestore(savedOrder, "create").catch((err) =>
+      console.error("Failed to sync new order to Firestore:", err.message),
+    );
+
+    res.status(201).json({
+      error: false,
+      success: true,
+      message:
+        "Your order is saved but not confirmed. Complete payment once payments are enabled.",
+      data: {
+        orderId: savedOrder._id,
+        orderStatus: savedOrder.order_status,
+        paymentStatus: savedOrder.payment_status,
+        totalAmount: savedOrder.totalAmt,
+        finalAmount: savedOrder.finalAmount,
+        couponApplied: !!savedOrder.couponCode,
+        affiliateTracked: !!savedOrder.affiliateCode,
+      },
+    });
+  } catch (error) {
+    console.error("Error saving order:", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to save order",
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Check Payment Gateway Status
+ * @route GET /api/orders/payment-status
+ * @description Returns the current status of payment gateway integration
+ */
+export const getPaymentGatewayStatus = async (req, res) => {
+  try {
+    const paymentEnabled = isPaymentEnabled();
+
+    res.status(200).json({
+      error: false,
+      success: true,
+      data: {
+        paymentEnabled,
+        provider: PAYMENT_PROVIDER,
+        message: paymentEnabled
+          ? "PhonePe payment gateway is active"
+          : "Payments are temporarily unavailable. We are onboarding PhonePe as our payment partner. You can still save orders for later.",
+        canSaveOrder: true, // Always allow saving orders
+        onboardingStatus: paymentEnabled ? "complete" : "in_progress",
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to check payment status",
     });
   }
 };

@@ -198,9 +198,9 @@ export const promoBanners = [
   },
   {
     id: 2,
-    title: "7 Days Returns",
-    subtitle: "Easy return policy",
-    icon: "return",
+    title: "Quality Assured",
+    subtitle: "100% genuine products",
+    icon: "verified",
     isActive: true,
   },
   {

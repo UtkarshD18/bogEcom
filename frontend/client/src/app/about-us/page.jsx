@@ -1,6 +1,56 @@
 "use client";
 
+import { CircularProgress } from "@mui/material";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+
+/**
+ * About Us Page
+ * Fetches content from API - fully editable by admin
+ */
 export default function AboutUsPage() {
+  const [content, setContent] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchContent();
+  }, []);
+
+  const fetchContent = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/about/public`);
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        setContent(data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching about content:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <CircularProgress />
+      </div>
+    );
+  }
+
+  if (!content) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <p className="text-gray-500">Unable to load content</p>
+      </div>
+    );
+  }
+
+  const { hero, standard, whyUs, values, cta } = content;
+
   return (
     <div
       style={{
@@ -34,8 +84,8 @@ export default function AboutUsPage() {
               letterSpacing: "-0.03em",
             }}
           >
-            Nutrition without the{" "}
-            <span style={{ color: "#02b290" }}>noise.</span>
+            {hero?.title}{" "}
+            <span style={{ color: "#02b290" }}>{hero?.titleHighlight}</span>
           </h1>
           <p
             style={{
@@ -46,13 +96,11 @@ export default function AboutUsPage() {
               margin: "0 auto",
             }}
           >
-            We built Buy One Gram to answer a simple question: Why is it so hard
-            to find peanut butter that is exactly what it says it is? No palm
-            oil, no hidden sugars—just pure, verified nutrition.
+            {hero?.description}
           </p>
         </div>
 
-        {/* SECTION 2: THE "CARD" (Who We Are) */}
+        {/* SECTION 2: THE "CARD" (Our Standard) */}
         <section
           style={{
             background: "rgba(255, 255, 255, 0.9)",
@@ -77,7 +125,7 @@ export default function AboutUsPage() {
                 marginBottom: "1rem",
               }}
             >
-              Our Standard
+              {standard?.subtitle}
             </h6>
             <h2
               style={{
@@ -89,7 +137,7 @@ export default function AboutUsPage() {
                 lineHeight: 1.2,
               }}
             >
-              The "One Gram" Philosophy.
+              {standard?.title}
             </h2>
             <p
               style={{
@@ -99,81 +147,37 @@ export default function AboutUsPage() {
                 lineHeight: 1.6,
               }}
             >
-              The peanut butter industry is crowded with misleading labels. We
-              prefer transparency. Buy One Gram was founded to bridge the gap
-              between premium ingredients and everyday nutrition. We source
-              peanuts based on quality, not cost.
+              {standard?.description}
             </p>
 
-            {/* Trust Grid */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "1.5rem",
-              }}
-            >
-              <div>
-                <h3
-                  style={{
-                    fontSize: "1.25rem",
-                    fontWeight: 700,
-                    color: "#111",
-                    marginBottom: "0.25rem",
-                  }}
-                >
-                  100%
-                </h3>
-                <p style={{ fontSize: "0.9rem", color: "#666", margin: 0 }}>
-                  Roasted Peanuts
-                </p>
+            {/* Stats Grid */}
+            {standard?.stats?.length > 0 && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "1.5rem",
+                }}
+              >
+                {standard.stats.map((stat, index) => (
+                  <div key={index}>
+                    <h3
+                      style={{
+                        fontSize: "1.25rem",
+                        fontWeight: 700,
+                        color: "#111",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
+                      {stat.value}
+                    </h3>
+                    <p style={{ fontSize: "0.9rem", color: "#666", margin: 0 }}>
+                      {stat.label}
+                    </p>
+                  </div>
+                ))}
               </div>
-              <div>
-                <h3
-                  style={{
-                    fontSize: "1.25rem",
-                    fontWeight: 700,
-                    color: "#111",
-                    marginBottom: "0.25rem",
-                  }}
-                >
-                  0g
-                </h3>
-                <p style={{ fontSize: "0.9rem", color: "#666", margin: 0 }}>
-                  Added Sugar
-                </p>
-              </div>
-              <div>
-                <h3
-                  style={{
-                    fontSize: "1.25rem",
-                    fontWeight: 700,
-                    color: "#111",
-                    marginBottom: "0.25rem",
-                  }}
-                >
-                  FSSAI
-                </h3>
-                <p style={{ fontSize: "0.9rem", color: "#666", margin: 0 }}>
-                  Certified Facility
-                </p>
-              </div>
-              <div>
-                <h3
-                  style={{
-                    fontSize: "1.25rem",
-                    fontWeight: 700,
-                    color: "#111",
-                    marginBottom: "0.25rem",
-                  }}
-                >
-                  No
-                </h3>
-                <p style={{ fontSize: "0.9rem", color: "#666", margin: 0 }}>
-                  Palm Oil
-                </p>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Image Section */}
@@ -200,7 +204,156 @@ export default function AboutUsPage() {
           </div>
         </section>
 
-        {/* SECTION 3: CONTACT / FOOTER CARD */}
+        {/* SECTION 3: WHY US */}
+        {whyUs?.features?.length > 0 && (
+          <section style={{ marginBottom: "4rem" }}>
+            <div style={{ textAlign: "center", marginBottom: "3rem" }}>
+              <h6
+                style={{
+                  textTransform: "uppercase",
+                  fontSize: "0.85rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  color: "#02b290",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                {whyUs?.subtitle}
+              </h6>
+              <h2
+                style={{
+                  fontSize: "2rem",
+                  fontWeight: 700,
+                  color: "#111",
+                }}
+              >
+                {whyUs?.title}
+              </h2>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                gap: "1.5rem",
+              }}
+            >
+              {whyUs.features.map((feature, index) => (
+                <div
+                  key={index}
+                  style={{
+                    background: "white",
+                    borderRadius: 16,
+                    padding: "2rem",
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.04)",
+                    border: "1px solid rgba(0,0,0,0.06)",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "2rem",
+                      marginBottom: "1rem",
+                      display: "block",
+                    }}
+                  >
+                    {feature.icon}
+                  </span>
+                  <h3
+                    style={{
+                      fontSize: "1.1rem",
+                      fontWeight: 600,
+                      color: "#111",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    {feature.title}
+                  </h3>
+                  <p
+                    style={{
+                      fontSize: "0.95rem",
+                      color: "#666",
+                      margin: 0,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {feature.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* SECTION 4: VALUES */}
+        {values?.items?.length > 0 && (
+          <section style={{ marginBottom: "4rem" }}>
+            <div style={{ textAlign: "center", marginBottom: "3rem" }}>
+              <h6
+                style={{
+                  textTransform: "uppercase",
+                  fontSize: "0.85rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  color: "#02b290",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                {values?.subtitle}
+              </h6>
+              <h2
+                style={{
+                  fontSize: "2rem",
+                  fontWeight: 700,
+                  color: "#111",
+                }}
+              >
+                {values?.title}
+              </h2>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: "1.5rem",
+              }}
+            >
+              {values.items.map((item, index) => (
+                <div
+                  key={index}
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #f8fffe 0%, #fff 100%)",
+                    borderRadius: 16,
+                    padding: "2rem",
+                    borderLeft: "4px solid #02b290",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "1.1rem",
+                      fontWeight: 600,
+                      color: "#111",
+                      marginBottom: "0.75rem",
+                    }}
+                  >
+                    {item.title}
+                  </h3>
+                  <p
+                    style={{
+                      fontSize: "0.95rem",
+                      color: "#666",
+                      margin: 0,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {item.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* SECTION 5: CTA */}
         <section
           style={{
             backgroundColor: "#111",
@@ -235,100 +388,42 @@ export default function AboutUsPage() {
                 marginBottom: "1rem",
               }}
             >
-              Ready to level up?
+              {cta?.title}
             </h2>
             <p
               style={{
                 color: "#aaa",
                 fontSize: "1.1rem",
-                marginBottom: "3rem",
+                marginBottom: "2rem",
                 maxWidth: 600,
-                margin: "0 auto 3rem auto",
+                margin: "0 auto 2rem auto",
               }}
             >
-              Partner with us or reach out to learn more about our products.
+              {cta?.description}
             </p>
 
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                justifyContent: "center",
-                gap: "2rem",
-              }}
-            >
-              <div
+            {cta?.buttonText && (
+              <Link
+                href={cta?.buttonLink || "/products"}
                 style={{
-                  background: "rgba(255,255,255,0.08)",
-                  padding: "2rem",
-                  borderRadius: 16,
-                  minWidth: 280,
-                  textAlign: "left",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  display: "inline-block",
+                  background: "#02b290",
+                  color: "white",
+                  padding: "1rem 2.5rem",
+                  borderRadius: 12,
+                  fontWeight: 600,
+                  fontSize: "1rem",
+                  textDecoration: "none",
+                  transition: "all 0.2s ease",
                 }}
               >
-                <p
-                  style={{
-                    color: "#02b290",
-                    fontSize: "0.85rem",
-                    textTransform: "uppercase",
-                    fontWeight: 700,
-                    marginBottom: "0.75rem",
-                    letterSpacing: "0.05em",
-                  }}
-                >
-                  General Inquiries
-                </p>
-                <a
-                  href="mailto:support@buyonegram.com"
-                  style={{
-                    color: "white",
-                    textDecoration: "none",
-                    fontSize: "1.2rem",
-                    fontWeight: 500,
-                  }}
-                >
-                  support@buyonegram.com
-                </a>
-              </div>
-              <div
-                style={{
-                  background: "rgba(255,255,255,0.08)",
-                  padding: "2rem",
-                  borderRadius: 16,
-                  minWidth: 280,
-                  textAlign: "left",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                }}
-              >
-                <p
-                  style={{
-                    color: "#02b290",
-                    fontSize: "0.85rem",
-                    textTransform: "uppercase",
-                    fontWeight: 700,
-                    marginBottom: "0.75rem",
-                    letterSpacing: "0.05em",
-                  }}
-                >
-                  Phone
-                </p>
-                <p
-                  style={{
-                    color: "white",
-                    fontSize: "1.1rem",
-                    margin: 0,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  (+91) 8619-641-968
-                </p>
-              </div>
-            </div>
+                {cta.buttonText}
+              </Link>
+            )}
 
             <footer
               style={{
-                marginTop: "5rem",
+                marginTop: "4rem",
                 borderTop: "1px solid rgba(255,255,255,0.1)",
                 paddingTop: "2rem",
                 fontSize: "0.9rem",

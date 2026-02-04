@@ -1,29 +1,55 @@
 "use client";
 
+import { postData } from "@/utils/api";
 import Link from "next/link";
 import { useState } from "react";
+import toast from "react-hot-toast";
 import { AiOutlineYoutube } from "react-icons/ai";
 import { BiSupport } from "react-icons/bi";
 import { BsWallet2 } from "react-icons/bs";
-import { FaFacebook, FaInstagram } from "react-icons/fa";
-import { IoChatboxOutline } from "react-icons/io5";
+import { FaFacebook, FaInstagram, FaLinkedin } from "react-icons/fa";
+import { FaXTwitter } from "react-icons/fa6";
+import { IoChatboxOutline, IoLocationSharp } from "react-icons/io5";
 import { LiaGiftSolid, LiaShippingFastSolid } from "react-icons/lia";
-import { PiKeyReturnLight } from "react-icons/pi";
 
 const Footer = () => {
   // --- STATE FOR NEWSLETTER ---
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null);
+  const [message, setMessage] = useState("");
 
-  const handleSubscribe = (e) => {
+  const handleSubscribe = async (e) => {
     e.preventDefault();
     if (!email) return;
     setStatus("loading");
-    setTimeout(() => {
-      console.log("Subscribed:", email);
-      setStatus("success");
-      setEmail("");
-    }, 1500);
+    setMessage("");
+
+    try {
+      const response = await postData("/api/newsletter/subscribe", {
+        email,
+        source: "footer",
+      });
+
+      if (response.success) {
+        setStatus("success");
+        setMessage(response.message || "Thank you for subscribing!");
+        setEmail("");
+        toast.success(response.message || "Thank you for subscribing!");
+      } else {
+        setStatus("error");
+        setMessage(
+          response.message || "Failed to subscribe. Please try again.",
+        );
+        toast.error(
+          response.message || "Failed to subscribe. Please try again.",
+        );
+      }
+    } catch (error) {
+      console.error("Newsletter subscription error:", error);
+      setStatus("error");
+      setMessage("Failed to subscribe. Please try again.");
+      toast.error("Failed to subscribe. Please try again.");
+    }
   };
 
   return (
@@ -43,9 +69,9 @@ const Footer = () => {
               desc: "For all Orders Over ₹500",
             },
             {
-              icon: <PiKeyReturnLight />,
-              title: "7 Days Returns",
-              desc: "For an Exchange Product",
+              icon: <BsWallet2 />,
+              title: "Quality Assured",
+              desc: "100% Genuine Products",
             },
             {
               icon: <BsWallet2 />,
@@ -70,10 +96,10 @@ const Footer = () => {
                 backgroundColor:
                   "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 50%, transparent)",
                 borderColor:
-                  "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
               }}
             >
-              <div className="text-[28px] sm:text-[38px] text-gray-400 transition-all duration-300 group-hover:text-[#c1591c] group-hover:scale-110">
+              <div className="text-[28px] sm:text-[38px] text-gray-400 transition-all duration-300 group-hover:text-[#059669] group-hover:scale-110">
                 {item.icon}
               </div>
               <h3 className="text-[12px] sm:text-[15px] font-bold mt-2 sm:mt-4 text-gray-800 text-center">
@@ -97,40 +123,62 @@ const Footer = () => {
               Contact Us
             </h3>
             <p className="text-[13px] sm:text-[14px] leading-relaxed text-gray-600">
-              Healthy One Gram – Mega Health Store <br />
-              Rajasthan Centre of Advanced Technology (R-CAT)
+              G-222, RIICO, sitapura industrial area, <br />
+              tonk road Jaipur, rajasthan 302019
             </p>
 
             <a
               href="mailto:support@healthyonegram.com"
-              className="text-[14px] font-semibold text-gray-600 hover:text-[#c1591c] transition-colors"
+              className="text-[14px] font-semibold text-gray-600 hover:text-[#059669] transition-colors"
             >
               support@healthyonegram.com
             </a>
 
             <a
               href="tel:+918619641968"
-              className="text-[18px] text-[#c1591c] font-bold tracking-tight hover:underline"
+              className="text-[18px] text-[#059669] font-bold tracking-tight hover:underline"
             >
               (+91) 8619-641-968
             </a>
+
+            {/* --- GOOGLE MAPS --- */}
+            <Link
+              href="https://www.google.com/maps/search/?api=1&query=G-222,+RIICO,+sitapura+industrial+area,+tonk+road+Jaipur,+rajasthan+302019"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center gap-4 mt-2 p-3 rounded-xl border shadow-sm transition-all duration-300 hover:border-[#059669] hover:shadow-md hover:-translate-y-1"
+              style={{
+                backgroundColor:
+                  "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 60%, transparent)",
+                borderColor:
+                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
+              }}
+            >
+              <IoLocationSharp className="text-[32px] text-[#059669] transition-transform group-hover:scale-110" />
+              <span className="text-[13px] font-bold text-gray-700 leading-tight">
+                View on Map <br />
+                <span className="font-normal text-gray-500 group-hover:text-[#059669] transition-colors">
+                  Click to open in Google Maps
+                </span>
+              </span>
+            </Link>
 
             {/* --- ONLINE CHAT (WhatsApp) --- */}
             <Link
               href="https://wa.me/918619641968?text=Hello%20Healthy%20One%20Gram,%20I%20need%20help%20with..."
               target="_blank"
-              className="group flex items-center gap-4 mt-2 p-3 rounded-xl border shadow-sm transition-all duration-300 hover:border-[#c1591c] hover:shadow-md hover:-translate-y-1"
+              className="group flex items-center gap-4 p-3 rounded-xl border shadow-sm transition-all duration-300 hover:border-[#059669] hover:shadow-md hover:-translate-y-1"
               style={{
                 backgroundColor:
                   "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 60%, transparent)",
                 borderColor:
-                  "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
               }}
             >
-              <IoChatboxOutline className="text-[32px] text-[#c1591c] transition-transform group-hover:scale-110" />
+              <IoChatboxOutline className="text-[32px] text-[#059669] transition-transform group-hover:scale-110" />
               <span className="text-[13px] font-bold text-gray-700 leading-tight">
                 Online Chat <br />
-                <span className="font-normal text-gray-500 group-hover:text-[#c1591c] transition-colors">
+                <span className="font-normal text-gray-500 group-hover:text-[#059669] transition-colors">
                   Click to chat on WhatsApp
                 </span>
               </span>
@@ -154,9 +202,9 @@ const Footer = () => {
                 <li key={i}>
                   <Link
                     href={item.link}
-                    className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-[#c1591c] transition-all duration-300"
+                    className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-[#059669] transition-all duration-300"
                   >
-                    <span className="w-0 h-0.5 bg-[#c1591c] mr-0 transition-all duration-300 group-hover:w-3 group-hover:mr-2 rounded-full"></span>
+                    <span className="w-0 h-0.5 bg-[#059669] mr-0 transition-all duration-300 group-hover:w-3 group-hover:mr-2 rounded-full"></span>
                     {item.name}
                   </Link>
                 </li>
@@ -181,9 +229,9 @@ const Footer = () => {
                 <li key={i}>
                   <Link
                     href={item.link}
-                    className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-[#c1591c] transition-all duration-300"
+                    className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-[#059669] transition-all duration-300"
                   >
-                    <span className="w-0 h-0.5 bg-[#c1591c] mr-0 transition-all duration-300 group-hover:w-3 group-hover:mr-2 rounded-full"></span>
+                    <span className="w-0 h-0.5 bg-[#059669] mr-0 transition-all duration-300 group-hover:w-3 group-hover:mr-2 rounded-full"></span>
                     {item.name}
                   </Link>
                 </li>
@@ -212,19 +260,19 @@ const Footer = () => {
                 placeholder="Your e-mail address"
                 required
                 disabled={status === "loading" || status === "success"}
-                className="w-full h-[48px] px-5 rounded-full border backdrop-blur-sm outline-none text-sm text-gray-700 placeholder-gray-400 focus:border-[#c1591c] focus:ring-2 focus:ring-[#c1591c]/10 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
+                className="w-full h-[48px] px-5 rounded-full border backdrop-blur-sm outline-none text-sm text-gray-700 placeholder-gray-400 focus:border-[#059669] focus:ring-2 focus:ring-[#059669]/10 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
                 style={{
                   backgroundColor:
                     "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 60%, transparent)",
                   borderColor:
-                    "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+                    "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
                 }}
               />
 
               <button
                 type="submit"
                 disabled={status === "loading" || status === "success"}
-                className={`h-[48px] w-full rounded-full text-white text-[14px] font-semibold tracking-wide transition-all duration-300 active:scale-95 flex items-center justify-center ${status === "success" ? "bg-green-600 hover:bg-green-700" : "bg-gray-900 hover:bg-[#c1591c] hover:shadow-lg"} disabled:opacity-80 disabled:cursor-not-allowed`}
+                className={`h-[48px] w-full rounded-full text-white text-[14px] font-semibold tracking-wide transition-all duration-300 active:scale-95 flex items-center justify-center ${status === "success" ? "bg-green-600 hover:bg-green-700" : "bg-gray-900 hover:bg-[#059669] hover:shadow-lg"} disabled:opacity-80 disabled:cursor-not-allowed`}
               >
                 {status === "loading" ? (
                   <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -238,7 +286,12 @@ const Footer = () => {
 
             {status === "success" && (
               <p className="text-green-600 text-xs mt-3 font-medium animate-pulse">
-                Thank you for subscribing!
+                {message || "Thank you for subscribing!"}
+              </p>
+            )}
+            {status === "error" && (
+              <p className="text-red-600 text-xs mt-3 font-medium">
+                {message || "Failed to subscribe. Please try again."}
               </p>
             )}
           </div>
@@ -252,14 +305,25 @@ const Footer = () => {
           {/* Social Icons */}
           <div className="flex gap-2 sm:gap-3">
             {[
-              { Icon: FaFacebook, link: "https://facebook.com/healthyonegram" },
+              {
+                Icon: FaFacebook,
+                link: "https://www.facebook.com/buyonegram/",
+              },
               {
                 Icon: AiOutlineYoutube,
-                link: "https://youtube.com/@healthyonegram",
+                link: "https://www.youtube.com/@buyonegram",
               },
               {
                 Icon: FaInstagram,
-                link: "https://instagram.com/healthyonegram",
+                link: "https://www.instagram.com/buyonegram/",
+              },
+              {
+                Icon: FaLinkedin,
+                link: "https://www.linkedin.com/company/buy-one-gram-private-limited/posts/?feedView=all",
+              },
+              {
+                Icon: FaXTwitter,
+                link: "https://x.com/buyonegram/",
               },
             ].map(({ Icon, link }, i) => (
               <Link
@@ -267,11 +331,11 @@ const Footer = () => {
                 href={link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-[38px] h-[38px] sm:w-[42px] sm:h-[42px] flex items-center justify-center rounded-full border text-gray-500 shadow-sm transition-all duration-300 hover:bg-[#c1591c] hover:text-white hover:border-[#c1591c] hover:-translate-y-1 hover:shadow-md"
+                className="w-[38px] h-[38px] sm:w-[42px] sm:h-[42px] flex items-center justify-center rounded-full border text-gray-500 shadow-sm transition-all duration-300 hover:bg-[#059669] hover:text-white hover:border-[#059669] hover:-translate-y-1 hover:shadow-md"
                 style={{
                   backgroundColor: "var(--flavor-card-bg, #fffbf5)",
                   borderColor:
-                    "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+                    "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
                 }}
               >
                 <Icon size={18} />

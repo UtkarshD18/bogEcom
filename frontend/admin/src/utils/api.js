@@ -221,6 +221,31 @@ export const deleteData = async (URL, token = null) => {
   }
 };
 
+export const patchData = async (URL, formData, token = null) => {
+  try {
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${apiUrl}${URL}`, {
+      method: "PATCH",
+      headers,
+      credentials: "include",
+      body: JSON.stringify(formData),
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("patchData error:", error);
+    return { error: true, message: error.message };
+  }
+};
+
 export const getDashboardStats = async (token) => {
   try {
     const headers = {

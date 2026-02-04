@@ -195,7 +195,7 @@ const AccountSidebar = () => {
             />
           ) : null}
           <div
-            className={`w-full h-full bg-gradient-to-br from-[#c1591c] to-[#d06a2d] flex items-center justify-center text-white text-2xl font-bold ${userPhoto ? "hidden" : "flex"}`}
+            className={`w-full h-full bg-gradient-to-br from-[#059669] to-[#10b981] flex items-center justify-center text-white text-2xl font-bold ${userPhoto ? "hidden" : "flex"}`}
           >
             {getInitials(userName)}
           </div>

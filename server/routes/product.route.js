@@ -9,6 +9,7 @@ import {
   getProductById,
   getProducts,
   getRelatedProducts,
+  updateDemandStatus,
   updateProduct,
   updateStock,
 } from "../controllers/product.controller.js";
@@ -63,5 +64,8 @@ router.patch("/bulk", auth, admin, bulkUpdateProducts);
 
 // Update stock
 router.patch("/:id/stock", auth, admin, updateStock);
+
+// Update demand status (High Demand flag)
+router.patch("/:id/demand", auth, admin, updateDemandStatus);
 
 export default router;

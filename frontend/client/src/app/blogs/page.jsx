@@ -28,11 +28,11 @@ export default function BlogPage() {
         <section className="relative bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] text-white py-20 overflow-hidden">
           {/* Decorative Elements */}
           <div className="absolute inset-0 opacity-10">
-            <div className="absolute top-10 left-10 w-72 h-72 bg-[#c1591c] rounded-full blur-3xl"></div>
-            <div className="absolute bottom-10 right-10 w-96 h-96 bg-[#d06a2d] rounded-full blur-3xl"></div>
+            <div className="absolute top-10 left-10 w-72 h-72 bg-[#059669] rounded-full blur-3xl"></div>
+            <div className="absolute bottom-10 right-10 w-96 h-96 bg-[#10b981] rounded-full blur-3xl"></div>
           </div>
           <div className="container mx-auto px-4 text-center relative z-10">
-            <span className="inline-block px-4 py-2 bg-[#c1591c]/20 border border-[#c1591c]/30 rounded-full text-[#f0a070] text-sm font-semibold mb-6 backdrop-blur-sm">
+            <span className="inline-block px-4 py-2 bg-[#059669]/20 border border-[#059669]/30 rounded-full text-[#6ee7b7] text-sm font-semibold mb-6 backdrop-blur-sm">
               ✨ Health & Wellness Insights
             </span>
             <h1 className="text-5xl md:text-6xl font-bold mb-5 bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent">
@@ -68,7 +68,7 @@ export default function BlogPage() {
                     className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
-                  <div className="absolute top-4 left-4 bg-gradient-to-r from-[#c1591c] to-[#d06a2d] text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg">
+                  <div className="absolute top-4 left-4 bg-gradient-to-r from-[#059669] to-[#10b981] text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg">
                     ⭐ Featured
                   </div>
                 </div>
@@ -76,7 +76,7 @@ export default function BlogPage() {
                 {/* Featured Content */}
                 <div className="p-8 lg:p-12 flex flex-col justify-center bg-gradient-to-br from-white to-gray-50">
                   <div className="flex items-center gap-4 mb-5">
-                    <span className="bg-gradient-to-r from-[#c1591c]/10 to-[#d06a2d]/10 text-[#c1591c] px-4 py-1.5 rounded-full text-xs font-bold uppercase border border-[#c1591c]/20">
+                    <span className="bg-gradient-to-r from-[#059669]/10 to-[#10b981]/10 text-[#059669] px-4 py-1.5 rounded-full text-xs font-bold uppercase border border-[#059669]/20">
                       {featuredBlog.category || "General"}
                     </span>
                     <span className="text-gray-400 text-sm font-medium">
@@ -91,7 +91,7 @@ export default function BlogPage() {
                     </span>
                   </div>
 
-                  <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-5 leading-tight hover:text-[#c1591c] transition-colors">
+                  <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-5 leading-tight hover:text-[#059669] transition-colors">
                     {featuredBlog.title}
                   </h2>
 
@@ -102,7 +102,7 @@ export default function BlogPage() {
 
                   <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-100">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-gradient-to-br from-[#c1591c] to-[#d06a2d] rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md">
+                      <div className="w-12 h-12 bg-gradient-to-br from-[#059669] to-[#10b981] rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md">
                         {(featuredBlog.author || "A")[0]}
                       </div>
                       <div>
@@ -122,7 +122,7 @@ export default function BlogPage() {
 
                   <Link
                     href={`/blogs/${featuredBlog.slug}`}
-                    className="inline-flex items-center gap-3 bg-gradient-to-r from-[#c1591c] to-[#d06a2d] hover:from-[#a84d18] hover:to-[#c1591c] text-white font-bold py-4 px-10 rounded-xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 w-fit"
+                    className="inline-flex items-center gap-3 bg-gradient-to-r from-[#059669] to-[#10b981] hover:from-[#047857] hover:to-[#059669] text-white font-bold py-4 px-10 rounded-xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 w-fit"
                   >
                     Read Full Article
                     <span className="text-xl">→</span>
@@ -138,7 +138,7 @@ export default function BlogPage() {
           <section className="py-20 bg-gray-50">
             <div className="container mx-auto px-4">
               <div className="text-center mb-14">
-                <span className="inline-block px-4 py-1.5 bg-[#c1591c]/10 text-[#c1591c] rounded-full text-sm font-semibold mb-4">
+                <span className="inline-block px-4 py-1.5 bg-[#059669]/10 text-[#059669] rounded-full text-sm font-semibold mb-4">
                   Latest Posts
                 </span>
                 <h2 className="text-4xl font-bold text-gray-900 mb-4">
@@ -165,7 +165,7 @@ export default function BlogPage() {
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm text-[#c1591c] px-3 py-1.5 rounded-full text-xs font-bold uppercase shadow-sm">
+                        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm text-[#059669] px-3 py-1.5 rounded-full text-xs font-bold uppercase shadow-sm">
                           {blog.category || "General"}
                         </div>
                       </div>
@@ -174,7 +174,7 @@ export default function BlogPage() {
                       <div className="p-6 flex-1 flex flex-col">
                         <div className="flex items-center justify-between mb-4">
                           <span className="text-xs text-gray-400 font-medium flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 bg-[#c1591c] rounded-full"></span>
+                            <span className="w-1.5 h-1.5 bg-[#059669] rounded-full"></span>
                             {new Date(blog.createdAt).toLocaleDateString(
                               "en-US",
                               {
@@ -188,7 +188,7 @@ export default function BlogPage() {
                           </span>
                         </div>
 
-                        <h3 className="text-xl font-bold text-gray-900 group-hover:text-[#c1591c] transition-colors mb-3 line-clamp-2 leading-tight">
+                        <h3 className="text-xl font-bold text-gray-900 group-hover:text-[#059669] transition-colors mb-3 line-clamp-2 leading-tight">
                           {blog.title}
                         </h3>
 
@@ -198,14 +198,14 @@ export default function BlogPage() {
 
                         <div className="flex items-center justify-between pt-5 border-t border-gray-100">
                           <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 bg-gradient-to-br from-[#c1591c] to-[#d06a2d] rounded-full flex items-center justify-center text-white text-xs font-bold">
+                            <div className="w-7 h-7 bg-gradient-to-br from-[#059669] to-[#10b981] rounded-full flex items-center justify-center text-white text-xs font-bold">
                               {(blog.author || "A")[0]}
                             </div>
                             <span className="text-xs font-medium text-gray-600">
                               {blog.author || "Admin"}
                             </span>
                           </div>
-                          <span className="text-[#c1591c] font-semibold group-hover:gap-3 flex items-center gap-1.5 transition-all text-sm">
+                          <span className="text-[#059669] font-semibold group-hover:gap-3 flex items-center gap-1.5 transition-all text-sm">
                             Read More
                             <span className="group-hover:translate-x-1 transition-transform">
                               →
@@ -225,8 +225,8 @@ export default function BlogPage() {
         <section className="relative bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] text-white py-20 overflow-hidden">
           {/* Decorative Elements */}
           <div className="absolute inset-0 opacity-10">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-[#c1591c] rounded-full blur-3xl"></div>
-            <div className="absolute bottom-0 left-0 w-72 h-72 bg-[#d06a2d] rounded-full blur-3xl"></div>
+            <div className="absolute top-0 right-0 w-96 h-96 bg-[#059669] rounded-full blur-3xl"></div>
+            <div className="absolute bottom-0 left-0 w-72 h-72 bg-[#10b981] rounded-full blur-3xl"></div>
           </div>
           <div className="container mx-auto px-4 text-center max-w-2xl relative z-10">
             <div className="inline-block mb-6">
@@ -243,9 +243,9 @@ export default function BlogPage() {
               <input
                 type="email"
                 placeholder="Enter your email address"
-                className="flex-1 px-6 py-4 rounded-xl text-gray-900 focus:outline-none focus:ring-4 focus:ring-[#c1591c]/30 border-2 border-transparent focus:border-[#c1591c] transition-all shadow-lg"
+                className="flex-1 px-6 py-4 rounded-xl text-gray-900 focus:outline-none focus:ring-4 focus:ring-[#059669]/30 border-2 border-transparent focus:border-[#059669] transition-all shadow-lg"
               />
-              <button className="bg-gradient-to-r from-[#c1591c] to-[#d06a2d] hover:from-[#a84d18] hover:to-[#c1591c] text-white font-bold px-8 py-4 rounded-xl transition-all whitespace-nowrap shadow-lg hover:shadow-xl hover:-translate-y-0.5">
+              <button className="bg-gradient-to-r from-[#059669] to-[#10b981] hover:from-[#047857] hover:to-[#059669] text-white font-bold px-8 py-4 rounded-xl transition-all whitespace-nowrap shadow-lg hover:shadow-xl hover:-translate-y-0.5">
                 Subscribe →
               </button>
             </div>

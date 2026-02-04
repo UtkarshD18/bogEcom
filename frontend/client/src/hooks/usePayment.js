@@ -88,7 +88,7 @@ export const usePayment = () => {
           contact: address?.phone || "",
         },
         theme: {
-          color: "#c1591c",
+          color: "#059669",
         },
         handler: async (response) => {
           try {

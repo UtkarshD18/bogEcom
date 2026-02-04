@@ -157,12 +157,12 @@ export default function DeliveryPage() {
                 </p>
               </div>
               <div className="text-center">
-                <div className="text-4xl mb-3">💰</div>
+                <div className="text-4xl mb-3">⭐</div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                  Full Refund
+                  Customer Satisfaction
                 </h3>
                 <p className="text-gray-600">
-                  100% refund for eligible returns
+                  Quality guaranteed on all orders
                 </p>
               </div>
             </div>

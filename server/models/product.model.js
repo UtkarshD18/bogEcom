@@ -224,6 +224,14 @@ const productSchema = new mongoose.Schema(
       default: "piece", // piece, kg, g, ml, l, etc.
     },
 
+    // Demand Status (Admin-controlled, shown to customers instead of stock)
+    demandStatus: {
+      type: String,
+      enum: ["NORMAL", "HIGH"],
+      default: "NORMAL",
+      index: true,
+    },
+
     // Status flags
     isActive: {
       type: Boolean,

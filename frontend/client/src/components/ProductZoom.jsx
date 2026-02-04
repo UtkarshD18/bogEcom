@@ -36,7 +36,7 @@ const ProductZoom = ({
         style={{
           backgroundColor: "var(--flavor-card-bg, #fffbf5)",
           borderColor:
-            "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+            "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
         }}
       >
         <Swiper
@@ -72,15 +72,15 @@ const ProductZoom = ({
                   onClick={() => goToSlide(index)}
                   className={`cursor-pointer border rounded-lg p-2 transition-all duration-300 ${
                     activeIndex === index
-                      ? "border-[#c1591c] shadow-md"
+                      ? "border-[#059669] shadow-md"
                       : "hover:border-gray-300"
                   }`}
                   style={{
                     backgroundColor: "var(--flavor-card-bg, #fffbf5)",
                     borderColor:
                       activeIndex === index
-                        ? "#c1591c"
-                        : "color-mix(in srgb, var(--flavor-color, #f5c16c) 30%, transparent)",
+                        ? "#059669"
+                        : "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
                   }}
                 >
                   <img
