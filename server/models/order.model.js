@@ -215,6 +215,36 @@ const orderSchema = new mongoose.Schema(
       default: false,
     },
 
+    // ==================== SHIPPING (XPRESSBEES) ====================
+
+shipping_provider: {
+  type: String,
+  enum: ["XPRESSBEES", null],
+  default: null,
+},
+
+awb_number: {
+  type: String,
+  default: null,
+  index: true,
+},
+
+shipping_label: {
+  type: String,
+  default: null, // PDF URL from courier
+},
+
+shipment_status: {
+  type: String,
+  enum: ["pending", "booked", "shipped", "delivered", "cancelled"],
+  default: "pending",
+},
+
+shipment_created_at: {
+  type: Date,
+  default: null,
+},
+
     // ==================== END NEW FIELDS ====================
 
     // Metadata
