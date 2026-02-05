@@ -121,6 +121,76 @@ export const uploadMultipleToCloudinary = async (
  * @param {string} publicId - Cloudinary public_id of the image
  * @returns {Promise<object>} Deletion result
  */
+/**
+ * Upload video to Cloudinary
+ * @param {Buffer|string} file - File buffer or base64 string
+ * @param {string} folder - Folder name in Cloudinary
+ * @returns {Promise<object>} Upload result with url, public_id, etc.
+ */
+export const uploadVideoToCloudinary = async (
+  file,
+  folder = "buyonegram/videos",
+) => {
+  try {
+    // Verify Cloudinary is configured
+    const config = cloudinary.config();
+    if (!config.cloud_name || !config.api_key || !config.api_secret) {
+      return {
+        success: false,
+        error: "Cloudinary credentials not configured",
+      };
+    }
+
+    console.log("Uploading video to Cloudinary folder:", folder);
+
+    // Use upload_stream for video buffers (handles large files better)
+    return new Promise((resolve) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: folder,
+          resource_type: "video",
+          chunk_size: 6000000,
+        },
+        (error, result) => {
+          if (error) {
+            console.error("Cloudinary video upload error:", error.message);
+            resolve({
+              success: false,
+              error: error.message,
+            });
+          } else {
+            console.log("Cloudinary video upload success:", result.public_id);
+            resolve({
+              success: true,
+              url: result.secure_url,
+              publicId: result.public_id,
+              width: result.width,
+              height: result.height,
+              format: result.format,
+              duration: result.duration,
+              size: result.bytes,
+            });
+          }
+        },
+      );
+
+      // Write buffer to stream
+      if (Buffer.isBuffer(file)) {
+        uploadStream.end(file);
+      } else {
+        // If it's a string/path, pipe it
+        uploadStream.end(Buffer.from(file, "base64"));
+      }
+    });
+  } catch (error) {
+    console.error("Cloudinary video upload error:", error.message);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
 export const deleteFromCloudinary = async (publicId) => {
   try {
     const result = await cloudinary.uploader.destroy(publicId);

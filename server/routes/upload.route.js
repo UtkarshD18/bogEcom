@@ -4,6 +4,7 @@ import {
   deleteFromCloudinary,
   uploadMultipleToCloudinary,
   uploadToCloudinary,
+  uploadVideoToCloudinary,
 } from "../config/cloudinary.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
@@ -21,19 +22,23 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = [
+  const allowedImageTypes = [
     "image/jpeg",
     "image/jpg",
     "image/png",
     "image/gif",
     "image/webp",
   ];
+  const allowedVideoTypes = ["video/mp4", "video/webm"];
+  const allowedTypes = [...allowedImageTypes, ...allowedVideoTypes];
 
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
     cb(
-      new Error("Invalid file type. Only JPEG, PNG, GIF, WebP allowed."),
+      new Error(
+        "Invalid file type. Only JPEG, PNG, GIF, WebP, MP4, WebM allowed.",
+      ),
       false,
     );
   }
@@ -221,6 +226,92 @@ router.post(
         error: true,
         success: false,
         message: "Upload failed: " + error.message,
+      });
+    }
+  },
+);
+
+/**
+ * Upload video to Cloudinary
+ * @route POST /api/upload/video
+ */
+router.post(
+  "/video",
+  auth,
+  admin,
+  upload.single("video"),
+  handleUploadError,
+  async (req, res) => {
+    try {
+      console.log("Video upload request received");
+      console.log(
+        "File received:",
+        req.file
+          ? {
+              fieldname: req.file.fieldname,
+              originalname: req.file.originalname,
+              mimetype: req.file.mimetype,
+              size: req.file.size,
+            }
+          : "No file",
+      );
+
+      if (!req.file) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "No video file uploaded",
+        });
+      }
+
+      // Validate video type
+      const allowedVideoTypes = ["video/mp4", "video/webm"];
+      if (!allowedVideoTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Invalid video type. Only MP4 and WebM allowed.",
+        });
+      }
+
+      console.log("Uploading to Cloudinary...");
+      // Upload to Cloudinary as video
+      const result = await uploadVideoToCloudinary(
+        req.file.buffer,
+        "buyonegram/videos",
+      );
+
+      console.log("Cloudinary result:", result);
+
+      if (!result.success) {
+        return res.status(500).json({
+          error: true,
+          success: false,
+          message: result.error || "Video upload to Cloudinary failed",
+        });
+      }
+
+      res.status(200).json({
+        error: false,
+        success: true,
+        message: "Video uploaded successfully",
+        data: {
+          url: result.url,
+          publicId: result.publicId,
+          width: result.width,
+          height: result.height,
+          format: result.format,
+          duration: result.duration,
+          size: result.size,
+          filename: req.file.originalname,
+        },
+      });
+    } catch (error) {
+      console.error("Video upload error:", error);
+      res.status(500).json({
+        error: true,
+        success: false,
+        message: "Video upload failed: " + error.message,
       });
     }
   },

@@ -143,7 +143,7 @@ const Footer = () => {
 
             {/* --- GOOGLE MAPS --- */}
             <Link
-              href="https://www.google.com/maps/search/?api=1&query=G-222,+RIICO,+sitapura+industrial+area,+tonk+road+Jaipur,+rajasthan+302019"
+              href="https://maps.app.goo.gl/zbbCcKeTnX3GYPhZ8"
               target="_blank"
               rel="noopener noreferrer"
               className="group flex items-center gap-4 mt-2 p-3 rounded-xl border shadow-sm transition-all duration-300 hover:border-[#059669] hover:shadow-md hover:-translate-y-1"

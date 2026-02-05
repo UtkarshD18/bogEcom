@@ -23,7 +23,14 @@ const blogSchema = new mongoose.Schema(
     },
     image: {
       type: String,
-      required: true,
+    },
+    mediaType: {
+      type: String,
+      enum: ["image", "video"],
+      default: "image",
+    },
+    videoUrl: {
+      type: String,
     },
     author: {
       type: String,

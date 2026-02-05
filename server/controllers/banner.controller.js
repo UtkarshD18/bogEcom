@@ -153,6 +153,9 @@ export const getAllBanners = async (req, res) => {
 /**
  * Create banner (Admin only)
  * @route POST /api/banners
+ * @description Supports both image and video banners
+ * - Image banners: require image field (existing behavior)
+ * - Video banners: require image (as poster/fallback) + videoUrl
  */
 export const createBanner = async (req, res) => {
   try {
@@ -170,15 +173,56 @@ export const createBanner = async (req, res) => {
       sortOrder,
       startDate,
       endDate,
+      // ===== NEW VIDEO FIELDS (optional) =====
+      mediaType,
+      videoUrl,
     } = req.body;
 
-    if (!title || !image) {
+    // Validation: title required, image required only for image banners
+    if (!title) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "Title and image are required",
+        message: "Title is required",
       });
     }
+
+    // For image banners, image is required
+    if (mediaType !== "video" && !image) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Image is required for image banners",
+      });
+    }
+
+    // ===== VIDEO VALIDATION (only when mediaType is "video") =====
+    if (mediaType === "video") {
+      if (!videoUrl) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Video URL is required for video banners",
+        });
+      }
+
+      // Validate video URL format (must be mp4 or webm, or valid URL)
+      const validVideoExtensions = [".mp4", ".webm"];
+      const isValidVideoUrl =
+        videoUrl.startsWith("http") ||
+        validVideoExtensions.some((ext) =>
+          videoUrl.toLowerCase().endsWith(ext),
+        );
+
+      if (!isValidVideoUrl) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Invalid video URL. Supported formats: MP4, WebM",
+        });
+      }
+    }
+    // ===== END VIDEO VALIDATION =====
 
     const banner = new BannerModel({
       title,
@@ -194,6 +238,9 @@ export const createBanner = async (req, res) => {
       sortOrder: sortOrder || 0,
       startDate: startDate || null,
       endDate: endDate || null,
+      // ===== NEW VIDEO FIELDS =====
+      mediaType: mediaType || "image", // Default to "image" for backward compatibility
+      videoUrl: mediaType === "video" ? videoUrl : "",
     });
 
     await banner.save();
@@ -218,6 +265,7 @@ export const createBanner = async (req, res) => {
 /**
  * Update banner (Admin only)
  * @route PUT /api/banners/:id
+ * @description Supports updating both image and video banners
  */
 export const updateBanner = async (req, res) => {
   try {
@@ -237,6 +285,43 @@ export const updateBanner = async (req, res) => {
         message: "Banner not found",
       });
     }
+
+    // ===== VIDEO VALIDATION (only when updating to video type) =====
+    if (updateData.mediaType === "video") {
+      const videoUrl = updateData.videoUrl || existingBanner.videoUrl;
+      if (!videoUrl) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Video URL is required for video banners",
+        });
+      }
+
+      // Validate video URL format
+      const validVideoExtensions = [".mp4", ".webm"];
+      const isValidVideoUrl =
+        videoUrl.startsWith("http") ||
+        validVideoExtensions.some((ext) =>
+          videoUrl.toLowerCase().endsWith(ext),
+        );
+
+      if (!isValidVideoUrl) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Invalid video URL. Supported formats: MP4, WebM",
+        });
+      }
+    }
+
+    // Clear videoUrl if switching from video to image
+    if (
+      updateData.mediaType === "image" &&
+      existingBanner.mediaType === "video"
+    ) {
+      updateData.videoUrl = "";
+    }
+    // ===== END VIDEO VALIDATION =====
 
     // Clean up old images if they're being replaced
     if (updateData.image && existingBanner.image !== updateData.image) {
