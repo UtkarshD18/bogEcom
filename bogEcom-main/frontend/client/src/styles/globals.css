@@ -1,0 +1,528 @@
+/* ============================================= */
+/* GLOBAL STYLES - BUY ONE GRAM ECOMMERCE       */
+/* ============================================= */
+
+@import "tailwindcss";
+@import "./theme.css";
+
+/* ========== THEME INTEGRATION ========== */
+@theme {
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
+}
+
+/* ========== SCROLLBAR STYLING ========== */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+.scroll::-webkit-scrollbar-thumb {
+  background: #ccc !important;
+}
+
+/* ========== CONTAINER ========== */
+.container {
+  width: 96%;
+  max-width: 1400px;
+  margin: auto;
+  padding: 0 1rem;
+}
+
+@media (max-width: 768px) {
+  .container {
+    width: 100%;
+    padding: 0 0.75rem;
+  }
+}
+
+/* ========== TYPOGRAPHY ========== */
+body {
+  font-family: var(--font-primary);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* ========== BUTTONS ========== */
+.btn-primary {
+  background: var(--color-primary) !important;
+  border: 1px solid var(--color-primary) !important;
+  color: white !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
+  border-radius: var(--radius-lg) !important;
+  transition: all var(--transition-normal) !important;
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-dark) !important;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-secondary {
+  background: var(--color-secondary) !important;
+  border: 1px solid var(--color-secondary) !important;
+  color: white !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
+  border-radius: var(--radius-lg) !important;
+  transition: all var(--transition-normal) !important;
+}
+
+.btn-secondary:hover {
+  background: var(--color-secondary-dark) !important;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-outline {
+  background: transparent !important;
+  border: 2px solid var(--color-primary) !important;
+  color: var(--color-primary) !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
+  border-radius: var(--radius-lg) !important;
+  transition: all var(--transition-normal) !important;
+}
+
+.btn-outline:hover {
+  background: var(--color-primary) !important;
+  color: white !important;
+}
+
+/* Legacy button class support */
+.btn-g {
+  border: 1px solid var(--color-primary) !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  background: var(--color-primary) !important;
+  padding: 8px 15px !important;
+  border-radius: var(--radius-lg) !important;
+  transition: all var(--transition-normal) !important;
+}
+
+.btn-g:hover {
+  color: #fff !important;
+  background-color: var(--color-text-primary) !important;
+  transform: translateY(-1px);
+}
+
+/* ========== SWIPER CUSTOMIZATION ========== */
+.swiper-button-next,
+.swiper-button-prev {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px !important;
+  height: 50px !important;
+  background: var(--color-bg-primary) !important;
+  border-radius: 50%;
+  box-shadow: var(--shadow-md) !important;
+  transition: all var(--transition-normal) !important;
+}
+
+.swiper-button-next svg,
+.swiper-button-prev svg {
+  color: var(--color-text-primary) !important;
+  width: 15px !important;
+}
+
+.swiper-button-next:hover,
+.swiper-button-prev:hover {
+  background-color: var(--color-primary) !important;
+  transform: scale(1.05);
+}
+
+.swiper-button-next:hover svg,
+.swiper-button-prev:hover svg {
+  color: #fff !important;
+}
+
+.swiper-pagination-bullet {
+  background: var(--color-text-muted) !important;
+  opacity: 0.5 !important;
+  transition: all var(--transition-normal) !important;
+}
+
+.swiper-pagination-bullet-active {
+  background: var(--color-primary) !important;
+  opacity: 1 !important;
+  width: 24px !important;
+  border-radius: var(--radius-full) !important;
+}
+
+/* ========== FORM ELEMENTS ========== */
+hr {
+  border-color: var(--color-border-light) !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1) !important;
+}
+
+/* ========== MATERIAL UI OVERRIDES ========== */
+.MuiFormgroup-root.MuiTextField-root {
+  font-size: 14px !important;
+}
+
+.MuiFormgroup-root .Mui-checked .MuiSvgIcon-root,
+.Mui-checked .MuiSvgIcon-root {
+  fill: var(--color-primary) !important;
+}
+
+.MuiFormgroup-root .MuiFormControlLabel-root .MuiCheckbox-root,
+.MuiCheckbox-root {
+  padding: 5px !important;
+  padding-left: 10px !important;
+}
+
+.ratingFilter .MuiCheckbox-root {
+  padding-left: 0px !important;
+}
+
+.MuiRating-iconFilled {
+  color: #facc15 !important;
+}
+
+.MuiButton-containedPrimary {
+  background-color: var(--color-primary) !important;
+}
+
+.MuiButton-containedPrimary:hover {
+  background-color: var(--color-primary-dark) !important;
+}
+
+/* ========== REACT COLLAPSE ========== */
+.ReactCollapse--collapse {
+  transition: height 300ms ease;
+}
+
+/* ========== RANGE SLIDER ========== */
+.range-slider {
+  height: 5px !important;
+}
+
+.range-slider .range-slider__thumb,
+.range-slider .range-slider__range {
+  background: var(--color-primary) !important;
+}
+
+.range-slider .range-slider__thumb {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+/* ========== GLASS MORPHISM EFFECTS ========== */
+.glass {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.glass-dark {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ========== CARD STYLES ========== */
+.card {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border-light);
+  transition: all var(--transition-normal);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+.card-glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-glass);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* ========== BADGE STYLES ========== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.badge-primary {
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+}
+
+.badge-secondary {
+  background: rgba(var(--color-secondary-rgb), 0.1);
+  color: var(--color-secondary);
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--color-success);
+}
+
+.badge-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+}
+
+/* ========== PRICE STYLES ========== */
+.price {
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+
+.price-sale {
+  color: var(--color-error);
+}
+
+.price-original {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
+/* ========== LINK STYLES ========== */
+.link {
+  color: var(--color-primary);
+  font-weight: 500;
+  transition: color var(--transition-fast);
+}
+
+.link:hover {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+}
+
+/* ========== ANIMATIONS ========== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease forwards;
+}
+
+.animate-fadeUp {
+  animation: fadeUp 0.5s ease forwards;
+}
+
+.animate-slideInRight {
+  animation: slideInRight 0.5s ease forwards;
+}
+
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ========== RESPONSIVE UTILITIES ========== */
+@media (max-width: 640px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .hide-tablet {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  .hide-desktop {
+    display: none !important;
+  }
+}
+
+/* ========== LOADING STATES ========== */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary) 25%,
+    var(--color-bg-secondary) 50%,
+    var(--color-bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: var(--radius-md);
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ========== PRODUCT SPECIFIC ========== */
+.product-card {
+  transition: all var(--transition-normal);
+}
+
+.product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.product-image {
+  transition: transform var(--transition-slow);
+}
+
+.product-card:hover .product-image {
+  transform: scale(1.05);
+}
+
+/* ========== DISCOUNT BADGE ========== */
+.discount-badge {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  z-index: 10;
+}
+
+/* ========== WISHLIST BUTTON ========== */
+.wishlist-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border-radius: 50%;
+  box-shadow: var(--shadow-md);
+  transition: all var(--transition-normal);
+  z-index: 10;
+  opacity: 0;
+  transform: translateX(10px);
+}
+
+.product-card:hover .wishlist-btn {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.wishlist-btn:hover {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+.wishlist-btn.active {
+  background: #ef4444;
+  color: white;
+}
+
+/* ========== HEADER FIXED SPACING ========== */
+.main-content {
+  padding-top: 140px; /* Adjust based on header height */
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding-top: 160px;
+  }
+}
