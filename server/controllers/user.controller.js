@@ -157,7 +157,7 @@ export async function verifyEmailController(req, res) {
     const isCodeValid = user.otp === otp;
     const isNotExpires = user.otpExpires > Date.now();
     if (isCodeValid && isNotExpires) {
-      user.verify_Email = true;
+      user.verifyEmail = true;
       user.otp = null;
       user.otpExpires = null;
       await user.save();

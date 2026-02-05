@@ -78,15 +78,28 @@ const LoginForm = () => {
 
     postData("/api/user/login", formFields)
       .then((res) => {
+        console.log("Login response:", res);
         if (res?.error !== true) {
-          // Set cookies
+          // Set cookies - data is returned directly, not nested under user
+          console.log("Setting cookies with:", {
+            accessToken: res?.data?.accessToken ? "present" : "missing",
+            userName: res?.data?.userName,
+            userEmail: res?.data?.userEmail,
+          });
           cookies.set("accessToken", res?.data?.accessToken, { expires: 7 });
           cookies.set("refreshToken", res?.data?.refreshToken, { expires: 7 });
-          cookies.set("userName", res?.data?.user?.name || "User", {
+          cookies.set("userName", res?.data?.userName || "User", {
             expires: 7,
           });
-          cookies.set("userEmail", res?.data?.user?.email || formFields.email, {
+          cookies.set("userEmail", res?.data?.userEmail || formFields.email, {
             expires: 7,
+          });
+
+          // Update context immediately
+          context?.setIsLogin(true);
+          context?.setUser({
+            name: res?.data?.userName || "User",
+            email: res?.data?.userEmail || formFields.email,
           });
 
           context?.alertBox("success", res?.message);

@@ -14,12 +14,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FaRegTrashAlt } from "react-icons/fa";
+import { FiImage, FiVideo } from "react-icons/fi";
 import { IoEyeOutline } from "react-icons/io5";
 import { RiEdit2Line } from "react-icons/ri";
 
 const columns = [
-  { id: "IMAGE", label: "IMAGE", minWidth: 300 },
+  { id: "MEDIA", label: "MEDIA", minWidth: 300 },
   { id: "TITLE", label: "TITLE", minWidth: 150 },
+  { id: "TYPE", label: "TYPE", minWidth: 80 },
   { id: "POSITION", label: "POSITION", minWidth: 100 },
   { id: "STATUS", label: "STATUS", minWidth: 80 },
   { id: "ACTIONS", label: "ACTIONS", minWidth: 200 },
@@ -127,12 +129,31 @@ const Banners = () => {
                   <TableRow key={banner._id || index}>
                     <TableCell className="!px-0">
                       <div className="flex items-center gap-3">
-                        <div className="img bg-white rounded-md w-[400px] h-[118px] overflow-hidden">
-                          <img
-                            src={getImageUrl(banner.image)}
-                            alt="banner image"
-                            className="w-full h-full object-cover hover:scale-105 transition-all"
-                          />
+                        <div className="img bg-white rounded-md w-[400px] h-[118px] overflow-hidden relative">
+                          {/* Show video or image based on mediaType */}
+                          {banner.mediaType === "video" && banner.videoUrl ? (
+                            <video
+                              src={banner.videoUrl}
+                              className="w-full h-full object-cover"
+                              muted
+                              loop
+                              playsInline
+                              autoPlay
+                              poster={getImageUrl(banner.image)}
+                            />
+                          ) : (
+                            <img
+                              src={getImageUrl(banner.image)}
+                              alt="banner image"
+                              className="w-full h-full object-cover hover:scale-105 transition-all"
+                            />
+                          )}
+                          {/* Video indicator badge */}
+                          {banner.mediaType === "video" && (
+                            <span className="absolute top-2 left-2 bg-purple-600 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                              <FiVideo size={12} /> Video
+                            </span>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -146,6 +167,26 @@ const Banners = () => {
                           {banner.subtitle}
                         </p>
                       )}
+                    </TableCell>
+
+                    <TableCell>
+                      <span
+                        className={`px-2 py-1 rounded text-sm flex items-center gap-1 w-fit ${
+                          banner.mediaType === "video"
+                            ? "bg-purple-100 text-purple-700"
+                            : "bg-blue-100 text-blue-700"
+                        }`}
+                      >
+                        {banner.mediaType === "video" ? (
+                          <>
+                            <FiVideo size={14} /> Video
+                          </>
+                        ) : (
+                          <>
+                            <FiImage size={14} /> Image
+                          </>
+                        )}
+                      </span>
                     </TableCell>
 
                     <TableCell>

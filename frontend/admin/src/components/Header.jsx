@@ -1,4 +1,5 @@
 "use client";
+import { useAdmin } from "@/context/AdminContext";
 import { useOrderNotifications } from "@/hooks/useOrderNotifications";
 import { Avatar, Badge, Button, Menu, MenuItem, Tooltip } from "@mui/material";
 import { useRouter } from "next/navigation";
@@ -13,6 +14,7 @@ const Header = () => {
   const [notificationAnchor, setNotificationAnchor] = useState(null);
   const { notificationCount, orders, markOrderAsSeen, clearAllNotifications } =
     useOrderNotifications();
+  const { logout } = useAdmin();
   const router = useRouter();
 
   const open = Boolean(anchorEl);
@@ -45,8 +47,8 @@ const Header = () => {
   };
 
   const handleLogout = () => {
-    // Add logout logic here
-    router.push("/login");
+    handleProfileClose();
+    logout();
   };
 
   return (

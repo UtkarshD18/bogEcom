@@ -159,17 +159,37 @@ export const createBlog = async (req, res) => {
       content,
       excerpt,
       image,
+      mediaType,
+      videoUrl,
       author,
       category,
       tags,
       isPublished,
     } = req.body;
 
-    if (!title || !content || !image) {
+    // Validate required fields based on media type
+    if (!title || !content) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "Title, content, and image are required",
+        message: "Title and content are required",
+      });
+    }
+
+    // Validate media based on type
+    if (mediaType === "video" && !videoUrl) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Video URL is required for video blogs",
+      });
+    }
+
+    if (mediaType !== "video" && !image) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Image is required for image blogs",
       });
     }
 
@@ -177,7 +197,9 @@ export const createBlog = async (req, res) => {
       title,
       content,
       excerpt: excerpt || content.substring(0, 500),
-      image,
+      image: image || null,
+      mediaType: mediaType || "image",
+      videoUrl: videoUrl || null,
       author: author || "Admin",
       category: category || "General",
       tags: tags || [],
@@ -214,6 +236,8 @@ export const updateBlog = async (req, res) => {
       content,
       excerpt,
       image,
+      mediaType,
+      videoUrl,
       author,
       category,
       tags,
@@ -244,7 +268,9 @@ export const updateBlog = async (req, res) => {
     if (title) blog.title = title;
     if (content) blog.content = content;
     if (excerpt) blog.excerpt = excerpt;
-    if (image) blog.image = image;
+    if (image !== undefined) blog.image = image;
+    if (mediaType) blog.mediaType = mediaType;
+    if (videoUrl !== undefined) blog.videoUrl = videoUrl;
     if (author) blog.author = author;
     if (category) blog.category = category;
     if (tags) blog.tags = tags;

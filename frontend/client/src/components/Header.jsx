@@ -66,6 +66,12 @@ const Header = () => {
     const userNameCookie = cookies.get("userName");
     const userPhotoCookie = cookies.get("userPhoto");
 
+    console.log("Header checkLoginStatus:", {
+      accessToken: accessToken ? "present" : "missing",
+      userEmail: userEmailCookie,
+      userName: userNameCookie,
+    });
+
     if (accessToken) {
       setIsLoggedIn(true);
       setUserEmail(userEmailCookie || "user@example.com");

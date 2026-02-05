@@ -8,7 +8,7 @@ import UserModel from "../models/user.model.js";
  */
 const admin = async (req, res, next) => {
   try {
-    const userId = req.user;
+    const userId = req.userId || req.user;
 
     if (!userId) {
       return res.status(401).json({
@@ -18,7 +18,9 @@ const admin = async (req, res, next) => {
       });
     }
 
-    const user = await UserModel.findById(userId).select("role status");
+    const user = await UserModel.findById(userId).select(
+      "_id role status name email",
+    );
 
     if (!user) {
       return res.status(401).json({
@@ -43,6 +45,10 @@ const admin = async (req, res, next) => {
         message: "Admin access required",
       });
     }
+
+    // Attach full user object for controllers that need it
+    req.user = user;
+    req.userId = user._id;
 
     next();
   } catch (error) {

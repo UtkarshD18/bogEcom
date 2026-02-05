@@ -81,6 +81,42 @@ export const uploadFile = async (file, token) => {
   }
 };
 
+// Upload video file
+export const uploadVideoFile = async (file, token) => {
+  try {
+    if (!token || typeof token !== "string") {
+      return {
+        error: true,
+        message: "Authentication token is missing or invalid",
+      };
+    }
+
+    const formData = new FormData();
+    formData.append("video", file);
+
+    console.log("uploadVideoFile debug:", {
+      hasToken: !!token,
+      fileName: file.name,
+      fileSize: file.size,
+    });
+
+    const response = await fetch(`${apiUrl}/api/upload/video`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: "include",
+      body: formData,
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("uploadVideoFile error:", error);
+    return { error: true, message: error.message };
+  }
+};
+
 // Upload multiple files
 export const uploadFiles = async (files, token) => {
   try {

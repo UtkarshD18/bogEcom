@@ -1,14 +1,15 @@
 "use client";
 import UploadBox from "@/components/UploadBox";
 import { useAdmin } from "@/context/AdminContext";
-import { postData, uploadFile } from "@/utils/api";
-import { Button } from "@mui/material";
+import { postData, uploadFile, uploadVideoFile } from "@/utils/api";
+import { Button, FormControlLabel, Radio, RadioGroup } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Switch from "@mui/material/Switch";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
+import { FiImage, FiLink, FiVideo } from "react-icons/fi";
 import { IoMdClose } from "react-icons/io";
 
 const AddBanner = () => {
@@ -17,10 +18,17 @@ const AddBanner = () => {
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [link, setLink] = useState("");
-  const [position, setPosition] = useState("top");
+  const [position, setPosition] = useState("home-top");
   const [isActive, setIsActive] = useState(true);
   const [images, setImages] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ===== NEW VIDEO SUPPORT STATE =====
+  const [mediaType, setMediaType] = useState("image"); // "image" or "video"
+  const [videoUrl, setVideoUrl] = useState("");
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoPreview, setVideoPreview] = useState("");
+  const [videoInputMethod, setVideoInputMethod] = useState("url"); // "url" or "upload"
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -47,31 +55,89 @@ const AddBanner = () => {
     setImages([]);
   };
 
+  // ===== VIDEO HANDLERS =====
+  const handleVideoFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      const validTypes = ["video/mp4", "video/webm"];
+      if (!validTypes.includes(file.type)) {
+        toast.error("Only MP4 and WebM video formats are supported");
+        return;
+      }
+      // Validate file size (max 50MB)
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error("Video size should be less than 50MB");
+        return;
+      }
+      setVideoFile(file);
+      setVideoPreview(URL.createObjectURL(file));
+      setVideoUrl(""); // Clear URL if uploading file
+    }
+  };
+
+  const removeVideo = () => {
+    setVideoFile(null);
+    setVideoPreview("");
+    setVideoUrl("");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (images.length === 0) {
+
+    // For image banners, image is required
+    // For video banners, image is optional (poster/fallback)
+    if (mediaType === "image" && images.length === 0) {
       toast.error("Please upload a banner image");
       return;
+    }
+
+    // Video validation
+    if (mediaType === "video") {
+      if (!videoUrl && !videoFile) {
+        toast.error("Please provide a video URL or upload a video file");
+        return;
+      }
     }
 
     setIsSubmitting(true);
 
     try {
-      // Upload image first
-      const uploadResult = await uploadFile(images[0].file, token);
-      if (!uploadResult.success || !uploadResult.data?.url) {
-        toast.error("Failed to upload image");
-        setIsSubmitting(false);
-        return;
+      let imageUrl = "";
+
+      // Upload image if provided
+      if (images.length > 0 && images[0].file) {
+        const uploadResult = await uploadFile(images[0].file, token);
+        if (!uploadResult.success || !uploadResult.data?.url) {
+          toast.error("Failed to upload image");
+          setIsSubmitting(false);
+          return;
+        }
+        imageUrl = uploadResult.data.url;
+      }
+
+      // Handle video upload if video file is provided
+      let finalVideoUrl = videoUrl;
+      if (mediaType === "video" && videoFile) {
+        const videoUploadResult = await uploadVideoFile(videoFile, token);
+        if (!videoUploadResult.success || !videoUploadResult.data?.url) {
+          toast.error("Failed to upload video");
+          setIsSubmitting(false);
+          return;
+        }
+        finalVideoUrl = videoUploadResult.data.url;
       }
 
       const bannerData = {
         title,
         subtitle,
-        image: uploadResult.data.url,
+        image: imageUrl, // Optional for video banners
         link,
         position,
         isActive,
+        // ===== NEW VIDEO FIELDS =====
+        mediaType,
+        videoUrl: mediaType === "video" ? finalVideoUrl : "",
       };
 
       const response = await postData("/api/banners", bannerData, token);
@@ -155,10 +221,12 @@ const AddBanner = () => {
               size="small"
               className="bg-white"
             >
-              <MenuItem value="top">Top Banner</MenuItem>
-              <MenuItem value="middle">Middle Banner</MenuItem>
-              <MenuItem value="bottom">Bottom Banner</MenuItem>
-              <MenuItem value="sidebar">Sidebar Banner</MenuItem>
+              <MenuItem value="home-top">Home Top</MenuItem>
+              <MenuItem value="home-middle">Home Middle</MenuItem>
+              <MenuItem value="home-bottom">Home Bottom</MenuItem>
+              <MenuItem value="sidebar">Sidebar</MenuItem>
+              <MenuItem value="category">Category Page</MenuItem>
+              <MenuItem value="product">Product Page</MenuItem>
             </Select>
           </div>
 
@@ -179,9 +247,187 @@ const AddBanner = () => {
           </div>
         </div>
 
+        {/* ===== MEDIA TYPE SELECTOR ===== */}
+        <div className="flex flex-col gap-2 mt-5 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <h3 className="text-[16px] text-gray-700 font-[600] flex items-center gap-2">
+            Media Type
+          </h3>
+          <RadioGroup
+            row
+            value={mediaType}
+            onChange={(e) => {
+              setMediaType(e.target.value);
+              // Reset video fields when switching to image
+              if (e.target.value === "image") {
+                setVideoUrl("");
+                setVideoFile(null);
+                setVideoPreview("");
+              }
+            }}
+          >
+            <FormControlLabel
+              value="image"
+              control={<Radio />}
+              label={
+                <span className="flex items-center gap-2">
+                  <FiImage /> Image Banner
+                </span>
+              }
+            />
+            <FormControlLabel
+              value="video"
+              control={<Radio />}
+              label={
+                <span className="flex items-center gap-2">
+                  <FiVideo /> Video Banner
+                </span>
+              }
+            />
+          </RadioGroup>
+          <p className="text-xs text-gray-500">
+            {mediaType === "image"
+              ? "Standard image banner (existing behavior)"
+              : "Autoplaying video banner with image fallback"}
+          </p>
+        </div>
+
+        {/* ===== VIDEO INPUT (Only shown when mediaType is "video") ===== */}
+        {mediaType === "video" && (
+          <div className="flex flex-col gap-4 mt-5 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <h3 className="text-[16px] text-gray-700 font-[600] flex items-center gap-2">
+              <FiVideo className="text-purple-600" /> Video Source
+            </h3>
+
+            {/* Video Input Method Toggle */}
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => setVideoInputMethod("url")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
+                  videoInputMethod === "url"
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                <FiLink /> Video URL
+              </button>
+              <button
+                type="button"
+                onClick={() => setVideoInputMethod("upload")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
+                  videoInputMethod === "upload"
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                <FiVideo /> Upload Video
+              </button>
+            </div>
+
+            {/* Video URL Input */}
+            {videoInputMethod === "url" && (
+              <div className="form-group flex flex-col gap-1">
+                <span className="text-[14px] text-gray-700 font-medium">
+                  Video URL (MP4/WebM)
+                </span>
+                <input
+                  type="text"
+                  value={videoUrl}
+                  onChange={(e) => {
+                    setVideoUrl(e.target.value);
+                    setVideoFile(null);
+                    setVideoPreview("");
+                  }}
+                  placeholder="https://example.com/video.mp4"
+                  className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-purple-500 px-3 text-[14px]"
+                />
+                {videoUrl && (
+                  <div className="mt-2 relative">
+                    <video
+                      src={videoUrl}
+                      className="w-full max-w-[400px] h-[150px] object-cover rounded-md bg-black"
+                      muted
+                      loop
+                      playsInline
+                      autoPlay
+                    />
+                    <button
+                      type="button"
+                      onClick={removeVideo}
+                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                    >
+                      <IoMdClose size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Video File Upload */}
+            {videoInputMethod === "upload" && (
+              <div className="form-group flex flex-col gap-1">
+                <span className="text-[14px] text-gray-700 font-medium">
+                  Upload Video File
+                </span>
+                {!videoPreview ? (
+                  <label className="w-[250px] h-[150px] rounded-md bg-gray-100 border-2 border-dashed border-purple-300 flex flex-col items-center justify-center cursor-pointer hover:bg-purple-50 transition-all">
+                    <FiVideo size={32} className="text-purple-500 mb-2" />
+                    <span className="text-sm text-gray-600">
+                      Click to upload
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      MP4, WebM (max 50MB)
+                    </span>
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm"
+                      onChange={handleVideoFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                ) : (
+                  <div className="relative w-fit">
+                    <video
+                      src={videoPreview}
+                      className="w-[300px] h-[150px] object-cover rounded-md bg-black"
+                      muted
+                      loop
+                      playsInline
+                      autoPlay
+                    />
+                    <button
+                      type="button"
+                      onClick={removeVideo}
+                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                    >
+                      <IoMdClose size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Video Specs Helper */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+              <p className="text-sm text-yellow-800 font-medium">
+                📹 Recommended Video Specs:
+              </p>
+              <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
+                <li>Resolution: 1920×400 (wide banner format)</li>
+                <li>Duration: ≤10 seconds for best UX</li>
+                <li>Format: MP4 (H.264) or WebM</li>
+                <li>Size: Under 10MB for fast loading</li>
+                <li>Videos auto-play muted for browser compatibility</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col gap-2 mt-5">
           <h3 className="text-[16px] text-gray-700 font-[600]">
-            Banner Image *
+            {mediaType === "video"
+              ? "Poster Image (Optional)"
+              : "Banner Image *"}
           </h3>
 
           <div className="flex items-center gap-4 mt-2 flex-wrap">
@@ -208,7 +454,9 @@ const AddBanner = () => {
             {images.length === 0 && <UploadBox onChange={handleImageUpload} />}
           </div>
           <p className="text-sm text-gray-500">
-            Recommended size: 1920x400px for top banners. Max 5MB.
+            {mediaType === "video"
+              ? "Optional: Shows while video loads. Recommended: 1920x400px. Max 5MB."
+              : "Recommended size: 1920x400px for top banners. Max 5MB."}
           </p>
         </div>
 
