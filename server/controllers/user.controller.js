@@ -7,6 +7,16 @@ import generateAccessToken from "../utils/generateAccessToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
 import VerificationEmail from "../utils/verifyEmailTemplate.js";
 
+const ACCESS_TOKEN_MAX_AGE = 15 * 60 * 1000; // 15 minutes
+const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+const buildCookieOptions = (maxAge) => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+  maxAge,
+});
+
 /**
  * Validate password strength
  * @param {string} password
@@ -233,14 +243,11 @@ export async function loginUserController(req, res) {
       last_login_date: new Date(),
     });
 
-    const cookiesOption = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-    };
+    const accessCookieOptions = buildCookieOptions(ACCESS_TOKEN_MAX_AGE);
+    const refreshCookieOptions = buildCookieOptions(REFRESH_TOKEN_MAX_AGE);
 
-    res.cookie("accessToken", accessToken, cookiesOption);
-    res.cookie("refreshToken", refreshToken, cookiesOption);
+    res.cookie("accessToken", accessToken, accessCookieOptions);
+    res.cookie("refreshToken", refreshToken, refreshCookieOptions);
 
     return res.json({
       message: "Login successful",
@@ -265,14 +272,63 @@ export async function loginUserController(req, res) {
   }
 }
 
+export async function refreshTokenController(req, res) {
+  try {
+    const refreshToken =
+      req.cookies?.refreshToken || req.body?.refreshToken || null;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        error: true,
+        message: "Refresh token required",
+      });
+    }
+
+    const secretKey = process.env.SECRET_KEY_REFRESH_TOKEN;
+    if (!secretKey) {
+      return res.status(500).json({
+        success: false,
+        error: true,
+        message: "Server configuration error",
+      });
+    }
+
+    const decoded = jwt.verify(refreshToken, secretKey);
+    const user = await UserModel.findById(decoded?.id);
+
+    if (!user || user.refreshToken !== refreshToken) {
+      return res.status(401).json({
+        success: false,
+        error: true,
+        message: "Invalid refresh token",
+      });
+    }
+
+    const accessToken = await generateAccessToken(user._id);
+    const accessCookieOptions = buildCookieOptions(ACCESS_TOKEN_MAX_AGE);
+
+    res.cookie("accessToken", accessToken, accessCookieOptions);
+
+    return res.json({
+      success: true,
+      error: false,
+      message: "Access token refreshed",
+      data: { accessToken },
+    });
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      error: true,
+      message: "Refresh token expired or invalid",
+    });
+  }
+}
+
 export async function logoutController(req, res) {
   try {
     const userId = req?.userId;
-    const cookiesOption = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-    };
+    const cookiesOption = buildCookieOptions(0);
 
     res.clearCookie("accessToken", cookiesOption);
     res.clearCookie("refreshToken", cookiesOption);
@@ -518,14 +574,11 @@ export async function authWithGoogle(req, res) {
       last_login_date: new Date(),
     });
 
-    const cookiesOption = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-    };
+    const accessCookieOptions = buildCookieOptions(ACCESS_TOKEN_MAX_AGE);
+    const refreshCookieOptions = buildCookieOptions(REFRESH_TOKEN_MAX_AGE);
 
-    res.cookie("accessToken", accessToken, cookiesOption);
-    res.cookie("refreshToken", refreshToken, cookiesOption);
+    res.cookie("accessToken", accessToken, accessCookieOptions);
+    res.cookie("refreshToken", refreshToken, refreshCookieOptions);
 
     return res.json({
       message: "Google login successful",

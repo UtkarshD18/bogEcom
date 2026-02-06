@@ -10,10 +10,8 @@ import {
   getUserOrderById,
   getUserOrders,
   handlePhonePeWebhook,
-  handleRazorpayWebhook,
   saveOrderForLater,
   updateOrderStatus,
-  verifyPayment,
 } from "../controllers/order.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
@@ -22,7 +20,6 @@ import {
   validateCreateOrderRequest,
   validateSaveOrderRequest,
   validateUpdateOrderStatusRequest,
-  validateVerifyPaymentRequest,
   validateGetOrderRequest,
   validatePaginationQuery,
 } from "../middlewares/orderValidation.js";
@@ -34,7 +31,7 @@ const router = express.Router();
  *
  * Admin routes for managing orders
  * User routes for creating and viewing orders
- * Payment integration (PhonePe/Razorpay)
+ * Payment integration (PhonePe)
  *
  * Route Structure:
  * - Public routes: Payment status, webhooks
@@ -46,9 +43,6 @@ const router = express.Router();
 
 // PhonePe webhook (signature verified server-side)
 router.post("/webhook/phonepe", handlePhonePeWebhook);
-
-// Razorpay webhook (signature verified server-side)
-router.post("/webhook/razorpay", handleRazorpayWebhook);
 
 // ==================== PUBLIC ROUTES ====================
 
@@ -73,14 +67,6 @@ router.post(
   saveOrderForLater
 );
 
-// Verify payment - with validation
-router.post(
-  "/verify-payment",
-  optionalAuth,
-  validateVerifyPaymentRequest,
-  verifyPayment
-);
-
 // Get user's orders
 router.get("/user/my-orders", optionalAuth, getUserOrders);
 
@@ -95,7 +81,9 @@ router.get(
 // ==================== TEST ROUTES (Development Only) ====================
 
 // Create test order (for testing without payment gateway)
-router.post("/test/create", createTestOrder);
+if (process.env.NODE_ENV !== "production") {
+  router.post("/test/create", createTestOrder);
+}
 
 // ==================== ADMIN ROUTES ====================
 

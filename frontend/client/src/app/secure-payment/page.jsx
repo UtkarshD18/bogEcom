@@ -7,7 +7,7 @@ import {
   FiLock,
   FiShield,
 } from "react-icons/fi";
-import { SiMastercard, SiRazorpay, SiVisa } from "react-icons/si";
+import { SiMastercard, SiVisa } from "react-icons/si";
 
 const SecurePayment = () => {
   const securityFeatures = [
@@ -27,7 +27,7 @@ const SecurePayment = () => {
       icon: <FiCreditCard className="text-3xl" />,
       title: "Secure Payment Gateway",
       description:
-        "Powered by Razorpay, one of India's most trusted payment gateways.",
+        "Powered by PhonePe, one of India's most trusted payment platforms.",
     },
   ];
 
@@ -104,11 +104,11 @@ const SecurePayment = () => {
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-gray-800 mb-4">
-                Powered by Razorpay
+                Powered by PhonePe
               </h2>
               <p className="text-gray-600 mb-4">
-                We've partnered with Razorpay, India's leading payment gateway
-                trusted by over 8 million businesses. Your transactions are
+                We've partnered with PhonePe, India's leading payment platform
+                trusted by millions of businesses. Your transactions are
                 processed securely with bank-grade security protocols.
               </p>
               <ul className="space-y-2">
@@ -127,7 +127,9 @@ const SecurePayment = () => {
               </ul>
             </div>
             <div className="flex items-center justify-center bg-gray-50 rounded-xl p-8">
-              <SiRazorpay className="text-7xl text-blue-600" />
+              <span className="text-3xl font-bold text-[#059669]">
+                PhonePe
+              </span>
             </div>
           </div>
         </div>

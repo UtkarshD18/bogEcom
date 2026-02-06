@@ -4,6 +4,36 @@ import {
   shouldThrottleNotification,
 } from "./notification.controller.js";
 
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
+
+const isDateOnlyString = (value) =>
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const normalizeCouponDate = (value, boundary = "start") => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  // Treat date-only strings as local day boundaries
+  if (isDateOnlyString(value)) {
+    if (boundary === "end") {
+      date.setHours(23, 59, 59, 999);
+    } else {
+      date.setHours(0, 0, 0, 0);
+    }
+  }
+
+  return date;
+};
+
 /**
  * Coupon Controller
  *
@@ -23,7 +53,7 @@ export const validateCoupon = async (req, res) => {
     const { code, orderAmount } = req.body;
     const userId = req.user?.id || null;
 
-    console.log("[Coupon Validate] Request:", { code, orderAmount, userId });
+    debugLog("[Coupon Validate] Request:", { code, orderAmount, userId });
 
     if (!code) {
       return res.status(400).json({
@@ -47,7 +77,7 @@ export const validateCoupon = async (req, res) => {
       isActive: true,
     });
 
-    console.log(
+    debugLog(
       "[Coupon Validate] Found coupon:",
       coupon
         ? {
@@ -64,7 +94,7 @@ export const validateCoupon = async (req, res) => {
       const allCoupons = await CouponModel.find({ isActive: true }).select(
         "code",
       );
-      console.log(
+      debugLog(
         "[Coupon Validate] Available active coupons:",
         allCoupons.map((c) => c.code),
       );
@@ -78,6 +108,20 @@ export const validateCoupon = async (req, res) => {
 
     // Check if coupon is valid (dates and usage)
     const now = new Date();
+    let effectiveEndDate = coupon.endDate;
+
+    // If coupon dates were saved as date-only (midnight), treat endDate as end-of-day
+    if (
+      effectiveEndDate instanceof Date &&
+      !Number.isNaN(effectiveEndDate.getTime()) &&
+      effectiveEndDate.getHours() === 0 &&
+      effectiveEndDate.getMinutes() === 0 &&
+      effectiveEndDate.getSeconds() === 0 &&
+      effectiveEndDate.getMilliseconds() === 0
+    ) {
+      effectiveEndDate = new Date(effectiveEndDate);
+      effectiveEndDate.setHours(23, 59, 59, 999);
+    }
 
     if (now < coupon.startDate) {
       return res.status(400).json({
@@ -87,12 +131,12 @@ export const validateCoupon = async (req, res) => {
       });
     }
 
-    if (now > coupon.endDate) {
-      console.log(
+    if (now > effectiveEndDate) {
+      debugLog(
         "[Coupon Validate] Coupon expired. Now:",
         now,
         "EndDate:",
-        coupon.endDate,
+        effectiveEndDate,
       );
       return res.status(400).json({
         error: true,
@@ -266,6 +310,17 @@ export const createCoupon = async (req, res) => {
       });
     }
 
+    const normalizedStartDate = normalizeCouponDate(startDate, "start");
+    const normalizedEndDate = normalizeCouponDate(endDate, "end");
+
+    if (!normalizedEndDate) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid end date",
+      });
+    }
+
     const newCoupon = new CouponModel({
       code: code.toUpperCase().trim(),
       description: description || "",
@@ -275,8 +330,8 @@ export const createCoupon = async (req, res) => {
       maxDiscountAmount: maxDiscountAmount || null,
       usageLimit: usageLimit || null,
       perUserLimit: perUserLimit || 1,
-      startDate: startDate || new Date(),
-      endDate: new Date(endDate),
+      startDate: normalizedStartDate || new Date(),
+      endDate: normalizedEndDate,
       isActive: isActive !== false,
     });
 
@@ -290,7 +345,7 @@ export const createCoupon = async (req, res) => {
         sendOfferNotification(savedCoupon).catch((err) =>
           console.error("Failed to send offer notification:", err.message),
         );
-        console.log(
+        debugLog(
           `Offer notification triggered for coupon: ${savedCoupon.code}`,
         );
       }
@@ -326,6 +381,36 @@ export const updateCoupon = async (req, res) => {
       updateData.code = updateData.code.toUpperCase().trim();
     }
 
+    if (updateData.startDate) {
+      const normalizedStartDate = normalizeCouponDate(
+        updateData.startDate,
+        "start",
+      );
+      if (!normalizedStartDate) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Invalid start date",
+        });
+      }
+      updateData.startDate = normalizedStartDate;
+    }
+
+    if (updateData.endDate) {
+      const normalizedEndDate = normalizeCouponDate(
+        updateData.endDate,
+        "end",
+      );
+      if (!normalizedEndDate) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Invalid end date",
+        });
+      }
+      updateData.endDate = normalizedEndDate;
+    }
+
     // Check if coupon is being activated (for notification trigger)
     const oldCoupon = await CouponModel.findById(id);
     const wasInactive = oldCoupon && !oldCoupon.isActive;
@@ -351,7 +436,7 @@ export const updateCoupon = async (req, res) => {
         sendOfferNotification(coupon).catch((err) =>
           console.error("Failed to send offer notification:", err.message),
         );
-        console.log(
+        debugLog(
           `Offer notification triggered for activated coupon: ${coupon.code}`,
         );
       }

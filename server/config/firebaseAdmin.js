@@ -13,6 +13,13 @@
 import admin from "firebase-admin";
 
 let firebaseApp = null;
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
 
 /**
  * Initialize Firebase Admin SDK
@@ -29,7 +36,7 @@ export const initializeFirebaseAdmin = () => {
 
   // Check if credentials are configured
   if (!projectId || !clientEmail || !privateKey) {
-    console.log(
+    debugLog(
       "⚠ Firebase Admin SDK not configured (missing credentials). Push notifications disabled.",
     );
     return null;
@@ -52,7 +59,7 @@ export const initializeFirebaseAdmin = () => {
       }),
     });
 
-    console.log("✓ Firebase Admin SDK initialized");
+    debugLog("✓ Firebase Admin SDK initialized");
     return firebaseApp;
   } catch (error) {
     console.error("✗ Failed to initialize Firebase Admin SDK:", error.message);

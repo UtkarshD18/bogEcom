@@ -3,7 +3,8 @@
 import ProductItem from "@/components/ProductItem";
 import ProductZoom from "@/components/ProductZoom";
 import QtyBox from "@/components/QtyBox";
-import { MyContext } from "@/context/ThemeProvider";
+import { useCart } from "@/context/CartContext";
+import { useWishlist } from "@/context/WishlistContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { sanitizeHTML } from "@/utils/sanitize";
 import {
@@ -15,7 +16,7 @@ import {
 } from "@mui/material";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { HiOutlineFire } from "react-icons/hi";
 import { IoMdCart, IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
 import { MdLocalShipping, MdPolicy, MdVerified } from "react-icons/md";
@@ -28,13 +29,13 @@ import { MdLocalShipping, MdPolicy, MdVerified } from "react-icons/md";
  */
 const ProductDetailPage = () => {
   const { id } = useParams();
-  const context = useContext(MyContext);
+  const { addToCart } = useCart();
+  const { toggleWishlist, isInWishlist } = useWishlist();
 
   const [product, setProduct] = useState(null);
   const [relatedProducts, setRelatedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
-  const [isWishlisted, setIsWishlisted] = useState(false);
   const [activeTab, setActiveTab] = useState("description");
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -83,24 +84,8 @@ const ProductDetailPage = () => {
   // Handle Add to Cart
   const handleAddToCart = async () => {
     try {
-      // Add to cart logic - integrates with your cart context/API
-      if (context?.addToCart) {
-        await context.addToCart(product, quantity);
-      } else {
-        // Fallback: Save to localStorage
-        const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-        const existingIndex = cart.findIndex(
-          (item) => item._id === product._id || item.id === product.id,
-        );
-
-        if (existingIndex >= 0) {
-          cart[existingIndex].quantity += quantity;
-        } else {
-          cart.push({ ...product, quantity });
-        }
-
-        localStorage.setItem("cart", JSON.stringify(cart));
-      }
+      if (!product) return;
+      await addToCart(product, quantity);
 
       setSnackbar({
         open: true,
@@ -119,29 +104,16 @@ const ProductDetailPage = () => {
   // Handle Wishlist Toggle
   const handleWishlistToggle = async () => {
     try {
-      if (context?.toggleWishlist) {
-        await context.toggleWishlist(product);
-      } else {
-        // Fallback: Save to localStorage
-        const wishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
-        const existingIndex = wishlist.findIndex(
-          (item) => item._id === product._id || item.id === product.id,
-        );
-
-        if (existingIndex >= 0) {
-          wishlist.splice(existingIndex, 1);
-          setIsWishlisted(false);
-        } else {
-          wishlist.push(product);
-          setIsWishlisted(true);
-        }
-
-        localStorage.setItem("wishlist", JSON.stringify(wishlist));
-      }
+      if (!product) return;
+      const productId = product._id || product.id;
+      const wasWishlisted = productId ? isInWishlist(productId) : false;
+      await toggleWishlist(product);
 
       setSnackbar({
         open: true,
-        message: isWishlisted ? "Removed from wishlist" : "Added to wishlist!",
+        message: wasWishlisted
+          ? "Removed from wishlist"
+          : "Added to wishlist!",
         severity: "success",
       });
     } catch (error) {
@@ -207,6 +179,8 @@ const ProductDetailPage = () => {
   const discount = calculateDiscount();
   const images =
     product.images || (product.image ? [product.image] : ["/product_1.png"]);
+  const productId = product?._id || product?.id;
+  const isWishlisted = productId ? isInWishlist(productId) : false;
 
   return (
     <section className="py-4 sm:py-8 bg-gray-50 min-h-screen">

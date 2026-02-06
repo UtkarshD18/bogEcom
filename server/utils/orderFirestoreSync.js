@@ -13,6 +13,13 @@
 import { getFirestore, isFirebaseReady } from "../config/firebaseAdmin.js";
 
 const ORDERS_COLLECTION = "orders";
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
 
 /**
  * Sync order to Firestore
@@ -37,7 +44,7 @@ export const syncOrderToFirestore = async (order, action = "update") => {
 
     if (action === "delete") {
       await docRef.delete();
-      console.log(`[Firestore] Order ${orderId} deleted`);
+      debugLog(`[Firestore] Order ${orderId} deleted`);
       return { success: true, action: "deleted" };
     }
 
@@ -45,8 +52,8 @@ export const syncOrderToFirestore = async (order, action = "update") => {
     const firestoreData = {
       orderId: order.orderId || orderId,
       userId: order.userId?.toString() || order.user?.toString() || null,
-      status: order.status || "Pending",
-      paymentStatus: order.paymentStatus || "Pending",
+      status: order.order_status || order.status || "pending",
+      paymentStatus: order.payment_status || order.paymentStatus || "pending",
 
       // Order amounts
       totalAmount: order.totalAmt || order.totalAmount || 0,
@@ -67,8 +74,11 @@ export const syncOrderToFirestore = async (order, action = "update") => {
       // Delivery info
       delivery: {
         estimatedDate: order.estimatedDeliveryDate || null,
-        trackingNumber: order.trackingNumber || null,
-        carrier: order.shippingCarrier || null,
+        trackingNumber: order.awb_number || order.trackingNumber || null,
+        carrier: order.shipping_provider || order.shippingCarrier || null,
+        labelUrl: order.shipping_label || null,
+        manifestUrl: order.shipping_manifest || null,
+        shipmentStatus: order.shipment_status || null,
       },
 
       // Metadata
@@ -77,10 +87,10 @@ export const syncOrderToFirestore = async (order, action = "update") => {
 
     if (action === "create") {
       await docRef.set(firestoreData);
-      console.log(`[Firestore] Order ${orderId} created`);
+      debugLog(`[Firestore] Order ${orderId} created`);
     } else {
       await docRef.set(firestoreData, { merge: true });
-      console.log(`[Firestore] Order ${orderId} updated`);
+      debugLog(`[Firestore] Order ${orderId} updated`);
     }
 
     return { success: true, action };
@@ -122,13 +132,13 @@ export const syncOrderStatus = async (
     }
 
     await docRef.update(updateData);
-    console.log(`[Firestore] Order ${orderId} status updated to ${status}`);
+    debugLog(`[Firestore] Order ${orderId} status updated to ${status}`);
 
     return { success: true };
   } catch (error) {
     // If document doesn't exist, that's okay (might not have been synced initially)
     if (error.code === 5) {
-      console.log(`[Firestore] Order ${orderId} not found for status update`);
+      debugLog(`[Firestore] Order ${orderId} not found for status update`);
       return { success: false, reason: "not_found" };
     }
     console.error(`[Firestore] Status sync error:`, error.message);
@@ -162,8 +172,8 @@ export const batchSyncOrders = async (orders) => {
         {
           orderId: order.orderId || orderId,
           userId: order.userId?.toString() || null,
-          status: order.status || "Pending",
-          paymentStatus: order.paymentStatus || "Pending",
+          status: order.order_status || order.status || "pending",
+          paymentStatus: order.payment_status || order.paymentStatus || "pending",
           totalAmount: order.totalAmt || order.totalAmount || 0,
           itemCount: order.products?.length || 0,
           createdAt: order.createdAt || new Date(),
@@ -177,7 +187,7 @@ export const batchSyncOrders = async (orders) => {
     }
 
     await batch.commit();
-    console.log(`[Firestore] Batch synced ${count} orders`);
+    debugLog(`[Firestore] Batch synced ${count} orders`);
 
     return { success: true, count };
   } catch (error) {

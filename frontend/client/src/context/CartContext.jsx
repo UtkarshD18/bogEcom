@@ -1,5 +1,6 @@
 "use client";
 
+import Cookies from "js-cookie";
 import { createContext, useContext, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 
@@ -37,7 +38,7 @@ export const CartProvider = ({ children }) => {
   // Get user token if logged in
   const getToken = () => {
     if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
+    return Cookies.get("accessToken") || localStorage.getItem("token");
   };
 
   // Fetch cart from API or local storage

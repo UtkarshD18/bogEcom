@@ -1,7 +1,14 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
 import { getData, putData } from "@/utils/api";
-import { Button } from "@mui/material";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  TextField,
+} from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Pagination from "@mui/material/Pagination";
 import Select from "@mui/material/Select";
@@ -10,14 +17,207 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FaAngleDown } from "react-icons/fa6";
 import { FiSearch } from "react-icons/fi";
-import { MdDateRange } from "react-icons/md";
+import { MdDateRange, MdLocalShipping } from "react-icons/md";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const [expandIndex, setExpandIndex] = useState(false);
   const [orderStatus, setOrderStatus] = useState(
-    order?.order_status || "confirm",
+    order?.order_status || "pending",
   );
   const [updating, setUpdating] = useState(false);
+  const [shippingEditorOpen, setShippingEditorOpen] = useState(false);
+  const [shippingForm, setShippingForm] = useState(null);
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingResponse, setShippingResponse] = useState(null);
+
+  const buildShipmentPayload = () => {
+    const addr = order?.delivery_address || {};
+    return {
+      order_number: `#${order?._id?.slice(-6) || "000001"}`,
+      payment_type:
+        order?.payment_status === "paid" ? "prepaid" : "cod",
+      order_amount: order?.finalAmount || order?.totalAmt || 0,
+      package_weight: 500,
+      package_length: 10,
+      package_breadth: 10,
+      package_height: 10,
+      request_auto_pickup: "no",
+      consignee: {
+        name: addr.name || "Customer",
+        address: addr.address_line1 || addr.address_line || "",
+        address_2: addr.address_line2 || "",
+        city: addr.city || "",
+        state: addr.state || "",
+        pincode: addr.pincode || "",
+        phone: String(addr.mobile || ""),
+      },
+      pickup: {
+        warehouse_name: "",
+        name: "",
+        address: "",
+        address_2: "",
+        city: "",
+        state: "",
+        pincode: "",
+        phone: "",
+      },
+    };
+  };
+
+  const shippingRequest = async (path, method = "POST", body = null) => {
+    const response = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await response.json();
+    if (!data?.success) {
+      throw new Error(data?.message || "Shipping request failed");
+    }
+    return data;
+  };
+
+  const handleOpenShippingEditor = () => {
+    const payload = buildShipmentPayload();
+    setShippingForm(payload);
+    setShippingEditorOpen(true);
+  };
+
+  const handleBookShipment = async () => {
+    try {
+      if (!shippingForm) {
+        toast.error("Shipment details missing");
+        return;
+      }
+      setShippingLoading(true);
+      const response = await shippingRequest(
+        "/api/shipping/xpressbees/book",
+        "POST",
+        { orderId: order?._id, shipment: shippingForm },
+      );
+      setShippingResponse(response);
+      toast.success("Shipment booked");
+      setShippingEditorOpen(false);
+      if (onStatusUpdate) onStatusUpdate();
+    } catch (err) {
+      toast.error(err.message || "Failed to book shipment");
+    } finally {
+      setShippingLoading(false);
+    }
+  };
+
+  const updateShippingField = (field, value) => {
+    setShippingForm((prev) => {
+      const base = prev || buildShipmentPayload();
+      return {
+        ...base,
+        [field]: value,
+      };
+    });
+  };
+
+  const updateConsigneeField = (field, value) => {
+    setShippingForm((prev) => {
+      const base = prev || buildShipmentPayload();
+      return {
+        ...base,
+        consignee: {
+          ...(base?.consignee || {}),
+          [field]: value,
+        },
+      };
+    });
+  };
+
+  const updatePickupField = (field, value) => {
+    setShippingForm((prev) => {
+      const base = prev || buildShipmentPayload();
+      return {
+        ...base,
+        pickup: {
+          ...(base?.pickup || {}),
+          [field]: value,
+        },
+      };
+    });
+  };
+
+  const handleTrackShipment = async () => {
+    try {
+      if (!order?.awb_number) {
+        toast.error("AWB number not available");
+        return;
+      }
+      setShippingLoading(true);
+      const response = await shippingRequest(
+        `/api/shipping/xpressbees/track/${order.awb_number}?orderId=${order._id}`,
+        "GET",
+      );
+      setShippingResponse(response);
+      toast.success("Tracking fetched");
+    } catch (err) {
+      toast.error(err.message || "Failed to track shipment");
+    } finally {
+      setShippingLoading(false);
+    }
+  };
+
+  const handleCancelShipment = async () => {
+    try {
+      if (!order?.awb_number) {
+        toast.error("AWB number not available");
+        return;
+      }
+      setShippingLoading(true);
+      const response = await shippingRequest(
+        "/api/shipping/xpressbees/cancel",
+        "POST",
+        { awb: order.awb_number, orderId: order._id },
+      );
+      setShippingResponse(response);
+      toast.success("Shipment cancelled");
+      if (onStatusUpdate) onStatusUpdate();
+    } catch (err) {
+      toast.error(err.message || "Failed to cancel shipment");
+    } finally {
+      setShippingLoading(false);
+    }
+  };
+
+  const handleManifest = async () => {
+    try {
+      if (!order?.awb_number) {
+        toast.error("AWB number not available");
+        return;
+      }
+      setShippingLoading(true);
+      const response = await shippingRequest(
+        "/api/shipping/xpressbees/manifest",
+        "POST",
+        { awbs: [order.awb_number], orderId: order._id },
+      );
+      setShippingResponse(response);
+      const manifestUrl =
+        response?.data?.data?.manifest ||
+        response?.data?.manifest ||
+        response?.data?.data?.manifest_url ||
+        null;
+      if (manifestUrl && typeof window !== "undefined") {
+        window.open(manifestUrl, "_blank", "noopener,noreferrer");
+      }
+      toast.success("Manifest generated");
+    } catch (err) {
+      toast.error(err.message || "Failed to generate manifest");
+    } finally {
+      setShippingLoading(false);
+    }
+  };
 
   const handleChange = async (event) => {
     const newStatus = event.target.value;
@@ -25,7 +225,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     try {
       const response = await putData(
         `/api/orders/${order._id}/status`,
-        { status: newStatus },
+        { order_status: newStatus },
         token,
       );
       if (response.success) {
@@ -99,7 +299,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           {order?.delivery_address?.pincode || "N/A"}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
-          ₹{order?.totalAmt || "0"}
+          ₹{order?.finalAmount || order?.totalAmt || "0"}
         </td>
         <td className="text-[14px] text-gray-600 px-4 py-2 whitespace-nowrap text-primary font-bold">
           {order?.user?._id?.slice(-6) || "------"}
@@ -114,8 +314,8 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             disabled={updating}
           >
             <MenuItem value="pending">Pending</MenuItem>
-            <MenuItem value="confirm">Confirm</MenuItem>
-            <MenuItem value="processing">Processing</MenuItem>
+            <MenuItem value="pending_payment">Pending Payment</MenuItem>
+            <MenuItem value="confirmed">Confirmed</MenuItem>
             <MenuItem value="shipped">Shipped</MenuItem>
             <MenuItem value="delivered">Delivered</MenuItem>
             <MenuItem value="cancelled">Cancelled</MenuItem>
@@ -166,9 +366,264 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
                 <p className="text-gray-500">No product details available</p>
               )}
             </div>
+
+            {/* Shipping Section */}
+            <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2 text-gray-800 font-semibold">
+                  <MdLocalShipping className="text-xl text-orange-500" />
+                  Shipping
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={handleOpenShippingEditor}
+                    disabled={shippingLoading}
+                  >
+                    Book Shipment
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={handleTrackShipment}
+                    disabled={shippingLoading}
+                  >
+                    Track
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={handleManifest}
+                    disabled={shippingLoading}
+                  >
+                    Manifest
+                  </Button>
+                  <Button
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                    onClick={handleCancelShipment}
+                    disabled={shippingLoading}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-3 text-sm text-gray-700 space-y-1">
+                <div>
+                  <span className="font-semibold">AWB:</span>{" "}
+                  {order?.awb_number || "N/A"}
+                </div>
+                <div>
+                  <span className="font-semibold">Status:</span>{" "}
+                  {order?.shipment_status || "pending"}
+                </div>
+                <div>
+                  <span className="font-semibold">Label:</span>{" "}
+                  {order?.shipping_label ? "Available" : "N/A"}
+                </div>
+                <div>
+                  <span className="font-semibold">Manifest:</span>{" "}
+                  {order?.shipping_manifest ? "Available" : "N/A"}
+                </div>
+              </div>
+
+              {shippingResponse && (
+                <pre className="mt-3 text-xs bg-gray-50 border rounded p-3 overflow-auto">
+{JSON.stringify(shippingResponse, null, 2)}
+                </pre>
+              )}
+            </div>
           </td>
         </tr>
       )}
+
+      <Dialog
+        open={shippingEditorOpen}
+        onClose={() => setShippingEditorOpen(false)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Book Xpressbees Shipment</DialogTitle>
+        <DialogContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+            <TextField
+              label="Order Number"
+              value={shippingForm?.order_number || ""}
+              onChange={(e) => updateShippingField("order_number", e.target.value)}
+              fullWidth
+            />
+            <Select
+              value={shippingForm?.payment_type || "cod"}
+              onChange={(e) => updateShippingField("payment_type", e.target.value)}
+              size="small"
+            >
+              <MenuItem value="cod">COD</MenuItem>
+              <MenuItem value="prepaid">Prepaid</MenuItem>
+              <MenuItem value="reverse">Reverse</MenuItem>
+            </Select>
+            <TextField
+              label="Order Amount"
+              value={shippingForm?.order_amount || ""}
+              onChange={(e) => updateShippingField("order_amount", e.target.value)}
+              fullWidth
+            />
+            <Select
+              value={shippingForm?.request_auto_pickup || "no"}
+              onChange={(e) => updateShippingField("request_auto_pickup", e.target.value)}
+              size="small"
+            >
+              <MenuItem value="yes">Auto Pickup: Yes</MenuItem>
+              <MenuItem value="no">Auto Pickup: No</MenuItem>
+            </Select>
+            <TextField
+              label="Package Weight (g)"
+              value={shippingForm?.package_weight || ""}
+              onChange={(e) => updateShippingField("package_weight", e.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="Length (cm)"
+              value={shippingForm?.package_length || ""}
+              onChange={(e) => updateShippingField("package_length", e.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="Breadth (cm)"
+              value={shippingForm?.package_breadth || ""}
+              onChange={(e) => updateShippingField("package_breadth", e.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="Height (cm)"
+              value={shippingForm?.package_height || ""}
+              onChange={(e) => updateShippingField("package_height", e.target.value)}
+              fullWidth
+            />
+          </div>
+
+          <div className="mt-6">
+            <p className="text-sm font-semibold text-gray-700 mb-2">
+              Consignee
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <TextField
+                label="Name"
+                value={shippingForm?.consignee?.name || ""}
+                onChange={(e) => updateConsigneeField("name", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Phone"
+                value={shippingForm?.consignee?.phone || ""}
+                onChange={(e) => updateConsigneeField("phone", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Address Line 1"
+                value={shippingForm?.consignee?.address || ""}
+                onChange={(e) => updateConsigneeField("address", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Address Line 2"
+                value={shippingForm?.consignee?.address_2 || ""}
+                onChange={(e) => updateConsigneeField("address_2", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="City"
+                value={shippingForm?.consignee?.city || ""}
+                onChange={(e) => updateConsigneeField("city", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="State"
+                value={shippingForm?.consignee?.state || ""}
+                onChange={(e) => updateConsigneeField("state", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pincode"
+                value={shippingForm?.consignee?.pincode || ""}
+                onChange={(e) => updateConsigneeField("pincode", e.target.value)}
+                fullWidth
+              />
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <p className="text-sm font-semibold text-gray-700 mb-2">
+              Pickup
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <TextField
+                label="Warehouse Name"
+                value={shippingForm?.pickup?.warehouse_name || ""}
+                onChange={(e) =>
+                  updatePickupField("warehouse_name", e.target.value)
+                }
+                fullWidth
+              />
+              <TextField
+                label="Pickup Contact Name"
+                value={shippingForm?.pickup?.name || ""}
+                onChange={(e) => updatePickupField("name", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup Phone"
+                value={shippingForm?.pickup?.phone || ""}
+                onChange={(e) => updatePickupField("phone", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup Address Line 1"
+                value={shippingForm?.pickup?.address || ""}
+                onChange={(e) => updatePickupField("address", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup Address Line 2"
+                value={shippingForm?.pickup?.address_2 || ""}
+                onChange={(e) => updatePickupField("address_2", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup City"
+                value={shippingForm?.pickup?.city || ""}
+                onChange={(e) => updatePickupField("city", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup State"
+                value={shippingForm?.pickup?.state || ""}
+                onChange={(e) => updatePickupField("state", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup Pincode"
+                value={shippingForm?.pickup?.pincode || ""}
+                onChange={(e) => updatePickupField("pincode", e.target.value)}
+                fullWidth
+              />
+            </div>
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShippingEditorOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleBookShipment}
+            disabled={shippingLoading}
+            variant="contained"
+          >
+            Submit
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };
@@ -191,8 +646,8 @@ const Orders = () => {
 
       const response = await getData(url, token);
       if (response.success) {
-        setOrders(response.data || []);
-        setTotalPages(response.pagination?.totalPages || 1);
+        setOrders(response.data?.orders || []);
+        setTotalPages(response.data?.pagination?.totalPages || 1);
       } else {
         setOrders([]);
         setTotalPages(1);
@@ -333,3 +788,4 @@ const Orders = () => {
 };
 
 export default Orders;
+

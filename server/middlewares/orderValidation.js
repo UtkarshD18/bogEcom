@@ -12,7 +12,21 @@ import mongoose from "mongoose";
  */
 export const validateCreateOrderRequest = (req, res, next) => {
   try {
-    const { products, totalAmt, delivery_address } = req.body;
+    const {
+      products,
+      totalAmt,
+      delivery_address,
+      couponCode,
+      discountAmount,
+      finalAmount,
+      influencerCode,
+      notes,
+      tax,
+      shipping,
+      originalAmount,
+      affiliateCode,
+      affiliateSource,
+    } = req.body;
 
     // Validate products array
     validateProductsArray(products, "products");
@@ -25,11 +39,99 @@ export const validateCreateOrderRequest = (req, res, next) => {
       validateMongoId(delivery_address, "delivery_address");
     }
 
+    // Optional monetary fields
+    const validatedDiscount =
+      discountAmount !== undefined
+        ? validateAmount(discountAmount, "discountAmount", 0)
+        : null;
+    const validatedFinal =
+      finalAmount !== undefined
+        ? validateAmount(finalAmount, "finalAmount", 1)
+        : null;
+    const validatedTax =
+      tax !== undefined ? validateAmount(tax, "tax", 0) : 0;
+    const validatedShipping =
+      shipping !== undefined ? validateAmount(shipping, "shipping", 0) : 0;
+    const validatedOriginal =
+      originalAmount !== undefined
+        ? validateAmount(originalAmount, "originalAmount", 1)
+        : null;
+
+    // Validate coupon code format (alphanumeric, underscore, hyphen)
+    if (couponCode && typeof couponCode === "string") {
+      if (couponCode.length > 50 || !/^[a-zA-Z0-9_-]+$/.test(couponCode)) {
+        throw new AppError("INVALID_FORMAT", {
+          field: "couponCode",
+          message: "Invalid coupon code format",
+        });
+      }
+    }
+
+    // Validate influencer code format (alphanumeric, underscore, hyphen)
+    if (influencerCode && typeof influencerCode === "string") {
+      if (
+        influencerCode.length > 50 ||
+        !/^[a-zA-Z0-9_-]+$/.test(influencerCode)
+      ) {
+        throw new AppError("INVALID_FORMAT", {
+          field: "influencerCode",
+          message: "Invalid influencer code format",
+        });
+      }
+    }
+
+    // Validate affiliate code format (alphanumeric, underscore, hyphen)
+    if (affiliateCode && typeof affiliateCode === "string") {
+      if (
+        affiliateCode.length > 50 ||
+        !/^[a-zA-Z0-9_-]+$/.test(affiliateCode)
+      ) {
+        throw new AppError("INVALID_FORMAT", {
+          field: "affiliateCode",
+          message: "Invalid affiliate code format",
+        });
+      }
+    }
+
+    // Validate affiliate source
+    if (affiliateSource) {
+      const allowedSources = [
+        "influencer",
+        "campaign",
+        "referral",
+        "organic",
+      ];
+      if (!allowedSources.includes(String(affiliateSource))) {
+        throw new AppError("INVALID_FORMAT", {
+          field: "affiliateSource",
+          validValues: allowedSources,
+        });
+      }
+    }
+
+    // Validate notes if provided (max 500 chars)
+    if (notes && typeof notes === "string" && notes.length > 500) {
+      throw new AppError("INVALID_FORMAT", {
+        field: "notes",
+        message: "Notes cannot exceed 500 characters",
+      });
+    }
+
     // Store validated data back to req.body
     req.validatedData = {
       products,
       totalAmt: Number(totalAmt),
       delivery_address: delivery_address || null,
+      couponCode: couponCode ? String(couponCode).trim() : null,
+      discountAmount: validatedDiscount ?? null,
+      finalAmount: validatedFinal ?? null,
+      influencerCode: influencerCode ? String(influencerCode).trim() : null,
+      notes: notes ? notes.trim().substring(0, 500) : null,
+      tax: validatedTax,
+      shipping: validatedShipping,
+      originalAmount: validatedOriginal,
+      affiliateCode: affiliateCode ? String(affiliateCode).trim() : null,
+      affiliateSource: affiliateSource ? String(affiliateSource) : null,
     };
 
     next();
@@ -67,6 +169,8 @@ export const validateSaveOrderRequest = (req, res, next) => {
       discountAmount,
       finalAmount,
       influencerCode,
+      affiliateCode,
+      affiliateSource,
       notes,
     } = req.body;
 
@@ -123,6 +227,27 @@ export const validateSaveOrderRequest = (req, res, next) => {
       }
     }
 
+    // Validate affiliate code format (alphanumeric, max 50 chars)
+    if (affiliateCode && typeof affiliateCode === "string") {
+      if (affiliateCode.length > 50 || !/^[a-zA-Z0-9_-]+$/.test(affiliateCode)) {
+        throw new AppError("INVALID_FORMAT", {
+          field: "affiliateCode",
+          message: "Invalid affiliate code format",
+        });
+      }
+    }
+
+    // Validate affiliate source
+    if (affiliateSource) {
+      const allowedSources = ["influencer", "campaign", "referral", "organic"];
+      if (!allowedSources.includes(String(affiliateSource))) {
+        throw new AppError("INVALID_FORMAT", {
+          field: "affiliateSource",
+          validValues: allowedSources,
+        });
+      }
+    }
+
     // Validate notes if provided (max 500 chars)
     if (notes && typeof notes === "string" && notes.length > 500) {
       throw new AppError("INVALID_FORMAT", {
@@ -140,6 +265,8 @@ export const validateSaveOrderRequest = (req, res, next) => {
       discountAmount: discountAmount ? validateAmount(discountAmount, "discountAmount", 0) : 0,
       finalAmount: finalAmount ? validateAmount(finalAmount, "finalAmount", 1) : totalAmount,
       influencerCode: influencerCode || null,
+      affiliateCode: affiliateCode || null,
+      affiliateSource: affiliateSource || null,
       notes: notes ? notes.trim().substring(0, 500) : null,
     };
 
@@ -222,58 +349,6 @@ export const validateUpdateOrderStatusRequest = (req, res, next) => {
 /**
  * Validate Verify Payment Request
  */
-export const validateVerifyPaymentRequest = (req, res, next) => {
-  try {
-    const { orderId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
-
-    // Validate order ID
-    if (orderId) {
-      validateMongoId(orderId, "orderId");
-    }
-
-    // Validate payment ID
-    if (!razorpayPaymentId || typeof razorpayPaymentId !== "string" || razorpayPaymentId.trim().length === 0) {
-      throw new AppError("MISSING_FIELD", { field: "razorpayPaymentId" });
-    }
-
-    // Validate razorpay order ID
-    if (!razorpayOrderId || typeof razorpayOrderId !== "string" || razorpayOrderId.trim().length === 0) {
-      throw new AppError("MISSING_FIELD", { field: "razorpayOrderId" });
-    }
-
-    // Validate signature
-    if (!razorpaySignature || typeof razorpaySignature !== "string" || razorpaySignature.trim().length === 0) {
-      throw new AppError("MISSING_FIELD", { field: "razorpaySignature" });
-    }
-
-    req.validatedData = {
-      orderId,
-      razorpayPaymentId: razorpayPaymentId.trim(),
-      razorpayOrderId: razorpayOrderId.trim(),
-      razorpaySignature: razorpaySignature.trim(),
-    };
-
-    next();
-  } catch (error) {
-    if (error instanceof AppError) {
-      return res.status(error.status).json({
-        error: true,
-        success: false,
-        code: error.code,
-        message: error.message,
-        details: error.details,
-      });
-    }
-
-    return res.status(400).json({
-      error: true,
-      success: false,
-      message: "Invalid request format",
-      details: error.message,
-    });
-  }
-};
-
 /**
  * Validate Get Order Request
  */
@@ -366,7 +441,6 @@ export default {
   validateCreateOrderRequest,
   validateSaveOrderRequest,
   validateUpdateOrderStatusRequest,
-  validateVerifyPaymentRequest,
   validateGetOrderRequest,
   validatePaginationQuery,
 };

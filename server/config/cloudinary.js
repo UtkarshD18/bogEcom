@@ -9,6 +9,13 @@ const __dirname = path.dirname(__filename);
 
 // Ensure environment variables are loaded from server root
 dotenv.config({ path: path.join(__dirname, "../.env") });
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
 
 /**
  * Cloudinary Configuration
@@ -22,7 +29,7 @@ dotenv.config({ path: path.join(__dirname, "../.env") });
  */
 
 // Debug: Log Cloudinary config status
-console.log("Cloudinary Config:", {
+debugLog("Cloudinary Config:", {
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME ? "✓ Set" : "✗ Missing",
   api_key: process.env.CLOUDINARY_API_KEY ? "✓ Set" : "✗ Missing",
   api_secret: process.env.CLOUDINARY_API_SECRET ? "✓ Set" : "✗ Missing",
@@ -71,9 +78,9 @@ export const uploadToCloudinary = async (file, folder = "buyonegram") => {
       uploadStr = `data:image/jpeg;base64,${file.toString("base64")}`;
     }
 
-    console.log("Uploading to Cloudinary folder:", folder);
+    debugLog("Uploading to Cloudinary folder:", folder);
     const result = await cloudinary.uploader.upload(uploadStr, options);
-    console.log("Cloudinary upload success:", result.public_id);
+    debugLog("Cloudinary upload success:", result.public_id);
 
     return {
       success: true,
@@ -141,7 +148,7 @@ export const uploadVideoToCloudinary = async (
       };
     }
 
-    console.log("Uploading video to Cloudinary folder:", folder);
+    debugLog("Uploading video to Cloudinary folder:", folder);
 
     // Use upload_stream for video buffers (handles large files better)
     return new Promise((resolve) => {
@@ -159,7 +166,7 @@ export const uploadVideoToCloudinary = async (
               error: error.message,
             });
           } else {
-            console.log("Cloudinary video upload success:", result.public_id);
+            debugLog("Cloudinary video upload success:", result.public_id);
             resolve({
               success: true,
               url: result.secure_url,

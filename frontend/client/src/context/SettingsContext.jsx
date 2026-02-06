@@ -4,7 +4,10 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const SettingsContext = createContext();
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL =
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000";
 
 /**
  * Default settings values (fallbacks when API fails)
@@ -49,8 +52,13 @@ const defaultSettings = {
   },
   // Discount settings
   discountSettings: {
-    enabled: false,
-    siteWideDiscount: 0,
+    maxDiscountPercentage: 50,
+    stackableCoupons: false,
+    firstOrderDiscount: {
+      enabled: true,
+      percentage: 10,
+      maxDiscount: 100,
+    },
   },
   // Offer popup settings
   showOfferPopup: false,

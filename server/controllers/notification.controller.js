@@ -2,6 +2,14 @@ import mongoose from "mongoose";
 import { getMessaging, isFirebaseReady } from "../config/firebaseAdmin.js";
 import NotificationTokenModel from "../models/notificationToken.model.js";
 
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
+
 /**
  * Notification Controller
  *
@@ -157,7 +165,7 @@ export const unregisterToken = async (req, res) => {
  */
 export const sendOfferNotification = async (coupon, options = {}) => {
   if (!isFirebaseReady()) {
-    console.log("Firebase not ready, skipping offer notification");
+    debugLog("Firebase not ready, skipping offer notification");
     return { success: false, reason: "firebase_not_ready" };
   }
 
@@ -178,7 +186,7 @@ export const sendOfferNotification = async (coupon, options = {}) => {
     const allTokens = [...guestTokens, ...userTokens].map((t) => t.token);
 
     if (allTokens.length === 0) {
-      console.log("No tokens to send offer notification to");
+      debugLog("No tokens to send offer notification to");
       return { success: true, sent: 0, reason: "no_tokens" };
     }
 
@@ -245,7 +253,7 @@ export const sendOfferNotification = async (coupon, options = {}) => {
       await NotificationTokenModel.markTokenFailed(failedToken);
     }
 
-    console.log(
+    debugLog(
       `Offer notification sent: ${successCount} success, ${failureCount} failed`,
     );
 
@@ -271,7 +279,7 @@ export const sendOfferNotification = async (coupon, options = {}) => {
  */
 export const sendOrderUpdateNotification = async (order, newStatus) => {
   if (!isFirebaseReady()) {
-    console.log("Firebase not ready, skipping order notification");
+    debugLog("Firebase not ready, skipping order notification");
     return { success: false, reason: "firebase_not_ready" };
   }
 
@@ -283,7 +291,7 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
   // Must have a user ID - guests don't get order notifications
   const userId = order.user?._id || order.user;
   if (!userId) {
-    console.log("No user ID for order notification");
+    debugLog("No user ID for order notification");
     return { success: false, reason: "no_user_id" };
   }
 
@@ -292,7 +300,7 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
     const userTokens = await NotificationTokenModel.getTokensByUserId(userId);
 
     if (userTokens.length === 0) {
-      console.log(`No tokens for user ${userId}`);
+      debugLog(`No tokens for user ${userId}`);
       return { success: true, sent: 0, reason: "no_tokens" };
     }
 
@@ -340,7 +348,7 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
       }
     });
 
-    console.log(
+    debugLog(
       `Order notification sent to user ${userId}: ${response.successCount} success, ${response.failureCount} failed`,
     );
 

@@ -68,6 +68,21 @@ const SettingsPage = () => {
     codMaxOrder: 5000,
   });
 
+  const [discountSettings, setDiscountSettings] = useState({
+    maxDiscountPercentage: 50,
+    stackableCoupons: false,
+    firstOrderDiscount: {
+      enabled: true,
+      percentage: 10,
+      maxDiscount: 100,
+    },
+  });
+
+  const [siteControls, setSiteControls] = useState({
+    paymentGatewayEnabled: false,
+    maintenanceMode: false,
+  });
+
   const [storeInfo, setStoreInfo] = useState({
     name: "BuyOneGram",
     email: "support@buyonegram.com",
@@ -130,8 +145,23 @@ const SettingsPage = () => {
             case "orderSettings":
               setOrderSettings(setting.value);
               break;
+            case "discountSettings":
+              setDiscountSettings(setting.value);
+              break;
             case "storeInfo":
               setStoreInfo(setting.value);
+              break;
+            case "paymentGatewayEnabled":
+              setSiteControls((prev) => ({
+                ...prev,
+                paymentGatewayEnabled: !!setting.value,
+              }));
+              break;
+            case "maintenanceMode":
+              setSiteControls((prev) => ({
+                ...prev,
+                maintenanceMode: !!setting.value,
+              }));
               break;
             case "showOfferPopup":
               setOfferSettings((prev) => ({
@@ -209,6 +239,7 @@ const SettingsPage = () => {
         saveSetting("shippingSettings", shippingSettings),
         saveSetting("taxSettings", taxSettings),
         saveSetting("orderSettings", orderSettings),
+        saveSetting("discountSettings", discountSettings),
         saveSetting("storeInfo", storeInfo),
         // Offer popup settings
         saveSetting("showOfferPopup", offerSettings.showOfferPopup),
@@ -218,6 +249,9 @@ const SettingsPage = () => {
         saveSetting("offerDiscountText", offerSettings.offerDiscountText),
         // High traffic notice
         saveSetting("highTrafficNotice", highTrafficNotice),
+        // Site controls
+        saveSetting("paymentGatewayEnabled", siteControls.paymentGatewayEnabled),
+        saveSetting("maintenanceMode", siteControls.maintenanceMode),
       ]);
 
       if (results.every(Boolean)) {
@@ -616,6 +650,165 @@ const SettingsPage = () => {
             </>
           )}
         </div>
+      </div>
+
+      {/* Discount Settings */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <MdPercent className="text-2xl text-emerald-500" />
+          <h2 className="text-lg font-semibold text-gray-800">
+            Discount Settings
+          </h2>
+        </div>
+        <Divider className="mb-4" />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TextField
+            label="Max Discount Percentage"
+            type="number"
+            value={discountSettings.maxDiscountPercentage}
+            onChange={(e) =>
+              setDiscountSettings({
+                ...discountSettings,
+                maxDiscountPercentage: Number(e.target.value),
+              })
+            }
+            InputProps={{
+              endAdornment: <InputAdornment position="end">%</InputAdornment>,
+            }}
+            size="small"
+            fullWidth
+          />
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={discountSettings.stackableCoupons}
+                onChange={(e) =>
+                  setDiscountSettings({
+                    ...discountSettings,
+                    stackableCoupons: e.target.checked,
+                  })
+                }
+                color="warning"
+              />
+            }
+            label="Allow Stackable Coupons"
+          />
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={discountSettings.firstOrderDiscount?.enabled}
+                onChange={(e) =>
+                  setDiscountSettings({
+                    ...discountSettings,
+                    firstOrderDiscount: {
+                      ...(discountSettings.firstOrderDiscount || {}),
+                      enabled: e.target.checked,
+                    },
+                  })
+                }
+                color="warning"
+              />
+            }
+            label="Enable First Order Discount"
+          />
+          <TextField
+            label="First Order Discount %"
+            type="number"
+            value={discountSettings.firstOrderDiscount?.percentage || 0}
+            onChange={(e) =>
+              setDiscountSettings({
+                ...discountSettings,
+                firstOrderDiscount: {
+                  ...(discountSettings.firstOrderDiscount || {}),
+                  percentage: Number(e.target.value),
+                },
+              })
+            }
+            InputProps={{
+              endAdornment: <InputAdornment position="end">%</InputAdornment>,
+            }}
+            size="small"
+            fullWidth
+            disabled={!discountSettings.firstOrderDiscount?.enabled}
+          />
+          <TextField
+            label="First Order Max Discount"
+            type="number"
+            value={discountSettings.firstOrderDiscount?.maxDiscount || 0}
+            onChange={(e) =>
+              setDiscountSettings({
+                ...discountSettings,
+                firstOrderDiscount: {
+                  ...(discountSettings.firstOrderDiscount || {}),
+                  maxDiscount: Number(e.target.value),
+                },
+              })
+            }
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">â‚¹</InputAdornment>
+              ),
+            }}
+            size="small"
+            fullWidth
+            disabled={!discountSettings.firstOrderDiscount?.enabled}
+          />
+        </div>
+      </div>
+
+      {/* Site Controls */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <MdWarning className="text-2xl text-red-500" />
+          <h2 className="text-lg font-semibold text-gray-800">
+            Site Controls
+          </h2>
+        </div>
+        <Divider className="mb-4" />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={siteControls.paymentGatewayEnabled}
+                onChange={(e) =>
+                  setSiteControls({
+                    ...siteControls,
+                    paymentGatewayEnabled: e.target.checked,
+                  })
+                }
+                color="warning"
+              />
+            }
+            label="Enable Payment Gateway"
+          />
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={siteControls.maintenanceMode}
+                onChange={(e) =>
+                  setSiteControls({
+                    ...siteControls,
+                    maintenanceMode: e.target.checked,
+                  })
+                }
+                color="warning"
+              />
+            }
+            label="Maintenance Mode"
+          />
+        </div>
+
+        <p className="text-sm text-gray-500 mt-3">
+          Payment gateway toggle respects environment credentials. Maintenance
+          mode disables checkout while enabled.
+        </p>
       </div>
 
       {/* Offer Popup Settings */}

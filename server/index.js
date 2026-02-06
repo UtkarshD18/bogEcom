@@ -26,6 +26,7 @@ import orderRouter from "./routes/order.route.js";
 import productRouter from "./routes/product.route.js";
 import settingsRouter from "./routes/settings.route.js";
 import statisticsRouter from "./routes/statistics.route.js";
+import shippingRouter from "./routes/shipping.route.js";
 import uploadRouter from "./routes/upload.route.js";
 import userRouter from "./routes/user.route.js";
 import wishlistRouter from "./routes/wishlist.route.js";
@@ -63,9 +64,22 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // ✅ CORS configuration
-const allowedOrigins = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL, "http://localhost:3000", "http://localhost:3001"]
-  : ["http://localhost:3000", "http://localhost:3001"];
+const envOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  : [];
+// Fallback to SITE_BASE_URL when FRONTEND_URL is not provided
+if (envOrigins.length === 0 && process.env.SITE_BASE_URL) {
+  envOrigins.push(process.env.SITE_BASE_URL.trim());
+}
+
+const isProduction = process.env.NODE_ENV === "production";
+const defaultDevOrigins = ["http://localhost:3000", "http://localhost:3001"];
+// In production, only allow explicitly configured origins
+const allowedOrigins = Array.from(
+  new Set([...envOrigins, ...(isProduction ? [] : defaultDevOrigins)]),
+);
 
 app.use(
   cors({
@@ -126,6 +140,7 @@ app.use("/api/influencers", generalLimiter, influencerRouter);
 app.use("/api/settings", adminLimiter, settingsRouter);
 app.use("/api/notifications", generalLimiter, notificationRouter);
 app.use("/api/newsletter", generalLimiter, newsletterRouter);
+app.use("/api/shipping", adminLimiter, shippingRouter);
 
 // 404 handler
 app.use((req, res, next) => {

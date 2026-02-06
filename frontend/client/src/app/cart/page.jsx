@@ -199,7 +199,7 @@ const Cart = () => {
 
                 <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
                   <span>🔒</span>
-                  <span>Secure checkout with Razorpay</span>
+                  <span>Secure checkout with PhonePe</span>
                 </div>
               </div>
             </div>

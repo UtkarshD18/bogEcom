@@ -225,6 +225,7 @@ const Footer = () => {
                 { name: "About Us", link: "/about-us" },
                 { name: "Secure payment", link: "/secure-payment" },
                 { name: "Login", link: "/login" },
+                { name: "Collaborator Portal", link: "/affiliate/login" },
               ].map((item, i) => (
                 <li key={i}>
                   <Link
@@ -353,3 +354,4 @@ const Footer = () => {
 };
 
 export default Footer;
+

@@ -535,6 +535,7 @@ const Header = () => {
                               />
                               <span className="font-medium">Settings</span>
                             </Link>
+
                           </div>
 
                           {/* Divider */}

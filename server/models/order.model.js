@@ -50,19 +50,33 @@ const orderSchema = new mongoose.Schema(
     // Payment Information
     paymentId: {
       type: String,
-      default: null, // Razorpay Payment ID
+      default: null, // Payment identifier (PhonePe transaction ID)
       // Note: index is defined in compound indexes below
     },
 
+    // Legacy Razorpay fields (kept for historical data)
     razorpayOrderId: {
       type: String,
-      default: null, // Razorpay Order ID for reference
+      default: null,
       index: true,
     },
 
     razorpaySignature: {
       type: String,
-      default: null, // Signature for verification
+      default: null,
+    },
+
+    // PhonePe identifiers
+    phonepeMerchantTransactionId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    phonepeTransactionId: {
+      type: String,
+      default: null,
+      index: true,
     },
 
     // Status Tracking
@@ -127,7 +141,7 @@ const orderSchema = new mongoose.Schema(
 
     // ==================== NEW FIELDS FOR PHONEPE INTEGRATION ====================
 
-    // Payment method tracking (for future PhonePe integration)
+    // Payment method tracking
     paymentMethod: {
       type: String,
       enum: ["RAZORPAY", "PHONEPE", "COD", "PENDING"],
@@ -232,6 +246,11 @@ awb_number: {
 shipping_label: {
   type: String,
   default: null, // PDF URL from courier
+},
+
+shipping_manifest: {
+  type: String,
+  default: null, // Manifest PDF URL
 },
 
 shipment_status: {

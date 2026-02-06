@@ -1,5 +1,6 @@
 import MembershipPlanModel from "../models/membershipPlan.model.js";
 import UserModel from "../models/user.model.js";
+import { createPhonePePayment, getPhonePeStatus } from "../services/phonepe.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -121,12 +122,71 @@ export const createMembershipOrder = async (req, res) => {
       });
     }
 
-    // TODO: PhonePe integration will be implemented here
-    return res.status(503).json({
-      error: true,
-      success: false,
-      message: "PhonePe integration coming soon for memberships.",
-      paymentProvider: PAYMENT_PROVIDER,
+    const { planId } = req.body;
+    if (!planId) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "planId is required",
+      });
+    }
+
+    const plan = await MembershipPlanModel.findById(planId);
+    if (!plan) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Membership plan not found",
+      });
+    }
+
+    const userId = req.user;
+    const primaryOrigin = (process.env.FRONTEND_URL || "http://localhost:3000")
+      .split(",")[0]
+      .trim();
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+
+    const merchantTransactionId = `MEM_${userId}_${Date.now()}`;
+    const redirectUrl =
+      process.env.PHONEPE_MEMBERSHIP_REDIRECT_URL ||
+      process.env.PHONEPE_REDIRECT_URL ||
+      `${primaryOrigin}/membership/checkout`;
+    const callbackUrl =
+      process.env.PHONEPE_MEMBERSHIP_CALLBACK_URL ||
+      process.env.PHONEPE_CALLBACK_URL ||
+      `${backendUrl}/api/membership/verify-payment`;
+
+    const phonepeResponse = await createPhonePePayment({
+      amount: plan.price,
+      merchantTransactionId,
+      merchantUserId: String(userId),
+      redirectUrl,
+      callbackUrl,
+    });
+
+    const paymentUrl =
+      phonepeResponse?.data?.instrumentResponse?.redirectInfo?.url ||
+      phonepeResponse?.data?.redirectInfo?.url ||
+      null;
+
+    if (!paymentUrl) {
+      return res.status(503).json({
+        error: true,
+        success: false,
+        message: "PhonePe payment URL not received",
+        paymentProvider: PAYMENT_PROVIDER,
+      });
+    }
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Membership order created",
+      data: {
+        paymentUrl,
+        merchantTransactionId,
+        planId: plan._id,
+      },
     });
   } catch (error) {
     console.error("Error creating membership order:", error);
@@ -155,12 +215,72 @@ export const verifyMembershipPayment = async (req, res) => {
       });
     }
 
-    // TODO: PhonePe callback verification will be implemented here
-    return res.status(503).json({
-      error: true,
-      success: false,
-      message: "PhonePe verification coming soon.",
-      paymentProvider: PAYMENT_PROVIDER,
+    const { merchantTransactionId, planId } = req.body || {};
+
+    if (!merchantTransactionId || !planId) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "merchantTransactionId and planId are required",
+      });
+    }
+
+    const status = await getPhonePeStatus({ merchantTransactionId });
+    const state =
+      status?.data?.state ||
+      status?.data?.status ||
+      status?.data?.code ||
+      "";
+
+    if (!String(state).toLowerCase().includes("success")) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Payment not successful yet",
+      });
+    }
+
+    const user = await UserModel.findById(req.user);
+    if (!user) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const plan = await MembershipPlanModel.findById(planId);
+    if (!plan) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Membership plan not found",
+      });
+    }
+
+    const expiry = new Date();
+    if (plan.durationUnit === "months") {
+      expiry.setMonth(expiry.getMonth() + plan.duration);
+    } else if (plan.durationUnit === "years") {
+      expiry.setFullYear(expiry.getFullYear() + plan.duration);
+    } else {
+      expiry.setDate(expiry.getDate() + plan.duration);
+    }
+
+    user.isMember = true;
+    user.membershipPlan = plan._id;
+    user.membershipExpiry = expiry;
+    user.membershipPaymentId = merchantTransactionId;
+    await user.save();
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Membership activated",
+      data: {
+        membershipPlan: plan._id,
+        membershipExpiry: expiry,
+      },
     });
   } catch (error) {
     console.error("Error verifying membership payment:", error);

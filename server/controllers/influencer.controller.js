@@ -1,5 +1,8 @@
+import jwt from "jsonwebtoken";
 import InfluencerModel from "../models/influencer.model.js";
 import OrderModel from "../models/order.model.js";
+import generateInfluencerToken from "../utils/generateInfluencerToken.js";
+import generateInfluencerRefreshToken from "../utils/generateInfluencerRefreshToken.js";
 
 /**
  * Influencer Controller
@@ -61,6 +64,324 @@ export const validateInfluencerCode = async (req, res) => {
       success: false,
       message: "Failed to validate referral code",
       valid: false,
+    });
+  }
+};
+
+const buildInfluencerPortalPayload = async (influencer) => {
+  // Recent orders for this influencer
+  const recentOrders = await OrderModel.find({
+    influencerId: influencer._id,
+  })
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .select(
+      "_id createdAt finalAmount totalAmt order_status payment_status influencerCommission commissionPaid",
+    )
+    .lean();
+
+  // Monthly summary (last 12 entries)
+  const monthlyStats = await OrderModel.aggregate([
+    { $match: { influencerId: influencer._id } },
+    {
+      $addFields: {
+        effectiveAmount: {
+          $cond: [{ $gt: ["$finalAmount", 0] }, "$finalAmount", "$totalAmt"],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: {
+          year: { $year: "$createdAt" },
+          month: { $month: "$createdAt" },
+        },
+        orders: { $sum: 1 },
+        revenue: { $sum: "$effectiveAmount" },
+        commission: { $sum: "$influencerCommission" },
+      },
+    },
+    { $sort: { "_id.year": -1, "_id.month": -1 } },
+    { $limit: 12 },
+  ]);
+
+  return {
+    influencer: {
+      _id: influencer._id,
+      name: influencer.name,
+      email: influencer.email,
+      code: influencer.code,
+      referralUrl: influencer.referralUrl,
+      isActive: influencer.isActive,
+    },
+    stats: {
+      totalOrders: influencer.totalOrders || 0,
+      totalRevenue: influencer.totalRevenue || 0,
+      totalCommission: influencer.totalCommissionEarned || 0,
+      paidCommission: influencer.totalCommissionPaid || 0,
+      pendingCommission:
+        (influencer.totalCommissionEarned || 0) -
+        (influencer.totalCommissionPaid || 0),
+    },
+    recentOrders,
+    monthlyStats,
+  };
+};
+
+/**
+ * Influencer login (issue collaborator token)
+ * @route POST /api/influencers/login
+ * @access Public
+ */
+export const loginInfluencer = async (req, res) => {
+  try {
+    const { code, email } = req.body || {};
+
+    if (!code || !email) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Referral code and email are required",
+      });
+    }
+
+    const normalizedCode = String(code).toUpperCase().trim();
+    const normalizedEmail = String(email).toLowerCase().trim();
+
+    const influencer = await InfluencerModel.findActiveByCode(normalizedCode);
+
+    if (!influencer) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Influencer not found or inactive",
+      });
+    }
+
+    if (!influencer.email) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "No email is associated with this collaborator. Please contact admin.",
+      });
+    }
+
+    if (influencer.email.toLowerCase() !== normalizedEmail) {
+      return res.status(403).json({
+        error: true,
+        success: false,
+        message: "Email does not match collaborator records",
+      });
+    }
+
+    const accessToken = generateInfluencerToken(influencer._id);
+    const refreshToken = await generateInfluencerRefreshToken(influencer._id);
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Influencer login successful",
+      data: {
+        accessToken,
+        refreshToken,
+        influencer: {
+          _id: influencer._id,
+          name: influencer.name,
+          email: influencer.email,
+          code: influencer.code,
+          referralUrl: influencer.referralUrl,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error logging in influencer:", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to login collaborator",
+    });
+  }
+};
+
+/**
+ * Influencer Portal Stats (Collaborator Dashboard)
+ * @route GET /api/influencers/portal?code=CODE&email=EMAIL
+ * @access Public (code + email verification)
+ */
+export const getInfluencerPortalStats = async (req, res) => {
+  try {
+    const { code, email } = req.query;
+
+    if (!code || !email) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Referral code and email are required",
+      });
+    }
+
+    const normalizedCode = String(code).toUpperCase().trim();
+    const normalizedEmail = String(email).toLowerCase().trim();
+
+    const influencer = await InfluencerModel.findActiveByCode(normalizedCode);
+
+    if (!influencer) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Influencer not found or inactive",
+      });
+    }
+
+    if (!influencer.email) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "No email is associated with this collaborator. Please contact admin.",
+      });
+    }
+
+    if (influencer.email.toLowerCase() !== normalizedEmail) {
+      return res.status(403).json({
+        error: true,
+        success: false,
+        message: "Email does not match collaborator records",
+      });
+    }
+
+    const payload = await buildInfluencerPortalPayload(influencer);
+
+    res.status(200).json({
+      error: false,
+      success: true,
+      data: payload,
+    });
+  } catch (error) {
+    console.error("Error fetching influencer portal stats:", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to fetch collaborator statistics",
+    });
+  }
+};
+
+/**
+ * Influencer Portal Stats (token-based)
+ * @route GET /api/influencers/portal/me
+ * @access Influencer (token)
+ */
+export const getInfluencerPortalStatsAuth = async (req, res) => {
+  try {
+    const influencerId = req.influencerId;
+    if (!influencerId) {
+      return res.status(401).json({
+        error: true,
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    const influencer = await InfluencerModel.findById(influencerId);
+
+    if (!influencer) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Influencer not found",
+      });
+    }
+
+    if (!influencer.isActive) {
+      return res.status(403).json({
+        error: true,
+        success: false,
+        message: "Influencer account is inactive",
+      });
+    }
+
+    const payload = await buildInfluencerPortalPayload(influencer);
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      data: payload,
+    });
+  } catch (error) {
+    console.error("Error fetching influencer portal stats (auth):", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to fetch collaborator statistics",
+    });
+  }
+};
+
+/**
+ * Refresh influencer access token
+ * @route POST /api/influencers/refresh-token
+ * @access Public (refresh token)
+ */
+export const refreshInfluencerToken = async (req, res) => {
+  try {
+    const refreshToken = req.body?.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        error: true,
+        success: false,
+        message: "Refresh token required",
+      });
+    }
+
+    const secret =
+      process.env.INFLUENCER_REFRESH_TOKEN_SECRET ||
+      process.env.INFLUENCER_JWT_SECRET ||
+      process.env.JSON_WEB_TOKEN_SECRET_KEY ||
+      "";
+
+    if (!secret) {
+      return res.status(500).json({
+        error: true,
+        success: false,
+        message: "Server configuration error",
+      });
+    }
+
+    const decoded = jwt.verify(refreshToken, secret);
+    const influencer = await InfluencerModel.findById(decoded?.id);
+
+    if (!influencer || influencer.refreshToken !== refreshToken) {
+      return res.status(401).json({
+        error: true,
+        success: false,
+        message: "Invalid refresh token",
+      });
+    }
+
+    if (!influencer.isActive) {
+      return res.status(403).json({
+        error: true,
+        success: false,
+        message: "Influencer account is inactive",
+      });
+    }
+
+    const accessToken = generateInfluencerToken(influencer._id);
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Access token refreshed",
+      data: { accessToken },
+    });
+  } catch (error) {
+    return res.status(401).json({
+      error: true,
+      success: false,
+      message: "Refresh token expired or invalid",
     });
   }
 };

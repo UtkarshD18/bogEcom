@@ -2,9 +2,32 @@ import Cookies from "js-cookie";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
 
+const refreshAccessToken = async () => {
+  try {
+    const response = await fetch(`${appUrl}/api/user/refresh-token`, {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const token = data?.data?.accessToken || null;
+    if (token) {
+      Cookies.set("accessToken", token, { expires: 7 });
+    }
+    return token;
+  } catch (error) {
+    console.error("refreshAccessToken error:", error);
+    return null;
+  }
+};
+
 export const postData = async (URL, FormData) => {
   try {
-    const response = await fetch(
+    let response = await fetch(
       `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
       {
         method: "POST",
@@ -15,6 +38,23 @@ export const postData = async (URL, FormData) => {
         body: JSON.stringify(FormData),
       },
     );
+
+    if (response.status === 401) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        response = await fetch(
+          `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${newToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(FormData),
+          },
+        );
+      }
+    }
 
     const contentType = response.headers.get("content-type");
     let data;
@@ -37,7 +77,7 @@ export const postData = async (URL, FormData) => {
 
 export const fetchDataFromApi = async (URL) => {
   try {
-    const response = await fetch(
+    let response = await fetch(
       `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
       {
         method: "GET",
@@ -47,6 +87,22 @@ export const fetchDataFromApi = async (URL) => {
         },
       },
     );
+
+    if (response.status === 401) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        response = await fetch(
+          `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${newToken}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+      }
+    }
 
     const contentType = response.headers.get("content-type");
     let data;
@@ -69,7 +125,7 @@ export const fetchDataFromApi = async (URL) => {
 
 export const putData = async (URL, FormData) => {
   try {
-    const response = await fetch(
+    let response = await fetch(
       `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
       {
         method: "PUT",
@@ -80,6 +136,23 @@ export const putData = async (URL, FormData) => {
         body: JSON.stringify(FormData),
       },
     );
+
+    if (response.status === 401) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        response = await fetch(
+          `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${newToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(FormData),
+          },
+        );
+      }
+    }
 
     const contentType = response.headers.get("content-type");
     let data;
@@ -102,7 +175,7 @@ export const putData = async (URL, FormData) => {
 
 export const deleteData = async (URL) => {
   try {
-    const response = await fetch(
+    let response = await fetch(
       `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
       {
         method: "DELETE",
@@ -112,6 +185,22 @@ export const deleteData = async (URL) => {
         },
       },
     );
+
+    if (response.status === 401) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        response = await fetch(
+          `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${newToken}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+      }
+    }
 
     const contentType = response.headers.get("content-type");
     let data;

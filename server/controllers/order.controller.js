@@ -4,22 +4,21 @@
  * with comprehensive error handling and logging
  */
 
-import crypto from "crypto";
 import mongoose from "mongoose";
 import CategoryModel from "../models/category.model.js";
+import CouponModel from "../models/coupon.model.js";
 import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
+import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
 import {
   AppError,
   asyncHandler,
   handleDatabaseError,
-  handlePaymentError,
   logger,
   sendError,
   sendSuccess,
   validateMongoId,
-  validateAmount,
 } from "../utils/errorHandler.js";
 import {
   syncOrderStatus,
@@ -31,30 +30,178 @@ import {
   updateInfluencerStats,
 } from "./influencer.controller.js";
 import { sendOrderUpdateNotification } from "./notification.controller.js";
+import { createPhonePePayment } from "../services/phonepe.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
 const PAYMENT_PROVIDER = process.env.PAYMENT_PROVIDER || "PHONEPE";
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "";
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
 const PHONEPE_MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || "";
-const PHONEPE_API_KEY = process.env.PHONEPE_API_KEY || "";
+const PHONEPE_SALT_KEY = process.env.PHONEPE_SALT_KEY || "";
+const PHONEPE_SALT_INDEX = process.env.PHONEPE_SALT_INDEX || "";
+const PAYMENT_ENV_ENABLED =
+  PAYMENT_PROVIDER === "PHONEPE" &&
+  process.env.PHONEPE_ENABLED === "true" &&
+  PHONEPE_MERCHANT_ID &&
+  PHONEPE_SALT_KEY &&
+  PHONEPE_SALT_INDEX;
 
-const isPaymentEnabled = () => {
-  // Check for PhonePe
-  if (PAYMENT_PROVIDER === "PHONEPE") {
-    return process.env.PHONEPE_ENABLED === "true" && PHONEPE_MERCHANT_ID && PHONEPE_API_KEY;
+const SETTINGS_CACHE_TTL_MS = 30 * 1000;
+const settingsCache = new Map();
+
+const getCachedSetting = async (key) => {
+  const cached = settingsCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < SETTINGS_CACHE_TTL_MS) {
+    return cached;
   }
 
-  // Check for Razorpay
-  if (PAYMENT_PROVIDER === "RAZORPAY") {
-    return RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET;
-  }
+  const setting = await SettingsModel.findOne({ key })
+    .select("value updatedBy")
+    .lean();
 
-  return false;
+  const record = {
+    value: setting?.value,
+    updatedBy: setting?.updatedBy || null,
+    fetchedAt: Date.now(),
+  };
+  settingsCache.set(key, record);
+  return record;
 };
 
-logger.info("Payment System", `Provider: ${PAYMENT_PROVIDER}, Enabled: ${isPaymentEnabled()}`);
+const isPaymentEnabled = async () => {
+  const envEnabled = PAYMENT_ENV_ENABLED;
+
+  if (!envEnabled) return false;
+
+  const paymentSetting = await getCachedSetting("paymentGatewayEnabled");
+  // Only enforce admin override if it was explicitly updated
+  if (paymentSetting?.updatedBy) {
+    return Boolean(paymentSetting.value);
+  }
+
+  return envEnabled;
+};
+
+const isMaintenanceMode = async () => {
+  const maintenanceSetting = await getCachedSetting("maintenanceMode");
+  return Boolean(maintenanceSetting?.value);
+};
+
+const isDateOnlyString = (value) =>
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const normalizeCouponDate = (value, boundary = "start") => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  if (isDateOnlyString(value)) {
+    if (boundary === "end") {
+      date.setHours(23, 59, 59, 999);
+    } else {
+      date.setHours(0, 0, 0, 0);
+    }
+  }
+
+  return date;
+};
+
+const resolveCouponEndDate = (endDate) => {
+  if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) {
+    return endDate;
+  }
+
+  const isMidnight =
+    endDate.getHours() === 0 &&
+    endDate.getMinutes() === 0 &&
+    endDate.getSeconds() === 0 &&
+    endDate.getMilliseconds() === 0;
+
+  if (!isMidnight) return endDate;
+
+  const adjusted = new Date(endDate);
+  adjusted.setHours(23, 59, 59, 999);
+  return adjusted;
+};
+
+const recordCouponUsage = async (order) => {
+  if (!order?.couponCode) return null;
+
+  const couponCode = String(order.couponCode).toUpperCase().trim();
+  if (!couponCode) return null;
+
+  return CouponModel.findOneAndUpdate(
+    { code: couponCode, "usedBy.orderId": { $ne: order._id } },
+    {
+      $inc: { usageCount: 1 },
+      $push: {
+        usedBy: {
+          user: order.user || null,
+          orderId: order._id,
+          usedAt: new Date(),
+        },
+      },
+    },
+    { new: true }
+  );
+};
+
+const validateCouponForOrder = async ({ code, orderAmount, userId }) => {
+  const normalizedCode = code ? String(code).toUpperCase().trim() : null;
+  if (!normalizedCode) {
+    return { normalizedCode: null, discount: 0 };
+  }
+
+  const coupon = await CouponModel.findOne({
+    code: normalizedCode,
+    isActive: true,
+  });
+
+  if (!coupon) {
+    return { errorMessage: "Invalid coupon code" };
+  }
+
+  const now = new Date();
+  const startDate = normalizeCouponDate(coupon.startDate, "start");
+  const endDate = resolveCouponEndDate(coupon.endDate);
+
+  if (startDate && now < startDate) {
+    return { errorMessage: "This coupon is not yet active" };
+  }
+
+  if (endDate && now > endDate) {
+    return { errorMessage: "This coupon has expired" };
+  }
+
+  if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
+    return { errorMessage: "This coupon has reached its usage limit" };
+  }
+
+  if (orderAmount < coupon.minOrderAmount) {
+    return {
+      errorMessage: `Minimum order of ₹${coupon.minOrderAmount} required for this coupon`,
+    };
+  }
+
+  if (userId && coupon.perUserLimit > 0) {
+    const userUsage = coupon.usedBy.filter(
+      (u) => u.user && u.user.toString() === userId.toString(),
+    ).length;
+    if (userUsage >= coupon.perUserLimit) {
+      return {
+        errorMessage:
+          "You have already used this coupon the maximum number of times",
+      };
+    }
+  }
+
+  const discount = Math.min(coupon.calculateDiscount(orderAmount), orderAmount);
+  return { normalizedCode, discount };
+};
+
+logger.info(
+  "Payment System",
+  `Provider: ${PAYMENT_PROVIDER}, EnvEnabled: ${PAYMENT_ENV_ENABLED}`,
+);
 
 // ==================== ADMIN ENDPOINTS ====================
 
@@ -79,10 +226,12 @@ export const getAllOrders = asyncHandler(async (req, res) => {
       filter.order_status = status;
     }
 
-    // Search by paymentId or user email
+    // Search by paymentId, PhonePe IDs, or user email
     if (search) {
       filter.$or = [
         { paymentId: { $regex: search, $options: "i" } },
+        { phonepeTransactionId: { $regex: search, $options: "i" } },
+        { phonepeMerchantTransactionId: { $regex: search, $options: "i" } },
         { "user.email": { $regex: search, $options: "i" } },
       ];
     }
@@ -146,11 +295,33 @@ export const getOrderStats = asyncHandler(async (req, res) => {
       OrderModel.countDocuments({ payment_status: "pending" }),
       OrderModel.aggregate([
         { $match: { payment_status: "paid" } },
-        { $group: { _id: null, total: { $sum: "$totalAmt" } } },
+        {
+          $addFields: {
+            effectiveAmount: {
+              $cond: [
+                { $gt: ["$finalAmount", 0] },
+                "$finalAmount",
+                "$totalAmt",
+              ],
+            },
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$effectiveAmount" } } },
       ]),
       OrderModel.aggregate([
         { $match: { payment_status: "failed" } },
-        { $group: { _id: null, total: { $sum: "$totalAmt" } } },
+        {
+          $addFields: {
+            effectiveAmount: {
+              $cond: [
+                { $gt: ["$finalAmount", 0] },
+                "$finalAmount",
+                "$totalAmt",
+              ],
+            },
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$effectiveAmount" } } },
       ]),
     ]);
 
@@ -213,7 +384,18 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
       UserModel.countDocuments(),
       OrderModel.aggregate([
         { $match: { order_status: { $ne: "cancelled" } } },
-        { $group: { _id: null, total: { $sum: "$totalAmt" } } },
+        {
+          $addFields: {
+            effectiveAmount: {
+              $cond: [
+                { $gt: ["$finalAmount", 0] },
+                "$finalAmount",
+                "$totalAmt",
+              ],
+            },
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$effectiveAmount" } } },
       ]),
       OrderModel.find()
         .populate("user", "name email avatar")
@@ -450,12 +632,35 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
  */
 export const createOrder = asyncHandler(async (req, res) => {
   try {
-    if (!isPaymentEnabled()) {
+    const maintenanceMode = await isMaintenanceMode();
+    if (maintenanceMode) {
+      logger.warn("createOrder", "Maintenance mode enabled - blocking checkout");
+      return res.status(503).json({
+        error: true,
+        success: false,
+        message:
+          "Checkout is temporarily unavailable due to maintenance. Please try again later.",
+      });
+    }
+
+    if (!(await isPaymentEnabled())) {
       logger.warn("createOrder", "Payment gateway not enabled");
       throw new AppError("PAYMENT_DISABLED");
     }
 
-    const { products, totalAmt, delivery_address } = req.validatedData;
+    const {
+      products,
+      totalAmt,
+      delivery_address,
+      couponCode,
+      influencerCode,
+      notes,
+      tax,
+      shipping,
+      originalAmount,
+      affiliateCode,
+      affiliateSource,
+    } = req.validatedData;
     const userId = req.user || null;
 
     logger.debug("createOrder", "Creating order", { userId, amount: totalAmt, productCount: products.length });
@@ -473,35 +678,157 @@ export const createOrder = asyncHandler(async (req, res) => {
       throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
     }
 
+    // Normalize amounts
+    const baseAmount = Number(originalAmount || totalAmt);
+    const taxAmount = Number(tax || 0);
+    const shippingAmount = Number(shipping || 0);
+
+    // Calculate influencer discount (if any)
+    let influencerDiscount = 0;
+    let influencerData = null;
+    if (influencerCode) {
+      const referralResult = await calculateReferralDiscount(
+        influencerCode,
+        baseAmount,
+      );
+      if (referralResult?.influencer) {
+        influencerDiscount = referralResult.discount || 0;
+        influencerData = referralResult.influencer;
+      }
+    }
+
+    // Validate coupon (if provided)
+    const couponResult = await validateCouponForOrder({
+      code: couponCode,
+      orderAmount: baseAmount,
+      userId,
+    });
+
+    if (couponResult.errorMessage) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: couponResult.errorMessage,
+      });
+    }
+
+    const normalizedCouponCode = couponResult.normalizedCode;
+    const couponDiscount = couponResult.discount || 0;
+
+    const totalDiscount = Math.min(
+      influencerDiscount + couponDiscount,
+      baseAmount,
+    );
+    const computedFinalAmount = Math.max(
+      Math.round((baseAmount - totalDiscount) * 100) / 100,
+      1,
+    );
+
+    // Calculate influencer commission based on final amount
+    let influencerCommission = 0;
+    if (influencerData?._id) {
+      influencerCommission = await calculateInfluencerCommission(
+        influencerData._id,
+        computedFinalAmount,
+      );
+    }
+
     // Create order in database
     const order = new OrderModel({
       user: userId,
       products,
-      totalAmt,
+      totalAmt: baseAmount,
       delivery_address: delivery_address || null,
       payment_status: "pending",
       order_status: "pending",
       paymentMethod: PAYMENT_PROVIDER,
-      originalPrice: totalAmt,
+      originalPrice: baseAmount,
+      finalAmount: computedFinalAmount,
+      couponCode: normalizedCouponCode,
+      discountAmount: couponDiscount,
+      discount: totalDiscount,
+      tax: taxAmount,
+      shipping: shippingAmount,
+      notes: notes || "",
+      influencerId: influencerData?._id || null,
+      influencerCode: influencerData?.code || influencerCode || null,
+      influencerDiscount,
+      influencerCommission,
+      affiliateCode: affiliateCode || influencerCode || null,
+      affiliateSource:
+        affiliateSource || (influencerData ? "referral" : null),
     });
 
     await order.save();
 
-    logger.info("createOrder", "Order created in database", { orderId: order._id, userId });
+    logger.info("createOrder", "Order created in database", {
+      orderId: order._id,
+      userId,
+    });
 
-    // TODO: Integrate with PhonePe API
-    // When PAYMENT_PROVIDER === "PHONEPE", call PhonePe API here
-    // Example:
-    // const phonePeResponse = await createPhonePeOrder(order, totalAmt);
-    // order.externalPaymentId = phonePeResponse.transactionId;
+    if (PAYMENT_PROVIDER === "PHONEPE") {
+      const primaryOrigin = (process.env.FRONTEND_URL || "http://localhost:3000")
+        .split(",")[0]
+        .trim();
+      const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
 
-    // For now, return pending response
+      const merchantTransactionId = `BOG_${order._id}`;
+      const merchantUserId = userId ? String(userId) : "guest";
+      const amount = order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
+      const redirectUrl =
+        process.env.PHONEPE_ORDER_REDIRECT_URL ||
+        process.env.PHONEPE_REDIRECT_URL ||
+        `${primaryOrigin}/payment/phonepe`;
+      const callbackUrl =
+        process.env.PHONEPE_ORDER_CALLBACK_URL ||
+        process.env.PHONEPE_CALLBACK_URL ||
+        `${backendUrl}/api/orders/webhook/phonepe`;
+
+      const phonepeResponse = await createPhonePePayment({
+        amount,
+        merchantTransactionId,
+        merchantUserId,
+        redirectUrl,
+        callbackUrl,
+        mobileNumber: req.body?.shippingAddress?.mobile || null,
+      });
+
+      const paymentUrl =
+        phonepeResponse?.data?.instrumentResponse?.redirectInfo?.url ||
+        phonepeResponse?.data?.redirectInfo?.url ||
+        null;
+
+      if (!paymentUrl) {
+        throw new AppError("PAYMENT_GATEWAY_ERROR", {
+          message: "PhonePe payment URL not received",
+        });
+      }
+
+      order.phonepeMerchantTransactionId = merchantTransactionId;
+      order.paymentId = merchantTransactionId;
+      order.phonepeTransactionId =
+        phonepeResponse?.data?.transactionId || null;
+      await order.save();
+
+      return sendSuccess(
+        res,
+        {
+          orderId: order._id,
+          paymentProvider: "PHONEPE",
+          paymentUrl,
+          merchantTransactionId,
+        },
+        "Order created successfully",
+        201
+      );
+    }
+
     return sendSuccess(
       res,
       {
         orderId: order._id,
         status: "pending",
-        message: "Order created. Awaiting payment integration.",
+        message: "Order created. Payment provider not configured.",
       },
       "Order created successfully",
       201
@@ -512,95 +839,6 @@ export const createOrder = asyncHandler(async (req, res) => {
     }
 
     const dbError = handleDatabaseError(error, "createOrder");
-    return sendError(res, dbError);
-  }
-});
-
-/**
- * Verify payment (Payment confirmation)
- * @route POST /api/orders/verify-payment
- * @access User (authenticated) / Guest
- * @param {string} orderId - MongoDB order ID
- * @param {string} razorpayPaymentId - Payment ID from gateway
- * @param {string} razorpayOrderId - Order ID from gateway
- * @param {string} razorpaySignature - Payment signature
- */
-export const verifyPayment = asyncHandler(async (req, res) => {
-  try {
-    if (!isPaymentEnabled()) {
-      logger.warn("verifyPayment", "Payment gateway not enabled");
-      throw new AppError("PAYMENT_DISABLED");
-    }
-
-    const { orderId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.validatedData;
-
-    logger.debug("verifyPayment", "Verifying payment", { orderId, paymentId: razorpayPaymentId });
-
-    // Fetch order
-    const order = await OrderModel.findById(orderId);
-    if (!order) {
-      logger.warn("verifyPayment", "Order not found", { orderId });
-      throw new AppError("ORDER_NOT_FOUND");
-    }
-
-    // Verify signature
-    const bodyString = razorpayOrderId + "|" + razorpayPaymentId;
-    const expectedSignature = crypto
-      .createHmac("sha256", RAZORPAY_KEY_SECRET)
-      .update(bodyString)
-      .digest("hex");
-
-    if (expectedSignature !== razorpaySignature) {
-      logger.warn("verifyPayment", "Signature mismatch", { orderId, paymentId: razorpayPaymentId });
-      order.payment_status = "failed";
-      order.failureReason = "Signature verification failed";
-      await order.save();
-      throw new AppError("SIGNATURE_MISMATCH");
-    }
-
-    logger.info("verifyPayment", "Signature verified", { orderId, paymentId: razorpayPaymentId });
-
-    // Update order
-    order.paymentId = razorpayPaymentId;
-    order.razorpayOrderId = razorpayOrderId;
-    order.razorpaySignature = razorpaySignature;
-    order.payment_status = "paid";
-    order.order_status = "confirmed";
-    order.updatedAt = new Date();
-
-    await order.save();
-
-    logger.info("verifyPayment", "Order confirmed after payment", { orderId, paymentId: razorpayPaymentId });
-
-    // Send notification
-    if (order.user) {
-      sendOrderUpdateNotification(order, "confirmed").catch((err) =>
-        logger.error("verifyPayment", "Failed to send notification", {
-          orderId,
-          error: err.message,
-        })
-      );
-    }
-
-    // Sync to Firestore
-    syncOrderToFirestore(order, "update").catch((err) =>
-      logger.error("verifyPayment", "Failed to sync to Firestore", {
-        orderId,
-        error: err.message,
-      })
-    );
-
-    return sendSuccess(res, {
-      orderId: order._id,
-      paymentStatus: order.payment_status,
-      orderStatus: order.order_status,
-    }, "Payment verified successfully");
-  } catch (error) {
-    if (error instanceof AppError) {
-      return sendError(res, error);
-    }
-
-    const dbError = handleDatabaseError(error, "verifyPayment");
     return sendError(res, dbError);
   }
 });
@@ -617,9 +855,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       totalAmt,
       delivery_address,
       couponCode,
-      discountAmount,
-      finalAmount,
       influencerCode,
+      affiliateCode,
+      affiliateSource,
       notes,
     } = req.validatedData;
 
@@ -637,7 +875,8 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     let influencerDiscount = 0;
     let influencerData = null;
     let influencerCommission = 0;
-    let couponDiscount = Number(discountAmount) || 0;
+    let couponDiscount = 0;
+    let normalizedCouponCode = couponCode ? couponCode.toUpperCase().trim() : null;
 
     // Apply influencer discount first
     if (influencerCode) {
@@ -660,14 +899,31 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       }
     }
 
-    // Apply coupon discount
-    if (couponCode && couponDiscount > 0) {
-      couponDiscount = Math.min(couponDiscount, workingAmount);
-      workingAmount = workingAmount - couponDiscount;
-      logger.info("saveOrderForLater", "Coupon discount applied", {
+    // Validate and apply coupon discount
+    if (couponCode) {
+      const couponResult = await validateCouponForOrder({
         code: couponCode,
-        discount: couponDiscount,
+        orderAmount: originalPrice,
+        userId,
       });
+
+      if (couponResult.errorMessage) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: couponResult.errorMessage,
+        });
+      }
+
+      normalizedCouponCode = couponResult.normalizedCode;
+      couponDiscount = Math.min(couponResult.discount || 0, workingAmount);
+      if (couponDiscount > 0) {
+        workingAmount = workingAmount - couponDiscount;
+        logger.info("saveOrderForLater", "Coupon discount applied", {
+          code: normalizedCouponCode,
+          discount: couponDiscount,
+        });
+      }
     }
 
     // Calculate final amount
@@ -691,7 +947,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       order_status: "pending_payment",
       payment_status: "unavailable",
       paymentMethod: "PENDING",
-      couponCode: couponCode || null,
+      couponCode: normalizedCouponCode || null,
       discountAmount: couponDiscount,
       discount: totalDiscount,
       finalAmount: finalOrderAmount,
@@ -701,8 +957,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       influencerCommission,
       commissionPaid: false,
       originalPrice,
-      affiliateCode: influencerCode || null,
-      affiliateSource: influencerCode ? "referral" : null,
+      affiliateCode: affiliateCode || influencerCode || null,
+      affiliateSource:
+        affiliateSource || (influencerCode ? "referral" : null),
       isSavedOrder: true,
       notes: notes || "Order saved - awaiting payment gateway activation",
     });
@@ -739,7 +996,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         },
         discountsApplied: {
           influencer: !!influencerCode,
-          coupon: !!couponCode,
+          coupon: !!normalizedCouponCode,
           affiliate: !!savedOrder.affiliateCode,
         },
       },
@@ -763,7 +1020,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
  */
 export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
   try {
-    const paymentEnabled = isPaymentEnabled();
+    const paymentEnabled = await isPaymentEnabled();
 
     logger.info("getPaymentGatewayStatus", "Status check", {
       provider: PAYMENT_PROVIDER,
@@ -798,52 +1055,108 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
   try {
     logger.debug("handlePhonePeWebhook", "Webhook received");
 
-    if (!isPaymentEnabled()) {
+    if (!(await isPaymentEnabled())) {
       logger.warn("handlePhonePeWebhook", "PhonePe not enabled");
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    // TODO: Implement PhonePe webhook verification
-    // 1. Verify X-VERIFY header signature
-    // 2. Decode base64 response
-    // 3. Update order based on payment status
-    // 4. Handle SUCCESS, FAILURE, PENDING states
+    const payload = req.body?.data || req.body || {};
+    const merchantTransactionId =
+      payload?.merchantTransactionId || payload?.merchant_transaction_id || null;
+    const transactionId =
+      payload?.transactionId || payload?.transaction_id || null;
+    const state =
+      payload?.state ||
+      payload?.code ||
+      payload?.status ||
+      payload?.paymentState ||
+      null;
 
-    logger.info("handlePhonePeWebhook", "Webhook placeholder - integration pending");
-
-    return sendSuccess(res, {}, "Webhook received");
-  } catch (error) {
-    logger.error("handlePhonePeWebhook", "Webhook processing error", {
-      error: error.message,
-    });
-    return sendError(res, error);
-  }
-});
-
-/**
- * Razorpay Webhook Handler
- * @route POST /api/orders/webhook/razorpay
- * @access Public (signature verified)
- */
-export const handleRazorpayWebhook = asyncHandler(async (req, res) => {
-  try {
-    logger.debug("handleRazorpayWebhook", "Webhook received");
-
-    const { event, payload } = req.body;
-
-    if (!event || !payload) {
-      logger.warn("handleRazorpayWebhook", "Invalid webhook payload");
-      throw new AppError("INVALID_INPUT");
+    if (!merchantTransactionId) {
+      logger.warn("handlePhonePeWebhook", "Missing merchantTransactionId");
+      return sendSuccess(res, {}, "Webhook received");
     }
 
-    // TODO: Implement Razorpay webhook verification
-    // Handle payment.authorized, payment.failed, payment.captured events
+    const orderId = merchantTransactionId.replace("BOG_", "");
+    const order = await OrderModel.findById(orderId);
 
-    logger.info("handleRazorpayWebhook", "Webhook received", { event });
+    if (!order) {
+      logger.warn("handlePhonePeWebhook", "Order not found", {
+        merchantTransactionId,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
 
-    return sendSuccess(res, {}, "Webhook received");
+    if (transactionId) {
+      order.phonepeTransactionId = transactionId;
+      order.paymentId = transactionId;
+    }
+
+    const normalizedState = String(state || "").toLowerCase();
+    const wasPaid = order.payment_status === "paid";
+
+    if (normalizedState.includes("success")) {
+      order.payment_status = "paid";
+      order.order_status = "confirmed";
+    } else if (normalizedState.includes("fail")) {
+      order.payment_status = "failed";
+      order.failureReason = "PhonePe payment failed";
+    } else if (normalizedState.includes("pending")) {
+      order.payment_status = "pending";
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+
+    if (!wasPaid && order.payment_status === "paid") {
+      // Record coupon usage (idempotent)
+      if (order.couponCode) {
+        recordCouponUsage(order).catch((err) =>
+          logger.error("handlePhonePeWebhook", "Failed to record coupon usage", {
+            orderId: order._id,
+            error: err.message,
+          }),
+        );
+      }
+
+      // Update influencer stats if applicable
+      if (order.influencerId) {
+        const effectiveAmount =
+          order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
+        let commission = order.influencerCommission || 0;
+        if (!commission && order.influencerId) {
+          commission = await calculateInfluencerCommission(
+            order.influencerId,
+            effectiveAmount,
+          );
+          order.influencerCommission = commission;
+          await order.save();
+        }
+
+        updateInfluencerStats(order.influencerId, effectiveAmount, commission)
+          .catch((err) =>
+            logger.error(
+              "handlePhonePeWebhook",
+              "Failed to update influencer stats",
+              {
+                orderId: order._id,
+                error: err.message,
+              },
+            ),
+          );
+      }
+    }
+
+    syncOrderToFirestore(order, "update").catch((err) =>
+      logger.error("handlePhonePeWebhook", "Failed to sync to Firestore", {
+        orderId: order._id,
+        error: err.message,
+      }),
+    );
+
+    return sendSuccess(res, {}, "Webhook processed");
   } catch (error) {
-    logger.error("handleRazorpayWebhook", "Webhook processing error", {
+    logger.error("handlePhonePeWebhook", "Webhook processing error", {
       error: error.message,
     });
     return sendError(res, error);

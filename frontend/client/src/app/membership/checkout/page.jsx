@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const PENDING_PAYMENT_KEY = "membershipPaymentPending";
 
 export default function MembershipCheckoutPage() {
   const [isLoading, setIsLoading] = useState(true);
@@ -59,19 +60,61 @@ export default function MembershipCheckoutPage() {
     init();
   }, [router]);
 
-  const loadRazorpayScript = () => {
-    return new Promise((resolve) => {
-      if (window.Razorpay) {
-        resolve(true);
-        return;
+  useEffect(() => {
+    const verifyPendingPayment = async () => {
+      try {
+        if (typeof window === "undefined") return;
+        const token = cookies.get("accessToken");
+        if (!token) return;
+
+        const raw = localStorage.getItem(PENDING_PAYMENT_KEY);
+        if (!raw) return;
+
+        const pending = JSON.parse(raw);
+        if (!pending?.merchantTransactionId || !pending?.planId) {
+          localStorage.removeItem(PENDING_PAYMENT_KEY);
+          return;
+        }
+
+        setIsProcessing(true);
+        setError(null);
+
+        const verifyRes = await fetch(
+          `${API_URL}/api/membership/verify-payment`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              merchantTransactionId: pending.merchantTransactionId,
+              planId: pending.planId,
+            }),
+          },
+        );
+
+        const verifyData = await verifyRes.json();
+        if (verifyData.success) {
+          localStorage.removeItem(PENDING_PAYMENT_KEY);
+          setSuccess(true);
+          setTimeout(() => router.push("/membership"), 1500);
+        } else {
+          setError(
+            verifyData.message ||
+              "Payment not confirmed yet. Please wait a moment and retry.",
+          );
+        }
+      } catch (err) {
+        console.error("Membership verification failed:", err);
+        setError("Failed to verify membership payment.");
+      } finally {
+        setIsProcessing(false);
       }
-      const script = document.createElement("script");
-      script.src = "https://checkout.razorpay.com/v1/checkout.js";
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  };
+    };
+
+    verifyPendingPayment();
+  }, [router]);
 
   const handlePayment = async () => {
     if (!plan) return;
@@ -82,14 +125,6 @@ export default function MembershipCheckoutPage() {
     const token = cookies.get("accessToken");
     if (!token) {
       router.push("/login?redirect=/membership/checkout");
-      return;
-    }
-
-    // Load Razorpay script
-    const scriptLoaded = await loadRazorpayScript();
-    if (!scriptLoaded) {
-      setError("Payment gateway failed to load");
-      setIsProcessing(false);
       return;
     }
 
@@ -110,65 +145,26 @@ export default function MembershipCheckoutPage() {
         setIsProcessing(false);
         return;
       }
+      const paymentUrl = orderData?.data?.paymentUrl;
+      const merchantTransactionId = orderData?.data?.merchantTransactionId;
+      if (!paymentUrl) {
+        setError("Payment URL not received. Please try again later.");
+        setIsProcessing(false);
+        return;
+      }
 
-      // Open Razorpay checkout
-      const options = {
-        key: orderData.data.keyId,
-        amount: orderData.data.amount * 100,
-        currency: orderData.data.currency,
-        name: "Healthy One Gram",
-        description: `Membership: ${orderData.data.planName}`,
-        order_id: orderData.data.orderId,
-        handler: async function (response) {
-          // Verify payment
-          try {
-            const verifyRes = await fetch(
-              `${API_URL}/api/membership/verify-payment`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                  razorpayPaymentId: response.razorpay_payment_id,
-                  razorpayOrderId: response.razorpay_order_id,
-                  razorpaySignature: response.razorpay_signature,
-                  planId: plan._id,
-                }),
-              },
-            );
+      if (typeof window !== "undefined" && merchantTransactionId) {
+        localStorage.setItem(
+          PENDING_PAYMENT_KEY,
+          JSON.stringify({
+            merchantTransactionId,
+            planId: plan._id,
+            createdAt: Date.now(),
+          }),
+        );
+      }
 
-            const verifyData = await verifyRes.json();
-            if (verifyData.success) {
-              setSuccess(true);
-              setTimeout(() => {
-                router.push("/membership");
-              }, 2000);
-            } else {
-              setError(verifyData.message || "Payment verification failed");
-            }
-          } catch (err) {
-            setError("Payment verification failed");
-          }
-          setIsProcessing(false);
-        },
-        prefill: {
-          email: cookies.get("userEmail") || "",
-          name: cookies.get("userName") || "",
-        },
-        theme: {
-          color: "#059669",
-        },
-        modal: {
-          ondismiss: function () {
-            setIsProcessing(false);
-          },
-        },
-      };
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
+      window.location.href = paymentUrl;
     } catch (err) {
       console.error("Payment error:", err);
       setError("Payment failed. Please try again.");
@@ -405,7 +401,7 @@ export default function MembershipCheckoutPage() {
             marginTop: 16,
           }}
         >
-          Secure payment powered by Razorpay
+          Secure payment powered by PhonePe
         </p>
       </div>
 

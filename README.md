@@ -1,21 +1,32 @@
 # 🛍️ Healthy One Gram - E-Commerce Platform
 
-> **Repository Hygiene & Environment Setup**
->
-> - **Sensitive data is never committed.** All secrets and credentials must be placed in `.env` files, which are excluded by `.gitignore`.
-> - **`.env.example` files** are provided for each app (server, client, admin). These list all required environment variables with empty placeholder values. Copy to `.env` (server) or `.env.local` (frontends) and fill in your real values.
-> - **Ports:**
->   - Backend: `8000` (set in `server/.env`)
->   - Client: `3000` (default Next.js)
->   - Admin: `3001` (set in `frontend/admin/package.json`)
-> - **Never commit your actual `.env` or `.env.local` files.** Only `.env.example` is tracked for onboarding and documentation.
-
 **Production-Ready Full-Stack E-Commerce Solution with PhonePe Payment Integration**
 
 ![Production Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
 ![Version](https://img.shields.io/badge/Version-1.2.0-blue)
 ![Last Audit](https://img.shields.io/badge/Last%20Audit-January%202026-orange)
 ![Payment](https://img.shields.io/badge/Payment-PhonePe%20Onboarding-yellow)
+
+---
+
+**Quick Start**
+
+```bash
+# Backend
+cd server && npm install && npm start
+
+# Client (new terminal)
+cd frontend/client && npm install && npm run dev
+
+# Admin (new terminal)
+cd frontend/admin && npm install && npm run dev
+```
+
+Ports: Backend `8000` | Client `3000` | Admin `3001`
+
+Setup notes:
+- Use `.env` (server) and `.env.local` (client/admin). Never commit real secrets.
+- Copy from `.env.example` files and fill real values.
 
 ---
 
@@ -45,23 +56,6 @@
 > - No actual payment processing occurs until PhonePe activation is complete
 > - Set `PHONEPE_ENABLED=true` in server `.env` when activated
 
-### Quick Start Commands
-
-```bash
-# Backend
-cd server && npm install && npm start
-
-# Client (in new terminal)
-cd frontend/client && npm install && npm run dev
-
-# Admin (in new terminal)
-cd frontend/admin && npm install && npm run dev
-```
-
-**Ports:** Backend: 8000 | Client: 3000 | Admin: 3001
-
----
-
 ## 📋 Table of Contents
 
 1. [Project Overview](#project-overview)
@@ -78,6 +72,38 @@ cd frontend/admin && npm install && npm run dev
 12. [Features & Workflows](#features--workflows)
 13. [Deployment Guide](#deployment-guide)
 14. [Troubleshooting](#troubleshooting)
+
+---
+
+## 🔄 Recent Updates
+
+- Influencer portal login + refresh flow added for collaborator access (token-based).
+- Referral discount auto-applies only for sessions arriving via `?ref=CODE` (sessionStorage).
+- Manual influencer codes now work from the coupon input (fallback validation).
+- Influencer links removed from header; portal now uses a "Copy referral link" action.
+- Referral redirect guard removed to allow influencers to browse storefront.
+- Hardened admin auth logging: token debug output is now dev-only and redacted.
+- Unified client API base URL usage and added refresh-token retry in My Orders.
+- Fixed delivery address rendering to support `address_line1` / `address_line` / `address`.
+- Tightened CORS in production to use only configured origins, with `SITE_BASE_URL` fallback.
+- Reduced debug noise in production by gating server logs and muting client-side `console.log/console.warn`.
+- Seeder no longer prints the default admin password to the console.
+- PhonePe payment hook now documents the legacy Razorpay alias as backward-compatible.
+- README emoji/heading encoding cleaned for production polish.
+
+Risky changes handled safely:
+- CORS now excludes localhost in production but falls back to `SITE_BASE_URL` if `FRONTEND_URL` is missing.
+- Auth token usage now prefers cookies but still falls back to localStorage to avoid breaking older flows.
+- Legacy Razorpay-named hook is preserved to avoid breaking existing imports.
+
+Additional fixes:
+- My Orders now attempts refresh-token flow before forcing re-login.
+
+New folders/files:
+- `_duplicates/` (temporary quarantine for removed duplicate shipping files)
+
+Confirmation:
+- No breaking changes introduced.
 
 ---
 
@@ -106,7 +132,7 @@ cd frontend/admin && npm install && npm run dev
 | Express.js | Web Framework   | 4.18+   |
 | MongoDB    | Database        | 5.0+    |
 | Mongoose   | ODM             | 7.0+    |
-| Razorpay   | Payment Gateway | -       |
+| PhonePe   | Payment Gateway | -       |
 | JWT        | Authentication  | -       |
 | Cloudinary | Image Storage   | -       |
 
@@ -256,7 +282,7 @@ bogEcom/
 
 - Node.js 18+ installed
 - MongoDB Atlas account (free tier available)
-- Razorpay account (for payments)
+- PhonePe business account (for payments)
 - Cloudinary account (for image storage)
 - Git installed
 
@@ -291,10 +317,12 @@ npm install
 
 ### **Step 4: Get API Keys**
 
-#### **Razorpay** (https://dashboard.razorpay.com/app/keys)
+#### **PhonePe** (https://business.phonepe.com)
 
-- Key ID
-- Key Secret
+- Merchant ID
+- Salt Key
+- Salt Index
+- Environment (UAT/PROD)
 
 #### **Cloudinary** (https://cloudinary.com/console)
 
@@ -308,7 +336,7 @@ npm install
 - Auth Domain
 - Project ID
 
----
+------
 
 ## ⚙️ Environment Configuration
 
@@ -336,13 +364,22 @@ CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
 
-# Razorpay (Payment Gateway)
-RAZORPAY_KEY_ID=rzp_test_xxxxx_or_rzp_live_xxxxx
-RAZORPAY_KEY_SECRET=your_razorpay_secret_key
-RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
-
-# PhonePe (Payment Gateway - set to true when activated)
+# PhonePe (Payment Gateway)
 PHONEPE_ENABLED=false
+PHONEPE_MERCHANT_ID=your_merchant_id
+PHONEPE_SALT_KEY=your_salt_key
+PHONEPE_SALT_INDEX=1
+PHONEPE_ENV=UAT
+PHONEPE_REDIRECT_URL=http://localhost:3000/payment/phonepe
+PHONEPE_CALLBACK_URL=http://localhost:8000/api/orders/webhook/phonepe
+PHONEPE_ORDER_REDIRECT_URL=http://localhost:3000/payment/phonepe
+PHONEPE_ORDER_CALLBACK_URL=http://localhost:8000/api/orders/webhook/phonepe
+PHONEPE_MEMBERSHIP_REDIRECT_URL=http://localhost:3000/membership/checkout
+PHONEPE_MEMBERSHIP_CALLBACK_URL=http://localhost:8000/api/membership/verify-payment
+PHONEPE_BASE_URL=https://api-preprod.phonepe.com/apis/pg-sandbox
+PHONEPE_PAY_PATH=/pg/v1/pay
+PHONEPE_STATUS_PATH=/pg/v1/status
+BACKEND_URL=http://localhost:8000
 
 # Frontend URLs
 FRONTEND_URL=http://localhost:3000,http://localhost:3001
@@ -351,11 +388,12 @@ FRONTEND_URL=http://localhost:3000,http://localhost:3001
 ### **Frontend Client: `/frontend/client/.env.local`**
 
 ```env
-# Razorpay Public Key
-NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_xxxxx_or_rzp_live_xxxxx
-
 # API Base URL
-NEXT_PUBLIC_API_URL=http://localhost:8000/api
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_APP_API_URL=http://localhost:8000
+
+# Site URL (for SEO)
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 # Firebase Configuration
 NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
@@ -364,9 +402,12 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-bucket.appspot.com
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+
+# Firebase VAPID Key
+NEXT_PUBLIC_FIREBASE_VAPID_KEY=your-vapid-key
 ```
 
-### **Frontend Admin: `/frontend/admin/.env.local`**
+### **Frontend Admin: `/frontend/admin/.env.local`**### **Frontend Admin: `/frontend/admin/.env.local`**
 
 ```env
 # API Base URL
@@ -503,10 +544,9 @@ Response: 201
   "message": "Order created successfully",
   "data": {
     "orderId": "507f1f77bcf86cd799439013",
-    "razorpayOrderId": "order_IluGWxBm9U8zJ8",
-    "amount": 650,
-    "currency": "INR",
-    "keyId": "rzp_test_xxxxx"
+    "paymentProvider": "PHONEPE",
+    "paymentUrl": "https://api.phonepe.com/redirect/...",
+    "merchantTransactionId": "BOG_507f1f77bcf86cd799439013"
   }
 }
 ```
@@ -517,47 +557,7 @@ Response: 201
 - `400` ❌ Invalid input (missing products, invalid amount)
 - `500` ❌ Server error
 
-**Flow:** Cart → Create Order → Get Razorpay Order ID → Open Checkout
-
----
-
-#### **2. Verify Payment**
-
-```http
-POST /api/orders/verify-payment
-Content-Type: application/json
-
-Body:
-{
-  "orderId": "507f1f77bcf86cd799439013",
-  "razorpayPaymentId": "pay_IluGWxBm9U8zJ8",
-  "razorpayOrderId": "order_IluGWxBm9U8zJ8",
-  "razorpaySignature": "9ef4dffbfd84f1318f6739a3ce19f9d85851857ae648f114332d8401e0949a3d"
-}
-
-Response: 200
-{
-  "error": false,
-  "success": true,
-  "message": "Payment verified and order confirmed",
-  "data": {
-    "orderId": "507f1f77bcf86cd799439013",
-    "orderStatus": "confirmed",
-    "paymentStatus": "paid",
-    "paymentId": "pay_IluGWxBm9U8zJ8",
-    "totalAmount": 650
-  }
-}
-```
-
-**Status Codes:**
-
-- `200` ✅ Payment verified
-- `400` ❌ Invalid signature (fraud attempt)
-- `404` ❌ Order not found
-- `500` ❌ Server error
-
-**Flow:** User completes payment → Razorpay callback → Verify on backend → Confirm order
+**Flow:** Cart → Create Order → Redirect to PhonePe payment page
 
 ---
 
@@ -584,7 +584,7 @@ Response: 200
           "subTotal": 600
         }
       ],
-      "paymentId": "pay_IluGWxBm9U8zJ8",
+      "paymentId": "T230412345678",
       "payment_status": "paid",
       "order_status": "confirmed",
       "totalAmt": 650,
@@ -620,7 +620,7 @@ Response: 200
     "user": "507f1f77bcf86cd799439000",
     "products": [...],
     "delivery_address": {...},
-    "paymentId": "pay_IluGWxBm9U8zJ8",
+    "paymentId": "T230412345678",
     "payment_status": "paid",         // paid, pending, unavailable, failed
     "order_status": "confirmed",      // pending_payment, confirmed, shipped, delivered, cancelled
     "subTotal": 600,
@@ -630,7 +630,7 @@ Response: 200
     "totalAmt": 680,
     "couponCode": null,
     "affiliateCode": null,
-    "paymentMethod": "razorpay",
+    "paymentMethod": "phonepe",
     "createdAt": "2026-01-25T10:30:00Z"
   }
 }
@@ -648,25 +648,17 @@ Response: 200
 
 ---
 
-#### **5. Razorpay Webhook** (Production Only)
+#### **5. PhonePe Webhook** (Production Only)
 
 ```http
-POST /api/orders/webhook/razorpay
-X-Razorpay-Signature: {signature}
+POST /api/orders/webhook/phonepe
+Content-Type: application/json
 
-Body: (Razorpay sends automatically)
+Body: (PhonePe sends automatically)
 {
-  "event": "payment.authorized",
-  "payload": {
-    "payment": {
-      "entity": {
-        "id": "pay_IluGWxBm9U8zJ8",
-        "notes": {
-          "order_id": "507f1f77bcf86cd799439013"
-        }
-      }
-    }
-  }
+  "merchantTransactionId": "BOG_507f1f77bcf86cd799439013",
+  "transactionId": "T230412345678",
+  "state": "COMPLETED"
 }
 
 Response: 200
@@ -679,10 +671,10 @@ Response: 200
 
 **Webhook Events Handled:**
 
-- `payment.authorized` → Update order status to "confirmed"
-- `payment.failed` → Update order status to "cancelled"
+- `SUCCESS/COMPLETED` ? Update order status to "confirmed"
+- `FAILURE` ? Update order status to "failed"
 
----
+------
 
 ### **👥 USER ENDPOINTS**
 
@@ -936,29 +928,6 @@ Response: 200
 
 ## 💳 Payment Gateway Setup
 
-### **Razorpay Test Mode (Development)**
-
-**Test Cards:**
-| Card | Number | CVV | Result |
-|------|--------|-----|--------|
-| Visa Success | 4111 1111 1111 1111 | Any 3 digits | ✅ Success |
-| Visa 3D Secure | 4012 8888 8888 1881 | Any 3 digits | ✅ Success with OTP |
-| Declined | 4000 0000 0000 0002 | Any 3 digits | ❌ Declined |
-
-**Expiry:** Any future date (MM/YY format)
-
-### **Production Checklist**
-
-- [ ] Switch Razorpay to live mode
-- [ ] Update `RAZORPAY_KEY_ID` to live key
-- [ ] Update `RAZORPAY_KEY_SECRET` to live secret
-- [ ] Configure webhook in Razorpay dashboard
-- [ ] Test payment flow end-to-end
-- [ ] Enable HTTPS
-- [ ] Setup email notifications
-- [ ] Configure database backups
-- [ ] Setup logging & monitoring
-
 ### **PhonePe Activation**
 
 When PhonePe onboarding is complete:
@@ -969,9 +938,27 @@ When PhonePe onboarding is complete:
    PHONEPE_MERCHANT_ID=your_merchant_id
    PHONEPE_SALT_KEY=your_salt_key
    PHONEPE_SALT_INDEX=1
+   PHONEPE_ENV=PROD
    ```
-3. Restart the server
-4. The checkout modal will automatically switch to active payment mode
+3. Configure the redirect and callback URLs (defaults used if omitted):
+   ```env
+   PHONEPE_ORDER_REDIRECT_URL=https://yourdomain.com/payment/phonepe
+   PHONEPE_ORDER_CALLBACK_URL=https://yourdomain.com/api/orders/webhook/phonepe
+   PHONEPE_MEMBERSHIP_REDIRECT_URL=https://yourdomain.com/membership/checkout
+   PHONEPE_MEMBERSHIP_CALLBACK_URL=https://yourdomain.com/api/membership/verify-payment
+   ```
+4. Restart the server and test a live transaction
+
+### **Production Checklist**
+
+- [ ] Confirm PhonePe UAT -> PROD switch
+- [ ] Set `PHONEPE_ENV=PROD`
+- [ ] Verify webhook callback URL is reachable
+- [ ] Test payment flow end-to-end
+- [ ] Enable HTTPS
+- [ ] Setup email notifications
+- [ ] Configure database backups
+- [ ] Setup logging & monitoring
 
 ---
 
@@ -1061,8 +1048,8 @@ The system automatically captures these URL parameters:
 ### **How It Works**
 
 1. **User clicks affiliate link:** `https://yoursite.com?ref=INFLUENCER_CODE`
-2. **Code is stored:** Saved in localStorage with 30-day expiry
-3. **User shops:** Code persists across sessions
+2. **Code is stored:** Saved in sessionStorage (session-only; resets on browser close)
+3. **User shops:** Code persists only for the current session
 4. **At checkout:** Affiliate data is attached to order
 5. **Coupon integration:** Affiliate coupons also set tracking
 
@@ -1113,8 +1100,8 @@ Orders include affiliate data:
       subTotal: Number
     }
   ],
-  paymentId: String,                 // Razorpay/PhonePe Payment ID
-  paymentMethod: String,             // "RAZORPAY" | "PHONEPE" | "COD" | "PENDING"
+  paymentId: String,                 // PhonePe transaction ID
+  paymentMethod: String,             // "PHONEPE" | "COD" | "PENDING"
   payment_status: String,            // "pending" | "paid" | "failed" | "unavailable"
   order_status: String,              // "pending" | "pending_payment" | "confirmed" | "shipped" | "delivered" | "cancelled"
   delivery_address: ObjectId,        // Reference to Address
@@ -1181,7 +1168,7 @@ Orders include affiliate data:
 
 ---
 
-## � Push Notifications System
+## 🔔 Push Notifications System
 
 ### **Overview**
 
@@ -1295,37 +1282,33 @@ NEXT_PUBLIC_FIREBASE_VAPID_KEY=your-vapid-key
 
 ---
 
-## �🔄 Features & Workflows
+## 🔄 Features & Workflows
 
 ### **1. Complete Order Flow**
 
 ```
 Step 1: User adds product to cart (localStorage)
-   ↓
+   ->
 Step 2: User goes to checkout page
-   ↓
+   ->
 Step 3: User fills address & clicks "Proceed to Payment"
-   ↓
+   ->
 Step 4: Frontend calls POST /api/orders
-   ↓
-Step 5: Backend creates order, generates Razorpay Order ID
-   ↓
-Step 6: Razorpay checkout opens with order details
-   ↓
-Step 7: User pays with card/UPI/wallet
-   ↓
-Step 8: Razorpay returns payment response (success/failure)
-   ↓
-Step 9: Frontend calls POST /api/orders/verify-payment
-   ↓
-Step 10: Backend verifies signature, updates order status
-   ↓
-Step 11: User redirected to My Orders page
-   ↓
-Step 12: Admin sees order in dashboard (real-time)
+   ->
+Step 5: Backend creates order and generates PhonePe payment URL
+   ->
+Step 6: User is redirected to PhonePe payment page
+   ->
+Step 7: PhonePe processes payment and redirects back to site
+   ->
+Step 8: PhonePe webhook updates order status
+   ->
+Step 9: User sees updated status in My Orders
+   ->
+Step 10: Admin sees order in dashboard (real-time)
 ```
 
-### **2. Admin Order Management**
+### **2. Admin Order Management**### **2. Admin Order Management**
 
 ```
 Admin Dashboard
@@ -1345,27 +1328,17 @@ User sees updated status in My Orders
 
 ```
 User Completes Payment
-   ↓
-Razorpay returns:
-- razorpay_payment_id
-- razorpay_order_id
-- razorpay_signature
-   ↓
-Frontend sends to backend
-   ↓
-Backend verifies signature using:
-HMAC = SHA256(order_id|payment_id, key_secret)
-   ↓
-If HMAC matches signature:
-- Order status = confirmed
-- Payment status = paid
-   ↓
-If HMAC doesn't match:
-- Order cancelled
-- User sees error
+   ->
+PhonePe webhook posts transaction status
+   ->
+Backend updates:
+- payment_status = paid / failed
+- order_status = confirmed (on success)
+   ->
+Optional status check (server-to-server) via PhonePe Status API
 ```
 
-### **4. Real-Time Admin Notifications**
+### **4. Real-Time Admin Notifications**### **4. Real-Time Admin Notifications**
 
 ```
 Order Created
@@ -1437,8 +1410,10 @@ Display full order details:
    ```
    PORT=8000
    MONGODB_URI=...
-   RAZORPAY_KEY_ID=...
-   RAZORPAY_KEY_SECRET=...
+   PHONEPE_MERCHANT_ID=...
+   PHONEPE_SALT_KEY=...
+   PHONEPE_SALT_INDEX=...
+   PHONEPE_ENV=PROD
    (etc)
    ```
 4. Deploy
@@ -1472,17 +1447,17 @@ MongoDB Atlas automatically backs up data. For production:
 
 **Problem:** Payment gateway not loading
 
-- Check: `NEXT_PUBLIC_RAZORPAY_KEY_ID` is set
-- Verify: Not expired or invalid key
-- Check: Browser console for errors
+- Check: `PHONEPE_ENABLED=true` in server `.env`
+- Verify: `PHONEPE_MERCHANT_ID`, `PHONEPE_SALT_KEY`, `PHONEPE_SALT_INDEX`
+- Check: Server logs for PhonePe request errors
 
-**Problem:** Payment verification failing
+**Problem:** Payment status not updating
 
-- Check: Razorpay credentials in `.env`
+- Check: PhonePe webhook callback URL reachable
 - Verify: Order exists in database
-- Check: Signature calculation
+- Check: `PHONEPE_CALLBACK_URL` in `.env`
 
-### **Database Issues**
+### **Database Issues**### **Database Issues**
 
 **Problem:** MongoDB connection failed
 
@@ -1531,4 +1506,4 @@ This project is proprietary software. All rights reserved.
 
 **Happy Coding! 🚀**
 
-Last Updated: January 25, 2026
+Last Updated: February 6, 2026

@@ -3,6 +3,14 @@ import { sendEmail } from "../config/emailService.js";
 import { isFirebaseReady } from "../config/firebaseAdmin.js";
 import Newsletter from "../models/newsletter.model.js";
 
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
+
 /**
  * Generate welcome email HTML template
  * @param {string} email - Subscriber email
@@ -97,7 +105,7 @@ const sendWelcomeEmail = async (email) => {
     const result = await sendEmail(email, subject, text, html);
 
     if (result.success) {
-      console.log(`✓ Welcome email sent to: ${email}`);
+      debugLog(`✓ Welcome email sent to: ${email}`);
     } else {
       console.error(
         `✗ Failed to send welcome email to ${email}:`,
@@ -120,7 +128,7 @@ const sendWelcomeEmail = async (email) => {
 const saveToFirebase = async (subscriberData) => {
   try {
     if (!isFirebaseReady()) {
-      console.log("Firebase not configured, skipping Firestore save");
+      debugLog("Firebase not configured, skipping Firestore save");
       return false;
     }
 
@@ -141,7 +149,7 @@ const saveToFirebase = async (subscriberData) => {
       { merge: true },
     );
 
-    console.log(`✓ Subscriber saved to Firebase: ${subscriberData.email}`);
+    debugLog(`✓ Subscriber saved to Firebase: ${subscriberData.email}`);
     return true;
   } catch (error) {
     console.error("Firebase save error:", error.message);

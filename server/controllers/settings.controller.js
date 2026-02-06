@@ -1,4 +1,13 @@
 import SettingsModel from "../models/settings.model.js";
+import CouponModel from "../models/coupon.model.js";
+
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
 
 /**
  * Settings Controller
@@ -43,7 +52,7 @@ export const getPublicSettings = async (req, res) => {
       settingsObject[setting.key] = setting.value;
     });
 
-    console.log(
+    debugLog(
       "[Settings] Public settings:",
       JSON.stringify(settingsObject.taxSettings),
     );
@@ -144,8 +153,31 @@ export const updateSetting = async (req, res) => {
       });
     }
 
+    // Enforce offer popup coupon validation (must match an existing coupon)
+    if (key === "offerCouponCode") {
+      const normalizedCode =
+        typeof value === "string" ? value.trim().toUpperCase() : "";
+
+      if (normalizedCode) {
+        const couponExists = await CouponModel.exists({
+          code: normalizedCode,
+        });
+
+        if (!couponExists) {
+          return res.status(400).json({
+            error: true,
+            success: false,
+            message:
+              "Offer coupon code must match an existing coupon. Please create the coupon first.",
+          });
+        }
+      }
+
+      req.body.value = normalizedCode;
+    }
+
     const updateData = {
-      value,
+      value: req.body.value,
       updatedBy: adminId,
     };
 
@@ -167,7 +199,7 @@ export const updateSetting = async (req, res) => {
       },
     ).populate("updatedBy", "name email");
 
-    console.log(`✓ Setting "${key}" updated/created by admin`);
+    debugLog(`✓ Setting "${key}" updated/created by admin`);
 
     res.status(200).json({
       error: false,
@@ -222,7 +254,7 @@ export const createSetting = async (req, res) => {
 
     await setting.save();
 
-    console.log(`✓ Setting "${key}" created by admin`);
+    debugLog(`✓ Setting "${key}" created by admin`);
 
     res.status(201).json({
       error: false,
@@ -277,7 +309,7 @@ export const deleteSetting = async (req, res) => {
       });
     }
 
-    console.log(`✓ Setting "${key}" deleted`);
+    debugLog(`✓ Setting "${key}" deleted`);
 
     res.status(200).json({
       error: false,
@@ -300,7 +332,7 @@ export const deleteSetting = async (req, res) => {
 export const initializeSettings = async () => {
   try {
     await SettingsModel.initializeDefaults();
-    console.log("✓ Default settings initialized");
+    debugLog("✓ Default settings initialized");
   } catch (error) {
     console.error("Error initializing settings:", error);
   }

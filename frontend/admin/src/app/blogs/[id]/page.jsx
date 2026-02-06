@@ -4,6 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { MdSave } from "react-icons/md";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 const EditBlog = () => {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
@@ -22,7 +24,7 @@ const EditBlog = () => {
     try {
       setIsLoading(true);
       const response = await fetch(
-        `http://localhost:8000/api/blogs/admin/${id}`,
+        `${API_URL}/api/blogs/admin/${id}`,
         {
           method: "GET",
           headers: {
@@ -72,7 +74,7 @@ const EditBlog = () => {
     setError("");
 
     try {
-      const response = await fetch(`http://localhost:8000/api/blogs/${id}`, {
+      const response = await fetch(`${API_URL}/api/blogs/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

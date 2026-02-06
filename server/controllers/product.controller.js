@@ -1,6 +1,14 @@
 import CategoryModel from "../models/category.model.js";
 import ProductModel from "../models/product.model.js";
 
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
+
 /**
  * Product Controller
  *
@@ -43,7 +51,7 @@ export const getProducts = async (req, res) => {
     const totalActiveProducts = await ProductModel.countDocuments({
       isActive: true,
     });
-    console.log(
+    debugLog(
       "[Product Search] Total products in DB:",
       totalAllProducts,
       "Active:",
@@ -59,7 +67,7 @@ export const getProducts = async (req, res) => {
       const sanitizedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const searchRegex = new RegExp(sanitizedTerm, "i");
 
-      console.log(
+      debugLog(
         "[Product Search] Searching for:",
         searchTerm,
         "Regex:",
@@ -74,7 +82,7 @@ export const getProducts = async (req, res) => {
         .lean();
       const categoryIds = matchingCategories.map((c) => c._id);
 
-      console.log(
+      debugLog(
         "[Product Search] Matching categories:",
         matchingCategories.length,
       );
@@ -98,7 +106,7 @@ export const getProducts = async (req, res) => {
 
       filter.$or = searchConditions;
 
-      console.log("[Product Search] Filter:", JSON.stringify(filter));
+      debugLog("[Product Search] Filter:", JSON.stringify(filter));
 
       // Debug: Test the name search directly
       const nameMatchTest = await ProductModel.find({
@@ -108,7 +116,7 @@ export const getProducts = async (req, res) => {
         .select("name")
         .limit(5)
         .lean();
-      console.log(
+      debugLog(
         "[Product Search] Direct name match test:",
         nameMatchTest.map((p) => p.name),
       );
@@ -194,9 +202,9 @@ export const getProducts = async (req, res) => {
       ProductModel.countDocuments(filter),
     ]);
 
-    console.log("[Product Search] Found:", totalProducts, "products");
+    debugLog("[Product Search] Found:", totalProducts, "products");
     if (search && products.length > 0) {
-      console.log("[Product Search] First result:", products[0]?.name);
+      debugLog("[Product Search] First result:", products[0]?.name);
     }
 
     const totalPages = Math.ceil(totalProducts / Number(limit));

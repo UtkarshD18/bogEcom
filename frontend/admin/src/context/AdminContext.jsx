@@ -10,6 +10,18 @@ import {
 } from "react";
 
 const AdminContext = createContext();
+const isProduction = process.env.NODE_ENV === "production";
+// Dev-only logging to avoid leaking auth details in production
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
+const debugWarn = (...args) => {
+  if (!isProduction) {
+    console.warn(...args);
+  }
+};
 
 export const AdminProvider = ({ children }) => {
   const [admin, setAdmin] = useState(null);
@@ -30,7 +42,7 @@ export const AdminProvider = ({ children }) => {
       const storedToken = localStorage.getItem("adminToken");
       const storedAdmin = localStorage.getItem("adminUser");
 
-      console.log("AdminContext checkAdminSession:", {
+      debugLog("AdminContext checkAdminSession:", {
         hasStoredToken: !!storedToken,
         tokenType: typeof storedToken,
         tokenLength: storedToken ? storedToken.length : 0,
@@ -45,7 +57,7 @@ export const AdminProvider = ({ children }) => {
           setToken(storedToken);
           setAdmin(adminData);
 
-          console.log("Token and admin set from localStorage:", {
+          debugLog("Token and admin set from localStorage:", {
             tokenLength: storedToken.length,
             hasAdmin: !!adminData,
           });
@@ -58,15 +70,15 @@ export const AdminProvider = ({ children }) => {
               storedToken,
             );
             if (response.error === false && response.data?.role === "Admin") {
-              console.log("Token verified successfully with server");
+              debugLog("Token verified successfully with server");
             } else {
-              console.warn(
+              debugWarn(
                 "Token verification returned error, but keeping token available",
               );
             }
           } catch (verifyError) {
             // Log error but don't logout - network might be temporarily down
-            console.warn(
+            debugWarn(
               "Token verification failed, but keeping token available:",
               verifyError.message,
             );
@@ -105,16 +117,16 @@ export const AdminProvider = ({ children }) => {
 
         // Store token and admin data
         const accessToken = data.accessToken;
-        console.log("Login successful, storing token:", {
+        debugLog("Login successful, storing token:", {
           tokenType: typeof accessToken,
           tokenLength: accessToken ? accessToken.length : 0,
-          tokenValue:
-            typeof accessToken === "string"
-              ? accessToken.substring(0, 30)
-              : String(accessToken).substring(0, 30),
           isString: typeof accessToken === "string",
         });
-        console.log("Full response data:", data);
+        debugLog("Full response data:", {
+          id: data?._id,
+          email: data?.email,
+          role: data?.role,
+        });
 
         if (typeof accessToken !== "string") {
           console.error("ERROR: accessToken is not a string!", {

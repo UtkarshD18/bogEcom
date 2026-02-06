@@ -5,12 +5,17 @@ import {
   getAllInfluencers,
   getInfluencerById,
   getInfluencerStats,
+  getInfluencerPortalStats,
   payCommission,
   updateInfluencer,
   validateInfluencerCode,
+  loginInfluencer,
+  getInfluencerPortalStatsAuth,
+  refreshInfluencerToken,
 } from "../controllers/influencer.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import influencerAuth from "../middlewares/influencerAuth.js";
 
 const influencerRouter = Router();
 
@@ -22,6 +27,28 @@ const influencerRouter = Router();
  * @access Public
  */
 influencerRouter.get("/validate", validateInfluencerCode);
+
+/**
+ * Influencer login (issue token)
+ * @route POST /api/influencers/login
+ * @access Public
+ */
+influencerRouter.post("/login", loginInfluencer);
+influencerRouter.post("/refresh-token", refreshInfluencerToken);
+
+/**
+ * Collaborator portal stats
+ * @route GET /api/influencers/portal?code=CODE&email=EMAIL
+ * @access Public (code + email verification)
+ */
+influencerRouter.get("/portal", getInfluencerPortalStats);
+
+/**
+ * Collaborator portal stats (token-based)
+ * @route GET /api/influencers/portal/me
+ * @access Influencer (token)
+ */
+influencerRouter.get("/portal/me", influencerAuth, getInfluencerPortalStatsAuth);
 
 // ==================== ADMIN ROUTES ====================
 
@@ -59,6 +86,13 @@ influencerRouter.post("/admin", auth, admin, createInfluencer);
  * @access Admin
  */
 influencerRouter.patch("/admin/:id", auth, admin, updateInfluencer);
+
+/**
+ * Update influencer (legacy PUT support)
+ * @route PUT /api/influencers/admin/:id
+ * @access Admin
+ */
+influencerRouter.put("/admin/:id", auth, admin, updateInfluencer);
 
 /**
  * Delete/deactivate influencer

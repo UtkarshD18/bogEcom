@@ -1,4 +1,34 @@
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const isProduction = process.env.NODE_ENV === "production";
+// Dev-only logging to avoid leaking auth details in production
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
+
+const refreshAdminToken = async () => {
+  try {
+    const response = await fetch(`${apiUrl}/api/user/refresh-token`, {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const token = data?.data?.accessToken || null;
+    if (token) {
+      localStorage.setItem("adminToken", token);
+    }
+    return token;
+  } catch (error) {
+    console.error("refreshAdminToken error:", error);
+    return null;
+  }
+};
 
 export const postData = async (URL, formData, token = null) => {
   try {
@@ -7,7 +37,7 @@ export const postData = async (URL, formData, token = null) => {
     };
 
     if (token) {
-      console.log("postData token debug:", {
+      debugLog("postData token debug:", {
         tokenType: typeof token,
         tokenLength: token
           ? typeof token === "string"
@@ -16,20 +46,29 @@ export const postData = async (URL, formData, token = null) => {
           : 0,
         isString: typeof token === "string",
         isObject: typeof token === "object",
-        tokenValue:
-          typeof token === "string"
-            ? token.substring(0, 20)
-            : String(token).substring(0, 20),
       });
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${apiUrl}${URL}`, {
+    let response = await fetch(`${apiUrl}${URL}`, {
       method: "POST",
       headers,
       credentials: "include",
       body: JSON.stringify(formData),
     });
+
+    if (response.status === 401) {
+      const newToken = await refreshAdminToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        response = await fetch(`${apiUrl}${URL}`, {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: JSON.stringify(formData),
+        });
+      }
+    }
 
     const data = await response.json();
     return data;
@@ -57,11 +96,10 @@ export const uploadFile = async (file, token) => {
     const formData = new FormData();
     formData.append("image", file);
 
-    console.log("uploadFile debug:", {
+    debugLog("uploadFile debug:", {
       hasToken: !!token,
       tokenLength: token.length,
       fileName: file.name,
-      tokenPreview: token.substring(0, 20) + "...",
     });
 
     const response = await fetch(`${apiUrl}/api/upload/single`, {
@@ -94,7 +132,7 @@ export const uploadVideoFile = async (file, token) => {
     const formData = new FormData();
     formData.append("video", file);
 
-    console.log("uploadVideoFile debug:", {
+    debugLog("uploadVideoFile debug:", {
       hasToken: !!token,
       fileName: file.name,
       fileSize: file.size,
@@ -149,7 +187,7 @@ export const getData = async (URL, token = null) => {
     };
 
     if (token) {
-      console.log("getData token debug:", {
+      debugLog("getData token debug:", {
         tokenType: typeof token,
         tokenLength: token
           ? typeof token === "string"
@@ -158,19 +196,27 @@ export const getData = async (URL, token = null) => {
           : 0,
         isString: typeof token === "string",
         isObject: typeof token === "object",
-        tokenValue:
-          typeof token === "string"
-            ? token.substring(0, 20)
-            : String(token).substring(0, 20),
       });
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${apiUrl}${URL}`, {
+    let response = await fetch(`${apiUrl}${URL}`, {
       method: "GET",
       headers,
       credentials: "include",
     });
+
+    if (response.status === 401) {
+      const newToken = await refreshAdminToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        response = await fetch(`${apiUrl}${URL}`, {
+          method: "GET",
+          headers,
+          credentials: "include",
+        });
+      }
+    }
 
     const data = await response.json();
     return data;
@@ -187,7 +233,7 @@ export const putData = async (URL, formData, token = null) => {
     };
 
     if (token) {
-      console.log("putData token debug:", {
+      debugLog("putData token debug:", {
         tokenType: typeof token,
         tokenLength: token
           ? typeof token === "string"
@@ -196,20 +242,29 @@ export const putData = async (URL, formData, token = null) => {
           : 0,
         isString: typeof token === "string",
         isObject: typeof token === "object",
-        tokenValue:
-          typeof token === "string"
-            ? token.substring(0, 20)
-            : String(token).substring(0, 20),
       });
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${apiUrl}${URL}`, {
+    let response = await fetch(`${apiUrl}${URL}`, {
       method: "PUT",
       headers,
       credentials: "include",
       body: JSON.stringify(formData),
     });
+
+    if (response.status === 401) {
+      const newToken = await refreshAdminToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        response = await fetch(`${apiUrl}${URL}`, {
+          method: "PUT",
+          headers,
+          credentials: "include",
+          body: JSON.stringify(formData),
+        });
+      }
+    }
 
     const data = await response.json();
     return data;
@@ -226,7 +281,7 @@ export const deleteData = async (URL, token = null) => {
     };
 
     if (token) {
-      console.log("deleteData token debug:", {
+      debugLog("deleteData token debug:", {
         tokenType: typeof token,
         tokenLength: token
           ? typeof token === "string"
@@ -235,19 +290,27 @@ export const deleteData = async (URL, token = null) => {
           : 0,
         isString: typeof token === "string",
         isObject: typeof token === "object",
-        tokenValue:
-          typeof token === "string"
-            ? token.substring(0, 20)
-            : String(token).substring(0, 20),
       });
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${apiUrl}${URL}`, {
+    let response = await fetch(`${apiUrl}${URL}`, {
       method: "DELETE",
       headers,
       credentials: "include",
     });
+
+    if (response.status === 401) {
+      const newToken = await refreshAdminToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        response = await fetch(`${apiUrl}${URL}`, {
+          method: "DELETE",
+          headers,
+          credentials: "include",
+        });
+      }
+    }
 
     const data = await response.json();
     return data;
@@ -267,12 +330,25 @@ export const patchData = async (URL, formData, token = null) => {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${apiUrl}${URL}`, {
+    let response = await fetch(`${apiUrl}${URL}`, {
       method: "PATCH",
       headers,
       credentials: "include",
       body: JSON.stringify(formData),
     });
+
+    if (response.status === 401) {
+      const newToken = await refreshAdminToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        response = await fetch(`${apiUrl}${URL}`, {
+          method: "PATCH",
+          headers,
+          credentials: "include",
+          body: JSON.stringify(formData),
+        });
+      }
+    }
 
     const data = await response.json();
     return data;
@@ -290,11 +366,22 @@ export const getDashboardStats = async (token) => {
     if (token && typeof token === "string") {
       headers["Authorization"] = `Bearer ${token}`;
     }
-    const response = await fetch(`${apiUrl}/api/statistics/dashboard`, {
+    let response = await fetch(`${apiUrl}/api/statistics/dashboard`, {
       method: "GET",
       headers,
       credentials: "include",
     });
+    if (response.status === 401) {
+      const newToken = await refreshAdminToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        response = await fetch(`${apiUrl}/api/statistics/dashboard`, {
+          method: "GET",
+          headers,
+          credentials: "include",
+        });
+      }
+    }
     if (!response.ok) {
       // Not status 200, return error
       return {

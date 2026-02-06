@@ -12,6 +12,7 @@ import {
   getUserSettings,
   loginUserController,
   logoutController,
+  refreshTokenController,
   registerUserController,
   resendOTPController,
   setBackupPassword,
@@ -27,6 +28,7 @@ const userRouter = Router();
 userRouter.post("/register", registerUserController);
 userRouter.post("/verifyEmail", verifyEmailController);
 userRouter.post("/login", loginUserController);
+userRouter.post("/refresh-token", refreshTokenController);
 userRouter.get("/logout", logoutController);
 userRouter.post("/forgot-Password", forgotPasswordController);
 userRouter.post(

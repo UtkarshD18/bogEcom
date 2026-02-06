@@ -62,6 +62,7 @@ const Checkout = () => {
     referralCode,
     referralData,
     calculateDiscount: calculateReferralDiscount,
+    applyReferralCode,
   } = useReferral();
 
   // Get settings from context
@@ -401,7 +402,7 @@ const Checkout = () => {
         setCouponCode("");
         setSnackbar({
           open: true,
-          message: `Coupon applied! You save ₹${data.data.discountAmount}`,
+          message: `Coupon applied! You save Rs.${data.data.discountAmount}`,
           severity: "success",
         });
 
@@ -415,6 +416,26 @@ const Checkout = () => {
           });
         }
       } else {
+        const shouldTryReferral = response.status === 404;
+        if (shouldTryReferral && applyReferralCode) {
+          const referralResult = await applyReferralCode(
+            couponCode.trim(),
+            "manual",
+          );
+
+          if (referralResult?.success) {
+            setAppliedCoupon(null);
+            setCouponCode("");
+            setCouponError("");
+            setSnackbar({
+              open: true,
+              message: "Referral code applied successfully",
+              severity: "success",
+            });
+            return;
+          }
+        }
+
         setCouponError(data.message || "Invalid coupon");
       }
     } catch (error) {
@@ -435,13 +456,100 @@ const Checkout = () => {
     });
   };
 
-  // Handle Pay Now click - show unavailable modal
-  const handlePayNow = () => {
+  // Handle Pay Now click - PhonePe redirect flow
+  const handlePayNow = async () => {
     if (isPayButtonDisabled) return;
 
-    // Disable button to prevent repeated attempts
     setIsPayButtonDisabled(true);
-    setShowPaymentModal(true);
+    try {
+      const statusRes = await fetch(`${API_URL}/api/orders/payment-status`);
+      const statusData = await statusRes.json();
+
+      if (!statusData?.data?.paymentEnabled) {
+        setShowPaymentModal(true);
+        return;
+      }
+
+      const token = cookies.get("accessToken");
+      const isValidObjectId =
+        selectedAddress && /^[a-f\d]{24}$/i.test(selectedAddress);
+      const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
+
+      const currentAffiliate = getStoredAffiliateData();
+      const originalAmount = subtotal + shipping + tax;
+
+      const orderData = {
+        products: (cartItems || []).map((item) => {
+          const data = getItemData(item);
+          return {
+            productId: data.id,
+            productTitle: data.name,
+            quantity: data.quantity,
+            price: data.price,
+            image: data.image,
+            subTotal: data.price * data.quantity,
+          };
+        }),
+        totalAmt: originalAmount,
+        originalAmount,
+        finalAmount: total,
+        delivery_address: isValidObjectId ? selectedAddress : null,
+        notes: orderNotes,
+        tax,
+        shipping,
+        // Coupon details (backend will revalidate)
+        couponCode: appliedCoupon?.code || null,
+        discountAmount: couponDiscount,
+        // Influencer/Referral tracking
+        influencerCode: referralCode || null,
+        // Legacy affiliate tracking
+        affiliateCode: currentAffiliate?.code || null,
+        affiliateSource: currentAffiliate?.source || null,
+        shippingAddress: selectedAddrObj
+          ? {
+              name: selectedAddrObj.name,
+              address: selectedAddrObj.address_line1,
+              landmark: selectedAddrObj.landmark,
+              city: selectedAddrObj.city,
+              state: selectedAddrObj.state,
+              pincode: selectedAddrObj.pincode,
+              mobile: selectedAddrObj.mobile,
+              addressType: selectedAddrObj.addressType,
+            }
+          : null,
+      };
+
+      const response = await fetch(`${API_URL}/api/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(orderData),
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.message || "Payment initialization failed");
+      }
+
+      const paymentUrl = data?.data?.paymentUrl;
+      if (!paymentUrl) {
+        throw new Error("Payment URL not received. Please try again.");
+      }
+
+      window.location.href = paymentUrl;
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: error.message || "Failed to initiate payment",
+        severity: "error",
+      });
+    } finally {
+      setTimeout(() => {
+        setIsPayButtonDisabled(false);
+      }, 2000);
+    }
   };
 
   // Handle Save Order for Later

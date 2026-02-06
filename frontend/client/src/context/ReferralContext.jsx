@@ -7,36 +7,46 @@ const ReferralContext = createContext({
   referralData: null,
   isValidating: false,
   clearReferral: () => {},
+  applyReferralCode: () => ({}),
 });
 
 const REFERRAL_STORAGE_KEY = "bogearth_referral";
-const REFERRAL_EXPIRY_DAYS = 30; // Referral cookie expires in 30 days
+const REFERRAL_EXPIRY_DAYS = 30; // Referral session expires in 30 days
+// Use consistent API base URL across the client app
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000";
 
 export const ReferralProvider = ({ children }) => {
   const [referralCode, setReferralCode] = useState(null);
   const [referralData, setReferralData] = useState(null);
   const [isValidating, setIsValidating] = useState(false);
 
+  const getStorage = () => {
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage;
+  };
+
   // Check URL for referral code on initial load
   useEffect(() => {
     const detectReferral = async () => {
-      // Check URL params first
-      if (typeof window !== "undefined") {
-        const urlParams = new URLSearchParams(window.location.search);
-        const refCode = urlParams.get("ref");
+      if (typeof window === "undefined") return;
 
-        if (refCode) {
-          // New referral code from URL - validate and store
-          await validateAndStoreReferral(refCode.toUpperCase());
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get("ref");
 
-          // Clean URL (remove ref param) without reload
-          const newUrl = new URL(window.location.href);
-          newUrl.searchParams.delete("ref");
-          window.history.replaceState({}, "", newUrl.toString());
-        } else {
-          // Check localStorage for existing referral
-          loadStoredReferral();
-        }
+      if (refCode) {
+        // New referral code from URL - validate and store (session only)
+        await validateAndStoreReferral(refCode.toUpperCase(), "link");
+
+        // Clean URL (remove ref param) without reload
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete("ref");
+        window.history.replaceState({}, "", newUrl.toString());
+      } else {
+        // Load referral only for this browser session
+        loadStoredReferral();
       }
     };
 
@@ -45,7 +55,9 @@ export const ReferralProvider = ({ children }) => {
 
   const loadStoredReferral = () => {
     try {
-      const stored = localStorage.getItem(REFERRAL_STORAGE_KEY);
+      const storage = getStorage();
+      if (!storage) return;
+      const stored = storage.getItem(REFERRAL_STORAGE_KEY);
       if (stored) {
         const data = JSON.parse(stored);
         // Check if not expired
@@ -54,7 +66,7 @@ export const ReferralProvider = ({ children }) => {
           setReferralData(data);
         } else {
           // Expired - clear it
-          localStorage.removeItem(REFERRAL_STORAGE_KEY);
+          storage.removeItem(REFERRAL_STORAGE_KEY);
         }
       }
     } catch (error) {
@@ -62,15 +74,13 @@ export const ReferralProvider = ({ children }) => {
     }
   };
 
-  const validateAndStoreReferral = async (code) => {
-    if (!code) return;
+  const validateAndStoreReferral = async (code, source = "link") => {
+    if (!code) return { success: false, message: "Referral code is required" };
 
     setIsValidating(true);
     try {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
       const response = await fetch(
-        `${baseUrl}/api/influencers/validate?code=${encodeURIComponent(code)}`,
+        `${API_BASE_URL}/api/influencers/validate?code=${encodeURIComponent(code)}`,
       );
       const result = await response.json();
 
@@ -84,32 +94,39 @@ export const ReferralProvider = ({ children }) => {
           discountValue: result.data.discountValue,
           maxDiscountAmount: result.data.maxDiscountAmount,
           minOrderAmount: result.data.minOrderAmount,
+          source,
           storedAt: new Date().toISOString(),
           expiresAt: expiresAt.toISOString(),
         };
 
-        // Store in localStorage
-        localStorage.setItem(
-          REFERRAL_STORAGE_KEY,
-          JSON.stringify(referralInfo),
-        );
+        // Store in sessionStorage (only for this session)
+        const storage = getStorage();
+        if (storage) {
+          storage.setItem(REFERRAL_STORAGE_KEY, JSON.stringify(referralInfo));
+        }
 
         setReferralCode(referralInfo.code);
         setReferralData(referralInfo);
 
-        console.log("✓ Referral code validated and stored:", referralInfo.code);
-      } else {
-        console.log("✗ Invalid referral code:", code);
+        console.log("Referral code validated and stored:", referralInfo.code);
+        return { success: true, data: referralInfo };
       }
+
+      console.log("Invalid referral code:", code);
+      return { success: false, message: "Invalid referral code" };
     } catch (error) {
       console.error("Error validating referral code:", error);
+      return { success: false, message: "Failed to validate referral code" };
     } finally {
       setIsValidating(false);
     }
   };
 
   const clearReferral = () => {
-    localStorage.removeItem(REFERRAL_STORAGE_KEY);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(REFERRAL_STORAGE_KEY);
+      window.localStorage.removeItem(REFERRAL_STORAGE_KEY);
+    }
     setReferralCode(null);
     setReferralData(null);
   };
@@ -149,6 +166,7 @@ export const ReferralProvider = ({ children }) => {
         referralData,
         isValidating,
         clearReferral,
+        applyReferralCode: validateAndStoreReferral,
         calculateDiscount,
       }}
     >

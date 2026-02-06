@@ -504,7 +504,7 @@ const seedAdminUser = async () => {
     });
 
     console.log(`✅ Admin user created: ${adminUser.email}`);
-    console.log(`   Password: admin123 (change this immediately!)`);
+    console.log("   Password: [set in seeder script] (change this immediately!)");
   } else {
     console.log(`ℹ️  Admin user already exists: ${adminExists.email}`);
   }

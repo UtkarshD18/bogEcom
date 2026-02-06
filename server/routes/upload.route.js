@@ -10,6 +10,13 @@ import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
 
 const router = express.Router();
+const isProduction = process.env.NODE_ENV === "production";
+// Debug-only logging to keep production output clean
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
 
 /**
  * Upload Routes with Cloudinary
@@ -243,8 +250,8 @@ router.post(
   handleUploadError,
   async (req, res) => {
     try {
-      console.log("Video upload request received");
-      console.log(
+      debugLog("Video upload request received");
+      debugLog(
         "File received:",
         req.file
           ? {
@@ -274,14 +281,14 @@ router.post(
         });
       }
 
-      console.log("Uploading to Cloudinary...");
+      debugLog("Uploading to Cloudinary...");
       // Upload to Cloudinary as video
       const result = await uploadVideoToCloudinary(
         req.file.buffer,
         "buyonegram/videos",
       );
 
-      console.log("Cloudinary result:", result);
+      debugLog("Cloudinary result:", result);
 
       if (!result.success) {
         return res.status(500).json({

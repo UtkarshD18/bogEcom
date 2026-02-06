@@ -1,6 +1,7 @@
 "use client";
 
-import axios from "axios";
+import { useAdmin } from "@/context/AdminContext";
+import { getData } from "@/utils/api";
 import { useCallback, useEffect, useState } from "react";
 import {
   Bar,
@@ -18,6 +19,7 @@ import {
   YAxis,
 } from "recharts";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { useRouter } from "next/navigation";
 
 const COLORS = [
   "#3B82F6",
@@ -29,6 +31,8 @@ const COLORS = [
 ];
 
 export default function StatisticsPage() {
+  const { token, isAuthenticated, loading: authLoading } = useAdmin();
+  const router = useRouter();
   const [dashboardStats, setDashboardStats] = useState(null);
   const [salesTrend, setSalesTrend] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
@@ -46,9 +50,6 @@ export default function StatisticsPage() {
       setLoading(true);
       setError(null);
 
-      const token = localStorage.getItem("authToken");
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
       // Fetch all stats in parallel
       const [
         dashRes,
@@ -60,22 +61,38 @@ export default function StatisticsPage() {
         metricsRes,
         paymentRes,
       ] = await Promise.all([
-        axios.get(`/api/statistics/dashboard?period=${period}`, config),
-        axios.get(`/api/statistics/sales-trend?period=${period}`, config),
-        axios.get(`/api/statistics/top-products?limit=10`, config),
-        axios.get(`/api/statistics/order-status`, config),
-        axios.get(`/api/statistics/category-performance`, config),
-        axios.get(`/api/statistics/user-growth?period=${period}`, config),
-        axios.get(`/api/statistics/customer-metrics`, config),
-        axios.get(`/api/statistics/payment-methods`, config),
+        getData(`/api/statistics/dashboard?period=${period}`, token),
+        getData(`/api/statistics/sales-trend?period=${period}`, token),
+        getData(`/api/statistics/top-products?limit=10`, token),
+        getData(`/api/statistics/order-status`, token),
+        getData(`/api/statistics/category-performance`, token),
+        getData(`/api/statistics/user-growth?period=${period}`, token),
+        getData(`/api/statistics/customer-metrics`, token),
+        getData(`/api/statistics/payment-methods`, token),
       ]);
 
-      setDashboardStats(dashRes.data.data);
-      setSalesTrend(trendsRes.data.data);
-      setTopProducts(productsRes.data.data);
+      const responses = [
+        dashRes,
+        trendsRes,
+        productsRes,
+        statusRes,
+        categoryRes,
+        userRes,
+        metricsRes,
+        paymentRes,
+      ];
+
+      const failed = responses.find((res) => !res?.success);
+      if (failed) {
+        throw new Error(failed?.message || "Failed to fetch statistics");
+      }
+
+      setDashboardStats(dashRes.data);
+      setSalesTrend(trendsRes.data);
+      setTopProducts(productsRes.data);
 
       // Convert order status object to array for pie chart
-      const statusArray = Object.entries(statusRes.data.data).map(
+      const statusArray = Object.entries(statusRes.data).map(
         ([key, value]) => ({
           name: key.charAt(0).toUpperCase() + key.slice(1),
           value: value.count,
@@ -84,24 +101,36 @@ export default function StatisticsPage() {
       );
       setOrderStatus(statusArray);
 
-      setCategoryPerformance(categoryRes.data.data);
-      setUserGrowth(userRes.data.data);
-      setCustomerMetrics(metricsRes.data.data);
-      setPaymentMethods(paymentRes.data.data);
+      setCategoryPerformance(categoryRes.data);
+      setUserGrowth(userRes.data);
+      setCustomerMetrics(metricsRes.data);
+      setPaymentMethods(paymentRes.data);
     } catch (err) {
       console.error("Error fetching statistics:", err);
-      setError(err.response?.data?.message || "Failed to fetch statistics");
+      setError(err?.message || "Failed to fetch statistics");
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, token]);
 
   useEffect(() => {
-    fetchAllStats();
-  }, [period, fetchAllStats]);
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [authLoading, isAuthenticated, router]);
 
-  if (loading) {
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      fetchAllStats();
+    }
+  }, [period, fetchAllStats, isAuthenticated, token]);
+
+  if (authLoading || loading) {
     return <LoadingSpinner />;
+  }
+
+  if (!isAuthenticated) {
+    return null;
   }
 
   return (

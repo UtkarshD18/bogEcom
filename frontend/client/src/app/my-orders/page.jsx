@@ -5,10 +5,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
 
-const API_URL =
-  (process.env.NEXT_PUBLIC_API_URL ||
-    process.env.NEXT_PUBLIC_APP_API_URL ||
-    "http://localhost:8000") + "/api";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000";
+const API_URL = `${API_BASE_URL}/api`;
+
+const getCookieToken = () => {
+  if (typeof document === "undefined") return null;
+  return document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("accessToken="))
+    ?.split("=")[1];
+};
+
+const getAuthToken = () =>
+  getCookieToken() ||
+  localStorage.getItem("token") ||
+  localStorage.getItem("accessToken");
 
 const Orders = () => {
   const router = useRouter();
@@ -24,12 +38,7 @@ const Orders = () => {
         setError(null);
 
         // Check if user is logged in
-        const token =
-          localStorage.getItem("token") ||
-          document.cookie
-            .split("; ")
-            .find((row) => row.startsWith("accessToken="))
-            ?.split("=")[1];
+        let token = getAuthToken();
 
         if (!token) {
           setError("Please log in to view your orders");
@@ -38,7 +47,7 @@ const Orders = () => {
         }
 
         // Fetch orders from API
-        const response = await fetch(`${API_URL}/orders/user/my-orders`, {
+        let response = await fetch(`${API_URL}/orders/user/my-orders`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -46,6 +55,34 @@ const Orders = () => {
           },
           credentials: "include",
         });
+
+        if (response.status === 401) {
+          // Attempt refresh token flow (cookie-based) before failing
+          try {
+            const refresh = await fetch(`${API_URL}/user/refresh-token`, {
+              method: "POST",
+              credentials: "include",
+            });
+            if (refresh.ok) {
+              const refreshData = await refresh.json();
+              const newToken = refreshData?.data?.accessToken || null;
+              if (newToken) {
+                localStorage.setItem("accessToken", newToken);
+                token = newToken;
+                response = await fetch(`${API_URL}/orders/user/my-orders`, {
+                  method: "GET",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  credentials: "include",
+                });
+              }
+            }
+          } catch (refreshError) {
+            console.error("Refresh token failed:", refreshError);
+          }
+        }
 
         if (!response.ok) {
           if (response.status === 401) {
@@ -281,14 +318,22 @@ const Orders = () => {
                         <p className="font-medium">
                           {order.delivery_address?.name || "N/A"}
                         </p>
-                        <p>{order.delivery_address?.address || ""}</p>
+                        <p>
+                          {order.delivery_address?.address_line1 ||
+                            order.delivery_address?.address_line ||
+                            order.delivery_address?.address ||
+                            ""}
+                        </p>
                         <p>
                           {order.delivery_address?.city || ""},{" "}
                           {order.delivery_address?.state || ""} -{" "}
                           {order.delivery_address?.pincode || ""}
                         </p>
                         <p className="text-xs">
-                          Phone: {order.delivery_address?.phone || "N/A"}
+                          Phone:{" "}
+                          {order.delivery_address?.mobile ||
+                            order.delivery_address?.phone ||
+                            "N/A"}
                         </p>
                       </div>
                     </div>
@@ -346,20 +391,26 @@ const Orders = () => {
                   </div>
 
                   {/* Payment Details */}
-                  {order.paymentId && (
+                  {(order.phonepeMerchantTransactionId ||
+                    order.phonepeTransactionId ||
+                    order.paymentId) && (
                     <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
                       <p className="text-sm font-semibold text-gray-900 mb-2">
                         Payment Details
                       </p>
                       <div className="text-xs text-gray-600 space-y-1">
                         <p>
-                          Payment ID:{" "}
-                          <span className="font-mono">{order.paymentId}</span>
+                          PhonePe Transaction ID:{" "}
+                          <span className="font-mono">
+                            {order.phonepeTransactionId ||
+                              order.paymentId ||
+                              "N/A"}
+                          </span>
                         </p>
                         <p>
-                          Razorpay Order ID:{" "}
+                          PhonePe Merchant Txn ID:{" "}
                           <span className="font-mono">
-                            {order.razorpayOrderId || "N/A"}
+                            {order.phonepeMerchantTransactionId || "N/A"}
                           </span>
                         </p>
                       </div>

@@ -10,6 +10,9 @@ import {
   MdInfoOutline,
   MdOutlineArticle,
   MdOutlineCategory,
+  MdLocalShipping,
+  MdNotificationsActive,
+  MdMailOutline,
   MdSettings,
 } from "react-icons/md";
 import { PiImageSquare } from "react-icons/pi";
@@ -53,6 +56,11 @@ const Sidebar = () => {
       href: "/orders",
     },
     {
+      name: "Shipping",
+      icon: <MdLocalShipping size={22} />,
+      href: "/shipping",
+    },
+    {
       name: "Coupons",
       icon: <RiCoupon2Line size={22} />,
       href: "/coupons",
@@ -61,6 +69,16 @@ const Sidebar = () => {
       name: "Influencers",
       icon: <TbShare size={22} />,
       href: "/influencers",
+    },
+    {
+      name: "Notifications",
+      icon: <MdNotificationsActive size={22} />,
+      href: "/notifications",
+    },
+    {
+      name: "Newsletter",
+      icon: <MdMailOutline size={22} />,
+      href: "/newsletter",
     },
     {
       name: "Banners",

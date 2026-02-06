@@ -2,6 +2,7 @@
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 
 const publicPages = [
   "/login",
@@ -14,6 +15,14 @@ const publicPages = [
 export default function AdminLayout({ children }) {
   const pathname = usePathname();
   const isPublicPage = publicPages.some((p) => pathname.startsWith(p));
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") {
+      // Reduce client-side debug noise in production
+      console.log = () => {};
+      console.warn = () => {};
+    }
+  }, []);
 
   if (isPublicPage) {
     return <>{children}</>;

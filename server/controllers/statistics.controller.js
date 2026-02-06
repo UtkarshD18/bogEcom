@@ -2,6 +2,10 @@ import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
 import UserModel from "../models/user.model.js";
 
+const getEffectiveAmountExpression = {
+  $cond: [{ $gt: ["$finalAmount", 0] }, "$finalAmount", "$totalAmt"],
+};
+
 /**
  * Statistics Controller
  *
@@ -50,20 +54,24 @@ export const getDashboardStats = async (req, res) => {
     ] = await Promise.all([
       OrderModel.countDocuments(),
       OrderModel.aggregate([
+        { $match: { order_status: { $ne: "cancelled" } } },
+        { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
           $group: {
             _id: null,
-            total: { $sum: "$totalAmount" },
+            total: { $sum: "$effectiveAmount" },
           },
         },
       ]),
       UserModel.countDocuments(),
       ProductModel.countDocuments(),
       OrderModel.aggregate([
+        { $match: { order_status: { $ne: "cancelled" } } },
+        { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
           $group: {
             _id: null,
-            average: { $avg: "$totalAmount" },
+            average: { $avg: "$effectiveAmount" },
           },
         },
       ]),
@@ -72,13 +80,15 @@ export const getDashboardStats = async (req, res) => {
 
     // Monthly sales aggregation for dashboard graph
     const monthlySales = await OrderModel.aggregate([
+      { $match: { order_status: { $ne: "cancelled" } } },
+      { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
       {
         $group: {
           _id: {
             month: { $month: "$createdAt" },
             year: { $year: "$createdAt" },
           },
-          total: { $sum: "$totalAmount" },
+          total: { $sum: "$effectiveAmount" },
           count: { $sum: 1 },
         },
       },
@@ -158,15 +168,16 @@ export const getSalesTrend = async (req, res) => {
       {
         $match: {
           createdAt: dateRange,
-          orderStatus: { $ne: "cancelled" },
+          order_status: { $ne: "cancelled" },
         },
       },
+      { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
       {
         $group: {
           _id: groupBy,
-          totalSales: { $sum: "$totalAmount" },
+          totalSales: { $sum: "$effectiveAmount" },
           orderCount: { $sum: 1 },
-          averageOrder: { $avg: "$totalAmount" },
+          averageOrder: { $avg: "$effectiveAmount" },
         },
       },
       {
@@ -205,20 +216,20 @@ export const getTopProducts = async (req, res) => {
 
     const topProducts = await OrderModel.aggregate([
       {
-        $match: { orderStatus: { $ne: "cancelled" } },
+        $match: { order_status: { $ne: "cancelled" } },
       },
       {
-        $unwind: "$items",
+        $unwind: "$products",
       },
       {
         $group: {
-          _id: "$items.productId",
-          totalQuantity: { $sum: "$items.quantity" },
+          _id: "$products.productId",
+          totalQuantity: { $sum: "$products.quantity" },
           totalRevenue: {
-            $sum: { $multiply: ["$items.quantity", "$items.price"] },
+            $sum: { $multiply: ["$products.quantity", "$products.price"] },
           },
           orderCount: { $sum: 1 },
-          productName: { $first: "$items.productName" },
+          productName: { $first: "$products.productTitle" },
         },
       },
       {
@@ -259,9 +270,13 @@ export const getOrderStatus = async (req, res) => {
     const statusBreakdown = await OrderModel.aggregate([
       {
         $group: {
-          _id: "$orderStatus",
+          _id: "$order_status",
           count: { $sum: 1 },
-          totalRevenue: { $sum: "$totalAmount" },
+          totalRevenue: {
+            $sum: {
+              $cond: [{ $gt: ["$finalAmount", 0] }, "$finalAmount", "$totalAmt"],
+            },
+          },
         },
       },
       {
@@ -271,11 +286,11 @@ export const getOrderStatus = async (req, res) => {
 
     const statuses = [
       "pending",
-      "processing",
+      "pending_payment",
+      "confirmed",
       "shipped",
       "delivered",
       "cancelled",
-      "returned",
     ];
     const result = {};
 
@@ -310,19 +325,68 @@ export const getCategoryPerformance = async (req, res) => {
   try {
     const categoryPerformance = await OrderModel.aggregate([
       {
-        $match: { orderStatus: { $ne: "cancelled" } },
+        $match: { order_status: { $ne: "cancelled" } },
       },
       {
-        $unwind: "$items",
+        $unwind: "$products",
+      },
+      {
+        $addFields: {
+          productObjectId: {
+            $convert: {
+              input: "$products.productId",
+              to: "objectId",
+              onError: null,
+              onNull: null,
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "products",
+          localField: "productObjectId",
+          foreignField: "_id",
+          as: "productInfo",
+        },
+      },
+      {
+        $unwind: {
+          path: "$productInfo",
+          preserveNullAndEmptyArrays: true,
+        },
       },
       {
         $group: {
-          _id: "$items.category",
+          _id: "$productInfo.category",
           totalRevenue: {
-            $sum: { $multiply: ["$items.quantity", "$items.price"] },
+            $sum: { $multiply: ["$products.quantity", "$products.price"] },
           },
-          totalQuantity: { $sum: "$items.quantity" },
+          totalQuantity: { $sum: "$products.quantity" },
           orderCount: { $sum: 1 },
+        },
+      },
+      {
+        $lookup: {
+          from: "categories",
+          localField: "_id",
+          foreignField: "_id",
+          as: "categoryInfo",
+        },
+      },
+      {
+        $unwind: {
+          path: "$categoryInfo",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          totalRevenue: 1,
+          totalQuantity: 1,
+          orderCount: 1,
+          categoryName: "$categoryInfo.name",
         },
       },
       {
@@ -334,7 +398,7 @@ export const getCategoryPerformance = async (req, res) => {
       error: false,
       success: true,
       data: categoryPerformance.map((cat) => ({
-        category: cat._id || "Uncategorized",
+        category: cat.categoryName || "Uncategorized",
         revenue: parseFloat(cat.totalRevenue.toFixed(2)),
         quantity: cat.totalQuantity,
         orders: cat.orderCount,
@@ -435,7 +499,7 @@ export const getCustomerMetrics = async (req, res) => {
     const repeatCustomers = await OrderModel.aggregate([
       {
         $group: {
-          _id: "$userId",
+          _id: "$user",
           orderCount: { $sum: 1 },
         },
       },
@@ -450,12 +514,13 @@ export const getCustomerMetrics = async (req, res) => {
     // Get customer lifetime value
     const customerLifetimeValue = await OrderModel.aggregate([
       {
-        $match: { orderStatus: { $ne: "cancelled" } },
+        $match: { order_status: { $ne: "cancelled" } },
       },
+      { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
       {
         $group: {
-          _id: "$userId",
-          totalSpent: { $sum: "$totalAmount" },
+          _id: "$user",
+          totalSpent: { $sum: "$effectiveAmount" },
           orderCount: { $sum: 1 },
         },
       },
@@ -507,14 +572,15 @@ export const getPaymentMethods = async (req, res) => {
   try {
     const paymentBreakdown = await OrderModel.aggregate([
       {
-        $match: { orderStatus: { $ne: "cancelled" } },
+        $match: { order_status: { $ne: "cancelled" } },
       },
+      { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
       {
         $group: {
           _id: "$paymentMethod",
           count: { $sum: 1 },
-          totalRevenue: { $sum: "$totalAmount" },
-          averageOrder: { $avg: "$totalAmount" },
+          totalRevenue: { $sum: "$effectiveAmount" },
+          averageOrder: { $avg: "$effectiveAmount" },
         },
       },
       {

@@ -335,6 +335,15 @@ const LoginForm = () => {
             </Link>
           </span>
         </div>
+        <div className="text-center text-[14px] text-gray-600 mb-4">
+          Are you a collaborator?{" "}
+          <Link
+            href="/affiliate/login"
+            className="text-[#059669] hover:text-[#047857] font-semibold"
+          >
+            Influencer Login
+          </Link>
+        </div>
         <div className="text-center text-[15px] text-gray-600 mb-3">
           or continue with social account
         </div>
