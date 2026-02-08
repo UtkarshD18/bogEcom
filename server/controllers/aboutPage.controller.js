@@ -1,5 +1,24 @@
 import AboutPageModel from "../models/aboutPage.model.js";
 
+const mergeWithDefaults = (page) => {
+  const defaults = AboutPageModel.getDefaultContent();
+  if (!page) return defaults;
+
+  const data = typeof page?.toObject === "function" ? page.toObject() : page;
+
+  return {
+    ...defaults,
+    ...data,
+    theme: { ...defaults.theme, ...(data.theme || {}) },
+    sections: { ...defaults.sections, ...(data.sections || {}) },
+    hero: { ...defaults.hero, ...(data.hero || {}) },
+    standard: { ...defaults.standard, ...(data.standard || {}) },
+    whyUs: { ...defaults.whyUs, ...(data.whyUs || {}) },
+    values: { ...defaults.values, ...(data.values || {}) },
+    cta: { ...defaults.cta, ...(data.cta || {}) },
+  };
+};
+
 /**
  * About Page Controller
  * Manages the About Us page content
@@ -28,7 +47,7 @@ export const getAboutPageContent = async (req, res) => {
     res.status(200).json({
       error: false,
       success: true,
-      data: aboutPage,
+      data: mergeWithDefaults(aboutPage),
     });
   } catch (error) {
     console.error("Error fetching about page:", error);
@@ -55,17 +74,17 @@ export const getAboutPageAdmin = async (req, res) => {
     // If no content exists, return defaults
     if (!aboutPage) {
       const defaultContent = AboutPageModel.getDefaultContent();
-      aboutPage = {
+      aboutPage = mergeWithDefaults({
         ...defaultContent,
         isActive: true,
         _id: null,
-      };
+      });
     }
 
     res.status(200).json({
       error: false,
       success: true,
-      data: aboutPage,
+      data: mergeWithDefaults(aboutPage),
     });
   } catch (error) {
     console.error("Error fetching about page for admin:", error);
@@ -83,8 +102,9 @@ export const getAboutPageAdmin = async (req, res) => {
  */
 export const updateAboutPage = async (req, res) => {
   try {
-    const adminId = req.user?.id || req.user;
-    const { hero, standard, whyUs, values, cta, isActive } = req.body;
+    const adminId = req.userId || req.user?._id || req.user;
+    const { theme, sections, hero, standard, whyUs, values, cta, isActive } =
+      req.body;
 
     // Find existing or create new
     let aboutPage = await AboutPageModel.findOne();
@@ -94,6 +114,8 @@ export const updateAboutPage = async (req, res) => {
     };
 
     // Only update provided fields
+    if (theme !== undefined) updateData.theme = theme;
+    if (sections !== undefined) updateData.sections = sections;
     if (hero !== undefined) updateData.hero = hero;
     if (standard !== undefined) updateData.standard = standard;
     if (whyUs !== undefined) updateData.whyUs = whyUs;
@@ -122,7 +144,7 @@ export const updateAboutPage = async (req, res) => {
       error: false,
       success: true,
       message: "About page updated successfully",
-      data: aboutPage,
+      data: mergeWithDefaults(aboutPage),
     });
   } catch (error) {
     console.error("Error updating about page:", error);
@@ -140,7 +162,7 @@ export const updateAboutPage = async (req, res) => {
  */
 export const resetAboutPage = async (req, res) => {
   try {
-    const adminId = req.user?.id || req.user;
+    const adminId = req.userId || req.user?._id || req.user;
     const defaultContent = AboutPageModel.getDefaultContent();
 
     // Delete existing and create fresh
@@ -156,7 +178,7 @@ export const resetAboutPage = async (req, res) => {
       error: false,
       success: true,
       message: "About page reset to defaults",
-      data: aboutPage,
+      data: mergeWithDefaults(aboutPage),
     });
   } catch (error) {
     console.error("Error resetting about page:", error);

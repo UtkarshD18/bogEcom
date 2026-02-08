@@ -170,8 +170,7 @@ const Header = () => {
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      const response = await postData("/api/user/logout", {});
-      console.log("Logout response:", response);
+      await postData("/api/user/logout", {});
 
       // Clear cookies and user data regardless of API response
       context?.setIsLogin?.(false);
@@ -185,7 +184,7 @@ const Header = () => {
       setAnchorEl(null);
 
       context?.alertBox("success", "Logged out successfully");
-      router.push("/login");
+      router.push("/logout-confirmation");
     } catch (error) {
       console.error("Logout error:", error);
       // Logout locally even if API fails
@@ -197,7 +196,7 @@ const Header = () => {
       setIsLoggedIn(false);
       setAnchorEl(null);
       context?.alertBox("success", "Logged out successfully");
-      router.push("/login");
+      router.push("/logout-confirmation");
     } finally {
       setIsLoggingOut(false);
     }

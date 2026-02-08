@@ -12,7 +12,7 @@ import {
   Switch,
   TextField,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   MdLocalOffer,
   MdLocalShipping,
@@ -24,7 +24,11 @@ import {
   MdWarning,
 } from "react-icons/md";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
 /**
  * Store Settings Page
@@ -109,12 +113,7 @@ const SettingsPage = () => {
       "High traffic — availability may vary. Your order will be processed once confirmed.",
   });
 
-  // Fetch settings on mount
-  useEffect(() => {
-    fetchSettings();
-  }, [token]);
-
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
       const adminToken = token || localStorage.getItem("adminToken");
@@ -124,6 +123,7 @@ const SettingsPage = () => {
       }
 
       const response = await fetch(`${API_URL}/api/settings/admin/all`, {
+        method: "GET",
         headers: {
           Authorization: `Bearer ${adminToken}`,
         },
@@ -200,7 +200,7 @@ const SettingsPage = () => {
         });
       }
     } catch (error) {
-      console.error("Error fetching settings:", error);
+      console.warn("Settings fetch failed:", error);
       setSnackbar({
         open: true,
         message: "Failed to load settings",
@@ -209,7 +209,12 @@ const SettingsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  // Fetch settings on mount
+  useEffect(() => {
+    fetchSettings();
+  }, [token, fetchSettings]);
 
   const saveSetting = async (key, value) => {
     try {
@@ -905,7 +910,7 @@ const SettingsPage = () => {
         {offerSettings.showOfferPopup && (
           <p className="text-sm text-gray-500 mt-3">
             A popup will appear on the homepage offering customers the coupon
-            code "{offerSettings.offerCouponCode || "COUPON"}".
+            code &quot;{offerSettings.offerCouponCode || "COUPON"}&quot;.
           </p>
         )}
       </div>

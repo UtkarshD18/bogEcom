@@ -31,13 +31,26 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const [shippingForm, setShippingForm] = useState(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingResponse, setShippingResponse] = useState(null);
+  const [downloadingPo, setDownloadingPo] = useState(false);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+
+  const purchaseOrderId = (() => {
+    const raw = order?.purchaseOrder;
+    if (!raw) return null;
+    if (typeof raw === "string") return raw;
+    if (typeof raw === "object" && raw?._id) return String(raw._id);
+    if (typeof raw?.toString === "function") return String(raw.toString());
+    return null;
+  })();
+  const canDownloadInvoice =
+    order?.order_status !== "cancelled" &&
+    (order?.payment_status === "paid" || order?.order_status === "confirmed");
 
   const buildShipmentPayload = () => {
     const addr = order?.delivery_address || {};
     return {
       order_number: `#${order?._id?.slice(-6) || "000001"}`,
-      payment_type:
-        order?.payment_status === "paid" ? "prepaid" : "cod",
+      payment_type: order?.payment_status === "paid" ? "prepaid" : "cod",
       order_amount: order?.finalAmount || order?.totalAmt || 0,
       package_weight: 500,
       package_length: 10,
@@ -219,6 +232,100 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     }
   };
 
+  const handleDownloadPurchaseOrder = async () => {
+    try {
+      if (!purchaseOrderId) {
+        toast.error("Purchase order not linked");
+        return;
+      }
+
+      setDownloadingPo(true);
+      const response = await fetch(
+        `${API_URL}/api/purchase-orders/${purchaseOrderId}/pdf`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        let message = "Failed to download purchase order";
+        try {
+          const errorData = await response.json();
+          message = errorData?.message || message;
+        } catch {
+          // Ignore non-JSON response parsing failures.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `purchase-order-${purchaseOrderId.slice(-8).toUpperCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      toast.success("Purchase order downloaded");
+    } catch (error) {
+      toast.error(error.message || "Failed to download purchase order");
+    } finally {
+      setDownloadingPo(false);
+    }
+  };
+
+  const handleDownloadInvoice = async () => {
+    try {
+      if (!canDownloadInvoice) {
+        toast.error("Invoice not available yet");
+        return;
+      }
+
+      setDownloadingInvoice(true);
+      const response = await fetch(
+        `${API_URL}/api/orders/${order._id}/invoice`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        let message = "Failed to download invoice";
+        try {
+          const errorData = await response.json();
+          message = errorData?.message || message;
+        } catch {
+          // Ignore non-JSON response parsing failures.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `invoice-${String(order?._id || "")
+        .slice(-8)
+        .toUpperCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      toast.success("Invoice downloaded");
+    } catch (error) {
+      toast.error(error.message || "Failed to download invoice");
+    } finally {
+      setDownloadingInvoice(false);
+    }
+  };
+
   const handleChange = async (event) => {
     const newStatus = event.target.value;
     setUpdating(true);
@@ -258,6 +365,15 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 font-bold">
           #{order?._id?.slice(-6) || "------"}
         </td>
+        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 whitespace-nowrap">
+          {purchaseOrderId ? (
+            <span className="text-[12px] font-[600] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
+              PO #{String(purchaseOrderId).slice(-6).toUpperCase()}
+            </span>
+          ) : (
+            <span className="text-gray-400">N/A</span>
+          )}
+        </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
           <div className="flex items-center gap-3 w-[300px]">
             <div className="rounded-full w-[50px] h-[50px] overflow-hidden bg-gray-200">
@@ -290,7 +406,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             </span>
             <p className="pt-2">
               {order?.delivery_address
-                ? `${order.delivery_address.address_line || ""}, ${order.delivery_address.city || ""}, ${order.delivery_address.state || ""}`
+                ? `${order.delivery_address.address_line1 || order.delivery_address.address_line || ""}, ${order.delivery_address.city || ""}, ${order.delivery_address.state || ""}`
                 : "No address"}
             </p>
           </div>
@@ -332,7 +448,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
       </tr>
       {expandIndex && (
         <tr className="bg-gray-100">
-          <td colSpan={11} className="p-5">
+          <td colSpan={12} className="p-5">
             <div className="flex flex-wrap gap-4">
               {(order?.products || []).map((product, idx) => (
                 <div
@@ -365,6 +481,46 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
               {(!order?.products || order.products.length === 0) && (
                 <p className="text-gray-500">No product details available</p>
               )}
+            </div>
+
+            {/* Invoice Section */}
+            <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="text-gray-800 font-semibold">Invoice</div>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleDownloadInvoice}
+                  disabled={!canDownloadInvoice || downloadingInvoice}
+                >
+                  {downloadingInvoice ? "Downloading..." : "Download Invoice"}
+                </Button>
+              </div>
+              <div className="mt-2 text-sm text-gray-700">
+                <span className="font-semibold">Status:</span>{" "}
+                {canDownloadInvoice ? "Available" : "Pending"}
+              </div>
+            </div>
+
+            {/* Purchase Order Section */}
+            <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="text-gray-800 font-semibold">
+                  Purchase Order
+                </div>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleDownloadPurchaseOrder}
+                  disabled={!purchaseOrderId || downloadingPo}
+                >
+                  {downloadingPo ? "Downloading..." : "Download PO PDF"}
+                </Button>
+              </div>
+              <div className="mt-2 text-sm text-gray-700">
+                <span className="font-semibold">PO ID:</span>{" "}
+                {purchaseOrderId ? String(purchaseOrderId) : "Not linked"}
+              </div>
             </div>
 
             {/* Shipping Section */}
@@ -431,7 +587,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
 
               {shippingResponse && (
                 <pre className="mt-3 text-xs bg-gray-50 border rounded p-3 overflow-auto">
-{JSON.stringify(shippingResponse, null, 2)}
+                  {JSON.stringify(shippingResponse, null, 2)}
                 </pre>
               )}
             </div>
@@ -451,12 +607,16 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             <TextField
               label="Order Number"
               value={shippingForm?.order_number || ""}
-              onChange={(e) => updateShippingField("order_number", e.target.value)}
+              onChange={(e) =>
+                updateShippingField("order_number", e.target.value)
+              }
               fullWidth
             />
             <Select
               value={shippingForm?.payment_type || "cod"}
-              onChange={(e) => updateShippingField("payment_type", e.target.value)}
+              onChange={(e) =>
+                updateShippingField("payment_type", e.target.value)
+              }
               size="small"
             >
               <MenuItem value="cod">COD</MenuItem>
@@ -466,12 +626,16 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             <TextField
               label="Order Amount"
               value={shippingForm?.order_amount || ""}
-              onChange={(e) => updateShippingField("order_amount", e.target.value)}
+              onChange={(e) =>
+                updateShippingField("order_amount", e.target.value)
+              }
               fullWidth
             />
             <Select
               value={shippingForm?.request_auto_pickup || "no"}
-              onChange={(e) => updateShippingField("request_auto_pickup", e.target.value)}
+              onChange={(e) =>
+                updateShippingField("request_auto_pickup", e.target.value)
+              }
               size="small"
             >
               <MenuItem value="yes">Auto Pickup: Yes</MenuItem>
@@ -480,25 +644,33 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             <TextField
               label="Package Weight (g)"
               value={shippingForm?.package_weight || ""}
-              onChange={(e) => updateShippingField("package_weight", e.target.value)}
+              onChange={(e) =>
+                updateShippingField("package_weight", e.target.value)
+              }
               fullWidth
             />
             <TextField
               label="Length (cm)"
               value={shippingForm?.package_length || ""}
-              onChange={(e) => updateShippingField("package_length", e.target.value)}
+              onChange={(e) =>
+                updateShippingField("package_length", e.target.value)
+              }
               fullWidth
             />
             <TextField
               label="Breadth (cm)"
               value={shippingForm?.package_breadth || ""}
-              onChange={(e) => updateShippingField("package_breadth", e.target.value)}
+              onChange={(e) =>
+                updateShippingField("package_breadth", e.target.value)
+              }
               fullWidth
             />
             <TextField
               label="Height (cm)"
               value={shippingForm?.package_height || ""}
-              onChange={(e) => updateShippingField("package_height", e.target.value)}
+              onChange={(e) =>
+                updateShippingField("package_height", e.target.value)
+              }
               fullWidth
             />
           </div>
@@ -523,13 +695,17 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
               <TextField
                 label="Address Line 1"
                 value={shippingForm?.consignee?.address || ""}
-                onChange={(e) => updateConsigneeField("address", e.target.value)}
+                onChange={(e) =>
+                  updateConsigneeField("address", e.target.value)
+                }
                 fullWidth
               />
               <TextField
                 label="Address Line 2"
                 value={shippingForm?.consignee?.address_2 || ""}
-                onChange={(e) => updateConsigneeField("address_2", e.target.value)}
+                onChange={(e) =>
+                  updateConsigneeField("address_2", e.target.value)
+                }
                 fullWidth
               />
               <TextField
@@ -547,16 +723,16 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
               <TextField
                 label="Pincode"
                 value={shippingForm?.consignee?.pincode || ""}
-                onChange={(e) => updateConsigneeField("pincode", e.target.value)}
+                onChange={(e) =>
+                  updateConsigneeField("pincode", e.target.value)
+                }
                 fullWidth
               />
             </div>
           </div>
 
           <div className="mt-6">
-            <p className="text-sm font-semibold text-gray-700 mb-2">
-              Pickup
-            </p>
+            <p className="text-sm font-semibold text-gray-700 mb-2">Pickup</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <TextField
                 label="Warehouse Name"
@@ -612,9 +788,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           </div>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShippingEditorOpen(false)}>
-            Cancel
-          </Button>
+          <Button onClick={() => setShippingEditorOpen(false)}>Cancel</Button>
           <Button
             onClick={handleBookShipment}
             disabled={shippingLoading}
@@ -697,18 +871,28 @@ const Orders = () => {
               {orders.length === 1 ? "order" : "orders"}
             </p>
           </div>
-          <form onSubmit={handleSearch} className="flex items-center gap-2">
-            <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search Order..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-md w-[300px] outline-none focus:border-blue-500"
-              />
-            </div>
-          </form>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => router.push("/purchase-orders")}
+              sx={{ textTransform: "none" }}
+            >
+              Purchase Orders
+            </Button>
+            <form onSubmit={handleSearch} className="flex items-center gap-2">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search Order..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-md w-[300px] outline-none focus:border-blue-500"
+                />
+              </div>
+            </form>
+          </div>
         </div>
 
         {isLoading ? (
@@ -728,6 +912,9 @@ const Orders = () => {
                     <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left border-b-[1px] border-[rgba(0,0,0,0.1)]"></th>
                     <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
                       Order Id
+                    </th>
+                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                      PO
                     </th>
                     <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
                       Customer
@@ -788,4 +975,3 @@ const Orders = () => {
 };
 
 export default Orders;
-

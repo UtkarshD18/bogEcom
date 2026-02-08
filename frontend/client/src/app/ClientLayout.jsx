@@ -1,5 +1,6 @@
 "use client";
 
+import CartDrawer from "@/components/CartDrawer";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
@@ -11,8 +12,8 @@ import { ReferralProvider } from "@/context/ReferralContext";
 import { SettingsProvider, useSettings } from "@/context/SettingsContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import { usePathname } from "next/navigation";
-import { Toaster } from "react-hot-toast";
 import { useEffect } from "react";
+import { Toaster } from "react-hot-toast";
 
 const MaintenanceScreen = ({ storeName }) => {
   return (
@@ -24,7 +25,9 @@ const MaintenanceScreen = ({ storeName }) => {
         <p className="text-gray-600 mb-6">
           We are performing a quick update. Please check back soon.
         </p>
-        <div className="text-sm text-gray-500">Thank you for your patience.</div>
+        <div className="text-sm text-gray-500">
+          Thank you for your patience.
+        </div>
       </div>
     </div>
   );
@@ -50,6 +53,7 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
       <Footer />
       <OfferPopup />
       <NotificationHandler />
+      <CartDrawer />
     </>
   );
 };

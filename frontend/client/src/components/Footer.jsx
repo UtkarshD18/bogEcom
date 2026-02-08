@@ -2,7 +2,7 @@
 
 import { postData } from "@/utils/api";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { AiOutlineYoutube } from "react-icons/ai";
 import { BiSupport } from "react-icons/bi";
@@ -12,11 +12,20 @@ import { FaXTwitter } from "react-icons/fa6";
 import { IoChatboxOutline, IoLocationSharp } from "react-icons/io5";
 import { LiaGiftSolid, LiaShippingFastSolid } from "react-icons/lia";
 
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
+
 const Footer = () => {
   // --- STATE FOR NEWSLETTER ---
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null);
   const [message, setMessage] = useState("");
+  const [policyLinks, setPolicyLinks] = useState({
+    terms: { name: "Terms & Conditions", link: "/policy/terms-and-conditions" },
+  });
 
   const handleSubscribe = async (e) => {
     e.preventDefault();
@@ -51,6 +60,37 @@ const Footer = () => {
       toast.error("Failed to subscribe. Please try again.");
     }
   };
+
+  useEffect(() => {
+    const fetchPolicyLinks = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/policies/public`);
+        const data = await response.json();
+        if (!data.success || !Array.isArray(data.data)) return;
+
+        const policyBySlug = data.data.reduce((acc, policy) => {
+          acc[policy.slug] = policy;
+          return acc;
+        }, {});
+
+        setPolicyLinks({
+          terms: policyBySlug["terms-and-conditions"]
+            ? {
+                name: policyBySlug["terms-and-conditions"].title,
+                link: `/policy/${policyBySlug["terms-and-conditions"].slug}`,
+              }
+            : {
+                name: "Terms & Conditions",
+                link: "/policy/terms-and-conditions",
+              },
+        });
+      } catch (error) {
+        // Silent fallback to defaults
+      }
+    };
+
+    fetchPolicyLinks();
+  }, []);
 
   return (
     <footer className="relative bg-[#Fdfbf7] text-gray-700 overflow-hidden">
@@ -223,7 +263,8 @@ const Footer = () => {
                 { name: "Collaborator Portal", link: "/affiliate/login" },
                 { name: "Delivery", link: "/delivery" },
                 { name: "Secure payment", link: "/secure-payment" },
-                { name: "Terms and Conditions", link: "/terms" },
+                policyLinks.terms,
+                { name: "Cancellation & Return", link: "/cancellation" },
                 { name: "About Us", link: "/about-us" },
               ].map((item, i) => (
                 <li key={i}>
@@ -353,4 +394,3 @@ const Footer = () => {
 };
 
 export default Footer;
-

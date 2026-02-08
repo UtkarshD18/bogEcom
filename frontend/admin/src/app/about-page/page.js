@@ -6,14 +6,93 @@ import {
   Button,
   CircularProgress,
   Divider,
+  FormControl,
+  FormControlLabel,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
   Snackbar,
+  Switch,
   TextField,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import { MdAdd, MdDelete, MdInfo, MdRefresh, MdSave } from "react-icons/md";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const normalizeApiBaseUrl = (raw) => {
+  const cleaned = String(raw || "")
+    .trim()
+    .replace(/^\"|\"$/g, "")
+    .replace(/\/+$/, "");
+  if (!cleaned) return "";
+  return cleaned.endsWith("/api") ? cleaned.slice(0, -4) : cleaned;
+};
+
+const API_BASE_URL = normalizeApiBaseUrl(
+  process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_APP_API_URL ||
+    "http://localhost:8000",
+);
+
+const buildApiUrl = (path) => {
+  const safePath = String(path || "").startsWith("/") ? path : `/${path}`;
+  if (!API_BASE_URL) return safePath;
+  return `${API_BASE_URL}${safePath}`;
+};
+
+const getAdminToken = (tokenFromContext) => {
+  if (tokenFromContext) return tokenFromContext;
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("adminToken");
+};
+
+const readResponseBody = async (response) => {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+  const text = await response.text();
+  return text ? { message: text } : {};
+};
+
+const apiFetch = async ({ path, method = "GET", token, body }) => {
+  const url = buildApiUrl(path);
+  if (!url) {
+    throw new Error("Missing NEXT_PUBLIC_API_URL");
+  }
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        ...(body ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await readResponseBody(response);
+    if (!response.ok) {
+      const message =
+        data?.message ||
+        data?.error ||
+        response.statusText ||
+        "Request failed";
+      throw new Error(`[${response.status}] ${message}`);
+    }
+
+    return data;
+  } catch (error) {
+    const message = String(error?.message || "");
+    if (message.includes("Failed to fetch")) {
+      throw new Error(
+        `Network error calling ${url}. Check API URL, backend, and CORS.`,
+      );
+    }
+    throw error;
+  }
+};
 
 /**
  * About Page Editor
@@ -31,15 +110,26 @@ const AboutPageEditor = () => {
 
   // Content State
   const [content, setContent] = useState({
+    theme: { style: "mint", layout: "glass" },
+    sections: {
+      hero: true,
+      standard: true,
+      whyUs: true,
+      values: true,
+      cta: true,
+    },
     hero: {
+      badge: "About Us",
       title: "",
       titleHighlight: "",
       description: "",
+      image: "",
     },
     standard: {
       subtitle: "",
       title: "",
       description: "",
+      image: "",
       stats: [],
     },
     whyUs: {
@@ -68,35 +158,33 @@ const AboutPageEditor = () => {
   const fetchContent = async () => {
     setLoading(true);
     try {
-      const adminToken = token || localStorage.getItem("adminToken");
+      const adminToken = getAdminToken(token);
       if (!adminToken) {
-        setLoading(false);
-        return;
+        throw new Error("Admin token missing. Please login again.");
       }
 
-      const response = await fetch(`${API_URL}/api/about/admin`, {
-        headers: {
-          Authorization: `Bearer ${adminToken}`,
-        },
-        credentials: "include",
+      const data = await apiFetch({
+        path: "/api/about/admin",
+        token: adminToken,
       });
-
-      const data = await response.json();
 
       if (data.success && data.data) {
         setContent({
-          hero: data.data.hero || content.hero,
-          standard: data.data.standard || content.standard,
-          whyUs: data.data.whyUs || content.whyUs,
-          values: data.data.values || content.values,
-          cta: data.data.cta || content.cta,
+          theme: { ...content.theme, ...(data.data.theme || {}) },
+          sections: { ...content.sections, ...(data.data.sections || {}) },
+          hero: { ...content.hero, ...(data.data.hero || {}) },
+          standard: { ...content.standard, ...(data.data.standard || {}) },
+          whyUs: { ...content.whyUs, ...(data.data.whyUs || {}) },
+          values: { ...content.values, ...(data.data.values || {}) },
+          cta: { ...content.cta, ...(data.data.cta || {}) },
         });
       }
     } catch (error) {
-      console.error("Error fetching about content:", error);
+      console.error("AboutPageEditor fetchContent error:", error);
       setSnackbar({
         open: true,
-        message: "Failed to load about page content",
+        message:
+          error?.message || "Failed to load about page content. Try again.",
         severity: "error",
       });
     } finally {
@@ -107,18 +195,17 @@ const AboutPageEditor = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const adminToken = token || localStorage.getItem("adminToken");
-      const response = await fetch(`${API_URL}/api/about/admin`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${adminToken}`,
-        },
-        credentials: "include",
-        body: JSON.stringify(content),
-      });
+      const adminToken = getAdminToken(token);
+      if (!adminToken) {
+        throw new Error("Admin token missing. Please login again.");
+      }
 
-      const data = await response.json();
+      const data = await apiFetch({
+        path: "/api/about/admin",
+        method: "PUT",
+        token: adminToken,
+        body: content,
+      });
 
       if (data.success) {
         setSnackbar({
@@ -130,9 +217,10 @@ const AboutPageEditor = () => {
         throw new Error(data.message);
       }
     } catch (error) {
+      console.error("AboutPageEditor handleSave error:", error);
       setSnackbar({
         open: true,
-        message: "Failed to save about page",
+        message: error?.message || "Failed to save about page. Try again.",
         severity: "error",
       });
     } finally {
@@ -144,16 +232,16 @@ const AboutPageEditor = () => {
     if (!confirm("Are you sure you want to reset to default content?")) return;
 
     try {
-      const adminToken = token || localStorage.getItem("adminToken");
-      const response = await fetch(`${API_URL}/api/about/admin/reset`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${adminToken}`,
-        },
-        credentials: "include",
-      });
+      const adminToken = getAdminToken(token);
+      if (!adminToken) {
+        throw new Error("Admin token missing. Please login again.");
+      }
 
-      const data = await response.json();
+      const data = await apiFetch({
+        path: "/api/about/admin/reset",
+        method: "POST",
+        token: adminToken,
+      });
 
       if (data.success) {
         setContent({
@@ -170,9 +258,10 @@ const AboutPageEditor = () => {
         });
       }
     } catch (error) {
+      console.error("AboutPageEditor handleReset error:", error);
       setSnackbar({
         open: true,
-        message: "Failed to reset about page",
+        message: error?.message || "Failed to reset about page. Try again.",
         severity: "error",
       });
     }
@@ -318,6 +407,144 @@ const AboutPageEditor = () => {
       </div>
 
       <div className="space-y-8">
+        {/* Theme & Layout */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">
+            Page Theme
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormControl fullWidth size="small">
+              <InputLabel>Theme</InputLabel>
+              <Select
+                label="Theme"
+                value={content.theme.style}
+                onChange={(e) =>
+                  setContent({
+                    ...content,
+                    theme: { ...content.theme, style: e.target.value },
+                  })
+                }
+              >
+                <MenuItem value="mint">Mint</MenuItem>
+                <MenuItem value="sky">Sky</MenuItem>
+                <MenuItem value="aurora">Aurora</MenuItem>
+                <MenuItem value="lavender">Lavender</MenuItem>
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth size="small">
+              <InputLabel>Layout</InputLabel>
+              <Select
+                label="Layout"
+                value={content.theme.layout}
+                onChange={(e) =>
+                  setContent({
+                    ...content,
+                    theme: { ...content.theme, layout: e.target.value },
+                  })
+                }
+              >
+                <MenuItem value="glass">Liquid Glass</MenuItem>
+                <MenuItem value="minimal">Minimal</MenuItem>
+              </Select>
+            </FormControl>
+          </div>
+        </div>
+
+        {/* Section Visibility */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">
+            Section Visibility
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={!!content.sections.hero}
+                  onChange={(e) =>
+                    setContent({
+                      ...content,
+                      sections: {
+                        ...content.sections,
+                        hero: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              }
+              label="Hero"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={!!content.sections.standard}
+                  onChange={(e) =>
+                    setContent({
+                      ...content,
+                      sections: {
+                        ...content.sections,
+                        standard: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              }
+              label="Our Standard"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={!!content.sections.whyUs}
+                  onChange={(e) =>
+                    setContent({
+                      ...content,
+                      sections: {
+                        ...content.sections,
+                        whyUs: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              }
+              label="Why Us"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={!!content.sections.values}
+                  onChange={(e) =>
+                    setContent({
+                      ...content,
+                      sections: {
+                        ...content.sections,
+                        values: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              }
+              label="Values"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={!!content.sections.cta}
+                  onChange={(e) =>
+                    setContent({
+                      ...content,
+                      sections: {
+                        ...content.sections,
+                        cta: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              }
+              label="CTA"
+            />
+          </div>
+        </div>
+
         {/* Hero Section */}
         <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -325,6 +552,18 @@ const AboutPageEditor = () => {
             Hero Section
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TextField
+              label="Badge"
+              value={content.hero.badge}
+              onChange={(e) =>
+                setContent({
+                  ...content,
+                  hero: { ...content.hero, badge: e.target.value },
+                })
+              }
+              fullWidth
+              size="small"
+            />
             <TextField
               label="Title"
               value={content.hero.title}
@@ -344,6 +583,18 @@ const AboutPageEditor = () => {
                 setContent({
                   ...content,
                   hero: { ...content.hero, titleHighlight: e.target.value },
+                })
+              }
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Hero Image URL (optional)"
+              value={content.hero.image}
+              onChange={(e) =>
+                setContent({
+                  ...content,
+                  hero: { ...content.hero, image: e.target.value },
                 })
               }
               fullWidth
@@ -411,6 +662,19 @@ const AboutPageEditor = () => {
               fullWidth
               multiline
               rows={3}
+              className="md:col-span-2"
+            />
+            <TextField
+              label="Image URL (optional)"
+              value={content.standard.image}
+              onChange={(e) =>
+                setContent({
+                  ...content,
+                  standard: { ...content.standard, image: e.target.value },
+                })
+              }
+              fullWidth
+              size="small"
               className="md:col-span-2"
             />
           </div>

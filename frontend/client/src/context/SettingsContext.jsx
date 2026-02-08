@@ -4,10 +4,11 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const SettingsContext = createContext();
 
-const API_URL =
+const API_URL = (
   process.env.NEXT_PUBLIC_APP_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000";
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
 /**
  * Default settings values (fallbacks when API fails)

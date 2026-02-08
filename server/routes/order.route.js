@@ -2,6 +2,7 @@ import express from "express";
 import {
   createOrder,
   createTestOrder,
+  downloadOrderInvoice,
   getAllOrders,
   getDashboardStats,
   getOrderById,
@@ -68,7 +69,7 @@ router.post(
 );
 
 // Get user's orders
-router.get("/user/my-orders", optionalAuth, getUserOrders);
+router.get("/user/my-orders", auth, getUserOrders);
 
 // Get user's single order (with ownership check)
 router.get(
@@ -77,6 +78,9 @@ router.get(
   validateGetOrderRequest,
   getUserOrderById
 );
+
+// Download invoice (user own order or admin any order)
+router.get("/:orderId/invoice", auth, downloadOrderInvoice);
 
 // ==================== TEST ROUTES (Development Only) ====================
 

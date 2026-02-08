@@ -1,6 +1,7 @@
 "use client";
 
 import PaymentUnavailableModal from "@/components/PaymentUnavailableModal";
+import UseCurrentLocationGoogleMaps from "@/components/UseCurrentLocationGoogleMaps";
 import { useCart } from "@/context/CartContext";
 import { useReferral } from "@/context/ReferralContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -10,6 +11,7 @@ import {
   initAffiliateTracking,
   setAffiliateFromCoupon,
 } from "@/utils/affiliateTracking";
+import { round2, splitGstInclusiveAmount } from "@/utils/gst";
 import {
   Alert,
   Button,
@@ -40,7 +42,13 @@ import {
   MdWork,
 } from "react-icons/md";
 
-const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+)
+  .trim()
+  .replace(/\/+$/, "");
 
 /**
  * Checkout Page
@@ -54,8 +62,10 @@ const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
  */
 const Checkout = () => {
   const context = useContext(MyContext);
-  const { cartItems, cartTotal, clearCart } = useCart();
+  const { cartItems, clearCart, orderNote, setOrderNote } = useCart();
   const router = useRouter();
+  const authToken = cookies.get("accessToken");
+  const isGuestCheckout = !authToken;
 
   // Get referral/influencer data from context
   const {
@@ -68,13 +78,9 @@ const Checkout = () => {
   // Get settings from context
   const {
     shippingSettings,
-    taxSettings,
-    orderSettings,
     highTrafficNotice,
+    taxSettings,
     calculateShipping,
-    calculateTax,
-    formatPrice,
-    isCODAvailable,
   } = useSettings();
 
   // Helper to normalize cart item data (handles both API and localStorage structures)
@@ -97,7 +103,6 @@ const Checkout = () => {
 
   // UI State
   const [selectedAddress, setSelectedAddress] = useState(null);
-  const [orderNotes, setOrderNotes] = useState("");
   const [isPayButtonDisabled, setIsPayButtonDisabled] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
@@ -115,6 +120,15 @@ const Checkout = () => {
 
   // Affiliate State
   const [affiliateData, setAffiliateData] = useState(null);
+  const [membershipStatus, setMembershipStatus] = useState(null);
+  const [coinSettings, setCoinSettings] = useState({
+    coinsPerRupee: 0.05,
+    redeemRate: 0.1,
+    maxRedeemPercentage: 20,
+    expiryDays: 365,
+  });
+  const [coinBalance, setCoinBalance] = useState(0);
+  const [requestedCoins, setRequestedCoins] = useState(0);
 
   // Address State - Real addresses from database
   const [addresses, setAddresses] = useState([]);
@@ -122,6 +136,7 @@ const Checkout = () => {
   const [isAddressDialogOpen, setIsAddressDialogOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState(null);
   const [addressSaving, setAddressSaving] = useState(false);
+  const [locationPayload, setLocationPayload] = useState(null);
   const [formData, setFormData] = useState({
     name: "",
     address_line1: "",
@@ -133,6 +148,20 @@ const Checkout = () => {
     addressType: "Home",
   });
   const [formErrors, setFormErrors] = useState({});
+  const [guestDetails, setGuestDetails] = useState({
+    fullName: "",
+    phone: "",
+    address: "",
+    pincode: "",
+    state: "",
+    email: "",
+  });
+  const [guestLocationPayload, setGuestLocationPayload] = useState(null);
+  const [guestErrors, setGuestErrors] = useState({});
+  const [gstNumber, setGstNumber] = useState("");
+  const [gstError, setGstError] = useState("");
+  const [gstSaving, setGstSaving] = useState(false);
+  const [gstSavedValue, setGstSavedValue] = useState("");
 
   const INDIAN_STATES = [
     "Andhra Pradesh",
@@ -170,37 +199,116 @@ const Checkout = () => {
     "Puducherry",
   ];
 
-  // Debug log settings
-  console.log("[Checkout] Tax Settings:", taxSettings);
-  console.log("[Checkout] Shipping Settings:", shippingSettings);
-  console.log("[Checkout] Referral Code:", referralCode);
+  const normalizeStateValue = (value) => {
+    const incoming = String(value || "").trim().toLowerCase();
+    if (!incoming) return "";
+    const match = INDIAN_STATES.find(
+      (s) => String(s).trim().toLowerCase() === incoming,
+    );
+    return match || "";
+  };
 
-  // Calculate totals using normalized item data and backend settings
-  const subtotal = (cartItems || []).reduce((sum, item) => {
+  // Prices are GST-inclusive throughout the storefront.
+  // GST is fixed at 5% (IGST) for all orders.
+  const gstRatePercent = 5;
+
+  // Derive the delivery state for GST display (CGST+SGST vs IGST)
+  const checkoutStateForPreview = isGuestCheckout
+    ? guestDetails.state
+    : addresses.find((a) => a._id === selectedAddress)?.state || "";
+
+  // Per-line breakdown so rounding works for multiple items.
+  const cartItemTaxLines = (cartItems || []).map((item) => {
     const data = getItemData(item);
-    return sum + data.price * data.quantity;
-  }, 0);
+    const quantity = Math.max(Number(data.quantity || 1), 0);
+    const unitPrice = Number(data.price || 0);
+    const lineAmount = round2(unitPrice * quantity);
 
-  // Shipping calculation from context settings
-  const shipping = calculateShipping(subtotal);
+    if (gstRatePercent > 0) {
+      return splitGstInclusiveAmount(lineAmount, gstRatePercent);
+    }
 
-  // Tax calculation from context settings
-  const tax = calculateTax(subtotal);
+    const taxableAmount = lineAmount;
+    const gstAmount = 0;
+    return {
+      ratePercent: gstRatePercent,
+      grossAmount: round2(taxableAmount + gstAmount),
+      taxableAmount,
+      gstAmount,
+    };
+  });
+
+  const cartGrossSubtotal = round2(
+    cartItemTaxLines.reduce((sum, line) => sum + line.grossAmount, 0),
+  );
+  const originalTaxEstimate = round2(
+    cartItemTaxLines.reduce((sum, line) => sum + line.gstAmount, 0),
+  );
+
+  const membershipDiscountPercentage =
+    membershipStatus?.isMember && !membershipStatus?.isExpired
+      ? Number(
+          membershipStatus?.membershipPlan?.discountPercentage ??
+            membershipStatus?.membershipPlan?.discountPercent ??
+            0,
+        )
+      : 0;
+  const membershipDiscount = Math.max(
+    round2((cartGrossSubtotal * membershipDiscountPercentage) / 100),
+    0,
+  );
+  const subtotalAfterMembership = Math.max(
+    cartGrossSubtotal - membershipDiscount,
+    0,
+  );
 
   // Referral/Influencer discount (applied FIRST, calculated on subtotal)
   // Note: Backend will recalculate this for security - this is for display only
   const referralDiscount = referralCode
-    ? calculateReferralDiscount(subtotal)
+    ? calculateReferralDiscount(subtotalAfterMembership)
     : 0;
 
   // Coupon discount (applied SECOND, on amount after referral discount)
   const couponDiscount = appliedCoupon?.discountAmount || 0;
 
+  const subtotalAfterDiscounts = Math.max(
+    subtotalAfterMembership - referralDiscount - couponDiscount,
+    0,
+  );
+  const maxCoinRedeemValue = Math.floor(
+    (subtotalAfterDiscounts * Number(coinSettings.maxRedeemPercentage || 0)) /
+      100,
+  );
+  const safeRequestedCoins = Math.max(Number(requestedCoins || 0), 0);
+  const effectiveRedeemCoins = Math.min(
+    safeRequestedCoins,
+    Number(coinBalance || 0),
+    Math.floor(maxCoinRedeemValue / Number(coinSettings.redeemRate || 1)),
+  );
+  const coinRedeemAmount = Math.round(
+    effectiveRedeemCoins * Number(coinSettings.redeemRate || 0),
+  );
+  const netInclusiveSubtotal = Math.max(
+    round2(subtotalAfterDiscounts - coinRedeemAmount),
+    0,
+  );
+
+  const netSplit = splitGstInclusiveAmount(
+    netInclusiveSubtotal,
+    gstRatePercent,
+  );
+  const subtotal = netSplit.taxableAmount; // Subtotal (Excl. GST)
+  const tax = netSplit.gstAmount; // GST (IGST)
+
+  // Shipping calculation from context settings (thresholds use inclusive subtotal).
+  const shipping = calculateShipping(netInclusiveSubtotal);
+
   // Total discount
-  const totalDiscount = referralDiscount + couponDiscount;
+  const totalDiscount =
+    membershipDiscount + referralDiscount + couponDiscount + coinRedeemAmount;
 
   // Final total
-  const total = Math.max(0, subtotal + shipping + tax - totalDiscount);
+  const total = Math.max(0, round2(netInclusiveSubtotal + shipping));
 
   // Fetch addresses from database
   const fetchAddresses = useCallback(async () => {
@@ -244,6 +352,105 @@ const Checkout = () => {
     fetchAddresses();
   }, [fetchAddresses]);
 
+  useEffect(() => {
+    if (!authToken || gstSavedValue) return;
+
+    const fetchGst = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/user/user-details`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+          credentials: "include",
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const storedGst = data?.data?.gstNumber || "";
+        if (storedGst) {
+          setGstNumber(storedGst);
+          setGstSavedValue(storedGst);
+        }
+      } catch (error) {
+        // Silent fail: GST is optional and can be entered manually.
+      }
+    };
+
+    fetchGst();
+  }, [authToken, gstSavedValue]);
+
+  useEffect(() => {
+    const fetchDynamicCheckoutSettings = async () => {
+      try {
+        const [coinSettingsRes, membershipRes] = await Promise.all([
+          fetch(`${API_URL}/api/coins/settings/public`),
+          authToken
+            ? fetch(`${API_URL}/api/membership/status`, {
+                headers: {
+                  Authorization: `Bearer ${authToken}`,
+                },
+              })
+            : Promise.resolve(null),
+        ]);
+
+        if (coinSettingsRes?.ok) {
+          const coinSettingsData = await coinSettingsRes.json();
+          if (coinSettingsData?.success && coinSettingsData?.data) {
+            setCoinSettings({
+              coinsPerRupee: Number(
+                coinSettingsData.data.coinsPerRupee ?? 0.05,
+              ),
+              redeemRate: Number(coinSettingsData.data.redeemRate ?? 0.1),
+              maxRedeemPercentage: Number(
+                coinSettingsData.data.maxRedeemPercentage ?? 20,
+              ),
+              expiryDays: Number(coinSettingsData.data.expiryDays ?? 365),
+            });
+          }
+        }
+
+        if (membershipRes?.ok) {
+          const membershipData = await membershipRes.json();
+          if (membershipData?.success) {
+            setMembershipStatus(membershipData.data || null);
+          }
+        } else {
+          setMembershipStatus(null);
+        }
+
+        if (authToken) {
+          const coinBalanceRes = await fetch(`${API_URL}/api/coins/me`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+          if (coinBalanceRes.ok) {
+            const coinBalanceData = await coinBalanceRes.json();
+            if (coinBalanceData?.success) {
+              setCoinBalance(Number(coinBalanceData?.data?.coinBalance || 0));
+            }
+          }
+        } else {
+          setCoinBalance(0);
+          setRequestedCoins(0);
+        }
+      } catch (error) {
+        // Checkout should continue even if optional dynamic services fail.
+      }
+    };
+
+    fetchDynamicCheckoutSettings();
+  }, [authToken]);
+
+  useEffect(() => {
+    const maxCoinsByRule = Math.floor(
+      maxCoinRedeemValue / Number(coinSettings.redeemRate || 1),
+    );
+    setRequestedCoins((prev) =>
+      Math.min(Math.max(Number(prev || 0), 0), coinBalance, maxCoinsByRule),
+    );
+  }, [coinBalance, maxCoinRedeemValue, coinSettings.redeemRate]);
+
   // Address form handlers
   const resetAddressForm = () => {
     setFormData({
@@ -258,6 +465,7 @@ const Checkout = () => {
     });
     setFormErrors({});
     setEditingAddress(null);
+    setLocationPayload(null);
   };
 
   const handleAddNewAddress = () => {
@@ -278,6 +486,7 @@ const Checkout = () => {
       addressType: address.addressType || "Home",
     });
     setFormErrors({});
+    setLocationPayload(null);
     setIsAddressDialogOpen(true);
   };
 
@@ -323,7 +532,10 @@ const Checkout = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          location: locationPayload,
+        }),
       });
 
       const data = await response.json();
@@ -371,6 +583,119 @@ const Checkout = () => {
     }
   };
 
+  const handleGuestChange = (e) => {
+    const { name, value } = e.target;
+    setGuestDetails((prev) => ({ ...prev, [name]: value }));
+    if (guestErrors[name]) {
+      setGuestErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  const handleGstChange = (event) => {
+    const value = String(event.target.value || "").toUpperCase();
+    setGstNumber(value);
+    if (gstError) setGstError("");
+  };
+
+  const handleGstBlur = async () => {
+    if (!gstNumber) {
+      setGstError("");
+      if (!authToken || !gstSavedValue) return;
+      setGstSaving(true);
+      try {
+        const response = await fetch(`${API_URL}/api/user/gst`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          credentials: "include",
+          body: JSON.stringify({ gstNumber: "" }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || "Failed to clear GST number");
+        }
+        setGstSavedValue("");
+        setSnackbar({
+          open: true,
+          message: "GST number cleared",
+          severity: "success",
+        });
+      } catch (error) {
+        setSnackbar({
+          open: true,
+          message: error.message || "Failed to clear GST number",
+          severity: "error",
+        });
+      } finally {
+        setGstSaving(false);
+      }
+      return;
+    }
+
+    const normalized = gstNumber.trim().toUpperCase();
+    const gstPattern = /^[0-9A-Z]{15}$/;
+    if (!gstPattern.test(normalized)) {
+      setGstError("Enter a valid 15-character GSTIN");
+      return;
+    }
+
+    if (!authToken) return;
+    if (normalized === gstSavedValue) return;
+
+    setGstSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/api/user/gst`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({ gstNumber: normalized }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "Failed to save GST number");
+      }
+      setGstSavedValue(normalized);
+      setSnackbar({
+        open: true,
+        message: "GST number saved",
+        severity: "success",
+      });
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: error.message || "Failed to save GST number",
+        severity: "error",
+      });
+    } finally {
+      setGstSaving(false);
+    }
+  };
+
+  const validateGuestCheckoutForm = () => {
+    const errors = {};
+    if (!guestDetails.fullName.trim())
+      errors.fullName = "Full name is required";
+    if (!/^\d{10}$/.test(guestDetails.phone.trim())) {
+      errors.phone = "Enter valid 10-digit phone number";
+    }
+    if (!guestDetails.address.trim()) errors.address = "Address is required";
+    if (!/^\d{6}$/.test(guestDetails.pincode.trim())) {
+      errors.pincode = "Enter valid 6-digit pincode";
+    }
+    if (!guestDetails.state.trim()) errors.state = "State is required";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestDetails.email.trim())) {
+      errors.email = "Enter valid email address";
+    }
+
+    setGuestErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   // Validate coupon with backend
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) {
@@ -391,7 +716,9 @@ const Checkout = () => {
         },
         body: JSON.stringify({
           code: couponCode.trim(),
-          orderAmount: subtotal + tax + shipping,
+          // Backend validates coupon against the net order amount
+          // (after membership/referral, before coupon/shipping).
+          orderAmount: Math.max(subtotalAfterMembership - referralDiscount, 0),
         }),
       });
 
@@ -456,12 +783,72 @@ const Checkout = () => {
     });
   };
 
+  const buildOrderProductsPayload = () =>
+    (cartItems || []).map((item) => {
+      const data = getItemData(item);
+      return {
+        productId: data.id,
+        productTitle: data.name,
+        quantity: data.quantity,
+        price: data.price,
+        image: data.image,
+        subTotal: data.price * data.quantity,
+      };
+    });
+
+  const buildGuestDetailsPayload = () => {
+    if (isGuestCheckout) {
+      return {
+        fullName: guestDetails.fullName,
+        phone: guestDetails.phone,
+        address: guestDetails.address,
+        pincode: guestDetails.pincode,
+        state: guestDetails.state,
+        email: guestDetails.email,
+        gst: gstNumber || "",
+      };
+    }
+    if (gstNumber) {
+      return {
+        gst: gstNumber,
+      };
+    }
+    return {};
+  };
+
+  const createPurchaseOrderDraft = async ({ token, deliveryAddressId }) => {
+    const poPayload = {
+      products: buildOrderProductsPayload(),
+      delivery_address: deliveryAddressId || null,
+      guestDetails: buildGuestDetailsPayload(),
+      paymentType: "prepaid",
+    };
+
+    const poResponse = await fetch(`${API_URL}/api/purchase-orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(poPayload),
+    });
+    const poData = await poResponse.json();
+    if (poData.success) {
+      return poData?.data?.purchaseOrder?._id || null;
+    }
+    return null;
+  };
+
   // Handle Pay Now click - PhonePe redirect flow
   const handlePayNow = async () => {
     if (isPayButtonDisabled) return;
 
     setIsPayButtonDisabled(true);
     try {
+      if (isGuestCheckout && !validateGuestCheckoutForm()) {
+        throw new Error("Please complete all required guest details");
+      }
+
       const statusRes = await fetch(`${API_URL}/api/orders/payment-status`);
       const statusData = await statusRes.json();
 
@@ -470,31 +857,32 @@ const Checkout = () => {
         return;
       }
 
-      const token = cookies.get("accessToken");
+      const token = authToken;
       const isValidObjectId =
         selectedAddress && /^[a-f\d]{24}$/i.test(selectedAddress);
       const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
 
       const currentAffiliate = getStoredAffiliateData();
-      const originalAmount = subtotal + shipping + tax;
+      const originalAmount = round2(subtotal + shipping + originalTaxEstimate);
+
+      let purchaseOrderId = null;
+      try {
+        purchaseOrderId = await createPurchaseOrderDraft({
+          token,
+          deliveryAddressId: isValidObjectId ? selectedAddress : null,
+        });
+      } catch (error) {
+        // Do not block checkout if PO generation fails.
+      }
 
       const orderData = {
-        products: (cartItems || []).map((item) => {
-          const data = getItemData(item);
-          return {
-            productId: data.id,
-            productTitle: data.name,
-            quantity: data.quantity,
-            price: data.price,
-            image: data.image,
-            subTotal: data.price * data.quantity,
-          };
-        }),
-        totalAmt: originalAmount,
+        products: buildOrderProductsPayload(),
+        totalAmt: total,
         originalAmount,
         finalAmount: total,
         delivery_address: isValidObjectId ? selectedAddress : null,
-        notes: orderNotes,
+        location: isGuestCheckout ? guestLocationPayload : null,
+        notes: orderNote,
         tax,
         shipping,
         // Coupon details (backend will revalidate)
@@ -505,6 +893,12 @@ const Checkout = () => {
         // Legacy affiliate tracking
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
+        coinRedeem: {
+          coins: effectiveRedeemCoins,
+        },
+        paymentType: "prepaid",
+        guestDetails: buildGuestDetailsPayload(),
+        purchaseOrderId,
         shippingAddress: selectedAddrObj
           ? {
               name: selectedAddrObj.name,
@@ -516,7 +910,16 @@ const Checkout = () => {
               mobile: selectedAddrObj.mobile,
               addressType: selectedAddrObj.addressType,
             }
-          : null,
+          : isGuestCheckout
+            ? {
+                name: guestDetails.fullName,
+                address: guestDetails.address,
+                city: "",
+                state: guestDetails.state,
+                pincode: guestDetails.pincode,
+                mobile: guestDetails.phone,
+              }
+            : null,
       };
 
       const response = await fetch(`${API_URL}/api/orders`, {
@@ -557,7 +960,11 @@ const Checkout = () => {
     setIsSavingOrder(true);
 
     try {
-      const token = cookies.get("accessToken");
+      if (isGuestCheckout && !validateGuestCheckoutForm()) {
+        throw new Error("Please complete all required guest details");
+      }
+
+      const token = authToken;
       const currentAffiliate = getStoredAffiliateData();
 
       // Get selected address - selectedAddress is now the _id directly
@@ -567,20 +974,21 @@ const Checkout = () => {
       // Find the full address object for order details
       const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
 
+      let purchaseOrderId = null;
+      try {
+        purchaseOrderId = await createPurchaseOrderDraft({
+          token,
+          deliveryAddressId: isValidObjectId ? selectedAddress : null,
+        });
+      } catch (error) {
+        // Do not block save-order flow if PO generation fails.
+      }
+
       const orderData = {
-        products: (cartItems || []).map((item) => {
-          const data = getItemData(item);
-          return {
-            productId: data.id,
-            productTitle: data.name,
-            quantity: data.quantity,
-            price: data.price,
-            image: data.image,
-            subTotal: data.price * data.quantity,
-          };
-        }),
-        totalAmt: subtotal + shipping + tax,
+        products: buildOrderProductsPayload(),
+        totalAmt: total,
         delivery_address: isValidObjectId ? selectedAddress : null,
+        location: isGuestCheckout ? guestLocationPayload : null,
         shippingAddress: selectedAddrObj
           ? {
               name: selectedAddrObj.name,
@@ -592,7 +1000,17 @@ const Checkout = () => {
               mobile: selectedAddrObj.mobile,
               addressType: selectedAddrObj.addressType,
             }
-          : null,
+          : isGuestCheckout
+            ? {
+                name: guestDetails.fullName,
+                address: guestDetails.address,
+                city: "",
+                state: guestDetails.state,
+                pincode: guestDetails.pincode,
+                mobile: guestDetails.phone,
+              }
+            : null,
+        guestDetails: buildGuestDetailsPayload(),
         // Coupon details
         couponCode: appliedCoupon?.code || null,
         discountAmount: couponDiscount,
@@ -602,10 +1020,13 @@ const Checkout = () => {
         // Legacy affiliate tracking
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
-        notes: orderNotes,
+        coinRedeem: {
+          coins: effectiveRedeemCoins,
+        },
+        paymentType: "prepaid",
+        purchaseOrderId,
+        notes: orderNote,
       };
-
-      console.log("Saving order with data:", orderData);
 
       const response = await fetch(`${API_URL}/api/orders/save-for-later`, {
         method: "POST",
@@ -617,7 +1038,6 @@ const Checkout = () => {
       });
 
       const data = await response.json();
-      console.log("Save order response:", data);
 
       if (data.success) {
         setShowPaymentModal(false);
@@ -636,7 +1056,6 @@ const Checkout = () => {
       } else {
         // Show detailed error from server if available
         const errorMsg = data.message || data.details || "Failed to save order";
-        console.error("Server error details:", data);
         throw new Error(errorMsg);
       }
     } catch (error) {
@@ -722,120 +1141,219 @@ const Checkout = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left Column - Address & Items */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Delivery Address */}
+              {/* Checkout Details */}
               <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg md:text-xl font-semibold text-gray-800">
-                    Delivery Address
+                    {isGuestCheckout
+                      ? "Guest Checkout Details"
+                      : "Delivery Address"}
                   </h2>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={handleAddNewAddress}
-                    sx={{
-                      borderColor: "#059669",
-                      color: "#059669",
-                      textTransform: "none",
-                      borderRadius: "8px",
-                      "&:hover": {
-                        borderColor: "#047857",
-                        backgroundColor: "#ecfdf5",
-                      },
-                    }}
-                  >
-                    <FiPlus className="mr-1" /> Add
-                  </Button>
-                </div>
-
-                {addressLoading ? (
-                  <div className="flex justify-center py-8">
-                    <CircularProgress size={32} sx={{ color: "#059669" }} />
-                  </div>
-                ) : addresses.length === 0 ? (
-                  <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl">
-                    <MdLocationOn
-                      className="mx-auto text-gray-300 mb-2"
-                      size={48}
-                    />
-                    <p className="text-gray-500 mb-3">
-                      No delivery address found
-                    </p>
+                  {!isGuestCheckout && (
                     <Button
+                      variant="outlined"
+                      size="small"
                       onClick={handleAddNewAddress}
                       sx={{
-                        backgroundColor: "#059669",
-                        color: "white",
+                        borderColor: "#059669",
+                        color: "#059669",
                         textTransform: "none",
                         borderRadius: "8px",
-                        "&:hover": { backgroundColor: "#047857" },
+                        "&:hover": {
+                          borderColor: "#047857",
+                          backgroundColor: "#ecfdf5",
+                        },
                       }}
                     >
                       <FiPlus className="mr-1" /> Add Address
                     </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {addresses.map((addr) => (
-                      <label
-                        key={addr._id}
-                        className={`flex items-start p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                          selectedAddress === addr._id
-                            ? "border-orange-500 bg-orange-50"
-                            : "border-gray-200 hover:border-orange-300"
-                        }`}
+                  )}
+                </div>
+
+                {isGuestCheckout && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <TextField
+                      label="Full Name *"
+                      name="fullName"
+                      value={guestDetails.fullName}
+                      onChange={handleGuestChange}
+                      error={!!guestErrors.fullName}
+                      helperText={guestErrors.fullName}
+                      size="small"
+                    />
+                    <TextField
+                      label="Phone *"
+                      name="phone"
+                      value={guestDetails.phone}
+                      onChange={handleGuestChange}
+                      error={!!guestErrors.phone}
+                      helperText={guestErrors.phone}
+                      size="small"
+                    />
+                    <TextField
+                      label="Email *"
+                      name="email"
+                      value={guestDetails.email}
+                      onChange={handleGuestChange}
+                      error={!!guestErrors.email}
+                      helperText={guestErrors.email}
+                      size="small"
+                    />
+
+                    <div className="md:col-span-2 flex items-center gap-2 flex-wrap">
+                      <UseCurrentLocationGoogleMaps
+                        onResolved={(loc) => {
+                          setGuestLocationPayload(loc);
+                          setGuestDetails((prev) => ({
+                            ...prev,
+                            address:
+                              loc.street || loc.formattedAddress || prev.address,
+                            pincode: loc.pincode || prev.pincode,
+                            state: normalizeStateValue(loc.state) || prev.state,
+                          }));
+                        }}
+                        onError={(message) =>
+                          setSnackbar({ open: true, message, severity: "error" })
+                        }
+                      />
+                      {guestLocationPayload?.formattedAddress && (
+                        <span className="text-xs text-gray-500">
+                          Location selected
+                        </span>
+                      )}
+                    </div>
+
+                    <TextField
+                      label="Address *"
+                      name="address"
+                      value={guestDetails.address}
+                      onChange={handleGuestChange}
+                      error={!!guestErrors.address}
+                      helperText={guestErrors.address}
+                      size="small"
+                      multiline
+                      rows={2}
+                      className="md:col-span-2"
+                    />
+                    <TextField
+                      label="Pincode *"
+                      name="pincode"
+                      value={guestDetails.pincode}
+                      onChange={handleGuestChange}
+                      error={!!guestErrors.pincode}
+                      helperText={guestErrors.pincode}
+                      size="small"
+                    />
+                    <FormControl size="small" error={!!guestErrors.state}>
+                      <InputLabel>State *</InputLabel>
+                      <Select
+                        name="state"
+                        value={guestDetails.state}
+                        label="State *"
+                        onChange={handleGuestChange}
                       >
-                        <Radio
-                          checked={selectedAddress === addr._id}
-                          onChange={() => setSelectedAddress(addr._id)}
-                          sx={{
-                            color: "#059669",
-                            "&.Mui-checked": { color: "#059669" },
-                          }}
+                        {INDIAN_STATES.map((state) => (
+                          <MenuItem key={state} value={state}>
+                            {state}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </div>
+                )}
+                {!isGuestCheckout && (
+                  <div className="mt-4">
+                    {addressLoading ? (
+                      <div className="flex justify-center py-8">
+                        <CircularProgress size={32} sx={{ color: "#059669" }} />
+                      </div>
+                    ) : addresses.length === 0 ? (
+                      <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl">
+                        <MdLocationOn
+                          className="mx-auto text-gray-300 mb-2"
+                          size={48}
                         />
-                        <div className="ml-3 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                              {getAddressIcon(addr.addressType)}
-                              {addr.addressType || "Home"}
-                            </span>
-                            {addr.selected && (
-                              <span className="text-xs text-orange-600 font-medium">
-                                Default
-                              </span>
-                            )}
-                          </div>
-                          <p className="font-medium text-gray-800">
-                            {addr.name}
-                          </p>
-                          <p className="text-gray-600 text-sm">
-                            {addr.address_line1}
-                            {addr.landmark && `, ${addr.landmark}`}
-                          </p>
-                          <p className="text-gray-600 text-sm">
-                            {addr.city}, {addr.state} - {addr.pincode}
-                          </p>
-                          <p className="text-gray-600 text-sm">
-                            +91 {addr.mobile}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleEditAddress(addr);
+                        <p className="text-gray-500 mb-3">
+                          No delivery address found
+                        </p>
+                        <Button
+                          onClick={handleAddNewAddress}
+                          sx={{
+                            backgroundColor: "#059669",
+                            color: "white",
+                            textTransform: "none",
+                            borderRadius: "8px",
+                            "&:hover": { backgroundColor: "#047857" },
                           }}
-                          className="text-orange-600 hover:text-orange-700 p-1"
                         >
-                          <FiEdit2 size={16} />
-                        </button>
-                      </label>
-                    ))}
-                    <Link href="/address" className="block">
-                      <p className="text-center text-sm text-orange-600 hover:underline mt-2">
-                        Manage all addresses →
-                      </p>
-                    </Link>
+                          <FiPlus className="mr-1" /> Add Address
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {addresses.map((addr) => (
+                          <label
+                            key={addr._id}
+                            className={`flex items-start p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                              selectedAddress === addr._id
+                                ? "border-orange-500 bg-orange-50"
+                                : "border-gray-200 hover:border-orange-300"
+                            }`}
+                          >
+                            <Radio
+                              checked={selectedAddress === addr._id}
+                              onChange={() => setSelectedAddress(addr._id)}
+                              sx={{
+                                color: "#059669",
+                                "&.Mui-checked": { color: "#059669" },
+                              }}
+                            />
+                            <div className="ml-3 flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                  {getAddressIcon(addr.addressType)}
+                                  {addr.addressType || "Home"}
+                                </span>
+                                {addr.selected && (
+                                  <span className="text-xs text-orange-600 font-medium">
+                                    Default
+                                  </span>
+                                )}
+                              </div>
+                              <p className="font-medium text-gray-800">
+                                {addr.name}
+                              </p>
+                              <p className="text-gray-600 text-sm">
+                                {addr.address_line1}
+                                {addr.landmark && `, ${addr.landmark}`}
+                              </p>
+                              <p className="text-gray-600 text-sm">
+                                {addr.city}, {addr.state} - {addr.pincode}
+                              </p>
+                              <p className="text-gray-600 text-sm">
+                                +91 {addr.mobile}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleEditAddress(addr);
+                              }}
+                              className="text-orange-600 hover:text-orange-700 p-1"
+                            >
+                              <FiEdit2 size={16} />
+                            </button>
+                          </label>
+                        ))}
+                        <Link href="/address" className="block">
+                          <p className="text-center text-sm text-orange-600 hover:underline mt-2">
+                            Manage all addresses →
+                          </p>
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -899,8 +1417,8 @@ const Checkout = () => {
                   <span className="text-gray-400 font-normal">(Optional)</span>
                 </h2>
                 <textarea
-                  value={orderNotes}
-                  onChange={(e) => setOrderNotes(e.target.value)}
+                  value={orderNote}
+                  onChange={(e) => setOrderNote(e.target.value)}
                   placeholder="Add special instructions for your order..."
                   className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none text-base"
                   rows="3"
@@ -978,6 +1496,85 @@ const Checkout = () => {
                 )}
               </div>
 
+              {/* GST Section */}
+              <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
+                <h3 className="font-semibold text-gray-800 mb-3">
+                  GST (Optional)
+                </h3>
+                <TextField
+                  label="GST Number"
+                  value={gstNumber}
+                  onChange={handleGstChange}
+                  onBlur={handleGstBlur}
+                  size="small"
+                  fullWidth
+                  placeholder="15-character GSTIN"
+                  error={!!gstError}
+                  helperText={
+                    gstError ||
+                    (authToken ? "Saved to your account for future orders" : "")
+                  }
+                />
+                {gstSaving && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Saving GST number...
+                  </p>
+                )}
+              </div>
+
+              {/* Coins */}
+              {!isGuestCheckout && (
+                <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
+                  <h3 className="font-semibold text-gray-800 mb-3">
+                    Redeem Coins
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Balance: <strong>{coinBalance}</strong> coins
+                  </p>
+                  <div className="flex gap-2 items-center">
+                    <TextField
+                      label="Coins to redeem"
+                      type="number"
+                      size="small"
+                      value={requestedCoins}
+                      onChange={(e) =>
+                        setRequestedCoins(
+                          Math.max(0, Math.floor(Number(e.target.value || 0))),
+                        )
+                      }
+                      inputProps={{ min: 0 }}
+                      fullWidth
+                    />
+                    <Button
+                      variant="outlined"
+                      onClick={() =>
+                        setRequestedCoins(
+                          Math.min(
+                            coinBalance,
+                            Math.floor(
+                              maxCoinRedeemValue /
+                                Number(coinSettings.redeemRate || 1),
+                            ),
+                          ),
+                        )
+                      }
+                    >
+                      Max
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    Max redeem value: ₹{maxCoinRedeemValue.toFixed(0)} (
+                    {Number(coinSettings.maxRedeemPercentage || 0)}% cap)
+                  </p>
+                  {coinRedeemAmount > 0 && (
+                    <p className="text-sm text-emerald-700 mt-1">
+                      Applying {effectiveRedeemCoins} coins = ₹
+                      {coinRedeemAmount.toFixed(0)}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Price Summary */}
               <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
                 <h3 className="font-semibold text-gray-800 mb-4">
@@ -985,26 +1582,27 @@ const Checkout = () => {
                 </h3>
                 <div className="space-y-3 text-base">
                   <div className="flex justify-between text-gray-600">
-                    <span>Subtotal</span>
-                    <span>₹{subtotal.toFixed(0)}</span>
+                    <span>Subtotal (Excl. GST)</span>
+                    <span>₹{subtotal.toFixed(2)}</span>
                   </div>
-                  {taxSettings?.enabled && !taxSettings?.taxIncludedInPrice && (
-                    <div className="flex justify-between text-gray-600">
+                  {membershipDiscount > 0 && (
+                    <div className="flex justify-between text-green-700 font-medium">
                       <span>
-                        {taxSettings?.taxName || "Tax"} (
-                        {taxSettings?.taxRate || 0}%)
+                        Membership Discount ({membershipDiscountPercentage}%)
                       </span>
-                      <span>₹{tax.toFixed(0)}</span>
+                      <span>-₹{membershipDiscount.toFixed(2)}</span>
                     </div>
                   )}
-                  {taxSettings?.enabled && taxSettings?.taxIncludedInPrice && (
-                    <div className="flex justify-between text-gray-500 text-sm">
-                      <span>
-                        ({taxSettings?.taxName || "Tax"} included in price)
-                      </span>
-                      <span></span>
-                    </div>
-                  )}
+                  <div className="flex justify-between text-gray-600">
+                    <span>
+                      {checkoutStateForPreview.toLowerCase() === "rajasthan"
+                        ? `GST (CGST ${round2(gstRatePercent / 2)}% + SGST ${round2(
+                            gstRatePercent / 2,
+                          )}%)`
+                        : `GST (IGST ${round2(gstRatePercent)}%)`}
+                    </span>
+                    <span>₹{tax.toFixed(2)}</span>
+                  </div>
                   <div className="flex justify-between text-gray-600">
                     <span className="flex items-center gap-2">
                       <MdLocalShipping />
@@ -1022,7 +1620,9 @@ const Checkout = () => {
                         shipping === 0 ? "text-green-600 font-medium" : ""
                       }
                     >
-                      {shipping === 0 ? "FREE" : `₹${shipping}`}
+                      {shipping === 0
+                        ? "FREE"
+                        : `₹${Number(shipping || 0).toFixed(2)}`}
                     </span>
                   </div>
                   {couponDiscount > 0 && (
@@ -1031,7 +1631,7 @@ const Checkout = () => {
                         <FiTag className="w-4 h-4" />
                         Coupon Discount ({appliedCoupon?.code})
                       </span>
-                      <span>-₹{couponDiscount.toFixed(0)}</span>
+                      <span>-₹{couponDiscount.toFixed(2)}</span>
                     </div>
                   )}
                   {/* Referral/Influencer Discount */}
@@ -1041,30 +1641,43 @@ const Checkout = () => {
                         <HiOutlineFire className="w-4 h-4" />
                         Referral Discount ({referralCode})
                       </span>
-                      <span>-₹{referralDiscount.toFixed(0)}</span>
+                      <span>-₹{referralDiscount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {coinRedeemAmount > 0 && (
+                    <div className="flex justify-between text-emerald-700 font-medium">
+                      <span>
+                        Coin Redemption ({effectiveRedeemCoins} coins)
+                      </span>
+                      <span>-₹{coinRedeemAmount.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="border-t border-gray-200 pt-3">
                     {/* Show original total crossed out when discount applied */}
                     {totalDiscount > 0 && (
                       <div className="flex justify-between text-gray-400 text-sm mb-1">
-                        <span>Original Total</span>
+                        <span>Original Total (Incl. GST + Shipping)</span>
                         <span className="line-through">
-                          ₹{(subtotal + shipping + tax).toFixed(0)}
+                          ₹
+                          {(subtotal + shipping + originalTaxEstimate).toFixed(
+                            2,
+                          )}
                         </span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-gray-800">
                       <span className="text-lg">
-                        {totalDiscount > 0 ? "You Pay" : "Total"}
+                        {totalDiscount > 0
+                          ? "You Pay (Incl. GST + Shipping)"
+                          : "Total (Incl. GST + Shipping)"}
                       </span>
                       <div className="text-right">
                         <span className="text-xl text-emerald-600">
-                          ₹{total.toFixed(0)}
+                          ₹{total.toFixed(2)}
                         </span>
                         {totalDiscount > 0 && (
                           <p className="text-xs text-green-600 font-normal">
-                            You save ₹{totalDiscount.toFixed(0)}!
+                            You save ₹{totalDiscount.toFixed(2)}!
                           </p>
                         )}
                       </div>
@@ -1195,6 +1808,29 @@ const Checkout = () => {
               size="small"
               placeholder="10-digit mobile number"
             />
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <UseCurrentLocationGoogleMaps
+                onResolved={(loc) => {
+                  setLocationPayload(loc);
+                  setFormData((prev) => ({
+                    ...prev,
+                    address_line1: loc.street || loc.formattedAddress || prev.address_line1,
+                    city: loc.city || prev.city,
+                    pincode: loc.pincode || prev.pincode,
+                    state: normalizeStateValue(loc.state) || prev.state,
+                  }));
+                }}
+                onError={(message) =>
+                  setSnackbar({ open: true, message, severity: "error" })
+                }
+              />
+              {locationPayload?.formattedAddress && (
+                <span className="text-xs text-gray-500">
+                  Location selected
+                </span>
+              )}
+            </div>
 
             <TextField
               name="address_line1"

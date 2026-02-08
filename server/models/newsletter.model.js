@@ -36,8 +36,7 @@ const newsletterSchema = new mongoose.Schema(
   },
 );
 
-// Index for faster queries
-newsletterSchema.index({ email: 1 });
+// Index for faster queries (email is already indexed by `unique: true`)
 newsletterSchema.index({ isActive: 1 });
 
 export default mongoose.model("Newsletter", newsletterSchema);

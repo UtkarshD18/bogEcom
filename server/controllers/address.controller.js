@@ -1,4 +1,34 @@
 import AddressModel from "../models/address.model.js";
+import { createUserLocationLog } from "../services/userLocationLog.service.js";
+
+const normalizeLocationPayload = (raw) => {
+  if (!raw || typeof raw !== "object") return null;
+
+  const latitude = Number(raw.latitude);
+  const longitude = Number(raw.longitude);
+  const hasCoords = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+  const source =
+    raw.source === "google_maps" && hasCoords ? "google_maps" : "manual";
+
+  return {
+    latitude: source === "google_maps" ? latitude : null,
+    longitude: source === "google_maps" ? longitude : null,
+    formattedAddress: String(raw.formattedAddress || "").trim(),
+    source,
+    capturedAt: new Date(),
+  };
+};
+
+const sanitizeAddressForResponse = (addressDoc) => {
+  if (!addressDoc) return addressDoc;
+  const data =
+    typeof addressDoc?.toObject === "function" ? addressDoc.toObject() : addressDoc;
+  if (data && data.location) {
+    delete data.location;
+  }
+  return data;
+};
 
 /**
  * Get all addresses for the current user
@@ -77,6 +107,7 @@ export const createAddress = async (req, res) => {
       landmark,
       addressType,
       name,
+      location,
     } = req.body;
 
     // Validation
@@ -124,14 +155,33 @@ export const createAddress = async (req, res) => {
       addressType: addressType || "Home",
       name,
       selected: shouldBeSelected,
+      location: normalizeLocationPayload(location),
     });
 
     await newAddress.save();
 
+    // Location log (90-day retention). This does not change address/order behavior.
+    try {
+      await createUserLocationLog({
+        userId,
+        orderId: null,
+        location: location || null,
+        addressFields: {
+          street: address_line1,
+          city,
+          state,
+          pincode,
+          country: country || "India",
+        },
+      });
+    } catch (logError) {
+      console.warn("createAddress location log failed:", logError?.message || logError);
+    }
+
     return res.status(201).json({
       success: true,
       error: false,
-      data: newAddress,
+      data: sanitizeAddressForResponse(newAddress),
       message: "Address created successfully",
     });
   } catch (error) {
@@ -161,6 +211,7 @@ export const updateAddress = async (req, res) => {
       landmark,
       addressType,
       name,
+      location,
     } = req.body;
 
     // Check if address exists and belongs to user
@@ -209,6 +260,7 @@ export const updateAddress = async (req, res) => {
     if (landmark !== undefined) updateData.landmark = landmark;
     if (addressType) updateData.addressType = addressType;
     if (name) updateData.name = name;
+    if (location !== undefined) updateData.location = normalizeLocationPayload(location);
 
     const updatedAddress = await AddressModel.findByIdAndUpdate(
       addressId,
@@ -216,10 +268,28 @@ export const updateAddress = async (req, res) => {
       { new: true },
     );
 
+    // Location log (90-day retention). Store on each save/update.
+    try {
+      await createUserLocationLog({
+        userId,
+        orderId: null,
+        location: location || null,
+        addressFields: {
+          street: updateData.address_line1 || existingAddress.address_line1,
+          city: updateData.city || existingAddress.city,
+          state: updateData.state || existingAddress.state,
+          pincode: updateData.pincode || existingAddress.pincode,
+          country: updateData.country || existingAddress.country || "India",
+        },
+      });
+    } catch (logError) {
+      console.warn("updateAddress location log failed:", logError?.message || logError);
+    }
+
     return res.status(200).json({
       success: true,
       error: false,
-      data: updatedAddress,
+      data: sanitizeAddressForResponse(updatedAddress),
       message: "Address updated successfully",
     });
   } catch (error) {

@@ -4,7 +4,9 @@ import { firebaseApp } from "@/firebase";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000"
+).replace(/\/+$/, "");
 
 /**
  * useNotifications Hook

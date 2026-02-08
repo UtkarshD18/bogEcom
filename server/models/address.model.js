@@ -41,6 +41,18 @@ const addressSchema = mongoose.Schema(
       enum: ["Home", "Work", "Other"],
       default: "Home",
     },
+    location: {
+      latitude: { type: Number, default: null, select: false },
+      longitude: { type: Number, default: null, select: false },
+      formattedAddress: { type: String, default: "", select: false, trim: true },
+      source: {
+        type: String,
+        enum: ["manual", "google_maps"],
+        default: "manual",
+        select: false,
+      },
+      capturedAt: { type: Date, default: null, select: false },
+    },
     userId: {
       type: String,
       default: "",

@@ -6,14 +6,11 @@ import { Button } from "@mui/material";
 import TextField from "@mui/material/TextField";
 import cookies from "js-cookie";
 import { useEffect, useState } from "react";
-import { Collapse } from "react-collapse";
 import { PhoneInput } from "react-international-phone";
 import "react-international-phone/style.css";
 
 const MyAccount = () => {
   const [Phone, setPhone] = useState("");
-  const [isOpenChangePasswordBox, setIsOpenChangePassworrdBox] =
-    useState(false);
   const [userProvider, setUserProvider] = useState("local");
 
   // Check user provider type from cookies or user data
@@ -59,25 +56,6 @@ const MyAccount = () => {
                   All your account information in one place
                 </p>
               </div>
-              <Button
-                variant="outlined"
-                className="btn-!text-primary !border !border-primary !capitalize !font-[600] !px-5 "
-                onClick={() =>
-                  setIsOpenChangePassworrdBox(!isOpenChangePasswordBox)
-                }
-                sx={{
-                  borderColor: "#059669 !important",
-                  color: "#059669 !important",
-                  backgroundColor: "transparent !important",
-                  "&:hover": {
-                    backgroundColor: "#059669 !important",
-                    color: "#fff !important",
-                    borderColor: "#059669 !important",
-                  },
-                }}
-              >
-                Change Password
-              </Button>
             </div>
             <form className=" p-5">
               <div className="grid grid-cols-2 gap-5 mb-5">
@@ -111,56 +89,6 @@ const MyAccount = () => {
               </Button>
             </form>
           </div>
-
-          <Collapse isOpened={isOpenChangePasswordBox}>
-            <div className="bg-white shadow-md rounded-md">
-              <div className="p-4 flex items-center justify-between border-b-[1px] border-[rgba(0,0,0,0.2)">
-                <div className="info">
-                  <h4 className="text-[20px] font-[500] text-gray-700">
-                    Change Password
-                  </h4>
-                  <p className="text-[14px] text-gray-500">
-                    Update Your Password
-                  </p>
-                </div>
-
-                <form className=" p-5">
-                  <div className="grid grid-cols-2 gap-5 mb-5">
-                    <div className="form-group">
-                      <TextField
-                        id="oldPassword"
-                        label="Old Password"
-                        variant="outlined"
-                        size="small"
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <TextField
-                        id="newPassword"
-                        label="New Password"
-                        variant="outlined"
-                        size="small"
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="form-group w-full">
-                      <TextField
-                        id="confirmPassword"
-                        label="Confirm Password"
-                        variant="outlined"
-                        size="small"
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                  <Button type="submit" className="btn-g px-5">
-                    Change Password
-                  </Button>
-                </form>
-              </div>
-            </div>
-          </Collapse>
         </div>
       </div>
     </section>

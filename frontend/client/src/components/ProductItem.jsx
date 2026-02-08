@@ -5,6 +5,7 @@ import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { getImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useContext, useState } from "react";
 import {
   IoIosStar,
@@ -13,6 +14,7 @@ import {
   IoMdHeart,
   IoMdHeartEmpty,
 } from "react-icons/io";
+import { MdDeleteOutline } from "react-icons/md";
 
 /**
  * ProductItem Component
@@ -40,8 +42,9 @@ const ProductItem = ({
   product = null,
 }) => {
   const [isAddingToCart, setIsAddingToCart] = useState(false);
-  const { addToCart, isInCart } = useCart();
+  const { addToCart, removeFromCart, isInCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
+  const router = useRouter();
   const context = useContext(MyContext);
   const flavor = context?.flavor || FLAVORS.creamy;
 
@@ -66,13 +69,27 @@ const ProductItem = ({
     await toggleWishlist(productData);
   };
 
-  // Handle add to cart
+  // Handle add to cart or remove from cart (toggle)
   const handleAddToCart = async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (isAddingToCart) return;
 
+    // If already in cart, remove it
+    if (alreadyInCart) {
+      setIsAddingToCart(true);
+      try {
+        await removeFromCart(productId);
+      } catch (error) {
+        console.error("Error removing from cart:", error);
+      } finally {
+        setIsAddingToCart(false);
+      }
+      return;
+    }
+
+    // Add to cart
     setIsAddingToCart(true);
     try {
       await addToCart(productData, 1);
@@ -103,26 +120,36 @@ const ProductItem = ({
   return (
     <Link href={`/product/${productId}`} className="block w-full h-full">
       <div
-        className="group relative w-full h-full rounded-xl sm:rounded-2xl p-2 sm:p-3 transition-all duration-300 hover:-translate-y-1 cursor-pointer"
+        className="group relative w-full h-full rounded-2xl p-2.5 sm:p-3.5 transition-all duration-300 hover:-translate-y-1 cursor-pointer"
         style={{
           backgroundColor: flavor.cardBg,
-          border: `1px solid ${flavor.color}15`,
-          boxShadow: `0 2px 8px ${flavor.color}08`,
+          border: `1px solid ${flavor.color}14`,
+          boxShadow: `0 10px 24px ${flavor.color}10`,
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.boxShadow = `0 12px 32px ${flavor.color}15`;
-          e.currentTarget.style.borderColor = `${flavor.color}25`;
+          e.currentTarget.style.boxShadow = `0 18px 40px ${flavor.color}18`;
+          e.currentTarget.style.borderColor = `${flavor.color}26`;
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = `0 2px 8px ${flavor.color}08`;
-          e.currentTarget.style.borderColor = `${flavor.color}15`;
+          e.currentTarget.style.boxShadow = `0 10px 24px ${flavor.color}10`;
+          e.currentTarget.style.borderColor = `${flavor.color}14`;
         }}
       >
         {/* ================= IMAGE SECTION ================= */}
         <div
           className="relative h-36 sm:h-44 md:h-52 w-full overflow-hidden rounded-xl flex items-center justify-center"
-          style={{ backgroundColor: flavor.glass }}
+          style={{
+            backgroundColor: flavor.glass,
+            border: `1px solid ${flavor.color}0f`,
+          }}
         >
+          <div
+            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+            style={{
+              background: `linear-gradient(135deg, ${flavor.color}10 0%, transparent 60%)`,
+            }}
+          />
+
           {/* Discount Badge - themed */}
           {discount > 0 && (
             <span
@@ -143,6 +170,7 @@ const ProductItem = ({
             }`}
             style={{
               backgroundColor: isWishlisted ? undefined : flavor.cardBg,
+              border: `1px solid ${flavor.color}1a`,
             }}
           >
             {isWishlisted ? (
@@ -156,20 +184,20 @@ const ProductItem = ({
           <img
             src={getImageUrl(image)}
             alt={name}
-            className="h-full w-full object-contain mix-blend-multiply p-4 transition-transform duration-500 ease-in-out group-hover:scale-110"
+            className="h-full w-full object-contain mix-blend-multiply p-4 transition-transform duration-500 ease-in-out group-hover:scale-[1.08]"
           />
         </div>
 
         {/* ================= CONTENT SECTION ================= */}
-        <div className="mt-2 sm:mt-4 px-0.5 sm:px-1">
+        <div className="mt-2.5 sm:mt-4 px-0.5 sm:px-1">
           {/* Brand */}
-          <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5 sm:mb-1">
+          <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-1">
             {brand}
           </p>
 
           {/* Title - hover color themed */}
           <h3
-            className="text-[12px] sm:text-[14px] font-bold text-gray-800 leading-snug line-clamp-2 transition-colors duration-300 min-h-[32px] sm:min-h-[40px] group-hover:text-gray-800"
+            className="text-[12px] sm:text-[14px] font-bold text-gray-900 leading-snug line-clamp-2 transition-colors duration-300 min-h-[32px] sm:min-h-[40px] group-hover:text-gray-900"
             style={{}}
           >
             <span className="group-hover:hidden">{name}</span>
@@ -182,7 +210,7 @@ const ProductItem = ({
           </h3>
 
           {/* Ratings - themed stars */}
-          <div className="flex items-center gap-0.5 sm:gap-1 mt-1 sm:mt-2">
+          <div className="flex items-center gap-0.5 sm:gap-1 mt-1.5 sm:mt-2">
             <div className="flex text-[10px] sm:text-xs transition-colors duration-300">
               {renderStars()}
             </div>
@@ -192,7 +220,7 @@ const ProductItem = ({
           </div>
 
           {/* Price Row */}
-          <div className="flex items-end justify-between mt-2 sm:mt-3">
+          <div className="flex items-end justify-between mt-3 sm:mt-4">
             <div className="flex flex-col">
               {originalPrice > price && (
                 <span className="text-[10px] sm:text-xs text-gray-400 line-through font-medium">
@@ -200,48 +228,49 @@ const ProductItem = ({
                 </span>
               )}
               <span
-                className="text-base sm:text-lg font-extrabold transition-colors duration-300"
+                className="text-base sm:text-lg font-extrabold tracking-tight transition-colors duration-300"
                 style={{ color: flavor.color }}
               >
                 ₹{price}
               </span>
             </div>
 
-            {/* Add Button - themed */}
+            {/* Add/Remove Cart Button - themed */}
             <button
               onClick={handleAddToCart}
               disabled={isAddingToCart}
-              className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wide transition-all duration-300 active:scale-95"
+              aria-label={alreadyInCart ? "Remove from cart" : "Add to cart"}
+              title={alreadyInCart ? "Remove from cart" : "Add to cart"}
+              className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wide transition-all duration-300 active:scale-95"
               style={{
-                backgroundColor: alreadyInCart ? "#16a34a" : flavor.color,
+                backgroundColor: alreadyInCart ? "#dc2626" : flavor.color,
                 color: "#ffffff",
                 cursor: "pointer",
+                border: `1px solid ${alreadyInCart ? "#dc2626" : `${flavor.color}cc`}`,
               }}
               onMouseEnter={(e) => {
                 if (!alreadyInCart) {
                   e.currentTarget.style.backgroundColor = flavor.hover;
                   e.currentTarget.style.boxShadow = `0 4px 12px ${flavor.color}40`;
+                } else {
+                  e.currentTarget.style.backgroundColor = "#b91c1c";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!alreadyInCart) {
                   e.currentTarget.style.backgroundColor = flavor.color;
                   e.currentTarget.style.boxShadow = "none";
+                } else {
+                  e.currentTarget.style.backgroundColor = "#dc2626";
                 }
               }}
             >
               {isAddingToCart ? (
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : alreadyInCart ? (
-                <>
-                  <IoMdCart size={16} />
-                  Added
-                </>
+                <MdDeleteOutline size={16} />
               ) : (
-                <>
-                  <IoMdCart size={16} />
-                  Add
-                </>
+                <IoMdCart size={16} />
               )}
             </button>
           </div>

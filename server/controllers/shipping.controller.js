@@ -19,6 +19,7 @@ import {
   loginXpressbees,
   trackShipment,
 } from "../services/xpressbees.service.js";
+import { getShippingQuote, validateIndianPincode } from "../services/shippingRate.service.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 
 const normalizeShipmentStatus = (status) => {
@@ -77,6 +78,29 @@ const updateOrderShipping = async (orderId, updates, context = "shipping") => {
 
   return order;
 };
+
+export const getShippingQuoteController = asyncHandler(async (req, res) => {
+  try {
+    const { pincode, subtotal = 0, paymentType = "prepaid" } = req.body || {};
+
+    if (!validateIndianPincode(pincode)) {
+      throw new AppError("INVALID_FORMAT", {
+        field: "pincode",
+        message: "Pincode must be 6 digits",
+      });
+    }
+
+    const quote = await getShippingQuote({
+      destinationPincode: pincode,
+      subtotal: Number(subtotal || 0),
+      paymentType,
+    });
+
+    return sendSuccess(res, quote, "Shipping quote fetched");
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
 
 export const xpressbeesLogin = asyncHandler(async (req, res) => {
   try {

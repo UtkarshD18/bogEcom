@@ -19,6 +19,7 @@ import {
   updateUserRole,
   updateUserSettings,
   updateUserStatus,
+  updateUserGstNumber,
   verifyEmailController,
   verifyForgotPasswordOTPController,
 } from "../controllers/user.controller.js";
@@ -45,6 +46,7 @@ userRouter.post("/set-backup-password", auth, setBackupPassword); // Protected r
 // User settings routes
 userRouter.get("/settings", auth, getUserSettings);
 userRouter.put("/settings", auth, updateUserSettings);
+userRouter.put("/gst", auth, updateUserGstNumber);
 
 // Get current user details (for session verification)
 userRouter.get("/user-details", auth, async (req, res) => {

@@ -1,4 +1,6 @@
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
+  .trim()
+  .replace(/\/+$/, "");
 const isProduction = process.env.NODE_ENV === "production";
 // Dev-only logging to avoid leaking auth details in production
 const debugLog = (...args) => {

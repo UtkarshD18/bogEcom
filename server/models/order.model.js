@@ -108,6 +108,14 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Location capture (90-day retention logs)
+    locationLog: {
+      type: mongoose.Schema.ObjectId,
+      ref: "UserLocationLog",
+      default: null,
+      index: true,
+    },
+
     // Financial Information
     totalAmt: {
       type: Number,
@@ -128,10 +136,63 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
+    subtotal: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     shipping: {
       type: Number,
       default: 0,
       min: 0,
+    },
+
+    gst: {
+      rate: {
+        type: Number,
+        default: 5,
+        min: 0,
+      },
+      state: {
+        type: String,
+        default: "",
+      },
+      taxableAmount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      cgst: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      sgst: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      igst: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+    },
+
+    gstNumber: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    billingDetails: {
+      fullName: { type: String, default: "" },
+      email: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      address: { type: String, default: "" },
+      pincode: { type: String, default: "" },
+      state: { type: String, default: "" },
     },
 
     notes: {
@@ -144,7 +205,7 @@ const orderSchema = new mongoose.Schema(
     // Payment method tracking
     paymentMethod: {
       type: String,
-      enum: ["RAZORPAY", "PHONEPE", "COD", "PENDING"],
+      enum: ["RAZORPAY", "PHONEPE", "COD", "PENDING", "TEST"],
       default: "PENDING",
     },
 
@@ -155,6 +216,37 @@ const orderSchema = new mongoose.Schema(
     },
 
     discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    membershipDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    membershipPlan: {
+      type: mongoose.Schema.ObjectId,
+      ref: "MembershipPlan",
+      default: null,
+    },
+
+    coinRedemption: {
+      coinsUsed: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      amount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+    },
+
+    coinsAwarded: {
       type: Number,
       default: 0,
       min: 0,
@@ -214,6 +306,14 @@ const orderSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Linked purchase order (if order created from PO flow)
+    purchaseOrder: {
+      type: mongoose.Schema.ObjectId,
+      ref: "PurchaseOrder",
+      default: null,
+      index: true,
+    },
+
     // Original price before any discounts
     originalPrice: {
       type: Number,
@@ -227,6 +327,22 @@ const orderSchema = new mongoose.Schema(
     isSavedOrder: {
       type: Boolean,
       default: false,
+    },
+
+    purchaseOrder: {
+      type: mongoose.Schema.ObjectId,
+      ref: "PurchaseOrder",
+      default: null,
+    },
+
+    guestDetails: {
+      fullName: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      address: { type: String, default: "" },
+      pincode: { type: String, default: "" },
+      state: { type: String, default: "" },
+      email: { type: String, default: "" },
+      gst: { type: String, default: "" },
     },
 
     // ==================== SHIPPING (XPRESSBEES) ====================
@@ -259,10 +375,27 @@ shipment_status: {
   default: "pending",
 },
 
-shipment_created_at: {
+    shipment_created_at: {
   type: Date,
   default: null,
 },
+
+    // ==================== INVOICE ====================
+
+    invoiceNumber: {
+      type: String,
+      default: null,
+    },
+
+    invoicePath: {
+      type: String,
+      default: null,
+    },
+
+    invoiceGeneratedAt: {
+      type: Date,
+      default: null,
+    },
 
     // ==================== END NEW FIELDS ====================
 
@@ -287,6 +420,9 @@ shipment_created_at: {
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ payment_status: 1, order_status: 1 });
 orderSchema.index({ paymentId: 1 });
+orderSchema.index({ invoiceNumber: 1 }, { sparse: true });
+orderSchema.index({ "gst.state": 1, createdAt: -1 });
+orderSchema.index({ purchaseOrder: 1 }, { sparse: true });
 
 // Pre-save hook for validation
 orderSchema.pre("save", async function () {

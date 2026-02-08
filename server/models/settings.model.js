@@ -116,10 +116,10 @@ settingsSchema.statics.defaultSettings = [
   {
     key: "taxSettings",
     value: {
-      enabled: false,
-      taxRate: 0, // Percentage (e.g., 18 for 18% GST)
+      enabled: true,
+      taxRate: 5, // Centralized GST rate
       taxName: "GST",
-      taxIncludedInPrice: true, // If true, prices shown include tax
+      taxIncludedInPrice: false, // Tax is calculated at checkout
     },
     description: "Tax/GST configuration",
     category: "checkout",

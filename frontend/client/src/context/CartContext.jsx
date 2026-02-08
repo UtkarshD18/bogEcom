@@ -14,7 +14,11 @@ import { toast } from "react-hot-toast";
  */
 
 const CartContext = createContext();
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
 // Generate or get session ID for guest carts
 const getSessionId = () => {
@@ -34,6 +38,8 @@ export const CartProvider = ({ children }) => {
   const [cartTotal, setCartTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [orderNote, setOrderNote] = useState("");
 
   // Get user token if logged in
   const getToken = () => {
@@ -154,15 +160,18 @@ export const CartProvider = ({ children }) => {
         setCartCount(data.data.itemCount || 0);
         setCartTotal(data.data.subtotal || 0);
         toast.success(`${product.name} added to cart!`);
+        setIsDrawerOpen(true); // Auto-open drawer
         return { success: true };
       } else {
         // Fallback to local storage
         addToCartLocal(product, quantity);
+        setIsDrawerOpen(true); // Auto-open drawer
         return { success: true };
       }
     } catch (error) {
       console.error("Error adding to cart:", error);
       addToCartLocal(product, quantity);
+      setIsDrawerOpen(true); // Auto-open drawer
       return { success: true };
     } finally {
       setLoading(false);
@@ -384,6 +393,10 @@ export const CartProvider = ({ children }) => {
         isInCart,
         getItemQuantity,
         fetchCart,
+        isDrawerOpen,
+        setIsDrawerOpen,
+        orderNote,
+        setOrderNote,
       }}
     >
       {children}

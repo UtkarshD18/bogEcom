@@ -44,7 +44,7 @@ const AccountSidebar = () => {
       icon: <FiMapPin size={20} />,
     },
     {
-      name: "My List",
+      name: "My Wishlist",
       href: "/my-list",
       icon: <FaRegHeart size={20} />,
     },
@@ -161,7 +161,7 @@ const AccountSidebar = () => {
 
       // Trigger header refresh and redirect
       window.dispatchEvent(new Event("loginSuccess"));
-      router.push("/login");
+      router.push("/logout-confirmation");
     }
   };
 

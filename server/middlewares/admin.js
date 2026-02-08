@@ -61,4 +61,6 @@ const admin = async (req, res, next) => {
   }
 };
 
+// Backward-compatible named export for older route files
+export const isAdmin = admin;
 export default admin;

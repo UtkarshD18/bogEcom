@@ -94,12 +94,19 @@ const BlogsPage = () => {
           </p>
         </div>
 
-        <Link href="/blogs/add-blog">
-          <button className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
-            <MdOutlineArticle size={20} />
-            Add New Blog
-          </button>
-        </Link>
+        <div className="flex items-center gap-3 flex-wrap">
+          <Link href="/blogs-page">
+            <button className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-800 px-6 py-3 rounded-xl shadow-sm hover:shadow transition-all duration-300">
+              Page Settings
+            </button>
+          </Link>
+          <Link href="/blogs/add-blog">
+            <button className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
+              <MdOutlineArticle size={20} />
+              Add New Blog
+            </button>
+          </Link>
+        </div>
       </div>
 
       {/* Blog Cards */}
