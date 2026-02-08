@@ -240,18 +240,30 @@ export function validateProductsArray(products, fieldName = "products") {
       });
     }
 
-    if (Number(product.quantity) < 1) {
+    const quantity = Number(product.quantity);
+    if (!Number.isFinite(quantity) || quantity < 1) {
       throw new AppError("INVALID_QUANTITY", {
         fieldName: `${fieldName}[${index}].quantity`,
         value: product.quantity,
       });
     }
 
-    if (Number(product.price) < 0) {
+    const price = Number(product.price);
+    if (!Number.isFinite(price) || price < 0) {
       throw new AppError("INVALID_AMOUNT", {
         fieldName: `${fieldName}[${index}].price`,
         value: product.price,
       });
+    }
+
+    if (product.subTotal !== undefined) {
+      const subTotal = Number(product.subTotal);
+      if (!Number.isFinite(subTotal) || subTotal < 0) {
+        throw new AppError("INVALID_AMOUNT", {
+          fieldName: `${fieldName}[${index}].subTotal`,
+          value: product.subTotal,
+        });
+      }
     }
   });
 

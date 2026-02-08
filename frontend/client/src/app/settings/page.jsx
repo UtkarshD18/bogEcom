@@ -4,12 +4,18 @@ import { Button, CircularProgress, Switch } from "@mui/material";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
+
 const Settings = () => {
   const [settings, setSettings] = useState({
     emailNotifications: true,
-    pushNotifications: false,
+    pushNotifications: true,
     orderUpdates: true,
-    promotionalEmails: false,
+    promotionalEmails: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -19,13 +25,10 @@ const Settings = () => {
     const fetchSettings = async () => {
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/user/settings`,
+          `${API_URL}/api/user/settings`,
           {
             method: "GET",
             credentials: "include",
-            headers: {
-              "Content-Type": "application/json",
-            },
           },
         );
 
@@ -42,10 +45,10 @@ const Settings = () => {
             emailNotifications:
               data.data.notificationSettings?.emailNotifications ?? true,
             pushNotifications:
-              data.data.notificationSettings?.pushNotifications ?? false,
+              data.data.notificationSettings?.pushNotifications ?? true,
             orderUpdates: data.data.notificationSettings?.orderUpdates ?? true,
             promotionalEmails:
-              data.data.notificationSettings?.promotionalEmails ?? false,
+              data.data.notificationSettings?.promotionalEmails ?? true,
           });
         }
       } catch (error) {
@@ -70,7 +73,7 @@ const Settings = () => {
     setSaving(true);
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/user/settings`,
+        `${API_URL}/api/user/settings`,
         {
           method: "PUT",
           credentials: "include",

@@ -6,7 +6,9 @@
 import { useCallback, useState } from "react";
 import cookies from "js-cookie";
 
-const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000"
+).replace(/\/+$/, "");
 
 const PaymentErrors = {
   NETWORK_ERROR: "Network error. Please check your connection.",

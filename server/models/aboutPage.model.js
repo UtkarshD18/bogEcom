@@ -6,8 +6,29 @@ import mongoose from "mongoose";
  */
 const aboutPageSchema = new mongoose.Schema(
   {
+    theme: {
+      style: {
+        type: String,
+        default: "mint",
+      },
+      layout: {
+        type: String,
+        default: "glass",
+      },
+    },
+    sections: {
+      hero: { type: Boolean, default: true },
+      standard: { type: Boolean, default: true },
+      whyUs: { type: Boolean, default: true },
+      values: { type: Boolean, default: true },
+      cta: { type: Boolean, default: true },
+    },
     // Hero Section
     hero: {
+      badge: {
+        type: String,
+        default: "About Us",
+      },
       title: {
         type: String,
         default: "Nutrition without the",
@@ -20,6 +41,10 @@ const aboutPageSchema = new mongoose.Schema(
         type: String,
         default:
           "We built Buy One Gram to answer a simple question: Why is it so hard to find peanut butter that is exactly what it says it is? No palm oil, no hidden sugars—just pure, verified nutrition.",
+      },
+      image: {
+        type: String,
+        default: "",
       },
     },
 
@@ -37,6 +62,10 @@ const aboutPageSchema = new mongoose.Schema(
         type: String,
         default:
           "The peanut butter industry is crowded with misleading labels. We prefer transparency. Buy One Gram was founded to bridge the gap between premium ingredients and everyday nutrition. We source peanuts based on quality, not cost.",
+      },
+      image: {
+        type: String,
+        default: "",
       },
       stats: [
         {
@@ -123,17 +152,28 @@ const aboutPageSchema = new mongoose.Schema(
 // Static method to get default content
 aboutPageSchema.statics.getDefaultContent = function () {
   return {
+    theme: { style: "mint", layout: "glass" },
+    sections: {
+      hero: true,
+      standard: true,
+      whyUs: true,
+      values: true,
+      cta: true,
+    },
     hero: {
+      badge: "About Us",
       title: "Nutrition without the",
       titleHighlight: "noise.",
       description:
         "We built Buy One Gram to answer a simple question: Why is it so hard to find peanut butter that is exactly what it says it is? No palm oil, no hidden sugars—just pure, verified nutrition.",
+      image: "",
     },
     standard: {
       subtitle: "Our Standard",
       title: 'The "One Gram" Philosophy.',
       description:
         "The peanut butter industry is crowded with misleading labels. We prefer transparency. Buy One Gram was founded to bridge the gap between premium ingredients and everyday nutrition. We source peanuts based on quality, not cost.",
+      image: "",
       stats: [
         { value: "100%", label: "Roasted Peanuts" },
         { value: "0g", label: "Added Sugar" },

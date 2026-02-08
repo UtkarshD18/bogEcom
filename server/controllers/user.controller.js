@@ -894,7 +894,7 @@ export async function deleteUser(req, res) {
 // Get user settings
 export async function getUserSettings(req, res) {
   try {
-    const userId = req.user._id;
+    const userId = req.user?._id || req.user;
 
     const user = await UserModel.findById(userId).select(
       "notificationSettings preferences",
@@ -912,9 +912,9 @@ export async function getUserSettings(req, res) {
     const settings = {
       notificationSettings: user.notificationSettings || {
         emailNotifications: true,
-        pushNotifications: false,
+        pushNotifications: true,
         orderUpdates: true,
-        promotionalEmails: false,
+        promotionalEmails: true,
       },
       preferences: user.preferences || {
         darkMode: false,
@@ -940,7 +940,7 @@ export async function getUserSettings(req, res) {
 // Update user settings
 export async function updateUserSettings(req, res) {
   try {
-    const userId = req.user._id;
+    const userId = req.user?._id || req.user;
     const { notificationSettings, preferences } = req.body;
 
     const updateData = {};
@@ -948,9 +948,9 @@ export async function updateUserSettings(req, res) {
     if (notificationSettings) {
       updateData.notificationSettings = {
         emailNotifications: notificationSettings.emailNotifications ?? true,
-        pushNotifications: notificationSettings.pushNotifications ?? false,
+        pushNotifications: notificationSettings.pushNotifications ?? true,
         orderUpdates: notificationSettings.orderUpdates ?? true,
-        promotionalEmails: notificationSettings.promotionalEmails ?? false,
+        promotionalEmails: notificationSettings.promotionalEmails ?? true,
       };
     }
 
@@ -986,6 +986,50 @@ export async function updateUserSettings(req, res) {
     });
   } catch (error) {
     console.error("Update user settings error:", error);
+    return res.status(500).json({
+      success: false,
+      error: true,
+      message: error.message || error,
+    });
+  }
+}
+
+// Update GST number (User only)
+export async function updateUserGstNumber(req, res) {
+  try {
+    const userId = req.user?._id || req.user;
+    const rawGst = String(req.body?.gstNumber || "").trim().toUpperCase();
+
+    if (rawGst && !/^[0-9A-Z]{15}$/.test(rawGst)) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Invalid GST number format",
+      });
+    }
+
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { $set: { gstNumber: rawGst } },
+      { new: true },
+    ).select("gstNumber");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: true,
+        message: "User not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      error: false,
+      message: "GST number updated",
+      data: { gstNumber: user.gstNumber || "" },
+    });
+  } catch (error) {
+    console.error("Update GST number error:", error);
     return res.status(500).json({
       success: false,
       error: true,

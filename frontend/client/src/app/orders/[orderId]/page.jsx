@@ -25,7 +25,11 @@ import {
   MdWarning,
 } from "react-icons/md";
 
-const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
 /**
  * Order Details Page
@@ -52,6 +56,10 @@ const OrderDetailsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [downloading, setDownloading] = useState({
+    invoice: false,
+    po: false,
+  });
 
   // Fetch order details
   useEffect(() => {
@@ -74,9 +82,9 @@ const OrderDetailsPage = () => {
           {
             method: "GET",
             headers: {
-              "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
+            credentials: "include",
           },
         );
 
@@ -218,6 +226,56 @@ const OrderDetailsPage = () => {
     setShowPaymentModal(true);
   };
 
+  const downloadFile = async (url, filename, key) => {
+    try {
+      setDownloading((prev) => ({ ...prev, [key]: true }));
+      const token = cookies.get("accessToken");
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Download failed");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (downloadError) {
+      setError(downloadError.message || "Failed to download file");
+    } finally {
+      setDownloading((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const handleDownloadInvoice = () => {
+    downloadFile(
+      `${API_URL}/api/orders/${order._id}/invoice`,
+      `invoice-${order._id}.pdf`,
+      "invoice",
+    );
+  };
+
+  const handleDownloadPurchaseOrder = () => {
+    const purchaseOrderId =
+      typeof order?.purchaseOrder === "object"
+        ? order?.purchaseOrder?._id || order?.purchaseOrder?.toString?.() || null
+        : order?.purchaseOrder || null;
+    if (!purchaseOrderId) return;
+    downloadFile(
+      `${API_URL}/api/purchase-orders/${purchaseOrderId}/pdf`,
+      `purchase-order-${String(purchaseOrderId).slice(-8).toUpperCase()}.pdf`,
+      "po",
+    );
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -275,7 +333,7 @@ const OrderDetailsPage = () => {
             <h1 className="text-2xl font-bold text-gray-800 mb-3">
               Order Not Found
             </h1>
-            <p className="text-gray-600 mb-6">We couldn't find this order.</p>
+            <p className="text-gray-600 mb-6">We could not find this order.</p>
             <Link href="/my-orders">
               <Button
                 sx={{
@@ -301,6 +359,22 @@ const OrderDetailsPage = () => {
   const paymentStatus = getPaymentStatusInfo(order.payment_status);
   const OrderStatusIcon = orderStatus.icon;
   const PaymentStatusIcon = paymentStatus.icon;
+  const displaySubtotal =
+    Number(order?.subtotal || 0) > 0
+      ? Number(order.subtotal || 0)
+      : Math.max(
+          Number(order?.totalAmt || 0) -
+            Number(order?.tax || 0) -
+            Number(order?.shipping || 0),
+          0,
+        );
+  const canDownloadInvoice =
+    order?.order_status !== "cancelled" &&
+    (order?.payment_status === "paid" || order?.order_status === "confirmed");
+  const purchaseOrderId =
+    typeof order?.purchaseOrder === "object"
+      ? order?.purchaseOrder?._id || order?.purchaseOrder?.toString?.() || null
+      : order?.purchaseOrder || null;
 
   return (
     <>
@@ -441,21 +515,28 @@ const OrderDetailsPage = () => {
             <div className="space-y-3 text-base">
               <div className="flex justify-between text-gray-600">
                 <span>Subtotal</span>
-                <span>
-                  ₹
-                  {(
-                    order.totalAmt -
-                    (order.tax || 0) -
-                    (order.shipping || 0)
-                  ).toFixed(2)}
-                </span>
+                <span>₹{displaySubtotal.toFixed(2)}</span>
               </div>
+              {Number(order.membershipDiscount || 0) > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>Membership Discount</span>
+                  <span>-₹{Number(order.membershipDiscount || 0).toFixed(2)}</span>
+                </div>
+              )}
               {order.discount > 0 && (
                 <div className="flex justify-between text-green-600">
                   <span>
                     Discount {order.couponCode && `(${order.couponCode})`}
                   </span>
                   <span>-₹{order.discount?.toFixed(2)}</span>
+                </div>
+              )}
+              {Number(order?.coinRedemption?.amount || 0) > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>
+                    Coin Redemption ({Number(order?.coinRedemption?.coinsUsed || 0)} coins)
+                  </span>
+                  <span>-₹{Number(order?.coinRedemption?.amount || 0).toFixed(2)}</span>
                 </div>
               )}
               {order.discountAmount > 0 &&
@@ -502,17 +583,57 @@ const OrderDetailsPage = () => {
               </h2>
               <div className="text-gray-600">
                 <p className="font-medium text-gray-800">
-                  {order.delivery_address.name}
+                  {order.delivery_address.name || order.billingDetails?.fullName}
                 </p>
-                <p>{order.delivery_address.addressLine1}</p>
-                {order.delivery_address.addressLine2 && (
-                  <p>{order.delivery_address.addressLine2}</p>
+                <p>
+                  {order.delivery_address.address_line1 ||
+                    order.delivery_address.addressLine1 ||
+                    order.billingDetails?.address}
+                </p>
+                {(order.delivery_address.address_line2 ||
+                  order.delivery_address.addressLine2) && (
+                  <p>
+                    {order.delivery_address.address_line2 ||
+                      order.delivery_address.addressLine2}
+                  </p>
                 )}
                 <p>
-                  {order.delivery_address.city}, {order.delivery_address.state}{" "}
-                  - {order.delivery_address.pinCode}
+                  {order.delivery_address.city
+                    ? `${order.delivery_address.city}, `
+                    : ""}
+                  {order.delivery_address.state || order.billingDetails?.state} -{" "}
+                  {order.delivery_address.pincode ||
+                    order.delivery_address.pinCode ||
+                    order.billingDetails?.pincode}
                 </p>
-                <p className="mt-2">Phone: {order.delivery_address.mobile}</p>
+                <p className="mt-2">
+                  Phone:{" "}
+                  {order.delivery_address.mobile ||
+                    order.delivery_address.phone ||
+                    order.billingDetails?.phone}
+                </p>
+              </div>
+            </div>
+          )}
+          {!order.delivery_address && order?.billingDetails && (
+            <div className="bg-white rounded-xl shadow-sm p-5 md:p-6 mb-6">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <MdLocalShipping className="text-orange-500" />
+                Billing / Guest Details
+              </h2>
+              <div className="text-gray-600">
+                <p className="font-medium text-gray-800">
+                  {order.billingDetails.fullName || order.guestDetails?.fullName || "Guest"}
+                </p>
+                <p>{order.billingDetails.address || order.guestDetails?.address || "-"}</p>
+                <p>
+                  {order.billingDetails.state || order.guestDetails?.state || "-"} -{" "}
+                  {order.billingDetails.pincode || order.guestDetails?.pincode || "-"}
+                </p>
+                <p className="mt-2">
+                  Phone: {order.billingDetails.phone || order.guestDetails?.phone || "-"}
+                </p>
+                <p>Email: {order.billingDetails.email || order.guestDetails?.email || "-"}</p>
               </div>
             </div>
           )}
@@ -540,6 +661,45 @@ const OrderDetailsPage = () => {
 
           {/* Actions */}
           <div className="flex flex-wrap gap-4 justify-center">
+            {canDownloadInvoice && (
+              <Button
+                onClick={handleDownloadInvoice}
+                disabled={downloading.invoice}
+                variant="contained"
+                sx={{
+                  backgroundColor: "#0f766e",
+                  color: "white",
+                  padding: "12px 24px",
+                  borderRadius: "12px",
+                  fontWeight: 600,
+                  textTransform: "none",
+                  "&:hover": { backgroundColor: "#115e59" },
+                }}
+              >
+                {downloading.invoice ? "Downloading..." : "Download Invoice"}
+              </Button>
+            )}
+            {purchaseOrderId && (
+              <Button
+                onClick={handleDownloadPurchaseOrder}
+                disabled={downloading.po}
+                variant="outlined"
+                sx={{
+                  borderColor: "#0f766e",
+                  color: "#0f766e",
+                  padding: "12px 24px",
+                  borderRadius: "12px",
+                  fontWeight: 600,
+                  textTransform: "none",
+                  "&:hover": {
+                    borderColor: "#115e59",
+                    backgroundColor: "#f0fdfa",
+                  },
+                }}
+              >
+                {downloading.po ? "Downloading..." : "Download Purchase Order"}
+              </Button>
+            )}
             <Link href="/my-orders">
               <Button
                 variant="outlined"

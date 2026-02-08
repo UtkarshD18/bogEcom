@@ -8,11 +8,12 @@ import { IoBagCheckOutline } from "react-icons/io5";
 import { LiaImageSolid } from "react-icons/lia";
 import {
   MdInfoOutline,
+  MdLocalShipping,
+  MdMailOutline,
+  MdNotificationsActive,
   MdOutlineArticle,
   MdOutlineCategory,
-  MdLocalShipping,
-  MdNotificationsActive,
-  MdMailOutline,
+  MdOutlinePolicy,
   MdSettings,
 } from "react-icons/md";
 import { PiImageSquare } from "react-icons/pi";
@@ -94,6 +95,21 @@ const Sidebar = () => {
       name: "Membership",
       icon: <RiVipCrownLine size={22} />,
       href: "/membership",
+    },
+    {
+      name: "Coins",
+      icon: <RiCoupon2Line size={22} />,
+      href: "/coins",
+    },
+    {
+      name: "Policies",
+      icon: <MdOutlinePolicy size={22} />,
+      href: "/policies",
+    },
+    {
+      name: "Cancellation & Return",
+      icon: <MdOutlinePolicy size={22} />,
+      href: "/cancellation-policy",
     },
     {
       name: "About Us",

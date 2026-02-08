@@ -112,12 +112,20 @@ export const addToWishlist = async (req, res) => {
     });
 
     await wishlist.save();
+    await wishlist.populate({
+      path: "items.product",
+      select:
+        "name price originalPrice images thumbnail stock isActive rating brand",
+    });
 
     res.status(200).json({
       error: false,
       success: true,
       message: "Added to wishlist",
-      data: { itemCount: wishlist.itemCount },
+      data: {
+        items: wishlist.items,
+        itemCount: wishlist.itemCount,
+      },
     });
   } catch (error) {
     console.error("Error adding to wishlist:", error);
@@ -161,12 +169,20 @@ export const removeFromWishlist = async (req, res) => {
     }
 
     await wishlist.save();
+    await wishlist.populate({
+      path: "items.product",
+      select:
+        "name price originalPrice images thumbnail stock isActive rating brand",
+    });
 
     res.status(200).json({
       error: false,
       success: true,
       message: "Removed from wishlist",
-      data: { itemCount: wishlist.itemCount },
+      data: {
+        items: wishlist.items,
+        itemCount: wishlist.itemCount,
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -215,12 +231,18 @@ export const toggleWishlist = async (req, res) => {
     }
 
     await wishlist.save();
+    await wishlist.populate({
+      path: "items.product",
+      select:
+        "name price originalPrice images thumbnail stock isActive rating brand",
+    });
 
     res.status(200).json({
       error: false,
       success: true,
       message: isWishlisted ? "Added to wishlist" : "Removed from wishlist",
       data: {
+        items: wishlist.items,
         isWishlisted,
         itemCount: wishlist.itemCount,
       },

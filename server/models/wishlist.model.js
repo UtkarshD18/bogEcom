@@ -51,5 +51,20 @@ wishlistSchema.virtual("itemCount").get(function () {
   return this.items.length;
 });
 
+wishlistSchema.pre("save", function (next) {
+  const seen = new Set();
+  for (const item of this.items || []) {
+    const key = String(item.product || "");
+    if (!key) continue;
+    if (seen.has(key)) {
+      return next(new Error("Duplicate product in wishlist"));
+    }
+    seen.add(key);
+  }
+  return next();
+});
+
+wishlistSchema.index({ user: 1, "items.product": 1 });
+
 const WishlistModel = mongoose.model("Wishlist", wishlistSchema);
 export default WishlistModel;

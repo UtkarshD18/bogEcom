@@ -1,95 +1,111 @@
 "use client";
+
 import AccountSidebar from "@/components/AccountSiderbar";
+import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
-import { Button, CircularProgress } from "@mui/material";
+import { Alert, Button, CircularProgress, Snackbar } from "@mui/material";
 import Rating from "@mui/material/Rating";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { FaHeart } from "react-icons/fa";
 import { IoMdClose } from "react-icons/io";
 
-const MyList = () => {
+const MyWishlistPage = () => {
+  const router = useRouter();
+  const { addToCart } = useCart();
   const { wishlistItems, wishlistCount, loading, removeFromWishlist } =
     useWishlist();
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
 
-  // Helper to get product data from wishlist item
-  const getProduct = (item) => {
-    // item.product can be populated object or just ID
-    // item.productData is the full product for local storage items
-    return item.product && typeof item.product === "object"
+  const getProduct = (item) =>
+    item.product && typeof item.product === "object"
       ? item.product
       : item.productData || item;
-  };
 
-  // Get the original/old price (API uses originalPrice, frontend may use oldPrice)
-  const getOldPrice = (product) => {
-    return product.originalPrice || product.oldPrice || 0;
-  };
+  const getOldPrice = (product) => product.originalPrice || product.oldPrice || 0;
 
-  // Calculate discount percentage
   const calcDiscount = (price, oldPrice) => {
     if (!oldPrice || oldPrice <= price) return 0;
     return Math.round(((oldPrice - price) / oldPrice) * 100);
   };
 
-  return (
-    <section className="bg-gray-100 py-8">
-      <div className="container flex gap-5">
-        {/* Sidebar */}
-        <div className="w-[20%]">
-          <AccountSidebar />
-        </div>
+  const handleAddToCart = async (product) => {
+    try {
+      await addToCart(product, 1);
+      setSnackbar({
+        open: true,
+        message: "Product added to cart",
+        severity: "success",
+      });
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: "Failed to add to cart",
+        severity: "error",
+      });
+    }
+  };
 
-        {/* Center Content */}
-        <div className="flex-1 flex justify-center wrapper w-[60%]">
-          <div className="bg-white shadow-md rounded-md mb-5 w-[70%]">
-            <div className="p-4 flex items-center justify-between border-b border-[rgba(0,0,0,0.2)]">
-              <div className="info">
-                <h4 className="text-[20px] font-[500] text-gray-700">
-                  My List
-                </h4>
-                <p className="text-[15px] text-gray-500">
-                  {wishlistCount > 0 ? (
-                    <>
-                      there are{" "}
-                      <span className="text-primary font-bold">
-                        {wishlistCount}
-                      </span>{" "}
-                      {wishlistCount === 1 ? "product" : "products"} in your My
-                      List
-                    </>
-                  ) : (
-                    "Your wishlist is empty"
-                  )}
+  const handleDirectOrder = async (product) => {
+    try {
+      await addToCart(product, 1);
+      router.push("/checkout");
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: "Unable to start direct order",
+        severity: "error",
+      });
+    }
+  };
+
+  return (
+    <section className="min-h-screen bg-gradient-to-b from-[#f5fbff] to-[#eefbf3] py-8">
+      <div className="container mx-auto px-4">
+        <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-6">
+          <div>
+            <AccountSidebar />
+          </div>
+
+          <div className="rounded-3xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-[0_30px_80px_-45px_rgba(15,23,42,0.4)] p-4 md:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
+                  My Wishlist
+                </h1>
+                <p className="text-sm text-slate-600 mt-1">
+                  {wishlistCount > 0
+                    ? `${wishlistCount} ${wishlistCount === 1 ? "item" : "items"} saved for later`
+                    : "No items saved yet"}
                 </p>
               </div>
             </div>
 
-            {/* Loading State */}
             {loading && (
-              <div className="flex justify-center items-center py-10">
+              <div className="flex items-center justify-center py-16">
                 <CircularProgress />
               </div>
             )}
 
-            {/* Empty State */}
             {!loading && wishlistItems.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-10 gap-4">
-                <FaHeart className="text-gray-300 text-6xl" />
-                <p className="text-gray-500">No items in your wishlist yet</p>
+              <div className="flex flex-col items-center justify-center py-20 gap-4">
+                <FaHeart className="text-slate-300 text-6xl" />
+                <p className="text-slate-500">Your wishlist is empty</p>
                 <Link href="/products">
-                  <Button
-                    variant="contained"
-                    className="!bg-primary !text-white"
-                  >
-                    Browse Products
+                  <Button variant="contained" className="!bg-[#059669] !text-white">
+                    Discover Products
                   </Button>
                 </Link>
               </div>
             )}
 
-            {/* Wishlist Items */}
             {!loading && wishlistItems.length > 0 && (
-              <div className="flex flex-col gap-2 py-3 px-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
                 {wishlistItems.map((item, index) => {
                   const product = getProduct(item);
                   const productId = product._id || product.id || item.product;
@@ -102,58 +118,83 @@ const MyList = () => {
                     "/product_1.png";
 
                   return (
-                    <div
+                    <article
                       key={productId || index}
-                      className="myListBox flex items-center gap-3 border-b border-[rgba(0,0,0,0.2)] py-3"
+                      className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md transition"
                     >
-                      <Link href={`/product/${productId}`}>
-                        <div className="img w-[80px] h-[100px] group">
-                          <img
-                            src={imageUrl}
-                            alt={product.name || "Product"}
-                            className="w-full h-full object-cover transition-all group-hover:scale-105 cursor-pointer"
-                          />
-                        </div>
-                      </Link>
-                      <div className="info flex-col gap-[5px] flex-1">
-                        <span className="text-[13px] text-gray-600">
-                          {product.brand || "Healthy One Gram"}
-                        </span>
-                        <Link href={`/product/${productId}`}>
-                          <h3 className="text-[13px] text-gray-800 font-[500] hover:text-primary cursor-pointer">
-                            {product.name || "Product Name"}
-                          </h3>
+                      <div className="flex gap-4">
+                        <Link href={`/product/${productId}`} className="shrink-0">
+                          <div className="w-[108px] h-[108px] rounded-xl overflow-hidden bg-slate-50">
+                            <img
+                              src={imageUrl}
+                              alt={product.name || "Product"}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
                         </Link>
-                        <Rating
-                          name="read-only"
-                          value={product.rating || 5}
-                          readOnly
-                          size="small"
-                        />
-                        <div className="flex items-center gap-5">
-                          <span className="text-lg font-semibold text-gray-900">
-                            ₹{product.price || 0}
+
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs uppercase tracking-wide text-slate-500">
+                            {product.brand || "Healthy One Gram"}
                           </span>
-                          {oldPrice > 0 && oldPrice > product.price && (
-                            <>
-                              <span className="text-sm text-gray-400 line-through">
-                                ₹{oldPrice}
-                              </span>
-                              <span className="text-primary font-bold text-gray-900 text-[16px]">
-                                {discount}% OFF
-                              </span>
-                            </>
-                          )}
+                          <Link href={`/product/${productId}`}>
+                            <h3 className="text-sm md:text-base font-semibold text-slate-900 hover:text-[#059669] mt-1 line-clamp-2">
+                              {product.name || "Product"}
+                            </h3>
+                          </Link>
+
+                          <div className="mt-2">
+                            <Rating
+                              name={`rating-${productId}`}
+                              value={Number(product.rating || 5)}
+                              readOnly
+                              size="small"
+                            />
+                          </div>
+
+                          <div className="mt-2 flex items-center gap-3 flex-wrap">
+                            <span className="text-lg font-semibold text-slate-900">
+                              ₹{product.price || 0}
+                            </span>
+                            {oldPrice > 0 && oldPrice > product.price && (
+                              <>
+                                <span className="text-sm text-slate-400 line-through">
+                                  ₹{oldPrice}
+                                </span>
+                                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                  {discount}% OFF
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </div>
+
+                        <button
+                          onClick={() => removeFromWishlist(productId)}
+                          className="h-9 w-9 rounded-full grid place-items-center text-slate-500 hover:text-red-600 hover:bg-red-50 transition"
+                          aria-label="Remove from wishlist"
+                        >
+                          <IoMdClose size={20} />
+                        </button>
                       </div>
-                      <Button
-                        className="!w-[50px] !h-[50px] !min-w-[50px] !rounded-full !p-0 text-gray-700 !ml-auto hover:!bg-red-50 hover:!text-red-500"
-                        onClick={() => removeFromWishlist(productId)}
-                        disabled={loading}
-                      >
-                        <IoMdClose size={20} />
-                      </Button>
-                    </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <Button
+                          onClick={() => handleAddToCart(product)}
+                          variant="outlined"
+                          className="!border-slate-300 !text-slate-700 !font-medium !normal-case"
+                        >
+                          Add to Cart
+                        </Button>
+                        <Button
+                          onClick={() => handleDirectOrder(product)}
+                          variant="contained"
+                          className="!bg-[#059669] hover:!bg-[#047857] !font-medium !normal-case"
+                        >
+                          Direct Order
+                        </Button>
+                      </div>
+                    </article>
                   );
                 })}
               </div>
@@ -161,8 +202,16 @@ const MyList = () => {
           </div>
         </div>
       </div>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={3000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+      >
+        <Alert severity={snackbar.severity}>{snackbar.message}</Alert>
+      </Snackbar>
     </section>
   );
 };
 
-export default MyList;
+export default MyWishlistPage;

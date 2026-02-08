@@ -29,7 +29,7 @@ import { MdLocalShipping, MdPolicy, MdVerified } from "react-icons/md";
  */
 const ProductDetailPage = () => {
   const { id } = useParams();
-  const { addToCart } = useCart();
+  const { addToCart, removeFromCart, isInCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
 
   const [product, setProduct] = useState(null);
@@ -81,21 +81,35 @@ const ProductDetailPage = () => {
     }
   }, [id]);
 
-  // Handle Add to Cart
+  // Handle Add to Cart or Remove from Cart (toggle)
   const handleAddToCart = async () => {
     try {
       if (!product) return;
-      await addToCart(product, quantity);
 
-      setSnackbar({
-        open: true,
-        message: "Added to cart!",
-        severity: "success",
-      });
+      const productId = product._id || product.id;
+
+      // Check if already in cart
+      if (isInCart(productId)) {
+        // Remove from cart
+        await removeFromCart(productId);
+        setSnackbar({
+          open: true,
+          message: "Removed from cart!",
+          severity: "success",
+        });
+      } else {
+        // Add to cart
+        await addToCart(product, quantity);
+        setSnackbar({
+          open: true,
+          message: "Added to cart!",
+          severity: "success",
+        });
+      }
     } catch (error) {
       setSnackbar({
         open: true,
-        message: "Failed to add to cart",
+        message: "Failed to update cart",
         severity: "error",
       });
     }
@@ -111,9 +125,7 @@ const ProductDetailPage = () => {
 
       setSnackbar({
         open: true,
-        message: wasWishlisted
-          ? "Removed from wishlist"
-          : "Added to wishlist!",
+        message: wasWishlisted ? "Removed from wishlist" : "Added to wishlist!",
         severity: "success",
       });
     } catch (error) {
@@ -165,7 +177,7 @@ const ProductDetailPage = () => {
           Product Not Found
         </h2>
         <p className="text-gray-500 mb-4">
-          The product you're looking for doesn't exist or has been removed.
+          The product you are looking for does not exist or has been removed.
         </p>
         <Link href="/products">
           <Button variant="contained" style={{ backgroundColor: "#059669" }}>
@@ -183,8 +195,11 @@ const ProductDetailPage = () => {
   const isWishlisted = productId ? isInWishlist(productId) : false;
 
   return (
-    <section className="py-4 sm:py-8 bg-gray-50 min-h-screen">
-      <div className="container px-3 sm:px-4">
+    <section className="py-4 sm:py-10 min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(5,150,105,0.12),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.12),_transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef9f2_100%)]">
+      <div
+        className="container px-3 sm:px-4"
+        style={{ fontFamily: "'Sora', 'Segoe UI', sans-serif" }}
+      >
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-xs sm:text-sm text-gray-500 mb-4 sm:mb-6 overflow-x-auto whitespace-nowrap pb-2">
           <Link href="/" className="hover:text-[#059669]">
@@ -212,7 +227,7 @@ const ProductDetailPage = () => {
         </nav>
 
         {/* Main Product Section */}
-        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm p-4 sm:p-6 md:p-8">
+        <div className="bg-white/75 backdrop-blur-xl border border-white/70 rounded-2xl sm:rounded-3xl shadow-[0_30px_80px_-55px_rgba(15,23,42,0.45)] p-4 sm:p-6 md:p-8 transition-all duration-500">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
             {/* Product Images */}
             <div className="relative">
@@ -234,7 +249,7 @@ const ProductDetailPage = () => {
               )}
 
               {/* Title */}
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-3">
+              <h1 className="text-xl sm:text-2xl md:text-4xl font-semibold tracking-tight text-gray-900 mb-3">
                 {product.name || product.title}
               </h1>
 
@@ -314,14 +329,16 @@ const ProductDetailPage = () => {
 
               {/* Quantity & Add to Cart */}
               <div className="flex flex-wrap items-center gap-4 mb-6">
-                <div className="flex items-center gap-3">
-                  <span className="text-gray-700 font-medium">Qty:</span>
-                  <QtyBox
-                    value={quantity}
-                    onChange={setQuantity}
-                    max={product.stock || 99}
-                  />
-                </div>
+                {!isInCart(product._id || product.id) && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-gray-700 font-medium">Qty:</span>
+                    <QtyBox
+                      value={quantity}
+                      onChange={setQuantity}
+                      max={product.stock || 99}
+                    />
+                  </div>
+                )}
 
                 <Button
                   variant="contained"
@@ -329,39 +346,57 @@ const ProductDetailPage = () => {
                   startIcon={<IoMdCart />}
                   onClick={handleAddToCart}
                   sx={{
-                    backgroundColor: "#059669",
-                    "&:hover": { backgroundColor: "#047857" },
+                    backgroundColor: isInCart(product._id || product.id)
+                      ? "#dc2626"
+                      : "#059669",
+                    "&:hover": {
+                      backgroundColor: isInCart(product._id || product.id)
+                        ? "#b91c1c"
+                        : "#047857",
+                    },
                     padding: "12px 32px",
-                    borderRadius: "12px",
+                    borderRadius: "14px",
                     fontWeight: "bold",
                     textTransform: "none",
                     fontSize: "16px",
+                    boxShadow: isInCart(product._id || product.id)
+                      ? "0 16px 30px -20px rgba(220,38,38,0.85)"
+                      : "0 16px 30px -20px rgba(5,150,105,0.85)",
                   }}
                 >
-                  Add to Cart
+                  {isInCart(product._id || product.id)
+                    ? "Remove from Cart"
+                    : "Add to Cart"}
                 </Button>
 
                 <Button
-                  variant="outlined"
+                  variant={isWishlisted ? "contained" : "outlined"}
                   size="large"
+                  startIcon={
+                    isWishlisted ? (
+                      <IoMdHeart size={20} />
+                    ) : (
+                      <IoMdHeartEmpty size={20} />
+                    )
+                  }
                   onClick={handleWishlistToggle}
                   sx={{
                     borderColor: isWishlisted ? "#ef4444" : "#d1d5db",
-                    color: isWishlisted ? "#ef4444" : "#6b7280",
+                    color: isWishlisted ? "#fff" : "#6b7280",
+                    backgroundColor: isWishlisted ? "#ef4444" : "transparent",
                     "&:hover": {
                       borderColor: "#ef4444",
-                      backgroundColor: "rgba(239, 68, 68, 0.04)",
+                      backgroundColor: isWishlisted
+                        ? "#dc2626"
+                        : "rgba(239, 68, 68, 0.04)",
                     },
                     padding: "12px 16px",
-                    borderRadius: "12px",
-                    minWidth: "auto",
+                    borderRadius: "14px",
+                    textTransform: "none",
+                    fontWeight: 600,
                   }}
                 >
-                  {isWishlisted ? (
-                    <IoMdHeart size={24} />
-                  ) : (
-                    <IoMdHeartEmpty size={24} />
-                  )}
+                  {isWishlisted ? "Wishlisted" : "Add to Wishlist"}
                 </Button>
               </div>
 
@@ -435,7 +470,7 @@ const ProductDetailPage = () => {
         </div>
 
         {/* Tabs Section */}
-        <div className="bg-white rounded-2xl shadow-sm mt-8 p-6 md:p-8">
+        <div className="bg-white/75 backdrop-blur-xl border border-white/70 rounded-2xl sm:rounded-3xl shadow-[0_24px_70px_-50px_rgba(30,41,59,0.55)] mt-8 p-6 md:p-8">
           {/* Tab Headers */}
           <div className="flex border-b border-gray-200">
             {["description", "reviews", "shipping"].map((tab) => (

@@ -1,5 +1,6 @@
 "use client";
 import AccountSidebar from "@/components/AccountSiderbar";
+import UseCurrentLocationGoogleMaps from "@/components/UseCurrentLocationGoogleMaps";
 import {
   Alert,
   Button,
@@ -21,7 +22,22 @@ import { useCallback, useEffect, useState } from "react";
 import { FiCheck, FiEdit2, FiMapPin, FiPlus, FiTrash2 } from "react-icons/fi";
 import { MdHome, MdLocationOn, MdWork } from "react-icons/md";
 
-const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+)
+  .trim()
+  .replace(/\/+$/, "");
+
+const parseResponse = async (response) => {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+  const text = await response.text();
+  return text ? { message: text } : {};
+};
 
 const INDIAN_STATES = [
   "Andhra Pradesh",
@@ -70,6 +86,7 @@ const AddressPage = () => {
   const [editingAddress, setEditingAddress] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [locationPayload, setLocationPayload] = useState(null);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -99,24 +116,32 @@ const AddressPage = () => {
       }
 
       const response = await fetch(`${API_URL}/api/address`, {
+        method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        credentials: "include",
       });
 
-      const data = await response.json();
-      if (data.success) {
+      const data = await parseResponse(response);
+      if (response.ok && data.success) {
         setAddresses(data.data || []);
       } else {
         if (response.status === 401) {
           router.push("/login?redirect=/address");
+        } else {
+          setSnackbar({
+            open: true,
+            message: data.message || "Failed to load addresses",
+            severity: "error",
+          });
         }
       }
     } catch (error) {
-      console.error("Error fetching addresses:", error);
       setSnackbar({
         open: true,
-        message: "Failed to load addresses",
+        message:
+          "Unable to reach server. Please check the backend and API URL.",
         severity: "error",
       });
     } finally {
@@ -142,6 +167,7 @@ const AddressPage = () => {
     });
     setFormErrors({});
     setEditingAddress(null);
+    setLocationPayload(null);
   };
 
   // Open dialog for new address
@@ -164,7 +190,17 @@ const AddressPage = () => {
       addressType: address.addressType || "Home",
     });
     setFormErrors({});
+    setLocationPayload(null);
     setIsDialogOpen(true);
+  };
+
+  const normalizeStateValue = (value) => {
+    const incoming = String(value || "").trim().toLowerCase();
+    if (!incoming) return "";
+    const match = INDIAN_STATES.find(
+      (s) => String(s).trim().toLowerCase() === incoming,
+    );
+    return match || "";
   };
 
   // Handle form change
@@ -212,10 +248,14 @@ const AddressPage = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(formData),
+        credentials: "include",
+        body: JSON.stringify({
+          ...formData,
+          location: locationPayload,
+        }),
       });
 
-      const data = await response.json();
+      const data = await parseResponse(response);
 
       if (data.success) {
         setSnackbar({
@@ -234,7 +274,7 @@ const AddressPage = () => {
         });
       }
     } catch (error) {
-      console.error("Error saving address:", error);
+      console.warn("Address save failed:", error);
       setSnackbar({
         open: true,
         message: "Failed to save address",
@@ -257,9 +297,10 @@ const AddressPage = () => {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        credentials: "include",
       });
 
-      const data = await response.json();
+      const data = await parseResponse(response);
 
       if (data.success) {
         setSnackbar({
@@ -276,7 +317,7 @@ const AddressPage = () => {
         });
       }
     } catch (error) {
-      console.error("Error deleting address:", error);
+      console.warn("Address delete failed:", error);
       setSnackbar({
         open: true,
         message: "Failed to delete address",
@@ -298,10 +339,11 @@ const AddressPage = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          credentials: "include",
         },
       );
 
-      const data = await response.json();
+      const data = await parseResponse(response);
 
       if (data.success) {
         setSnackbar({
@@ -318,7 +360,7 @@ const AddressPage = () => {
         });
       }
     } catch (error) {
-      console.error("Error setting default:", error);
+      console.warn("Address default update failed:", error);
       setSnackbar({
         open: true,
         message: "Failed to update default address",
@@ -533,6 +575,33 @@ const AddressPage = () => {
               size="small"
               placeholder="10-digit mobile number"
             />
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <UseCurrentLocationGoogleMaps
+                onResolved={(loc) => {
+                  setLocationPayload(loc);
+                  setFormData((prev) => ({
+                    ...prev,
+                    address_line1: loc.street || loc.formattedAddress || prev.address_line1,
+                    city: loc.city || prev.city,
+                    pincode: loc.pincode || prev.pincode,
+                    state: normalizeStateValue(loc.state) || prev.state,
+                  }));
+                }}
+                onError={(message) =>
+                  setSnackbar({
+                    open: true,
+                    message,
+                    severity: "error",
+                  })
+                }
+              />
+              {locationPayload?.formattedAddress && (
+                <span className="text-xs text-gray-500">
+                  Location selected
+                </span>
+              )}
+            </div>
 
             <TextField
               name="address_line1"

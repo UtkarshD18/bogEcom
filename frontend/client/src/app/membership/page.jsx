@@ -2,65 +2,131 @@
 
 import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { FaCheck, FaCrown, FaShippingFast } from "react-icons/fa";
+import { useEffect, useMemo, useState } from "react";
+import { FaCheck, FaCrown } from "react-icons/fa";
 import { HiSparkles } from "react-icons/hi2";
-import {
-  IoDiamond,
-  IoGift,
-  IoRocket,
-  IoShield,
-  IoSparkles,
-  IoStar,
-} from "react-icons/io5";
+import { IoSparkles } from "react-icons/io5";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
-// Benefit card data
-const BENEFITS = [
-  {
-    icon: IoStar,
-    title: "Earn Points",
-    description:
-      "Get 1 point for every ₹1 spent. Redeem points for discounts and exclusive products.",
-    gradient: "from-emerald-400 to-teal-500",
+const THEME_PRESETS = {
+  mint: {
+    bg: "from-emerald-50/80 via-white to-teal-50/80",
+    glowA: "bg-emerald-200/40",
+    glowB: "bg-teal-200/30",
+    glowC: "bg-green-200/30",
+    accent: "from-emerald-600 via-teal-600 to-green-600",
+    badge: "from-emerald-500 to-teal-500",
+    glass: "bg-white/70",
+    border: "border-emerald-200/50",
+    text: "text-emerald-700",
   },
-  {
-    icon: IoRocket,
-    title: "Early Access",
-    description:
-      "Be the first to try our latest products before they're available to the public.",
-    gradient: "from-teal-400 to-cyan-500",
+  sky: {
+    bg: "from-sky-50/80 via-white to-cyan-50/80",
+    glowA: "bg-sky-200/40",
+    glowB: "bg-cyan-200/30",
+    glowC: "bg-blue-200/30",
+    accent: "from-sky-600 via-cyan-600 to-blue-600",
+    badge: "from-sky-500 to-cyan-500",
+    glass: "bg-white/70",
+    border: "border-sky-200/50",
+    text: "text-sky-700",
   },
-  {
-    icon: IoDiamond,
-    title: "Special Discounts",
-    description:
-      "Enjoy exclusive pricing and promotions available only to our members.",
-    gradient: "from-cyan-400 to-emerald-500",
+  aurora: {
+    bg: "from-lime-50/70 via-white to-emerald-50/80",
+    glowA: "bg-lime-200/35",
+    glowB: "bg-emerald-200/30",
+    glowC: "bg-teal-200/25",
+    accent: "from-lime-600 via-emerald-600 to-teal-600",
+    badge: "from-lime-500 to-emerald-500",
+    glass: "bg-white/70",
+    border: "border-emerald-200/50",
+    text: "text-emerald-700",
   },
-  {
-    icon: FaShippingFast,
-    title: "Free Shipping",
-    description:
-      "Enjoy free shipping on all orders above ₹500. No hidden charges.",
-    gradient: "from-emerald-500 to-green-500",
+  lavender: {
+    bg: "from-indigo-50/70 via-white to-purple-50/80",
+    glowA: "bg-indigo-200/35",
+    glowB: "bg-purple-200/30",
+    glowC: "bg-fuchsia-200/25",
+    accent: "from-indigo-600 via-purple-600 to-fuchsia-600",
+    badge: "from-indigo-500 to-purple-500",
+    glass: "bg-white/70",
+    border: "border-indigo-200/50",
+    text: "text-indigo-700",
   },
-  {
-    icon: IoGift,
-    title: "Birthday Gifts",
+};
+
+const DEFAULT_CONTENT = {
+  theme: { style: "mint" },
+  hero: {
+    badge: "Premium Membership",
+    title: "Buy One Gram Club",
+    titleHighlight: "Premium",
     description:
-      "Receive special birthday surprises and exclusive member-only offers monthly.",
-    gradient: "from-green-400 to-emerald-500",
+      "Join our exclusive community and unlock premium benefits designed for your wellness journey.",
+    note: "Limited member slots refreshed monthly",
   },
-  {
-    icon: IoShield,
-    title: "VIP Support",
+  benefits: {
+    title: "Unlock Exclusive Benefits",
+    subtitle:
+      "Start earning rewards today and take your health journey to the next level with premium perks.",
+    items: [
+      {
+        icon: "⭐",
+        title: "Earn Points",
+        description:
+          "Get 1 point for every ₹1 spent. Redeem points for discounts and exclusive products.",
+      },
+      {
+        icon: "🚀",
+        title: "Early Access",
+        description:
+          "Be the first to try our latest products before they're available to the public.",
+      },
+      {
+        icon: "💎",
+        title: "Special Discounts",
+        description:
+          "Enjoy exclusive pricing and promotions available only to our members.",
+      },
+      {
+        icon: "🚚",
+        title: "Free Shipping",
+        description:
+          "Enjoy free shipping on all orders above ₹500. No hidden charges.",
+      },
+      {
+        icon: "🎁",
+        title: "Birthday Gifts",
+        description:
+          "Receive special birthday surprises and exclusive member-only offers monthly.",
+      },
+      {
+        icon: "🛡️",
+        title: "VIP Support",
+        description:
+          "Get priority customer support and personalized recommendations.",
+      },
+    ],
+  },
+  pricing: {
+    title: "Simple, honest pricing",
+    subtitle: "One plan. All benefits. Cancel anytime.",
+    ctaText: "Join Membership",
+    note: "Instant access after checkout.",
+  },
+  cta: {
+    title: "Ready to upgrade your daily nutrition?",
     description:
-      "Get priority customer support and personalized recommendations.",
-    gradient: "from-teal-500 to-emerald-600",
+      "Members get early access, exclusive drops, and a smoother checkout experience.",
+    buttonText: "Explore Plans",
+    buttonLink: "/membership",
   },
-];
+};
 
 // Floating particle component
 const FloatingParticle = ({ delay, size, left, duration }) => (
@@ -78,17 +144,17 @@ const FloatingParticle = ({ delay, size, left, duration }) => (
 );
 
 // Benefit Card Component with liquid glass effect
-const BenefitCard = ({ icon: Icon, title, description, gradient, index }) => (
+const BenefitCard = ({ icon, title, description, accent, index }) => (
   <div
     className="group relative overflow-hidden rounded-2xl transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1"
     style={{ animationDelay: `${index * 100}ms` }}
   >
     {/* Glass background */}
-    <div className="absolute inset-0 bg-white/60 backdrop-blur-xl border border-white/40 rounded-2xl shadow-lg shadow-emerald-500/5" />
+    <div className="absolute inset-0 bg-white/60 backdrop-blur-xl border border-white/40 rounded-2xl shadow-lg shadow-black/5" />
 
     {/* Gradient overlay on hover */}
     <div
-      className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-500 rounded-2xl`}
+      className={`absolute inset-0 bg-gradient-to-br ${accent} opacity-0 group-hover:opacity-10 transition-opacity duration-500 rounded-2xl`}
     />
 
     {/* Shine effect */}
@@ -100,12 +166,12 @@ const BenefitCard = ({ icon: Icon, title, description, gradient, index }) => (
     <div className="relative p-6 sm:p-7">
       {/* Icon container */}
       <div
-        className={`w-14 h-14 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}
+        className={`w-14 h-14 rounded-xl bg-gradient-to-br ${accent} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}
       >
-        <Icon className="text-white text-2xl" />
+        <span className="text-white text-2xl">{icon || "⭐"}</span>
       </div>
 
-      <h3 className="text-lg font-bold text-gray-800 mb-2 group-hover:text-emerald-700 transition-colors">
+      <h3 className="text-lg font-bold text-gray-800 mb-2 transition-colors">
         {title}
       </h3>
       <p className="text-gray-600 text-sm leading-relaxed">{description}</p>
@@ -113,7 +179,7 @@ const BenefitCard = ({ icon: Icon, title, description, gradient, index }) => (
 
     {/* Bottom accent line */}
     <div
-      className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${gradient} transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left rounded-b-2xl`}
+      className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${accent} transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left rounded-b-2xl`}
     />
   </div>
 );
@@ -123,6 +189,7 @@ export default function MembershipPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [membershipStatus, setMembershipStatus] = useState(null);
   const [activePlan, setActivePlan] = useState(null);
+  const [pageContent, setPageContent] = useState(DEFAULT_CONTENT);
   const router = useRouter();
 
   useEffect(() => {
@@ -134,13 +201,14 @@ export default function MembershipPage() {
         try {
           const res = await fetch(`${API_URL}/api/membership/status`, {
             headers: { Authorization: `Bearer ${token}` },
+            credentials: "include",
           });
           const data = await res.json();
           if (data.success) {
             setMembershipStatus(data.data);
           }
         } catch (err) {
-          console.error("Failed to fetch membership status:", err);
+          console.warn("Failed to fetch membership status:", err);
         }
       }
       // Fetch active plan
@@ -151,12 +219,44 @@ export default function MembershipPage() {
           setActivePlan(data.data);
         }
       } catch (err) {
-        console.error("Failed to fetch active plan:", err);
+        console.warn("Failed to fetch active plan:", err);
+      }
+      // Fetch membership page content
+      try {
+        const res = await fetch(`${API_URL}/api/membership/page/public`);
+        const data = await res.json();
+        if (data.success && data.data) {
+          setPageContent({
+            ...DEFAULT_CONTENT,
+            ...data.data,
+            hero: { ...DEFAULT_CONTENT.hero, ...(data.data.hero || {}) },
+            benefits: {
+              ...DEFAULT_CONTENT.benefits,
+              ...(data.data.benefits || {}),
+            },
+            pricing: {
+              ...DEFAULT_CONTENT.pricing,
+              ...(data.data.pricing || {}),
+            },
+            cta: { ...DEFAULT_CONTENT.cta, ...(data.data.cta || {}) },
+            theme: {
+              ...DEFAULT_CONTENT.theme,
+              ...(data.data.theme || {}),
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to fetch membership page content:", err);
       }
       setIsLoading(false);
     };
     checkAuth();
   }, []);
+
+  const theme = useMemo(() => {
+    const key = pageContent?.theme?.style || "mint";
+    return THEME_PRESETS[key] || THEME_PRESETS.mint;
+  }, [pageContent]);
 
   const handleSubscribe = () => {
     if (!isLoggedIn) {
@@ -184,16 +284,20 @@ export default function MembershipPage() {
     membershipStatus?.isMember && !membershipStatus?.isExpired;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/80 relative overflow-hidden">
+    <main
+      className={`min-h-screen bg-gradient-to-br ${theme.bg} relative overflow-hidden`}
+    >
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-200/40 rounded-full blur-3xl animate-pulse" />
         <div
-          className="absolute top-40 right-20 w-96 h-96 bg-teal-200/30 rounded-full blur-3xl animate-pulse"
+          className={`absolute top-20 left-10 w-72 h-72 rounded-full blur-3xl animate-pulse ${theme.glowA}`}
+        />
+        <div
+          className={`absolute top-40 right-20 w-96 h-96 rounded-full blur-3xl animate-pulse ${theme.glowB}`}
           style={{ animationDelay: "1s" }}
         />
         <div
-          className="absolute bottom-20 left-1/3 w-80 h-80 bg-green-200/30 rounded-full blur-3xl animate-pulse"
+          className={`absolute bottom-20 left-1/3 w-80 h-80 rounded-full blur-3xl animate-pulse ${theme.glowC}`}
           style={{ animationDelay: "2s" }}
         />
 
@@ -209,30 +313,43 @@ export default function MembershipPage() {
         {/* Header Section */}
         <header className="text-center mb-12 sm:mb-16">
           {/* Crown badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/70 backdrop-blur-lg border border-emerald-200/50 shadow-lg mb-6">
-            <FaCrown className="text-emerald-600" />
-            <span className="text-sm font-semibold text-emerald-700">
-              Premium Membership
+          <div
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${theme.glass} backdrop-blur-lg border ${theme.border} shadow-lg mb-6`}
+          >
+            <FaCrown className={theme.text} />
+            <span className={`text-sm font-semibold ${theme.text}`}>
+              {pageContent?.hero?.badge || "Premium Membership"}
             </span>
             <HiSparkles className="text-amber-500" />
           </div>
 
           {/* Main title */}
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black mb-4">
-            <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-green-600 bg-clip-text text-transparent">
-              {activePlan?.name || "Buy One Gram Club"}
+            <span className={`bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
+              {pageContent?.hero?.title || activePlan?.name || "Buy One Gram Club"}
             </span>
+            {pageContent?.hero?.titleHighlight && (
+              <span className={`block bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
+                {pageContent.hero.titleHighlight}
+              </span>
+            )}
           </h1>
 
           {/* Subtitle */}
           <p className="text-gray-600 text-lg sm:text-xl max-w-2xl mx-auto leading-relaxed mb-8">
-            {activePlan?.description ||
-              "Join our exclusive community and unlock premium benefits designed for your wellness journey"}
+            {pageContent?.hero?.description ||
+              activePlan?.description ||
+              DEFAULT_CONTENT.hero.description}
           </p>
+          {pageContent?.hero?.note && (
+            <p className="text-xs sm:text-sm text-gray-500">
+              {pageContent.hero.note}
+            </p>
+          )}
 
           {/* Active member badge */}
           {isMemberActive && (
-            <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/25">
+            <div className={`inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r ${theme.badge} text-white shadow-xl shadow-black/10`}>
               <FaCheck className="text-lg" />
               <span className="font-bold">You&apos;re a Member!</span>
               <span className="text-emerald-100">
@@ -249,20 +366,29 @@ export default function MembershipPage() {
         <section className="mb-16">
           <div className="text-center mb-10">
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">
-              <span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                Unlock Exclusive Benefits
+              <span className={`bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
+                {pageContent?.benefits?.title || DEFAULT_CONTENT.benefits.title}
               </span>
             </h2>
             <p className="text-gray-600 max-w-xl mx-auto">
-              Start earning rewards today and take your health journey to the
-              next level with premium perks
+              {pageContent?.benefits?.subtitle || DEFAULT_CONTENT.benefits.subtitle}
             </p>
           </div>
 
           {/* Benefits Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-            {BENEFITS.map((benefit, index) => (
-              <BenefitCard key={benefit.title} {...benefit} index={index} />
+            {(pageContent?.benefits?.items?.length
+              ? pageContent.benefits.items
+              : DEFAULT_CONTENT.benefits.items
+            ).map((benefit, index) => (
+              <BenefitCard
+                key={`${benefit.title}-${index}`}
+                icon={benefit.icon}
+                title={benefit.title}
+                description={benefit.description}
+                accent={theme.accent}
+                index={index}
+              />
             ))}
           </div>
         </section>
@@ -274,14 +400,23 @@ export default function MembershipPage() {
             <div className="inline-block mb-8">
               <div className="relative">
                 {/* Glass card */}
-                <div className="relative px-12 py-8 rounded-3xl bg-white/70 backdrop-blur-xl border border-white/50 shadow-2xl shadow-emerald-500/10">
+                <div className={`relative px-12 py-8 rounded-3xl ${theme.glass} backdrop-blur-xl border border-white/50 shadow-2xl shadow-black/10`}>
                   {/* Sparkle decoration */}
                   <IoSparkles className="absolute -top-3 -right-3 text-3xl text-amber-400 animate-pulse" />
+
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
+                      {pageContent?.pricing?.title || DEFAULT_CONTENT.pricing.title}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {pageContent?.pricing?.subtitle || DEFAULT_CONTENT.pricing.subtitle}
+                    </p>
+                  </div>
 
                   {/* Price */}
                   <div className="flex items-baseline justify-center gap-1 mb-2">
                     <span className="text-2xl font-bold text-gray-500">₹</span>
-                    <span className="text-5xl sm:text-6xl font-black bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                    <span className={`text-5xl sm:text-6xl font-black bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
                       {activePlan.price}
                     </span>
                     {activePlan.originalPrice > activePlan.price && (
@@ -296,9 +431,15 @@ export default function MembershipPage() {
                     for {activePlan.duration} {activePlan.durationUnit}
                   </p>
 
+                  {pageContent?.pricing?.note && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      {pageContent.pricing.note}
+                    </p>
+                  )}
+
                   {/* Save badge */}
                   {activePlan.originalPrice > activePlan.price && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-bold shadow-lg">
+                    <div className={`absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r ${theme.badge} text-white text-sm font-bold shadow-lg`}>
                       Save ₹{activePlan.originalPrice - activePlan.price}
                     </div>
                   )}
@@ -317,10 +458,10 @@ export default function MembershipPage() {
                 transition-all duration-300 transform
                 ${
                   isMemberActive
-                    ? "bg-gradient-to-r from-emerald-500 to-teal-500 cursor-default opacity-90"
-                    : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 bg-[length:200%_100%] hover:bg-right hover:scale-105 hover:shadow-2xl hover:shadow-emerald-500/30 active:scale-[0.98]"
+                    ? `bg-gradient-to-r ${theme.badge} cursor-default opacity-90`
+                    : `bg-gradient-to-r ${theme.accent} bg-[length:200%_100%] hover:bg-right hover:scale-105 hover:shadow-2xl hover:shadow-black/20 active:scale-[0.98]`
                 }
-                shadow-xl shadow-emerald-500/20
+                shadow-xl shadow-black/15
               `}
             >
               {/* Button shine effect */}
@@ -339,7 +480,7 @@ export default function MembershipPage() {
                 ) : isLoggedIn ? (
                   <>
                     <FaCrown className="inline mr-2" />
-                    Join Membership
+                    {pageContent?.pricing?.ctaText || DEFAULT_CONTENT.pricing.ctaText}
                   </>
                 ) : (
                   "Login to Join"
@@ -354,6 +495,43 @@ export default function MembershipPage() {
                   ? "Click above to proceed to checkout"
                   : "Login required to activate membership"}
             </p>
+          </div>
+        </section>
+
+        {/* CTA Section */}
+        <section className="mt-16">
+          <div
+            className={`relative overflow-hidden rounded-3xl ${theme.glass} backdrop-blur-xl border border-white/60 shadow-xl shadow-black/10 px-8 sm:px-10 py-10`}
+          >
+            <div className="absolute inset-0 opacity-40">
+              <div
+                className={`absolute -top-20 -right-20 h-48 w-48 rounded-full blur-3xl ${theme.glowB}`}
+              />
+              <div
+                className={`absolute -bottom-24 -left-24 h-56 w-56 rounded-full blur-3xl ${theme.glowA}`}
+              />
+            </div>
+            <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              <div>
+                <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                  {pageContent?.cta?.title || DEFAULT_CONTENT.cta.title}
+                </h3>
+                <p className="text-gray-600 mt-2 max-w-2xl">
+                  {pageContent?.cta?.description || DEFAULT_CONTENT.cta.description}
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  router.push(
+                    pageContent?.cta?.buttonLink ||
+                      DEFAULT_CONTENT.cta.buttonLink,
+                  )
+                }
+                className={`inline-flex items-center justify-center px-8 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r ${theme.accent} shadow-lg shadow-black/15 hover:scale-[1.02] transition-transform`}
+              >
+                {pageContent?.cta?.buttonText || DEFAULT_CONTENT.cta.buttonText}
+              </button>
+            </div>
           </div>
         </section>
       </div>

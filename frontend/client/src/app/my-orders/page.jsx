@@ -5,11 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
 
-const API_BASE_URL =
+const API_BASE_URL = (
   process.env.NEXT_PUBLIC_APP_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000";
-const API_URL = `${API_BASE_URL}/api`;
+  "http://localhost:8000"
+).replace(/\/+$/, "");
+const API_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL
+  : `${API_BASE_URL}/api`;
 
 const getCookieToken = () => {
   if (typeof document === "undefined") return null;

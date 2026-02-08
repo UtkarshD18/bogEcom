@@ -5,12 +5,17 @@
  */
 
 import mongoose from "mongoose";
+import fsPromises from "fs/promises";
+import AddressModel from "../models/address.model.js";
 import CategoryModel from "../models/category.model.js";
 import CouponModel from "../models/coupon.model.js";
+import InvoiceModel from "../models/invoice.model.js";
 import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
+import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
+import { createUserLocationLog } from "../services/userLocationLog.service.js";
 import {
   AppError,
   asyncHandler,
@@ -25,12 +30,24 @@ import {
   syncOrderToFirestore,
 } from "../utils/orderFirestoreSync.js";
 import {
+  generateInvoicePdf,
+  getAbsolutePathFromStoredInvoicePath,
+} from "../utils/generateInvoicePdf.js";
+import {
   calculateInfluencerCommission,
   calculateReferralDiscount,
   updateInfluencerStats,
 } from "./influencer.controller.js";
 import { sendOrderUpdateNotification } from "./notification.controller.js";
+import {
+  applyRedemptionToUser,
+  awardCoinsToUser,
+  calculateRedemption,
+} from "../services/coin.service.js";
+import { applyMembershipDiscount } from "../services/membership.service.js";
 import { createPhonePePayment } from "../services/phonepe.service.js";
+import { getShippingQuote, validateIndianPincode } from "../services/shippingRate.service.js";
+import { calculateTax, splitGstInclusiveAmount } from "../services/tax.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -198,10 +215,414 @@ const validateCouponForOrder = async ({ code, orderAmount, userId }) => {
   return { normalizedCode, discount };
 };
 
+const round2 = (value) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+const normalizeGuestDetails = (guestDetails = {}) => ({
+  fullName: String(guestDetails.fullName || "").trim(),
+  phone: String(guestDetails.phone || "").trim(),
+  address: String(guestDetails.address || "").trim(),
+  pincode: String(guestDetails.pincode || "").trim(),
+  state: String(guestDetails.state || "").trim(),
+  email: String(guestDetails.email || "").trim().toLowerCase(),
+  gst: String(guestDetails.gst || "").trim(),
+});
+
+const validateGuestDetails = (details) => {
+  const requiredFields = [
+    "fullName",
+    "phone",
+    "address",
+    "pincode",
+    "state",
+    "email",
+  ];
+
+  for (const field of requiredFields) {
+    if (!details[field]) {
+      throw new AppError("MISSING_FIELD", { field });
+    }
+  }
+
+  if (!/^\d{10}$/.test(details.phone)) {
+    throw new AppError("INVALID_FORMAT", {
+      field: "phone",
+      message: "Phone must be 10 digits",
+    });
+  }
+  if (!validateIndianPincode(details.pincode)) {
+    throw new AppError("INVALID_FORMAT", {
+      field: "pincode",
+      message: "Pincode must be 6 digits",
+    });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.email)) {
+    throw new AppError("INVALID_FORMAT", {
+      field: "email",
+      message: "Email is invalid",
+    });
+  }
+};
+
+const resolveCheckoutContact = async ({
+  userId,
+  deliveryAddressId,
+  guestDetails,
+}) => {
+  const normalizedGuest = normalizeGuestDetails(guestDetails);
+  let userGstNumber = "";
+  if (userId && !normalizedGuest.gst) {
+    const userRecord = await UserModel.findById(userId)
+      .select("gstNumber")
+      .lean();
+    userGstNumber = userRecord?.gstNumber || "";
+  }
+
+  if (deliveryAddressId) {
+    const address = await AddressModel.findById(deliveryAddressId).lean();
+    if (!address) {
+      throw new AppError("ADDRESS_NOT_FOUND");
+    }
+
+    const derived = {
+      fullName: String(address.name || normalizedGuest.fullName || "").trim(),
+      phone: String(address.mobile || normalizedGuest.phone || "").trim(),
+      address: String(
+        address.address_line1 || normalizedGuest.address || "",
+      ).trim(),
+      pincode: String(address.pincode || normalizedGuest.pincode || "").trim(),
+      state: String(address.state || normalizedGuest.state || "").trim(),
+      email: String(normalizedGuest.email || "").trim().toLowerCase(),
+      gst: normalizedGuest.gst || userGstNumber,
+    };
+
+    if (!userId) {
+      validateGuestDetails(derived);
+    }
+
+    return {
+      contact: derived,
+      addressId: address._id,
+      state: derived.state,
+      pincode: derived.pincode,
+    };
+  }
+
+  if (!userId) {
+    validateGuestDetails(normalizedGuest);
+  }
+
+  return {
+    contact: {
+      ...normalizedGuest,
+      gst: normalizedGuest.gst || userGstNumber,
+    },
+    addressId: null,
+    state: normalizedGuest.state,
+    pincode: normalizedGuest.pincode,
+  };
+};
+
+const normalizeOrderProducts = ({ products, dbProductMap }) => {
+  return products.map((item) => {
+    const productId = String(item.productId || "");
+    const dbProduct = dbProductMap.get(productId);
+    if (!dbProduct) {
+      throw new AppError("PRODUCT_NOT_FOUND", { productId });
+    }
+
+    const quantity = Math.max(Number(item.quantity || 1), 1);
+    const price = round2(Number(dbProduct.price || 0));
+    const subTotal = round2(price * quantity);
+
+    return {
+      productId,
+      productTitle: item.productTitle || dbProduct.name || "Product",
+      quantity,
+      price,
+      image: item.image || dbProduct.images?.[0] || dbProduct.thumbnail || "",
+      subTotal,
+    };
+  });
+};
+
+const authorizePurchaseOrderForCheckout = async ({
+  purchaseOrderId,
+  userId,
+  checkoutContact,
+}) => {
+  if (!purchaseOrderId) return null;
+
+  const purchaseOrder = await PurchaseOrderModel.findById(purchaseOrderId).lean();
+  if (!purchaseOrder) {
+    throw new AppError("NOT_FOUND", {
+      field: "purchaseOrderId",
+      message: "Purchase order not found",
+    });
+  }
+
+  if (purchaseOrder.userId) {
+    if (!userId || String(purchaseOrder.userId) !== String(userId)) {
+      throw new AppError("FORBIDDEN");
+    }
+  } else {
+    const checkoutEmail = String(checkoutContact?.contact?.email || "")
+      .trim()
+      .toLowerCase();
+    const poEmail = String(purchaseOrder?.guestDetails?.email || "")
+      .trim()
+      .toLowerCase();
+
+    if (!checkoutEmail || !poEmail || checkoutEmail !== poEmail) {
+      throw new AppError("FORBIDDEN");
+    }
+  }
+
+  return purchaseOrder;
+};
+
 logger.info(
   "Payment System",
   `Provider: ${PAYMENT_PROVIDER}, EnvEnabled: ${PAYMENT_ENV_ENABLED}`,
 );
+
+const isInvoiceEligible = (order) => {
+  if (!order) return false;
+  if (order.order_status === "cancelled") return false;
+  return order.payment_status === "paid" || order.order_status === "confirmed";
+};
+
+const getInvoiceEligibilityMessage = (order) => {
+  if (!order) return "Order not found";
+  if (order.order_status === "cancelled") {
+    return "Invoice is not available for cancelled orders.";
+  }
+  if (!isInvoiceEligible(order)) {
+    return "Invoice is available after order is paid or confirmed.";
+  }
+  return null;
+};
+
+const extractHsnFromSpecifications = (specifications) => {
+  if (!specifications) return null;
+
+  if (specifications instanceof Map) {
+    return (
+      specifications.get("HSN") ||
+      specifications.get("hsn") ||
+      specifications.get("Hsn") ||
+      null
+    );
+  }
+
+  if (typeof specifications === "object") {
+    return (
+      specifications.HSN ||
+      specifications.hsn ||
+      specifications.Hsn ||
+      null
+    );
+  }
+
+  return null;
+};
+
+const getOrderProductMetadata = async (order) => {
+  const productIds = Array.from(
+    new Set(
+      (order?.products || [])
+        .map((item) => String(item?.productId || ""))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id)),
+    ),
+  );
+
+  if (productIds.length === 0) return {};
+
+  const products = await ProductModel.find({ _id: { $in: productIds } })
+    .select("_id specifications")
+    .lean();
+
+  const metadata = {};
+  products.forEach((product) => {
+    const hsn = extractHsnFromSpecifications(product?.specifications);
+    metadata[String(product._id)] = {
+      hsn: hsn ? String(hsn) : process.env.INVOICE_DEFAULT_HSN || "2106",
+    };
+  });
+
+  return metadata;
+};
+
+const getInvoiceSellerDetails = async () => {
+  const storeInfo = (await getCachedSetting("storeInfo"))?.value || {};
+
+  return {
+    name: process.env.INVOICE_SELLER_NAME || storeInfo.name || "BuyOneGram",
+    gstin: process.env.INVOICE_SELLER_GSTIN || storeInfo.gstNumber || "",
+    address:
+      process.env.INVOICE_SELLER_ADDRESS ||
+      storeInfo.address ||
+      "Address not configured",
+    state: process.env.INVOICE_SELLER_STATE || "Rajasthan",
+    phone: process.env.INVOICE_SELLER_PHONE || storeInfo.phone || "",
+    email: process.env.INVOICE_SELLER_EMAIL || storeInfo.email || "",
+    currencySymbol: storeInfo.currencySymbol || "Rs. ",
+  };
+};
+
+const ensureOrderInvoice = async (orderDoc) => {
+  if (!orderDoc?._id) {
+    return { ok: false, reason: "Order not found" };
+  }
+
+  const eligibilityMessage = getInvoiceEligibilityMessage(orderDoc);
+  if (eligibilityMessage) {
+    return { ok: false, reason: eligibilityMessage };
+  }
+
+  const existingAbsolutePath = getAbsolutePathFromStoredInvoicePath(
+    orderDoc.invoicePath,
+  );
+
+  const populatedOrder =
+    orderDoc?.user?.name && orderDoc?.delivery_address?.address_line1
+      ? orderDoc
+      : await OrderModel.findById(orderDoc._id)
+          .populate("user", "name email")
+          .populate("delivery_address");
+
+  if (!populatedOrder) {
+    return { ok: false, reason: "Order not found" };
+  }
+
+  const [sellerDetails, productMetaById] = await Promise.all([
+    getInvoiceSellerDetails(),
+    getOrderProductMetadata(populatedOrder),
+  ]);
+
+  let generated = null;
+  let absolutePath = existingAbsolutePath;
+  let generatedNewFile = false;
+
+  if (orderDoc.invoicePath && existingAbsolutePath) {
+    try {
+      await fsPromises.access(existingAbsolutePath);
+    } catch {
+      generated = await generateInvoicePdf({
+        order: populatedOrder,
+        sellerDetails,
+        productMetaById,
+      });
+      generatedNewFile = true;
+      absolutePath = generated.absolutePath;
+    }
+  } else {
+    generated = await generateInvoicePdf({
+      order: populatedOrder,
+      sellerDetails,
+      productMetaById,
+    });
+    generatedNewFile = true;
+    absolutePath = generated.absolutePath;
+  }
+
+  if (generated) {
+    orderDoc.invoiceNumber = generated.invoiceNumber;
+    orderDoc.invoicePath = generated.invoicePath;
+    orderDoc.invoiceGeneratedAt = generated.invoiceGeneratedAt;
+    await orderDoc.save();
+  }
+
+  const subtotal = round2(
+    populatedOrder.subtotal ||
+      populatedOrder.products?.reduce(
+        (sum, item) => sum + Number(item.subTotal || 0),
+        0,
+      ) ||
+      0,
+  );
+  const state =
+    populatedOrder.billingDetails?.state ||
+    populatedOrder.guestDetails?.state ||
+    populatedOrder.delivery_address?.state ||
+    "";
+  const taxBreakdownFromService = calculateTax(subtotal, state);
+  const gst = populatedOrder.gst || {};
+  const taxBreakdown = {
+    rate: Number(gst.rate ?? taxBreakdownFromService.rate),
+    state: gst.state || taxBreakdownFromService.state,
+    taxableAmount: Number(
+      gst.taxableAmount ?? taxBreakdownFromService.taxableAmount,
+    ),
+    cgst: Number(gst.cgst ?? taxBreakdownFromService.cgst),
+    sgst: Number(gst.sgst ?? taxBreakdownFromService.sgst),
+    igst: Number(gst.igst ?? taxBreakdownFromService.igst),
+    totalTax: round2(
+      Number(populatedOrder.tax || taxBreakdownFromService.tax || 0),
+    ),
+  };
+
+  const billingDetails = {
+    fullName:
+      populatedOrder.billingDetails?.fullName ||
+      populatedOrder.guestDetails?.fullName ||
+      populatedOrder.delivery_address?.name ||
+      populatedOrder.user?.name ||
+      "",
+    email:
+      populatedOrder.billingDetails?.email ||
+      populatedOrder.guestDetails?.email ||
+      populatedOrder.user?.email ||
+      "",
+    phone:
+      populatedOrder.billingDetails?.phone ||
+      populatedOrder.guestDetails?.phone ||
+      String(populatedOrder.delivery_address?.mobile || ""),
+    address:
+      populatedOrder.billingDetails?.address ||
+      populatedOrder.guestDetails?.address ||
+      populatedOrder.delivery_address?.address_line1 ||
+      "",
+    pincode:
+      populatedOrder.billingDetails?.pincode ||
+      populatedOrder.guestDetails?.pincode ||
+      populatedOrder.delivery_address?.pincode ||
+      "",
+    state,
+  };
+
+  const invoiceNumber =
+    orderDoc.invoiceNumber || generated?.invoiceNumber || orderDoc._id.toString();
+  const invoicePath = orderDoc.invoicePath || generated?.invoicePath || "";
+
+  await InvoiceModel.findOneAndUpdate(
+    { orderId: orderDoc._id },
+    {
+      orderId: orderDoc._id,
+      invoiceNumber,
+      subtotal,
+      taxBreakdown,
+      shipping: round2(populatedOrder.shipping || 0),
+      total: round2(populatedOrder.finalAmount || populatedOrder.totalAmt || 0),
+      gstNumber:
+        populatedOrder.gstNumber ||
+        populatedOrder.guestDetails?.gst ||
+        sellerDetails.gstin ||
+        "",
+      billingDetails,
+      invoicePath,
+      createdBy: orderDoc.user || null,
+    },
+    { upsert: true, new: true, runValidators: true },
+  );
+
+  return {
+    ok: true,
+    generated: generatedNewFile,
+    order: orderDoc,
+    absolutePath,
+  };
+};
 
 // ==================== ADMIN ENDPOINTS ====================
 
@@ -243,6 +664,7 @@ export const getAllOrders = asyncHandler(async (req, res) => {
         .populate("user", "name email avatar mobile")
         .populate("delivery_address")
         .populate("influencerId", "code name")
+        .populate("purchaseOrder", "_id status total createdAt")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -520,6 +942,15 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       })
     );
 
+    if (isInvoiceEligible(order)) {
+      ensureOrderInvoice(order).catch((err) =>
+        logger.error("updateOrderStatus", "Failed to generate invoice", {
+          orderId: id,
+          error: err.message,
+        }),
+      );
+    }
+
     return sendSuccess(res, order, "Order status updated successfully");
   } catch (error) {
     if (error instanceof AppError) {
@@ -540,7 +971,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
  */
 export const getUserOrders = asyncHandler(async (req, res) => {
   try {
-    const userId = req.user || req.query.userId;
+    const userId = req.user;
 
     if (!userId) {
       logger.warn("getUserOrders", "User ID not found in request");
@@ -577,7 +1008,7 @@ export const getUserOrders = asyncHandler(async (req, res) => {
 export const getUserOrderById = asyncHandler(async (req, res) => {
   try {
     const userId = req.user;
-    const { id } = req.params;
+    const id = req.params.orderId || req.params.id;
 
     if (!userId) {
       throw new AppError("UNAUTHORIZED");
@@ -620,6 +1051,76 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Download order invoice (Admin or order owner)
+ * @route GET /api/orders/:orderId/invoice
+ * @access User/Admin
+ */
+export const downloadOrderInvoice = asyncHandler(async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const requesterId = req.user;
+
+    validateMongoId(orderId, "orderId");
+
+    if (!requesterId) {
+      throw new AppError("UNAUTHORIZED");
+    }
+
+    const requester = await UserModel.findById(requesterId).select("_id role");
+    if (!requester) {
+      throw new AppError("UNAUTHORIZED");
+    }
+
+    const order = await OrderModel.findById(orderId)
+      .populate("user", "_id name email")
+      .populate("delivery_address");
+
+    if (!order) {
+      throw new AppError("ORDER_NOT_FOUND");
+    }
+
+    const isAdmin = requester.role === "Admin";
+    const orderUserId = order.user?._id?.toString?.() || order.user?.toString?.();
+
+    if (!isAdmin && (!orderUserId || orderUserId !== requester._id.toString())) {
+      throw new AppError("FORBIDDEN");
+    }
+
+    const invoiceResult = await ensureOrderInvoice(order);
+    if (!invoiceResult.ok) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: invoiceResult.reason,
+      });
+    }
+
+    const filename = `${invoiceResult.order.invoiceNumber || `invoice_${orderId}`}.pdf`;
+
+    return res.download(invoiceResult.absolutePath, filename, (error) => {
+      if (error) {
+        logger.error("downloadOrderInvoice", "Failed to send invoice file", {
+          orderId,
+          error: error.message,
+        });
+
+        if (!res.headersSent) {
+          return sendError(res, error);
+        }
+      }
+      return undefined;
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      return sendError(res, error);
+    }
+
+    const dbError = handleDatabaseError(error, "downloadOrderInvoice");
+    return sendError(res, dbError);
+  }
+});
+
 // ==================== ORDER CREATION & PAYMENT ENDPOINTS ====================
 
 /**
@@ -650,38 +1151,57 @@ export const createOrder = asyncHandler(async (req, res) => {
 
     const {
       products,
-      totalAmt,
       delivery_address,
       couponCode,
       influencerCode,
       notes,
-      tax,
-      shipping,
-      originalAmount,
       affiliateCode,
       affiliateSource,
+      guestDetails,
+      coinRedeem,
+      purchaseOrderId,
+      paymentType,
     } = req.validatedData;
     const userId = req.user || null;
 
-    logger.debug("createOrder", "Creating order", { userId, amount: totalAmt, productCount: products.length });
-
-    // Verify products exist in database
-    const productIds = products.map((p) => p.productId);
-    const dbProducts = await ProductModel.find({
-      _id: { $in: productIds },
+    logger.debug("createOrder", "Creating order", {
+      userId,
+      productCount: products.length,
     });
 
-    if (dbProducts.length !== productIds.length) {
-      const foundIds = dbProducts.map((p) => p._id.toString());
-      const missingIds = productIds.filter((id) => !foundIds.includes(id.toString()));
+    // Verify products exist in database and normalize pricing server-side
+    const productIds = products.map((p) => String(p.productId));
+    const dbProducts = await ProductModel.find({
+      _id: { $in: productIds },
+    })
+      .select("_id name price images thumbnail")
+      .lean();
+    const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
+    const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
+    if (missingIds.length > 0) {
       logger.warn("createOrder", "Some products not found", { missingIds });
       throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
     }
 
-    // Normalize amounts
-    const baseAmount = Number(originalAmount || totalAmt);
-    const taxAmount = Number(tax || 0);
-    const shippingAmount = Number(shipping || 0);
+    const normalizedProducts = normalizeOrderProducts({
+      products,
+      dbProductMap,
+    });
+    const subtotal = round2(
+      normalizedProducts.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
+    );
+
+    const checkoutContact = await resolveCheckoutContact({
+      userId,
+      deliveryAddressId: delivery_address || null,
+      guestDetails: guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
+    });
+
+    const membershipResult = userId
+      ? await applyMembershipDiscount(subtotal, userId)
+      : { membership: null, discount: 0, netSubtotal: subtotal };
+
+    let workingAmount = membershipResult.netSubtotal;
 
     // Calculate influencer discount (if any)
     let influencerDiscount = 0;
@@ -689,18 +1209,19 @@ export const createOrder = asyncHandler(async (req, res) => {
     if (influencerCode) {
       const referralResult = await calculateReferralDiscount(
         influencerCode,
-        baseAmount,
+        workingAmount,
       );
       if (referralResult?.influencer) {
         influencerDiscount = referralResult.discount || 0;
         influencerData = referralResult.influencer;
+        workingAmount = Math.max(round2(workingAmount - influencerDiscount), 0);
       }
     }
 
     // Validate coupon (if provided)
     const couponResult = await validateCouponForOrder({
       code: couponCode,
-      orderAmount: baseAmount,
+      orderAmount: workingAmount,
       userId,
     });
 
@@ -713,42 +1234,117 @@ export const createOrder = asyncHandler(async (req, res) => {
     }
 
     const normalizedCouponCode = couponResult.normalizedCode;
-    const couponDiscount = couponResult.discount || 0;
+    const couponDiscount = Math.min(couponResult.discount || 0, workingAmount);
+    const membershipDiscount = round2(membershipResult.discount || 0);
+    workingAmount = Math.max(round2(workingAmount - couponDiscount), 0);
 
-    const totalDiscount = Math.min(
-      influencerDiscount + couponDiscount,
-      baseAmount,
+    const totalDiscountBeforeCoins = round2(
+      membershipDiscount + influencerDiscount + couponDiscount,
     );
-    const computedFinalAmount = Math.max(
-      Math.round((baseAmount - totalDiscount) * 100) / 100,
-      1,
+    const subtotalAfterDiscount = workingAmount;
+
+    let coinBalance = 0;
+    if (userId) {
+      const user = await UserModel.findById(userId).select("coinBalance").lean();
+      coinBalance = Number(user?.coinBalance || 0);
+    }
+
+    const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
+    const redemption =
+      requestedCoins > 0 && userId
+        ? await calculateRedemption({
+            subtotal: subtotalAfterDiscount,
+            requestedCoins,
+            coinBalance,
+          })
+        : { coinsUsed: 0, redeemAmount: 0 };
+
+    const netInclusiveSubtotal = Math.max(
+      round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
+      0,
     );
+
+    const taxData = splitGstInclusiveAmount(
+      netInclusiveSubtotal,
+      5,
+      checkoutContact.state,
+    );
+    let shippingQuote = {
+      amount: Number(req.validatedData.shipping || 0),
+      source: "client",
+      provider: "INTERNAL",
+    };
+    if (validateIndianPincode(checkoutContact.pincode)) {
+      shippingQuote = await getShippingQuote({
+        destinationPincode: checkoutContact.pincode,
+        subtotal: netInclusiveSubtotal,
+        paymentType: paymentType || "prepaid",
+      });
+    }
+
+    const computedFinalAmount = round2(
+      netInclusiveSubtotal + shippingQuote.amount,
+    );
+    const payableAmount = Math.max(computedFinalAmount, 1);
 
     // Calculate influencer commission based on final amount
     let influencerCommission = 0;
     if (influencerData?._id) {
       influencerCommission = await calculateInfluencerCommission(
         influencerData._id,
-        computedFinalAmount,
+        taxData.taxableAmount,
       );
     }
+
+    const totalDiscount = round2(totalDiscountBeforeCoins);
+
+    const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
+      purchaseOrderId,
+      userId,
+      checkoutContact,
+    });
 
     // Create order in database
     const order = new OrderModel({
       user: userId,
-      products,
-      totalAmt: baseAmount,
-      delivery_address: delivery_address || null,
+      products: normalizedProducts,
+      subtotal: taxData.taxableAmount,
+      totalAmt: computedFinalAmount,
+      delivery_address: checkoutContact.addressId || null,
       payment_status: "pending",
       order_status: "pending",
       paymentMethod: PAYMENT_PROVIDER,
-      originalPrice: baseAmount,
+      originalPrice: subtotal,
       finalAmount: computedFinalAmount,
       couponCode: normalizedCouponCode,
       discountAmount: couponDiscount,
       discount: totalDiscount,
-      tax: taxAmount,
-      shipping: shippingAmount,
+      membershipDiscount,
+      membershipPlan: membershipResult.membership?.planId || null,
+      tax: taxData.tax,
+      shipping: shippingQuote.amount,
+      gst: {
+        rate: taxData.rate,
+        state: taxData.state,
+        taxableAmount: taxData.taxableAmount,
+        cgst: taxData.cgst,
+        sgst: taxData.sgst,
+        igst: taxData.igst,
+      },
+      gstNumber: checkoutContact.contact.gst || "",
+      billingDetails: {
+        fullName: checkoutContact.contact.fullName || "",
+        email: checkoutContact.contact.email || "",
+        phone: checkoutContact.contact.phone || "",
+        address: checkoutContact.contact.address || "",
+        pincode: checkoutContact.contact.pincode || "",
+        state: checkoutContact.contact.state || "",
+      },
+      guestDetails: userId ? {} : checkoutContact.contact,
+      coinRedemption: {
+        coinsUsed: Number(redemption.coinsUsed || 0),
+        amount: Number(redemption.redeemAmount || 0),
+      },
       notes: notes || "",
       influencerId: influencerData?._id || null,
       influencerCode: influencerData?.code || influencerCode || null,
@@ -757,9 +1353,84 @@ export const createOrder = asyncHandler(async (req, res) => {
       affiliateCode: affiliateCode || influencerCode || null,
       affiliateSource:
         affiliateSource || (influencerData ? "referral" : null),
+      purchaseOrder: checkoutPurchaseOrder?._id || null,
     });
 
     await order.save();
+
+    // Location capture (90-day retention). Best-effort and non-blocking.
+    try {
+      let locationForLog = req.validatedData?.location || null;
+      let addressFieldsForLog = {
+        street: checkoutContact?.contact?.address || "",
+        city: "",
+        state: checkoutContact?.contact?.state || "",
+        pincode: checkoutContact?.contact?.pincode || "",
+        country: "India",
+      };
+
+      if (checkoutContact?.addressId) {
+        const addressDoc = await AddressModel.findById(checkoutContact.addressId)
+          .select(
+            [
+              "address_line1",
+              "city",
+              "state",
+              "pincode",
+              "country",
+              "+location.latitude",
+              "+location.longitude",
+              "+location.formattedAddress",
+              "+location.source",
+            ].join(" "),
+          )
+          .lean();
+
+        if (addressDoc) {
+          addressFieldsForLog = {
+            street: String(addressDoc.address_line1 || addressFieldsForLog.street || "").trim(),
+            city: String(addressDoc.city || "").trim(),
+            state: String(addressDoc.state || addressFieldsForLog.state || "").trim(),
+            pincode: String(addressDoc.pincode || addressFieldsForLog.pincode || "").trim(),
+            country: String(addressDoc.country || addressFieldsForLog.country || "India").trim() || "India",
+          };
+
+          const addrLoc = addressDoc.location || null;
+          if (
+            Number.isFinite(Number(addrLoc?.latitude)) &&
+            Number.isFinite(Number(addrLoc?.longitude))
+          ) {
+            locationForLog = {
+              source: addrLoc?.source || "google_maps",
+              latitude: addrLoc.latitude,
+              longitude: addrLoc.longitude,
+              formattedAddress: String(addrLoc.formattedAddress || "").trim(),
+            };
+          }
+        }
+      }
+
+      const log = await createUserLocationLog({
+        userId: userId || null,
+        orderId: order._id,
+        location: locationForLog,
+        addressFields: addressFieldsForLog,
+      });
+
+      order.locationLog = log?._id || null;
+      await order.save();
+    } catch (logErr) {
+      logger.warn("createOrder", "Location log creation failed", {
+        orderId: order?._id,
+        error: logErr?.message || String(logErr),
+      });
+    }
+
+    if (checkoutPurchaseOrder?._id) {
+      await PurchaseOrderModel.findByIdAndUpdate(checkoutPurchaseOrder._id, {
+        $set: { status: "approved" },
+      });
+    }
 
     logger.info("createOrder", "Order created in database", {
       orderId: order._id,
@@ -774,7 +1445,7 @@ export const createOrder = asyncHandler(async (req, res) => {
 
       const merchantTransactionId = `BOG_${order._id}`;
       const merchantUserId = userId ? String(userId) : "guest";
-      const amount = order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
+      const amount = payableAmount;
       const redirectUrl =
         process.env.PHONEPE_ORDER_REDIRECT_URL ||
         process.env.PHONEPE_REDIRECT_URL ||
@@ -790,7 +1461,8 @@ export const createOrder = asyncHandler(async (req, res) => {
         merchantUserId,
         redirectUrl,
         callbackUrl,
-        mobileNumber: req.body?.shippingAddress?.mobile || null,
+        mobileNumber:
+          checkoutContact.contact.phone || req.body?.shippingAddress?.mobile || null,
       });
 
       const paymentUrl =
@@ -852,40 +1524,77 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
   try {
     const {
       products,
-      totalAmt,
       delivery_address,
       couponCode,
       influencerCode,
       affiliateCode,
       affiliateSource,
       notes,
+      guestDetails,
+      coinRedeem,
+      purchaseOrderId,
+      paymentType,
     } = req.validatedData;
 
     const userId = req.user?.id || req.user || req.body.userId || null;
 
     logger.debug("saveOrderForLater", "Saving order for later", {
       userId,
-      amount: totalAmt,
       productCount: products.length,
     });
 
+    const productIds = products.map((p) => String(p.productId));
+    const dbProducts = await ProductModel.find({
+      _id: { $in: productIds },
+    })
+      .select("_id name price images thumbnail")
+      .lean();
+    const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
+    const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
+    if (missingIds.length > 0) {
+      logger.warn("saveOrderForLater", "Some products not found", { missingIds });
+      throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
+    }
+
+    const normalizedProducts = normalizeOrderProducts({
+      products,
+      dbProductMap,
+    });
+    const subtotal = round2(
+      normalizedProducts.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
+    );
+
+    const checkoutContact = await resolveCheckoutContact({
+      userId,
+      deliveryAddressId: delivery_address || null,
+      guestDetails: guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
+    });
+
+    const membershipResult = userId
+      ? await applyMembershipDiscount(subtotal, userId)
+      : { membership: null, discount: 0, netSubtotal: subtotal };
+
     // Backend discount calculation
-    const originalPrice = Number(totalAmt);
-    let workingAmount = originalPrice;
+    const originalPrice = subtotal;
+    let workingAmount = membershipResult.netSubtotal;
     let influencerDiscount = 0;
     let influencerData = null;
     let influencerCommission = 0;
     let couponDiscount = 0;
+    const membershipDiscount = round2(membershipResult.discount || 0);
     let normalizedCouponCode = couponCode ? couponCode.toUpperCase().trim() : null;
 
     // Apply influencer discount first
     if (influencerCode) {
       try {
-        const referralResult = await calculateReferralDiscount(influencerCode, originalPrice);
+        const referralResult = await calculateReferralDiscount(
+          influencerCode,
+          workingAmount,
+        );
         if (referralResult.influencer) {
           influencerDiscount = referralResult.discount;
           influencerData = referralResult.influencer;
-          workingAmount = originalPrice - influencerDiscount;
+          workingAmount = Math.max(round2(workingAmount - influencerDiscount), 0);
           logger.info("saveOrderForLater", "Influencer discount applied", {
             code: influencerCode,
             discount: influencerDiscount,
@@ -903,7 +1612,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     if (couponCode) {
       const couponResult = await validateCouponForOrder({
         code: couponCode,
-        orderAmount: originalPrice,
+        orderAmount: workingAmount,
         userId,
       });
 
@@ -926,13 +1635,64 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       }
     }
 
+    let coinBalance = 0;
+    if (userId) {
+      const user = await UserModel.findById(userId).select("coinBalance").lean();
+      coinBalance = Number(user?.coinBalance || 0);
+    }
+
+    const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
+    const redemption =
+      requestedCoins > 0 && userId
+        ? await calculateRedemption({
+            subtotal: workingAmount,
+            requestedCoins,
+            coinBalance,
+          })
+        : { coinsUsed: 0, redeemAmount: 0 };
+
+    const netInclusiveSubtotal = Math.max(
+      round2(workingAmount - Number(redemption.redeemAmount || 0)),
+      0,
+    );
+    const taxData = splitGstInclusiveAmount(
+      netInclusiveSubtotal,
+      5,
+      checkoutContact.state,
+    );
+    let shippingQuote = {
+      amount: Number(req.validatedData.shipping || 0),
+      source: "client",
+      provider: "INTERNAL",
+    };
+    if (validateIndianPincode(checkoutContact.pincode)) {
+      shippingQuote = await getShippingQuote({
+        destinationPincode: checkoutContact.pincode,
+        subtotal: netInclusiveSubtotal,
+        paymentType: paymentType || "prepaid",
+      });
+    }
+
     // Calculate final amount
-    const finalOrderAmount = Math.max(Math.round(workingAmount * 100) / 100, 1);
-    const totalDiscount = influencerDiscount + couponDiscount;
+    const finalOrderAmount = round2(
+      netInclusiveSubtotal + shippingQuote.amount,
+    );
+    const totalDiscount = round2(
+      membershipDiscount + influencerDiscount + couponDiscount,
+    );
+
+    const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
+      purchaseOrderId,
+      userId,
+      checkoutContact,
+    });
 
     // Calculate influencer commission
     if (influencerData) {
-      influencerCommission = await calculateInfluencerCommission(influencerData._id, finalOrderAmount);
+      influencerCommission = await calculateInfluencerCommission(
+        influencerData._id,
+        taxData.taxableAmount,
+      );
       logger.info("saveOrderForLater", "Influencer commission calculated", {
         commission: influencerCommission,
       });
@@ -941,15 +1701,18 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     // Create saved order
     const savedOrder = new OrderModel({
       user: userId,
-      products,
-      totalAmt: originalPrice,
-      delivery_address: delivery_address || null,
+      products: normalizedProducts,
+      subtotal: taxData.taxableAmount,
+      totalAmt: finalOrderAmount,
+      delivery_address: checkoutContact.addressId || null,
       order_status: "pending_payment",
       payment_status: "unavailable",
       paymentMethod: "PENDING",
       couponCode: normalizedCouponCode || null,
       discountAmount: couponDiscount,
       discount: totalDiscount,
+      membershipDiscount,
+      membershipPlan: membershipResult.membership?.planId || null,
       finalAmount: finalOrderAmount,
       influencerId: influencerData?._id || null,
       influencerCode: influencerData?.code || null,
@@ -957,14 +1720,113 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       influencerCommission,
       commissionPaid: false,
       originalPrice,
+      tax: taxData.tax,
+      shipping: shippingQuote.amount,
+      gst: {
+        rate: taxData.rate,
+        state: taxData.state,
+        taxableAmount: taxData.taxableAmount,
+        cgst: taxData.cgst,
+        sgst: taxData.sgst,
+        igst: taxData.igst,
+      },
+      gstNumber: checkoutContact.contact.gst || "",
+      billingDetails: {
+        fullName: checkoutContact.contact.fullName || "",
+        email: checkoutContact.contact.email || "",
+        phone: checkoutContact.contact.phone || "",
+        address: checkoutContact.contact.address || "",
+        pincode: checkoutContact.contact.pincode || "",
+        state: checkoutContact.contact.state || "",
+      },
+      guestDetails: userId ? {} : checkoutContact.contact,
+      coinRedemption: {
+        coinsUsed: Number(redemption.coinsUsed || 0),
+        amount: Number(redemption.redeemAmount || 0),
+      },
       affiliateCode: affiliateCode || influencerCode || null,
       affiliateSource:
         affiliateSource || (influencerCode ? "referral" : null),
+      purchaseOrder: checkoutPurchaseOrder?._id || null,
       isSavedOrder: true,
       notes: notes || "Order saved - awaiting payment gateway activation",
     });
 
     await savedOrder.save();
+
+    // Location capture (90-day retention). Best-effort and non-blocking.
+    try {
+      let locationForLog = req.validatedData?.location || null;
+      let addressFieldsForLog = {
+        street: checkoutContact?.contact?.address || "",
+        city: "",
+        state: checkoutContact?.contact?.state || "",
+        pincode: checkoutContact?.contact?.pincode || "",
+        country: "India",
+      };
+
+      if (checkoutContact?.addressId) {
+        const addressDoc = await AddressModel.findById(checkoutContact.addressId)
+          .select(
+            [
+              "address_line1",
+              "city",
+              "state",
+              "pincode",
+              "country",
+              "+location.latitude",
+              "+location.longitude",
+              "+location.formattedAddress",
+              "+location.source",
+            ].join(" "),
+          )
+          .lean();
+
+        if (addressDoc) {
+          addressFieldsForLog = {
+            street: String(addressDoc.address_line1 || addressFieldsForLog.street || "").trim(),
+            city: String(addressDoc.city || "").trim(),
+            state: String(addressDoc.state || addressFieldsForLog.state || "").trim(),
+            pincode: String(addressDoc.pincode || addressFieldsForLog.pincode || "").trim(),
+            country: String(addressDoc.country || addressFieldsForLog.country || "India").trim() || "India",
+          };
+
+          const addrLoc = addressDoc.location || null;
+          if (
+            Number.isFinite(Number(addrLoc?.latitude)) &&
+            Number.isFinite(Number(addrLoc?.longitude))
+          ) {
+            locationForLog = {
+              source: addrLoc?.source || "google_maps",
+              latitude: addrLoc.latitude,
+              longitude: addrLoc.longitude,
+              formattedAddress: String(addrLoc.formattedAddress || "").trim(),
+            };
+          }
+        }
+      }
+
+      const log = await createUserLocationLog({
+        userId: userId || null,
+        orderId: savedOrder._id,
+        location: locationForLog,
+        addressFields: addressFieldsForLog,
+      });
+
+      savedOrder.locationLog = log?._id || null;
+      await savedOrder.save();
+    } catch (logErr) {
+      logger.warn("saveOrderForLater", "Location log creation failed", {
+        orderId: savedOrder?._id,
+        error: logErr?.message || String(logErr),
+      });
+    }
+
+    if (checkoutPurchaseOrder?._id) {
+      await PurchaseOrderModel.findByIdAndUpdate(checkoutPurchaseOrder._id, {
+        $set: { status: "approved" },
+      });
+    }
 
     logger.info("saveOrderForLater", "Order saved for later", { orderId: savedOrder._id });
 
@@ -989,8 +1851,12 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         paymentStatus: savedOrder.payment_status,
         pricing: {
           originalAmount: originalPrice,
+          membershipDiscount,
           influencerDiscount,
           couponDiscount,
+          coinRedeemAmount: Number(redemption.redeemAmount || 0),
+          tax: taxData.tax,
+          shipping: shippingQuote.amount,
           totalDiscount,
           finalAmount: finalOrderAmount,
         },
@@ -1108,7 +1974,31 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     order.updatedAt = new Date();
     await order.save();
 
+    if (isInvoiceEligible(order)) {
+      ensureOrderInvoice(order).catch((err) =>
+        logger.error("handlePhonePeWebhook", "Failed to generate invoice", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+    }
+
     if (!wasPaid && order.payment_status === "paid") {
+      // Deduct redeemed coins only after payment is successful.
+      if (order.user && Number(order.coinRedemption?.coinsUsed || 0) > 0) {
+        try {
+          await applyRedemptionToUser({
+            userId: order.user,
+            coinsUsed: Number(order.coinRedemption.coinsUsed || 0),
+          });
+        } catch (coinError) {
+          logger.error("handlePhonePeWebhook", "Failed to deduct redeemed coins", {
+            orderId: order._id,
+            error: coinError.message,
+          });
+        }
+      }
+
       // Record coupon usage (idempotent)
       if (order.couponCode) {
         recordCouponUsage(order).catch((err) =>
@@ -1144,6 +2034,28 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
               },
             ),
           );
+      }
+
+      if (order.user) {
+        try {
+          const effectiveAmount = Math.max(
+            Number(order.subtotal || 0) - Number(order.discount || 0),
+            0,
+          );
+          const awardResult = await awardCoinsToUser({
+            userId: order.user,
+            orderAmount: effectiveAmount,
+          });
+          if (awardResult.coinsAwarded > 0) {
+            order.coinsAwarded = awardResult.coinsAwarded;
+            await order.save();
+          }
+        } catch (coinError) {
+          logger.error("handlePhonePeWebhook", "Failed to award coins", {
+            orderId: order._id,
+            error: coinError.message,
+          });
+        }
       }
     }
 
@@ -1224,6 +2136,15 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     });
 
     await testOrder.save();
+
+    if (isInvoiceEligible(testOrder)) {
+      ensureOrderInvoice(testOrder).catch((err) =>
+        logger.error("createTestOrder", "Failed to generate invoice", {
+          orderId: testOrder._id,
+          error: err.message,
+        }),
+      );
+    }
 
     logger.info("createTestOrder", "Test order created", { orderId: testOrder._id });
 

@@ -29,6 +29,12 @@ const userSchema = mongoose.Schema(
       type: Number,
       default: null,
     },
+    gstNumber: {
+      type: String,
+      default: "",
+      trim: true,
+      uppercase: true,
+    },
     verifyEmail: {
       type: Boolean,
       default: false,
@@ -105,12 +111,17 @@ const userSchema = mongoose.Schema(
       type: String,
       default: null,
     },
+    coinBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     // Notification Settings
     notificationSettings: {
       emailNotifications: { type: Boolean, default: true },
-      pushNotifications: { type: Boolean, default: false },
+      pushNotifications: { type: Boolean, default: true },
       orderUpdates: { type: Boolean, default: true },
-      promotionalEmails: { type: Boolean, default: false },
+      promotionalEmails: { type: Boolean, default: true },
     },
     // Appearance Settings
     preferences: {

@@ -31,7 +31,9 @@ const isPaymentEnabled = () => {
  */
 export const getActivePlan = async (req, res) => {
   try {
-    const plan = await MembershipPlanModel.findOne({ isActive: true });
+    const plan = await MembershipPlanModel.findOne({
+      $or: [{ isActive: true }, { active: true }],
+    });
 
     if (!plan) {
       return res.status(404).json({
@@ -330,6 +332,9 @@ export const createPlan = async (req, res) => {
       name,
       description,
       price,
+      durationDays,
+      discountPercentage,
+      active,
       originalPrice,
       duration,
       durationUnit,
@@ -349,11 +354,16 @@ export const createPlan = async (req, res) => {
       name,
       description,
       price,
+      durationDays: Number(durationDays || duration || 365),
+      discountPercentage: Number(
+        discountPercentage ?? req.body.discountPercent ?? 0,
+      ),
+      active: Boolean(active ?? isActive ?? false),
       originalPrice,
-      duration,
-      durationUnit,
+      duration: Number(duration || durationDays || 365),
+      durationUnit: durationUnit || "days",
       benefits: benefits || [],
-      isActive: isActive || false,
+      isActive: Boolean(isActive ?? active ?? false),
     });
 
     await plan.save();
@@ -381,7 +391,30 @@ export const createPlan = async (req, res) => {
 export const updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    const updates = { ...req.body };
+
+    if (updates.durationDays !== undefined || updates.duration !== undefined) {
+      updates.durationDays = Number(updates.durationDays || updates.duration);
+      updates.duration = Number(updates.duration || updates.durationDays);
+      updates.durationUnit = "days";
+    }
+
+    if (
+      updates.discountPercentage !== undefined ||
+      updates.discountPercent !== undefined
+    ) {
+      const value = Number(
+        updates.discountPercentage ?? updates.discountPercent ?? 0,
+      );
+      updates.discountPercentage = value;
+      updates.discountPercent = value;
+    }
+
+    if (updates.active !== undefined || updates.isActive !== undefined) {
+      const activeValue = Boolean(updates.active ?? updates.isActive);
+      updates.active = activeValue;
+      updates.isActive = activeValue;
+    }
 
     const plan = await MembershipPlanModel.findByIdAndUpdate(id, updates, {
       new: true,
@@ -454,12 +487,12 @@ export const activatePlan = async (req, res) => {
     const { id } = req.params;
 
     // Deactivate all plans
-    await MembershipPlanModel.updateMany({}, { isActive: false });
+    await MembershipPlanModel.updateMany({}, { isActive: false, active: false });
 
     // Activate selected plan
     const plan = await MembershipPlanModel.findByIdAndUpdate(
       id,
-      { isActive: true },
+      { isActive: true, active: true },
       { new: true },
     );
 

@@ -1,6 +1,12 @@
 import Cookies from "js-cookie";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+const appUrl = (
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000"
+)
+  .trim()
+  .replace(/\/+$/, "");
 
 const refreshAccessToken = async () => {
   try {

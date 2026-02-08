@@ -6,6 +6,110 @@
 import { AppError, validateAmount, validateMongoId, validateProductsArray } from "../utils/errorHandler.js";
 import mongoose from "mongoose";
 
+const calculateProductsSubtotal = (products = []) =>
+  Number(
+    products.reduce(
+      (sum, item) =>
+        sum +
+        Number(
+          item.subTotal || Number(item.price || 0) * Number(item.quantity || 0),
+        ),
+      0,
+    ) || 0,
+  );
+
+const normalizeGuestDetails = (guestDetails = {}) => ({
+  fullName: String(guestDetails.fullName || "").trim(),
+  phone: String(guestDetails.phone || "").trim(),
+  address: String(guestDetails.address || "").trim(),
+  pincode: String(guestDetails.pincode || "").trim(),
+  state: String(guestDetails.state || "").trim(),
+  email: String(guestDetails.email || "").trim().toLowerCase(),
+  gst: String(guestDetails.gst || "").trim(),
+});
+
+const normalizeLocationPayload = (location = null) => {
+  if (!location || typeof location !== "object") return null;
+
+  const source =
+    String(location.source || "").toLowerCase() === "google_maps"
+      ? "google_maps"
+      : "manual";
+
+  const latitude =
+    location.latitude !== undefined && location.latitude !== null
+      ? Number(location.latitude)
+      : null;
+  const longitude =
+    location.longitude !== undefined && location.longitude !== null
+      ? Number(location.longitude)
+      : null;
+
+  if (source === "google_maps") {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      throw new AppError("INVALID_FORMAT", {
+        field: "location",
+        message: "Google Maps location must include valid latitude/longitude",
+      });
+    }
+  }
+
+  return {
+    source,
+    latitude: Number.isFinite(latitude) ? latitude : null,
+    longitude: Number.isFinite(longitude) ? longitude : null,
+    formattedAddress: String(location.formattedAddress || "").trim(),
+    street: String(location.street || "").trim(),
+    city: String(location.city || "").trim(),
+    state: String(location.state || "").trim(),
+    pincode: String(location.pincode || "").trim(),
+    country: String(location.country || "").trim(),
+  };
+};
+
+const validateGuestDetails = (guestDetails) => {
+  const hasAnyGuestField = Object.values(guestDetails).some(Boolean);
+  if (!hasAnyGuestField) return;
+
+  const requiredFields = [
+    "fullName",
+    "phone",
+    "address",
+    "pincode",
+    "state",
+    "email",
+  ];
+
+  for (const field of requiredFields) {
+    if (!guestDetails[field]) {
+      throw new AppError("MISSING_FIELD", {
+        field: `guestDetails.${field}`,
+      });
+    }
+  }
+
+  if (!/^\d{10}$/.test(guestDetails.phone)) {
+    throw new AppError("INVALID_FORMAT", {
+      field: "guestDetails.phone",
+      message: "Phone must be 10 digits",
+    });
+  }
+
+  if (!/^\d{6}$/.test(guestDetails.pincode)) {
+    throw new AppError("INVALID_FORMAT", {
+      field: "guestDetails.pincode",
+      message: "Pincode must be 6 digits",
+    });
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestDetails.email)) {
+    throw new AppError("INVALID_FORMAT", {
+      field: "guestDetails.email",
+      message: "Invalid email format",
+    });
+  }
+};
+
 /**
  * Validate Create Order Request
  * Ensures all required fields are present and properly formatted
@@ -26,17 +130,30 @@ export const validateCreateOrderRequest = (req, res, next) => {
       originalAmount,
       affiliateCode,
       affiliateSource,
+      guestDetails,
+      coinRedeem,
+      purchaseOrderId,
+      paymentType,
+      location,
     } = req.body;
 
     // Validate products array
     validateProductsArray(products, "products");
 
-    // Validate total amount
-    validateAmount(totalAmt, "totalAmt", 1);
+    // Validate total amount (fallback to subtotal if omitted by client)
+    const subtotalFromProducts = calculateProductsSubtotal(products);
+    const validatedTotal =
+      totalAmt !== undefined
+        ? validateAmount(totalAmt, "totalAmt", 0)
+        : subtotalFromProducts;
 
     // Validate delivery_address if provided
     if (delivery_address) {
       validateMongoId(delivery_address, "delivery_address");
+    }
+
+    if (purchaseOrderId) {
+      validateMongoId(purchaseOrderId, "purchaseOrderId");
     }
 
     // Optional monetary fields
@@ -56,6 +173,39 @@ export const validateCreateOrderRequest = (req, res, next) => {
       originalAmount !== undefined
         ? validateAmount(originalAmount, "originalAmount", 1)
         : null;
+    const validatedCoinRedeem =
+      coinRedeem !== undefined
+        ? validateAmount(
+            typeof coinRedeem === "object" ? coinRedeem.coins : coinRedeem,
+            "coinRedeem",
+            0,
+          )
+        : 0;
+
+    const normalizedGuest = normalizeGuestDetails(guestDetails || {});
+    const normalizedLocation = normalizeLocationPayload(location || null);
+    const hasGuestIdentity = [
+      "fullName",
+      "phone",
+      "address",
+      "pincode",
+      "state",
+      "email",
+    ].some((field) => Boolean(normalizedGuest[field]));
+    if (!req.user || hasGuestIdentity) {
+      validateGuestDetails(normalizedGuest);
+    }
+
+    const allowedPaymentTypes = ["prepaid", "cod", "reverse"];
+    const normalizedPaymentType = paymentType
+      ? String(paymentType).toLowerCase()
+      : "prepaid";
+    if (!allowedPaymentTypes.includes(normalizedPaymentType)) {
+      throw new AppError("INVALID_FORMAT", {
+        field: "paymentType",
+        validValues: allowedPaymentTypes,
+      });
+    }
 
     // Validate coupon code format (alphanumeric, underscore, hyphen)
     if (couponCode && typeof couponCode === "string") {
@@ -120,7 +270,7 @@ export const validateCreateOrderRequest = (req, res, next) => {
     // Store validated data back to req.body
     req.validatedData = {
       products,
-      totalAmt: Number(totalAmt),
+      totalAmt: Number(validatedTotal),
       delivery_address: delivery_address || null,
       couponCode: couponCode ? String(couponCode).trim() : null,
       discountAmount: validatedDiscount ?? null,
@@ -132,6 +282,10 @@ export const validateCreateOrderRequest = (req, res, next) => {
       originalAmount: validatedOriginal,
       affiliateCode: affiliateCode ? String(affiliateCode).trim() : null,
       affiliateSource: affiliateSource ? String(affiliateSource) : null,
+      guestDetails: normalizedGuest,
+      coinRedeem: validatedCoinRedeem,
+      purchaseOrderId: purchaseOrderId || null,
+      paymentType: normalizedPaymentType,
     };
 
     next();
@@ -172,13 +326,22 @@ export const validateSaveOrderRequest = (req, res, next) => {
       affiliateCode,
       affiliateSource,
       notes,
+      guestDetails,
+      coinRedeem,
+      purchaseOrderId,
+      paymentType,
+      location,
     } = req.body;
 
     // Validate products array
     validateProductsArray(products, "products");
 
     // Validate total amount
-    const totalAmount = validateAmount(totalAmt, "totalAmt", 1);
+    const subtotalFromProducts = calculateProductsSubtotal(products);
+    const totalAmount =
+      totalAmt !== undefined
+        ? validateAmount(totalAmt, "totalAmt", 0)
+        : subtotalFromProducts;
 
     // Validate discount amounts if provided
     if (discountAmount !== undefined) {
@@ -205,6 +368,43 @@ export const validateSaveOrderRequest = (req, res, next) => {
     // Validate delivery_address if provided
     if (delivery_address && !mongoose.Types.ObjectId.isValid(delivery_address)) {
       throw new AppError("INVALID_OBJECT_ID", { field: "delivery_address" });
+    }
+    if (purchaseOrderId && !mongoose.Types.ObjectId.isValid(purchaseOrderId)) {
+      throw new AppError("INVALID_OBJECT_ID", { field: "purchaseOrderId" });
+    }
+
+    const normalizedGuest = normalizeGuestDetails(guestDetails || {});
+    const normalizedLocation = normalizeLocationPayload(location || null);
+    const hasGuestIdentity = [
+      "fullName",
+      "phone",
+      "address",
+      "pincode",
+      "state",
+      "email",
+    ].some((field) => Boolean(normalizedGuest[field]));
+    if (!req.user || hasGuestIdentity) {
+      validateGuestDetails(normalizedGuest);
+    }
+
+    const validatedCoinRedeem =
+      coinRedeem !== undefined
+        ? validateAmount(
+            typeof coinRedeem === "object" ? coinRedeem.coins : coinRedeem,
+            "coinRedeem",
+            0,
+          )
+        : 0;
+
+    const allowedPaymentTypes = ["prepaid", "cod", "reverse"];
+    const normalizedPaymentType = paymentType
+      ? String(paymentType).toLowerCase()
+      : "prepaid";
+    if (!allowedPaymentTypes.includes(normalizedPaymentType)) {
+      throw new AppError("INVALID_FORMAT", {
+        field: "paymentType",
+        validValues: allowedPaymentTypes,
+      });
     }
 
     // Validate coupon code format (alphanumeric, max 50 chars)
@@ -268,6 +468,11 @@ export const validateSaveOrderRequest = (req, res, next) => {
       affiliateCode: affiliateCode || null,
       affiliateSource: affiliateSource || null,
       notes: notes ? notes.trim().substring(0, 500) : null,
+      guestDetails: normalizedGuest,
+      location: normalizedLocation,
+      coinRedeem: validatedCoinRedeem,
+      purchaseOrderId: purchaseOrderId || null,
+      paymentType: normalizedPaymentType,
     };
 
     next();
@@ -354,7 +559,7 @@ export const validateUpdateOrderStatusRequest = (req, res, next) => {
  */
 export const validateGetOrderRequest = (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id || req.params.orderId;
 
     // Validate order ID
     validateMongoId(id, "id");

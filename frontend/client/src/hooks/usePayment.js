@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import { useContext, useState } from "react";
 
 // Backend API URL
-const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000"
+).replace(/\/+$/, "");
 
 /**
  * Custom Hook for Payment Processing
