@@ -1,4 +1,6 @@
 import CouponModel from "../models/coupon.model.js";
+import OrderModel from "../models/order.model.js";
+import SettingsModel from "../models/settings.model.js";
 import {
   sendOfferNotification,
   shouldThrottleNotification,
@@ -50,7 +52,7 @@ const normalizeCouponDate = (value, boundary = "start") => {
  */
 export const validateCoupon = async (req, res) => {
   try {
-    const { code, orderAmount } = req.body;
+    const { code, orderAmount, influencerCode } = req.body;
     const userId = req.user?.id || null;
 
     debugLog("[Coupon Validate] Request:", { code, orderAmount, userId });
@@ -71,9 +73,88 @@ export const validateCoupon = async (req, res) => {
       });
     }
 
+    const normalizedCode = code.toUpperCase().trim();
+    const safeOrderAmount = Math.max(Number(orderAmount || 0), 0);
+
+    // Discount rules from admin settings
+    const [discountSetting, offerCouponSetting] = await Promise.all([
+      SettingsModel.findOne({ key: "discountSettings" }).select("value").lean(),
+      SettingsModel.findOne({ key: "offerCouponCode" }).select("value").lean(),
+    ]);
+
+    const discountSettings = discountSetting?.value || {};
+    const stackableCoupons = Boolean(discountSettings?.stackableCoupons);
+
+    if (!stackableCoupons && String(influencerCode || "").trim()) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Coupons cannot be combined with referral/affiliate discounts",
+      });
+    }
+
+    const maxDiscountPercentage = Number(discountSettings?.maxDiscountPercentage);
+    const maxDiscountByPercent =
+      Number.isFinite(maxDiscountPercentage) && maxDiscountPercentage > 0
+        ? (safeOrderAmount * maxDiscountPercentage) / 100
+        : null;
+
+    const applyGlobalDiscountCaps = (discountAmount) => {
+      let capped = Math.max(discountAmount || 0, 0);
+      capped = Math.min(capped, safeOrderAmount);
+      if (maxDiscountByPercent !== null) {
+        capped = Math.min(capped, maxDiscountByPercent);
+      }
+      return Math.round(capped * 100) / 100;
+    };
+
+    // First order discount: tied to the offer popup coupon code (system rule)
+    const firstOrderConfig = discountSettings?.firstOrderDiscount || {};
+    const firstOrderEnabled = Boolean(firstOrderConfig?.enabled);
+    const offerCouponCode = String(offerCouponSetting?.value || "")
+      .trim()
+      .toUpperCase();
+
+    if (firstOrderEnabled && offerCouponCode && normalizedCode === offerCouponCode) {
+      if (userId) {
+        const hasPriorOrders = await OrderModel.exists({ user: userId });
+        if (hasPriorOrders) {
+          return res.status(400).json({
+            error: true,
+            success: false,
+            message: "This coupon is valid only on your first order",
+          });
+        }
+      }
+
+      const percentage = Math.max(Number(firstOrderConfig?.percentage || 0), 0);
+      const maxDiscount = Math.max(Number(firstOrderConfig?.maxDiscount || 0), 0);
+
+      const computed = (safeOrderAmount * percentage) / 100;
+      const discountAmount = applyGlobalDiscountCaps(
+        maxDiscount > 0 ? Math.min(computed, maxDiscount) : computed,
+      );
+
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Coupon applied successfully",
+        data: {
+          code: normalizedCode,
+          discountType: "percentage",
+          discountValue: percentage,
+          discountAmount,
+          finalAmount: Math.round((safeOrderAmount - discountAmount) * 100) / 100,
+          description: "First order discount",
+          isAffiliateCoupon: false,
+          affiliateSource: null,
+        },
+      });
+    }
+
     // Find coupon
     const coupon = await CouponModel.findOne({
-      code: code.toUpperCase().trim(),
+      code: normalizedCode,
       isActive: true,
     });
 
@@ -154,7 +235,7 @@ export const validateCoupon = async (req, res) => {
     }
 
     // Check minimum order amount
-    if (orderAmount < coupon.minOrderAmount) {
+    if (safeOrderAmount < coupon.minOrderAmount) {
       return res.status(400).json({
         error: true,
         success: false,
@@ -181,7 +262,7 @@ export const validateCoupon = async (req, res) => {
     // Calculate discount
     let discountAmount = 0;
     if (coupon.discountType === "percentage") {
-      discountAmount = (orderAmount * coupon.discountValue) / 100;
+      discountAmount = (safeOrderAmount * coupon.discountValue) / 100;
       if (coupon.maxDiscountAmount) {
         discountAmount = Math.min(discountAmount, coupon.maxDiscountAmount);
       }
@@ -189,11 +270,9 @@ export const validateCoupon = async (req, res) => {
       discountAmount = coupon.discountValue;
     }
 
-    // Ensure discount doesn't exceed order amount
-    discountAmount = Math.min(discountAmount, orderAmount);
-    discountAmount = Math.round(discountAmount * 100) / 100; // Round to 2 decimals
+    discountAmount = applyGlobalDiscountCaps(discountAmount);
 
-    const finalAmount = orderAmount - discountAmount;
+    const finalAmount = Math.round((safeOrderAmount - discountAmount) * 100) / 100;
 
     // Check if this coupon is an affiliate/referral code
     const isAffiliateCoupon =

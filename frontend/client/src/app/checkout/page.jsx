@@ -81,6 +81,7 @@ const Checkout = () => {
     highTrafficNotice,
     taxSettings,
     calculateShipping,
+    maintenanceMode,
   } = useSettings();
 
   // Helper to normalize cart item data (handles both API and localStorage structures)
@@ -217,32 +218,14 @@ const Checkout = () => {
     ? guestDetails.state
     : addresses.find((a) => a._id === selectedAddress)?.state || "";
 
-  // Per-line breakdown so rounding works for multiple items.
-  const cartItemTaxLines = (cartItems || []).map((item) => {
-    const data = getItemData(item);
-    const quantity = Math.max(Number(data.quantity || 1), 0);
-    const unitPrice = Number(data.price || 0);
-    const lineAmount = round2(unitPrice * quantity);
-
-    if (gstRatePercent > 0) {
-      return splitGstInclusiveAmount(lineAmount, gstRatePercent);
-    }
-
-    const taxableAmount = lineAmount;
-    const gstAmount = 0;
-    return {
-      ratePercent: gstRatePercent,
-      grossAmount: round2(taxableAmount + gstAmount),
-      taxableAmount,
-      gstAmount,
-    };
-  });
-
   const cartGrossSubtotal = round2(
-    cartItemTaxLines.reduce((sum, line) => sum + line.grossAmount, 0),
-  );
-  const originalTaxEstimate = round2(
-    cartItemTaxLines.reduce((sum, line) => sum + line.gstAmount, 0),
+    (cartItems || []).reduce((sum, item) => {
+      const data = getItemData(item);
+      const quantity = Math.max(Number(data.quantity || 1), 0);
+      const unitPrice = Number(data.price || 0);
+      const lineAmount = round2(unitPrice * quantity);
+      return sum + lineAmount;
+    }, 0),
   );
 
   const membershipDiscountPercentage =
@@ -271,12 +254,19 @@ const Checkout = () => {
   // Coupon discount (applied SECOND, on amount after referral discount)
   const couponDiscount = appliedCoupon?.discountAmount || 0;
 
-  const subtotalAfterDiscounts = Math.max(
-    subtotalAfterMembership - referralDiscount - couponDiscount,
+  // IMPORTANT: GST is calculated on the original subtotal (before coupon),
+  // and coupon must not reduce GST.
+  const baseInclusiveSubtotalBeforeCoupon = Math.max(
+    round2(subtotalAfterMembership - referralDiscount),
+    0,
+  );
+
+  const subtotalAfterCoupon = Math.max(
+    round2(baseInclusiveSubtotalBeforeCoupon - couponDiscount),
     0,
   );
   const maxCoinRedeemValue = Math.floor(
-    (subtotalAfterDiscounts * Number(coinSettings.maxRedeemPercentage || 0)) /
+    (subtotalAfterCoupon * Number(coinSettings.maxRedeemPercentage || 0)) /
       100,
   );
   const safeRequestedCoins = Math.max(Number(requestedCoins || 0), 0);
@@ -289,23 +279,20 @@ const Checkout = () => {
     effectiveRedeemCoins * Number(coinSettings.redeemRate || 0),
   );
   const netInclusiveSubtotal = Math.max(
-    round2(subtotalAfterDiscounts - coinRedeemAmount),
+    round2(subtotalAfterCoupon - coinRedeemAmount),
     0,
   );
 
-  const netSplit = splitGstInclusiveAmount(
-    netInclusiveSubtotal,
+  const preCouponSplit = splitGstInclusiveAmount(
+    baseInclusiveSubtotalBeforeCoupon,
     gstRatePercent,
   );
-  const subtotal = netSplit.taxableAmount; // Subtotal (Excl. GST)
-  const tax = netSplit.gstAmount; // GST (IGST)
+  const subtotal = preCouponSplit.taxableAmount; // Subtotal (Excl. GST)
+  const tax = preCouponSplit.gstAmount; // GST (IGST)
 
   // Shipping calculation from context settings (thresholds use inclusive subtotal).
-  const shipping = calculateShipping(netInclusiveSubtotal);
-
-  // Total discount
-  const totalDiscount =
-    membershipDiscount + referralDiscount + couponDiscount + coinRedeemAmount;
+  // Coupon must NOT affect shipping.
+  const shipping = calculateShipping(baseInclusiveSubtotalBeforeCoupon);
 
   // Final total
   const total = Math.max(0, round2(netInclusiveSubtotal + shipping));
@@ -719,6 +706,7 @@ const Checkout = () => {
           // Backend validates coupon against the net order amount
           // (after membership/referral, before coupon/shipping).
           orderAmount: Math.max(subtotalAfterMembership - referralDiscount, 0),
+          influencerCode: referralCode || null,
         }),
       });
 
@@ -843,6 +831,16 @@ const Checkout = () => {
   const handlePayNow = async () => {
     if (isPayButtonDisabled) return;
 
+    if (maintenanceMode) {
+      setSnackbar({
+        open: true,
+        message:
+          "Checkout is temporarily unavailable due to maintenance. Please try again later.",
+        severity: "error",
+      });
+      return;
+    }
+
     setIsPayButtonDisabled(true);
     try {
       if (isGuestCheckout && !validateGuestCheckoutForm()) {
@@ -863,7 +861,7 @@ const Checkout = () => {
       const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
 
       const currentAffiliate = getStoredAffiliateData();
-      const originalAmount = round2(subtotal + shipping + originalTaxEstimate);
+      const originalAmount = round2(subtotal + tax + shipping);
 
       let purchaseOrderId = null;
       try {
@@ -1585,14 +1583,6 @@ const Checkout = () => {
                     <span>Subtotal (Excl. GST)</span>
                     <span>₹{subtotal.toFixed(2)}</span>
                   </div>
-                  {membershipDiscount > 0 && (
-                    <div className="flex justify-between text-green-700 font-medium">
-                      <span>
-                        Membership Discount ({membershipDiscountPercentage}%)
-                      </span>
-                      <span>-₹{membershipDiscount.toFixed(2)}</span>
-                    </div>
-                  )}
                   <div className="flex justify-between text-gray-600">
                     <span>
                       {checkoutStateForPreview.toLowerCase() === "rajasthan"
@@ -1608,7 +1598,8 @@ const Checkout = () => {
                       <MdLocalShipping />
                       Shipping
                       {shippingSettings?.freeShippingEnabled &&
-                        subtotal < shippingSettings?.freeShippingThreshold && (
+                        baseInclusiveSubtotalBeforeCoupon <
+                          shippingSettings?.freeShippingThreshold && (
                           <span className="text-xs text-orange-500">
                             (Free over ₹
                             {shippingSettings?.freeShippingThreshold})
@@ -1629,58 +1620,19 @@ const Checkout = () => {
                     <div className="flex justify-between text-green-600 font-medium">
                       <span className="flex items-center gap-2">
                         <FiTag className="w-4 h-4" />
-                        Coupon Discount ({appliedCoupon?.code})
+                        Coupon Discount
                       </span>
                       <span>-₹{couponDiscount.toFixed(2)}</span>
                     </div>
                   )}
-                  {/* Referral/Influencer Discount */}
-                  {referralDiscount > 0 && (
-                    <div className="flex justify-between text-purple-600 font-medium">
-                      <span className="flex items-center gap-2">
-                        <HiOutlineFire className="w-4 h-4" />
-                        Referral Discount ({referralCode})
-                      </span>
-                      <span>-₹{referralDiscount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {coinRedeemAmount > 0 && (
-                    <div className="flex justify-between text-emerald-700 font-medium">
-                      <span>
-                        Coin Redemption ({effectiveRedeemCoins} coins)
-                      </span>
-                      <span>-₹{coinRedeemAmount.toFixed(2)}</span>
-                    </div>
-                  )}
                   <div className="border-t border-gray-200 pt-3">
-                    {/* Show original total crossed out when discount applied */}
-                    {totalDiscount > 0 && (
-                      <div className="flex justify-between text-gray-400 text-sm mb-1">
-                        <span>Original Total (Incl. GST + Shipping)</span>
-                        <span className="line-through">
-                          ₹
-                          {(subtotal + shipping + originalTaxEstimate).toFixed(
-                            2,
-                          )}
-                        </span>
-                      </div>
-                    )}
                     <div className="flex justify-between font-bold text-gray-800">
                       <span className="text-lg">
-                        {totalDiscount > 0
-                          ? "You Pay (Incl. GST + Shipping)"
-                          : "Total (Incl. GST + Shipping)"}
+                        You Pay (Incl. GST + Shipping)
                       </span>
-                      <div className="text-right">
-                        <span className="text-xl text-emerald-600">
-                          ₹{total.toFixed(2)}
-                        </span>
-                        {totalDiscount > 0 && (
-                          <p className="text-xs text-green-600 font-normal">
-                            You save ₹{totalDiscount.toFixed(2)}!
-                          </p>
-                        )}
-                      </div>
+                      <span className="text-xl text-emerald-600">
+                        ₹{total.toFixed(2)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1709,10 +1661,13 @@ const Checkout = () => {
               {/* Payment Button */}
               <Button
                 onClick={handlePayNow}
-                disabled={isPayButtonDisabled || cartItems.length === 0}
+                disabled={
+                  maintenanceMode || isPayButtonDisabled || cartItems.length === 0
+                }
                 fullWidth
                 sx={{
-                  backgroundColor: isPayButtonDisabled ? "#9ca3af" : "#059669",
+                  backgroundColor:
+                    maintenanceMode || isPayButtonDisabled ? "#9ca3af" : "#059669",
                   color: "white",
                   padding: "16px 24px",
                   borderRadius: "12px",
@@ -1733,7 +1688,9 @@ const Checkout = () => {
                   },
                 }}
               >
-                {isPayButtonDisabled
+                {maintenanceMode
+                  ? "Maintenance Mode"
+                  : isPayButtonDisabled
                   ? "Please Wait..."
                   : `Pay ₹${total.toFixed(0)}`}
               </Button>

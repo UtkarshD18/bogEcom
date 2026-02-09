@@ -27,8 +27,8 @@ const defaultSettings = {
   },
   // Tax settings
   taxSettings: {
-    enabled: false,
-    taxRate: 0,
+    enabled: true,
+    taxRate: 5,
     taxName: "GST",
     taxIncludedInPrice: true,
   },
@@ -54,7 +54,7 @@ const defaultSettings = {
   // Discount settings
   discountSettings: {
     maxDiscountPercentage: 50,
-    stackableCoupons: false,
+    stackableCoupons: true,
     firstOrderDiscount: {
       enabled: true,
       percentage: 10,
@@ -62,21 +62,21 @@ const defaultSettings = {
     },
   },
   // Offer popup settings
-  showOfferPopup: false,
+  showOfferPopup: true,
   offerCouponCode: "",
   offerTitle: "Special Offer!",
   offerDescription: "Use this code to get a discount on your order!",
   offerDiscountText: "Get Discount",
   // Traffic notice
   highTrafficNotice: {
-    enabled: false,
+    enabled: true,
     message:
       "High traffic — availability may vary. Your order will be processed once confirmed.",
   },
   // Maintenance
   maintenanceMode: false,
   // Payment
-  paymentGatewayEnabled: false,
+  paymentGatewayEnabled: true,
 };
 
 /**

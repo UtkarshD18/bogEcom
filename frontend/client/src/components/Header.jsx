@@ -7,7 +7,7 @@ import { postData } from "@/utils/api";
 import cookies from "js-cookie";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
 import { FaRegHeart, FaUser } from "react-icons/fa";
 import { IoCartOutline, IoCloseOutline, IoMenuOutline } from "react-icons/io5";
@@ -20,6 +20,7 @@ import {
 import Search from "./Search";
 
 const Header = () => {
+  const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userEmail, setUserEmail] = useState("");
@@ -270,36 +271,31 @@ const Header = () => {
               {/* NAVIGATION + SEARCHBAR in one line */}
               <div className="hidden md:flex flex-1 items-center gap-6">
                 <nav className="flex items-center gap-5">
-                  <Link
-                    href="/"
-                    className="font-semibold text-base text-[#059669] px-2 py-1 rounded-lg hover:bg-[#a7f3d0]/20 transition"
-                  >
-                    Home
-                  </Link>
-                  <Link
-                    href="/products"
-                    className="font-semibold text-base text-gray-700 px-2 py-1 rounded-lg hover:bg-[#a7f3d0]/20 transition"
-                  >
-                    Products
-                  </Link>
-                  <Link
-                    href="/membership"
-                    className="font-semibold text-base text-gray-700 px-2 py-1 rounded-lg hover:bg-[#a7f3d0]/20 transition"
-                  >
-                    Membership
-                  </Link>
-                  <Link
-                    href="/blogs"
-                    className="font-semibold text-base text-gray-700 px-2 py-1 rounded-lg hover:bg-[#a7f3d0]/20 transition"
-                  >
-                    Blogs
-                  </Link>
-                  <Link
-                    href="/about-us"
-                    className="font-semibold text-base text-gray-700 px-2 py-1 rounded-lg hover:bg-[#a7f3d0]/20 transition"
-                  >
-                    About Us
-                  </Link>
+                  {[
+                    { name: "Home", href: "/" },
+                    { name: "Products", href: "/products" },
+                    { name: "Membership", href: "/membership" },
+                    { name: "Blogs", href: "/blogs" },
+                    { name: "About Us", href: "/about-us" },
+                  ].map((item) => {
+                    const isActive =
+                      item.href === "/"
+                        ? pathname === "/"
+                        : pathname.startsWith(item.href);
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className={`font-semibold text-base px-2 py-1 rounded-lg transition ${
+                          isActive
+                            ? "text-[#059669] bg-[#a7f3d0]/20"
+                            : "text-gray-700 hover:bg-[#a7f3d0]/20"
+                        }`}
+                      >
+                        {item.name}
+                      </Link>
+                    );
+                  })}
                 </nav>
                 <div className="w-full max-w-sm relative group">
                   <div className="absolute -inset-1 bg-linear-to-r from-[#059669]/10 to-[#10b981]/10 rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
@@ -534,7 +530,6 @@ const Header = () => {
                               />
                               <span className="font-medium">Settings</span>
                             </Link>
-
                           </div>
 
                           {/* Divider */}
@@ -622,17 +617,27 @@ const Header = () => {
                 { name: "Membership", href: "/membership", icon: "⭐" },
                 { name: "Blogs", href: "/blogs", icon: "📝" },
                 { name: "About Us", href: "/about-us", icon: "ℹ️" },
-              ].map((item, index) => (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className="flex items-center gap-3 mx-2 px-4 py-3 rounded-xl text-[15px] font-semibold text-gray-700 hover:bg-[#a7f3d0]/15 hover:text-[#059669] active:bg-[#a7f3d0]/25 transition-all duration-200"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  <span className="text-lg w-6 text-center">{item.icon}</span>
-                  <span>{item.name}</span>
-                </Link>
-              ))}
+              ].map((item) => {
+                const isActive =
+                  item.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={`flex items-center gap-3 mx-2 px-4 py-3 rounded-xl text-[15px] font-semibold transition-all duration-200 ${
+                      isActive
+                        ? "text-[#059669] bg-[#a7f3d0]/20"
+                        : "text-gray-700 hover:bg-[#a7f3d0]/15 hover:text-[#059669] active:bg-[#a7f3d0]/25"
+                    }`}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <span className="text-lg w-6 text-center">{item.icon}</span>
+                    <span>{item.name}</span>
+                  </Link>
+                );
+              })}
             </nav>
 
             {/* Divider */}

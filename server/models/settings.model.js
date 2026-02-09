@@ -47,7 +47,7 @@ settingsSchema.statics.defaultSettings = [
   {
     key: "highTrafficNotice",
     value: {
-      enabled: false,
+      enabled: true,
       message:
         "High traffic — availability may vary. Your order will be processed once confirmed.",
     },
@@ -56,7 +56,7 @@ settingsSchema.statics.defaultSettings = [
   },
   {
     key: "paymentGatewayEnabled",
-    value: false,
+    value: true,
     description: "Enable/disable payment gateway (PhonePe)",
     category: "payment",
   },
@@ -68,7 +68,7 @@ settingsSchema.statics.defaultSettings = [
   },
   {
     key: "showOfferPopup",
-    value: false,
+    value: true,
     description: "Show offer popup to guests/users",
     category: "notification",
   },
@@ -119,7 +119,7 @@ settingsSchema.statics.defaultSettings = [
       enabled: true,
       taxRate: 5, // Centralized GST rate
       taxName: "GST",
-      taxIncludedInPrice: false, // Tax is calculated at checkout
+      taxIncludedInPrice: true, // Prices are GST-inclusive across the storefront
     },
     description: "Tax/GST configuration",
     category: "checkout",
@@ -143,7 +143,7 @@ settingsSchema.statics.defaultSettings = [
     key: "discountSettings",
     value: {
       maxDiscountPercentage: 50, // Maximum discount allowed
-      stackableCoupons: false, // Allow multiple coupons
+      stackableCoupons: true, // Allow multiple coupons
       firstOrderDiscount: {
         enabled: true,
         percentage: 10,
