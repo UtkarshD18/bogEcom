@@ -57,8 +57,8 @@ const SettingsPage = () => {
   });
 
   const [taxSettings, setTaxSettings] = useState({
-    enabled: false,
-    taxRate: 0,
+    enabled: true,
+    taxRate: 5,
     taxName: "GST",
     taxIncludedInPrice: true,
   });
@@ -140,7 +140,13 @@ const SettingsPage = () => {
               setShippingSettings(setting.value);
               break;
             case "taxSettings":
-              setTaxSettings(setting.value);
+              // GST is fixed and system-controlled (admin cannot disable/modify)
+              setTaxSettings({
+                enabled: true,
+                taxRate: 5,
+                taxName: "GST",
+                taxIncludedInPrice: true,
+              });
               break;
             case "orderSettings":
               setOrderSettings(setting.value);
@@ -460,31 +466,9 @@ const SettingsPage = () => {
           <FormControlLabel
             control={
               <Switch
-                checked={taxSettings.enabled}
-                onChange={(e) =>
-                  setTaxSettings({
-                    ...taxSettings,
-                    enabled: e.target.checked,
-                  })
-                }
-                color="warning"
-              />
-            }
-            label="Enable Tax/GST"
-          />
-
-          <FormControlLabel
-            control={
-              <Switch
                 checked={taxSettings.taxIncludedInPrice}
-                onChange={(e) =>
-                  setTaxSettings({
-                    ...taxSettings,
-                    taxIncludedInPrice: e.target.checked,
-                  })
-                }
                 color="warning"
-                disabled={!taxSettings.enabled}
+                disabled
               />
             }
             label="Tax Included in Product Price"
@@ -502,7 +486,7 @@ const SettingsPage = () => {
             size="small"
             fullWidth
             placeholder="e.g., GST, VAT"
-            disabled={!taxSettings.enabled}
+            disabled
           />
 
           <TextField
@@ -520,17 +504,14 @@ const SettingsPage = () => {
             }}
             size="small"
             fullWidth
-            disabled={!taxSettings.enabled}
+            disabled
           />
         </div>
 
-        {taxSettings.enabled && (
-          <p className="text-sm text-gray-500 mt-3">
-            {taxSettings.taxIncludedInPrice
-              ? `${taxSettings.taxName} is already included in all product prices. Customers will see "(${taxSettings.taxName} included)" in checkout.`
-              : `${taxSettings.taxName} at ${taxSettings.taxRate}% will be added to the subtotal at checkout.`}
-          </p>
-        )}
+        <p className="text-sm text-gray-500 mt-3">
+          GST is always enabled and system-controlled. Customers will see a GST
+          breakdown at checkout.
+        </p>
       </div>
 
       {/* Order Settings */}

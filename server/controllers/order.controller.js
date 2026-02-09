@@ -90,12 +90,12 @@ const isPaymentEnabled = async () => {
   if (!envEnabled) return false;
 
   const paymentSetting = await getCachedSetting("paymentGatewayEnabled");
-  // Only enforce admin override if it was explicitly updated
-  if (paymentSetting?.updatedBy) {
-    return Boolean(paymentSetting.value);
+  // Respect admin toggle (default ON if setting missing)
+  if (paymentSetting?.value === undefined || paymentSetting?.value === null) {
+    return true;
   }
 
-  return envEnabled;
+  return Boolean(paymentSetting.value);
 };
 
 const isMaintenanceMode = async () => {
@@ -162,10 +162,72 @@ const recordCouponUsage = async (order) => {
   );
 };
 
-const validateCouponForOrder = async ({ code, orderAmount, userId }) => {
+const validateCouponForOrder = async ({
+  code,
+  orderAmount,
+  userId,
+  influencerCode,
+}) => {
   const normalizedCode = code ? String(code).toUpperCase().trim() : null;
   if (!normalizedCode) {
     return { normalizedCode: null, discount: 0 };
+  }
+
+  const discountSettings =
+    (await getCachedSetting("discountSettings"))?.value || {};
+
+  // Admin-controlled rules
+  const stackableCoupons = Boolean(discountSettings?.stackableCoupons);
+  const hasInfluencerCode = Boolean(String(influencerCode || "").trim());
+  if (!stackableCoupons && hasInfluencerCode) {
+    return {
+      errorMessage:
+        "Coupons cannot be combined with referral/affiliate discounts",
+    };
+  }
+
+  const safeOrderAmount = Math.max(round2(orderAmount), 0);
+  const maxDiscountPercentage = Number(discountSettings?.maxDiscountPercentage);
+  const maxDiscountByPercent =
+    Number.isFinite(maxDiscountPercentage) && maxDiscountPercentage > 0
+      ? (safeOrderAmount * maxDiscountPercentage) / 100
+      : null;
+
+  const applyGlobalDiscountCaps = (discount) => {
+    let capped = Math.max(round2(discount), 0);
+    if (maxDiscountByPercent !== null) {
+      capped = Math.min(capped, maxDiscountByPercent);
+    }
+    return Math.min(capped, safeOrderAmount);
+  };
+
+  // First order discount (system-controlled) - tied to the offer popup coupon code
+  const firstOrderConfig = discountSettings?.firstOrderDiscount || {};
+  const firstOrderEnabled = Boolean(firstOrderConfig?.enabled);
+  const offerCouponCode = String(
+    (await getCachedSetting("offerCouponCode"))?.value || "",
+  )
+    .trim()
+    .toUpperCase();
+
+  if (firstOrderEnabled && offerCouponCode && normalizedCode === offerCouponCode) {
+    if (userId) {
+      const hasPriorOrders = await OrderModel.exists({ user: userId });
+      if (hasPriorOrders) {
+        return { errorMessage: "This coupon is valid only on your first order" };
+      }
+    }
+
+    const percentage = Math.max(Number(firstOrderConfig?.percentage || 0), 0);
+    const maxDiscount = Math.max(Number(firstOrderConfig?.maxDiscount || 0), 0);
+
+    const computed =
+      safeOrderAmount > 0 ? (safeOrderAmount * percentage) / 100 : 0;
+    const discountAmount = applyGlobalDiscountCaps(
+      maxDiscount > 0 ? Math.min(computed, maxDiscount) : computed,
+    );
+
+    return { normalizedCode, discount: discountAmount };
   }
 
   const coupon = await CouponModel.findOne({
@@ -211,7 +273,7 @@ const validateCouponForOrder = async ({ code, orderAmount, userId }) => {
     }
   }
 
-  const discount = Math.min(coupon.calculateDiscount(orderAmount), orderAmount);
+  const discount = applyGlobalDiscountCaps(coupon.calculateDiscount(safeOrderAmount));
   return { normalizedCode, discount };
 };
 
@@ -1223,6 +1285,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       code: couponCode,
       orderAmount: workingAmount,
       userId,
+      influencerCode: influencerDiscount > 0 ? influencerCode : null,
     });
 
     if (couponResult.errorMessage) {
@@ -1234,9 +1297,22 @@ export const createOrder = asyncHandler(async (req, res) => {
     }
 
     const normalizedCouponCode = couponResult.normalizedCode;
-    const couponDiscount = Math.min(couponResult.discount || 0, workingAmount);
+    const subtotalBeforeCoupon = workingAmount;
+    const couponDiscount = Math.min(
+      couponResult.discount || 0,
+      subtotalBeforeCoupon,
+    );
     const membershipDiscount = round2(membershipResult.discount || 0);
-    workingAmount = Math.max(round2(workingAmount - couponDiscount), 0);
+
+    // GST is system-controlled and must be calculated on the original subtotal
+    // (before coupon/coins). Coupon must NOT reduce GST.
+    const taxData = splitGstInclusiveAmount(
+      subtotalBeforeCoupon,
+      5,
+      checkoutContact.state,
+    );
+
+    workingAmount = Math.max(round2(subtotalBeforeCoupon - couponDiscount), 0);
 
     const totalDiscountBeforeCoins = round2(
       membershipDiscount + influencerDiscount + couponDiscount,
@@ -1264,11 +1340,6 @@ export const createOrder = asyncHandler(async (req, res) => {
       0,
     );
 
-    const taxData = splitGstInclusiveAmount(
-      netInclusiveSubtotal,
-      5,
-      checkoutContact.state,
-    );
     let shippingQuote = {
       amount: Number(req.validatedData.shipping || 0),
       source: "client",
@@ -1277,7 +1348,7 @@ export const createOrder = asyncHandler(async (req, res) => {
     if (validateIndianPincode(checkoutContact.pincode)) {
       shippingQuote = await getShippingQuote({
         destinationPincode: checkoutContact.pincode,
-        subtotal: netInclusiveSubtotal,
+        subtotal: subtotalBeforeCoupon,
         paymentType: paymentType || "prepaid",
       });
     }
@@ -1608,12 +1679,23 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       }
     }
 
+    const subtotalBeforeCoupon = workingAmount;
+
+    // GST is system-controlled and must be calculated on the original subtotal
+    // (before coupon/coins). Coupon must NOT reduce GST.
+    const taxData = splitGstInclusiveAmount(
+      subtotalBeforeCoupon,
+      5,
+      checkoutContact.state,
+    );
+
     // Validate and apply coupon discount
     if (couponCode) {
       const couponResult = await validateCouponForOrder({
         code: couponCode,
         orderAmount: workingAmount,
         userId,
+        influencerCode: influencerDiscount > 0 ? influencerCode : null,
       });
 
       if (couponResult.errorMessage) {
@@ -1655,11 +1737,6 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       round2(workingAmount - Number(redemption.redeemAmount || 0)),
       0,
     );
-    const taxData = splitGstInclusiveAmount(
-      netInclusiveSubtotal,
-      5,
-      checkoutContact.state,
-    );
     let shippingQuote = {
       amount: Number(req.validatedData.shipping || 0),
       source: "client",
@@ -1668,7 +1745,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     if (validateIndianPincode(checkoutContact.pincode)) {
       shippingQuote = await getShippingQuote({
         destinationPincode: checkoutContact.pincode,
-        subtotal: netInclusiveSubtotal,
+        subtotal: subtotalBeforeCoupon,
         paymentType: paymentType || "prepaid",
       });
     }

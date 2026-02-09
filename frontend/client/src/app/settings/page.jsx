@@ -1,7 +1,7 @@
 "use client";
 import AccountSidebar from "@/components/AccountSiderbar";
 import { Button, CircularProgress, Switch } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
 const API_URL = (
@@ -19,6 +19,7 @@ const Settings = () => {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const saveQueueRef = useRef(Promise.resolve());
 
   // Fetch settings from backend on mount
   useEffect(() => {
@@ -62,15 +63,9 @@ const Settings = () => {
     fetchSettings();
   }, []);
 
-  const handleToggle = (key) => {
-    setSettings((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
+  const saveSettings = async (nextSettings, { showSuccessToast } = {}) => {
+    const shouldShowSuccess = showSuccessToast !== false;
 
-  const handleSave = async () => {
-    setSaving(true);
     try {
       const response = await fetch(
         `${API_URL}/api/user/settings`,
@@ -82,10 +77,10 @@ const Settings = () => {
           },
           body: JSON.stringify({
             notificationSettings: {
-              emailNotifications: settings.emailNotifications,
-              pushNotifications: settings.pushNotifications,
-              orderUpdates: settings.orderUpdates,
-              promotionalEmails: settings.promotionalEmails,
+              emailNotifications: nextSettings.emailNotifications,
+              pushNotifications: nextSettings.pushNotifications,
+              orderUpdates: nextSettings.orderUpdates,
+              promotionalEmails: nextSettings.promotionalEmails,
             },
           }),
         },
@@ -94,16 +89,68 @@ const Settings = () => {
       const data = await response.json();
 
       if (data.success) {
-        toast.success("Settings saved successfully!");
+        if (shouldShowSuccess) toast.success("Settings saved successfully!");
+        return true;
       } else {
         throw new Error(data.message || "Failed to save settings");
       }
     } catch (error) {
       console.error("Error saving settings:", error);
       toast.error(error.message || "Failed to save settings");
+      return false;
     } finally {
-      setSaving(false);
     }
+  };
+
+  const queueSaveSettings = (nextSettings, options) => {
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => {
+        // Keep the queue alive even if a previous request failed.
+      })
+      .then(async () => {
+        setSaving(true);
+        const ok = await saveSettings(nextSettings, options);
+        setSaving(false);
+
+        if (!ok) {
+          // Re-sync from backend to prevent UI/backend mismatch.
+          try {
+            const response = await fetch(`${API_URL}/api/user/settings`, {
+              method: "GET",
+              credentials: "include",
+            });
+            const data = await response.json();
+            if (data.success && data.data?.notificationSettings) {
+              setSettings({
+                emailNotifications:
+                  data.data.notificationSettings.emailNotifications ?? true,
+                pushNotifications:
+                  data.data.notificationSettings.pushNotifications ?? true,
+                orderUpdates: data.data.notificationSettings.orderUpdates ?? true,
+                promotionalEmails:
+                  data.data.notificationSettings.promotionalEmails ?? true,
+              });
+            }
+          } catch (syncError) {
+            // Best-effort only.
+          }
+        }
+      });
+
+    return saveQueueRef.current;
+  };
+
+  const handleToggle = (key) => {
+    setSettings((prev) => {
+      const nextSettings = { ...prev, [key]: !prev[key] };
+      // Persist immediately to backend (no explicit save required).
+      queueSaveSettings(nextSettings, { showSuccessToast: false });
+      return nextSettings;
+    });
+  };
+
+  const handleSave = async () => {
+    await queueSaveSettings(settings, { showSuccessToast: true });
   };
 
   if (loading) {

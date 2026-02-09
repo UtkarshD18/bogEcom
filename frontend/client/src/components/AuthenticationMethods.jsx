@@ -10,13 +10,15 @@ const AuthenticationMethods = () => {
     hasGoogle: false,
     hasBackupPassword: false,
   });
+  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
-    const userEmail = cookies.get("userEmail");
+    const userEmailFromCookie = cookies.get("userEmail") || "";
     const userPhoto = cookies.get("userPhoto");
 
+    setUserEmail(userEmailFromCookie);
     setAuthMethods({
-      hasEmail: !!userEmail,
+      hasEmail: !!userEmailFromCookie,
       hasGoogle: !!userPhoto, // Presence of photo indicates Google auth
       hasBackupPassword: false, // This would come from backend in real app
     });
@@ -45,7 +47,7 @@ const AuthenticationMethods = () => {
             <div>
               <span className="font-medium">Email & Password</span>
               <p className="text-sm text-gray-600">
-                {cookies.get("userEmail") || "No email set"}
+                {userEmail || "No email set"}
               </p>
             </div>
           </div>

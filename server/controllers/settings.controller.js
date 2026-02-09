@@ -9,6 +9,14 @@ const debugLog = (...args) => {
   }
 };
 
+// GST is always enabled and system-controlled for this project.
+const FIXED_TAX_SETTINGS = Object.freeze({
+  enabled: true,
+  taxRate: 5,
+  taxName: "GST",
+  taxIncludedInPrice: true,
+});
+
 /**
  * Settings Controller
  * Manages site-wide configuration settings
@@ -51,6 +59,9 @@ export const getPublicSettings = async (req, res) => {
     settings.forEach((setting) => {
       settingsObject[setting.key] = setting.value;
     });
+
+    // Enforce fixed GST settings (admin cannot disable GST)
+    settingsObject.taxSettings = FIXED_TAX_SETTINGS;
 
     debugLog(
       "[Settings] Public settings:",
@@ -142,10 +153,15 @@ export const getAllSettings = async (req, res) => {
 export const updateSetting = async (req, res) => {
   try {
     const { key } = req.params;
-    const { value, description, isActive, category } = req.body;
+    const { description, isActive, category } = req.body;
     const adminId = req.user?.id || req.user;
 
-    if (value === undefined) {
+    // Enforce fixed GST settings (ignore admin-provided values)
+    if (key === "taxSettings") {
+      req.body.value = FIXED_TAX_SETTINGS;
+    }
+
+    if (req.body.value === undefined) {
       return res.status(400).json({
         error: true,
         success: false,
@@ -156,7 +172,9 @@ export const updateSetting = async (req, res) => {
     // Enforce offer popup coupon validation (must match an existing coupon)
     if (key === "offerCouponCode") {
       const normalizedCode =
-        typeof value === "string" ? value.trim().toUpperCase() : "";
+        typeof req.body.value === "string"
+          ? req.body.value.trim().toUpperCase()
+          : "";
 
       if (normalizedCode) {
         const couponExists = await CouponModel.exists({
