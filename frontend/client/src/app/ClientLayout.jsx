@@ -47,7 +47,7 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
   return (
     <>
       <Header />
-      <main className="min-h-screen pt-[130px] md:pt-[110px] overflow-x-hidden w-full">
+      <main className="min-h-screen pt-[120px] md:pt-[100px] overflow-x-hidden w-full">
         {children}
       </main>
       <Footer />

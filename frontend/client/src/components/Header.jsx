@@ -228,7 +228,7 @@ const Header = () => {
           }`}
         >
           {/* Removed Decorative Top Line Gradient */}
-          <div className="w-full px-3 sm:px-4 md:px-6 py-1">
+          <div className="w-full px-3 sm:px-4 md:px-6 py-0.5">
             <div className="flex items-center justify-between gap-4 md:gap-8">
               {/* Mobile Menu Button */}
               <button
@@ -244,7 +244,7 @@ const Header = () => {
               </button>
 
               {/* LOGO */}
-              <div className="shrink-0 md:pr-6 flex items-center">
+              <div className="shrink-0 md:pr-6 flex items-center h-full">
                 <Link
                   href="/"
                   className="block group"
@@ -307,14 +307,14 @@ const Header = () => {
                         "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
                     }}
                   >
-                    <div className="h-10 flex items-center">
+                    <div className="h-9 flex items-center">
                       <Search />
                     </div>
                   </div>
                 </div>
               </div>
               {/* ACTIONS (Icons + Login Button) */}
-              <div className="flex items-center justify-end shrink-0 gap-5">
+              <div className="flex items-center justify-end shrink-0 gap-4">
                 {/* Wishlist Icon */}
                 <Link
                   href="/my-list"
@@ -356,7 +356,7 @@ const Header = () => {
                 >
                   {cartCount > 0 && (
                     <div
-                      className="absolute -top-1.5 -right-1.5 bg-[#059669] text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm"
+                      className="absolute -top-1.5 -right-1.5 bg-[#EF4444] text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm"
                       style={{
                         boxShadow: "0 0 0 2px var(--flavor-card-bg, #fffbf5)",
                       }}
@@ -561,10 +561,10 @@ const Header = () => {
 
         {/* Mobile Search (Below header on small screens) */}
         <div
-          className={`md:hidden px-3 sm:px-4 pb-2 ${scrolled ? "pt-2" : "pt-0"}`}
+          className={`md:hidden px-3 sm:px-4 pb-1.5 ${scrolled ? "pt-1.5" : "pt-0"}`}
         >
           <div
-            className="rounded-full border overflow-hidden h-10 flex items-center"
+            className="rounded-full border overflow-hidden h-9 flex items-center"
             style={{
               backgroundColor: "#fff",
               borderColor: "#e5e5e5",
