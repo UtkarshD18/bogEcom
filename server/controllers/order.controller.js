@@ -4,8 +4,8 @@
  * with comprehensive error handling and logging
  */
 
-import mongoose from "mongoose";
 import fsPromises from "fs/promises";
+import mongoose from "mongoose";
 import AddressModel from "../models/address.model.js";
 import CategoryModel from "../models/category.model.js";
 import CouponModel from "../models/coupon.model.js";
@@ -15,6 +15,21 @@ import ProductModel from "../models/product.model.js";
 import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
+import {
+  applyRedemptionToUser,
+  awardCoinsToUser,
+  calculateRedemption,
+} from "../services/coin.service.js";
+import { applyMembershipDiscount } from "../services/membership.service.js";
+import { createPhonePePayment } from "../services/phonepe.service.js";
+import {
+  getShippingQuote,
+  validateIndianPincode,
+} from "../services/shippingRate.service.js";
+import {
+  calculateTax,
+  splitGstInclusiveAmount,
+} from "../services/tax.service.js";
 import { createUserLocationLog } from "../services/userLocationLog.service.js";
 import {
   AppError,
@@ -26,28 +41,19 @@ import {
   validateMongoId,
 } from "../utils/errorHandler.js";
 import {
-  syncOrderStatus,
-  syncOrderToFirestore,
-} from "../utils/orderFirestoreSync.js";
-import {
   generateInvoicePdf,
   getAbsolutePathFromStoredInvoicePath,
 } from "../utils/generateInvoicePdf.js";
+import {
+  syncOrderStatus,
+  syncOrderToFirestore,
+} from "../utils/orderFirestoreSync.js";
 import {
   calculateInfluencerCommission,
   calculateReferralDiscount,
   updateInfluencerStats,
 } from "./influencer.controller.js";
 import { sendOrderUpdateNotification } from "./notification.controller.js";
-import {
-  applyRedemptionToUser,
-  awardCoinsToUser,
-  calculateRedemption,
-} from "../services/coin.service.js";
-import { applyMembershipDiscount } from "../services/membership.service.js";
-import { createPhonePePayment } from "../services/phonepe.service.js";
-import { getShippingQuote, validateIndianPincode } from "../services/shippingRate.service.js";
-import { calculateTax, splitGstInclusiveAmount } from "../services/tax.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -158,7 +164,7 @@ const recordCouponUsage = async (order) => {
         },
       },
     },
-    { new: true }
+    { new: true },
   );
 };
 
@@ -210,16 +216,33 @@ const validateCouponForOrder = async ({
     .trim()
     .toUpperCase();
 
-  if (firstOrderEnabled && offerCouponCode && normalizedCode === offerCouponCode) {
+  if (
+    firstOrderEnabled &&
+    offerCouponCode &&
+    normalizedCode === offerCouponCode
+  ) {
     if (userId) {
       const hasPriorOrders = await OrderModel.exists({ user: userId });
       if (hasPriorOrders) {
-        return { errorMessage: "This coupon is valid only on your first order" };
+        return {
+          errorMessage: "This coupon is valid only on your first order",
+        };
       }
     }
 
-    const percentage = Math.max(Number(firstOrderConfig?.percentage || 0), 0);
-    const maxDiscount = Math.max(Number(firstOrderConfig?.maxDiscount || 0), 0);
+    // Use actual coupon document values if the coupon exists in the DB,
+    // otherwise fall back to firstOrderDiscount settings
+    const offerCoupon = await CouponModel.findOne({
+      code: normalizedCode,
+      isActive: true,
+    });
+
+    const percentage = offerCoupon
+      ? Math.max(Number(offerCoupon.discountValue || 0), 0)
+      : Math.max(Number(firstOrderConfig?.percentage || 0), 0);
+    const maxDiscount = offerCoupon
+      ? Math.max(Number(offerCoupon.maxDiscountAmount || 0), 0)
+      : Math.max(Number(firstOrderConfig?.maxDiscount || 0), 0);
 
     const computed =
       safeOrderAmount > 0 ? (safeOrderAmount * percentage) / 100 : 0;
@@ -273,7 +296,9 @@ const validateCouponForOrder = async ({
     }
   }
 
-  const discount = applyGlobalDiscountCaps(coupon.calculateDiscount(safeOrderAmount));
+  const discount = applyGlobalDiscountCaps(
+    coupon.calculateDiscount(safeOrderAmount),
+  );
   return { normalizedCode, discount };
 };
 
@@ -286,7 +311,9 @@ const normalizeGuestDetails = (guestDetails = {}) => ({
   address: String(guestDetails.address || "").trim(),
   pincode: String(guestDetails.pincode || "").trim(),
   state: String(guestDetails.state || "").trim(),
-  email: String(guestDetails.email || "").trim().toLowerCase(),
+  email: String(guestDetails.email || "")
+    .trim()
+    .toLowerCase(),
   gst: String(guestDetails.gst || "").trim(),
 });
 
@@ -354,7 +381,9 @@ const resolveCheckoutContact = async ({
       ).trim(),
       pincode: String(address.pincode || normalizedGuest.pincode || "").trim(),
       state: String(address.state || normalizedGuest.state || "").trim(),
-      email: String(normalizedGuest.email || "").trim().toLowerCase(),
+      email: String(normalizedGuest.email || "")
+        .trim()
+        .toLowerCase(),
       gst: normalizedGuest.gst || userGstNumber,
     };
 
@@ -415,7 +444,8 @@ const authorizePurchaseOrderForCheckout = async ({
 }) => {
   if (!purchaseOrderId) return null;
 
-  const purchaseOrder = await PurchaseOrderModel.findById(purchaseOrderId).lean();
+  const purchaseOrder =
+    await PurchaseOrderModel.findById(purchaseOrderId).lean();
   if (!purchaseOrder) {
     throw new AppError("NOT_FOUND", {
       field: "purchaseOrderId",
@@ -479,10 +509,7 @@ const extractHsnFromSpecifications = (specifications) => {
 
   if (typeof specifications === "object") {
     return (
-      specifications.HSN ||
-      specifications.hsn ||
-      specifications.Hsn ||
-      null
+      specifications.HSN || specifications.hsn || specifications.Hsn || null
     );
   }
 
@@ -654,7 +681,9 @@ const ensureOrderInvoice = async (orderDoc) => {
   };
 
   const invoiceNumber =
-    orderDoc.invoiceNumber || generated?.invoiceNumber || orderDoc._id.toString();
+    orderDoc.invoiceNumber ||
+    generated?.invoiceNumber ||
+    orderDoc._id.toString();
   const invoicePath = orderDoc.invoicePath || generated?.invoicePath || "";
 
   await InvoiceModel.findOneAndUpdate(
@@ -719,7 +748,12 @@ export const getAllOrders = asyncHandler(async (req, res) => {
       ];
     }
 
-    logger.debug("getAllOrders", "Fetching orders", { page, limit, status, search });
+    logger.debug("getAllOrders", "Fetching orders", {
+      page,
+      limit,
+      status,
+      search,
+    });
 
     const [orders, total] = await Promise.all([
       OrderModel.find(filter)
@@ -734,19 +768,27 @@ export const getAllOrders = asyncHandler(async (req, res) => {
       OrderModel.countDocuments(filter),
     ]);
 
-    logger.info("getAllOrders", `Retrieved ${orders.length} orders`, { total, page, limit });
+    logger.info("getAllOrders", `Retrieved ${orders.length} orders`, {
+      total,
+      page,
+      limit,
+    });
 
-    return sendSuccess(res, {
-      orders,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page * limit < total,
-        hasPrevPage: page > 1,
+    return sendSuccess(
+      res,
+      {
+        orders,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: page * limit < total,
+          hasPrevPage: page > 1,
+        },
       },
-    }, "Orders retrieved successfully");
+      "Orders retrieved successfully",
+    );
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -811,28 +853,32 @@ export const getOrderStats = asyncHandler(async (req, res) => {
 
     logger.info("getOrderStats", "Statistics calculated");
 
-    return sendSuccess(res, {
-      orders: {
-        total: stats[0],
-        byStatus: {
-          pending: stats[1],
-          pending_payment: stats[2],
-          confirmed: stats[3],
-          shipped: stats[4],
-          delivered: stats[5],
-          cancelled: stats[6],
+    return sendSuccess(
+      res,
+      {
+        orders: {
+          total: stats[0],
+          byStatus: {
+            pending: stats[1],
+            pending_payment: stats[2],
+            confirmed: stats[3],
+            shipped: stats[4],
+            delivered: stats[5],
+            cancelled: stats[6],
+          },
+        },
+        payments: {
+          paid: stats[7],
+          failed: stats[8],
+          pending: stats[9],
+        },
+        revenue: {
+          paid: stats[10][0]?.total || 0,
+          failed: stats[11][0]?.total || 0,
         },
       },
-      payments: {
-        paid: stats[7],
-        failed: stats[8],
-        pending: stats[9],
-      },
-      revenue: {
-        paid: stats[10][0]?.total || 0,
-        failed: stats[11][0]?.total || 0,
-      },
-    }, "Statistics retrieved successfully");
+      "Statistics retrieved successfully",
+    );
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -892,20 +938,24 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     logger.info("getDashboardStats", "Dashboard statistics calculated");
 
-    return sendSuccess(res, {
-      totals: {
-        orders: totalOrders,
-        products: totalProducts,
-        categories: totalCategories,
-        users: totalUsers,
-        revenue: totalRevenue[0]?.total || 0,
+    return sendSuccess(
+      res,
+      {
+        totals: {
+          orders: totalOrders,
+          products: totalProducts,
+          categories: totalCategories,
+          users: totalUsers,
+          revenue: totalRevenue[0]?.total || 0,
+        },
+        alerts: {
+          pendingOrders,
+          pendingPayments,
+        },
+        recentOrders,
       },
-      alerts: {
-        pendingOrders,
-        pendingPayments,
-      },
-      recentOrders,
-    }, "Dashboard data retrieved successfully");
+      "Dashboard data retrieved successfully",
+    );
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -961,7 +1011,10 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   try {
     const { id, order_status, notes } = req.validatedData;
 
-    logger.debug("updateOrderStatus", "Updating order status", { id, order_status });
+    logger.debug("updateOrderStatus", "Updating order status", {
+      id,
+      order_status,
+    });
 
     const order = await OrderModel.findByIdAndUpdate(
       id,
@@ -971,7 +1024,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
         lastUpdatedBy: req.user?.id || req.user,
         updatedAt: new Date(),
       },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     )
       .populate("user", "name email")
       .populate("delivery_address");
@@ -992,7 +1045,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
         logger.error("updateOrderStatus", "Failed to send notification", {
           orderId: id,
           error: err.message,
-        })
+        }),
       );
     }
 
@@ -1001,7 +1054,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       logger.error("updateOrderStatus", "Failed to sync to Firestore", {
         orderId: id,
         error: err.message,
-      })
+      }),
     );
 
     if (isInvoiceEligible(order)) {
@@ -1049,7 +1102,9 @@ export const getUserOrders = asyncHandler(async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    logger.info("getUserOrders", `Retrieved ${orders.length} orders for user`, { userId });
+    logger.info("getUserOrders", `Retrieved ${orders.length} orders for user`, {
+      userId,
+    });
 
     return sendSuccess(res, orders, "Orders retrieved successfully");
   } catch (error) {
@@ -1078,7 +1133,10 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
 
     validateMongoId(id, "orderId");
 
-    logger.debug("getUserOrderById", "Fetching user order", { userId, orderId: id });
+    logger.debug("getUserOrderById", "Fetching user order", {
+      userId,
+      orderId: id,
+    });
 
     const order = await OrderModel.findById(id)
       .populate("user", "name email avatar mobile")
@@ -1092,11 +1150,15 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
     // Check ownership
     const orderUserId = order.user?._id?.toString() || order.user?.toString();
     if (orderUserId !== userId?.toString()) {
-      logger.warn("getUserOrderById", "User trying to access order they don't own", {
-        userId,
-        orderId: id,
-        orderUserId,
-      });
+      logger.warn(
+        "getUserOrderById",
+        "User trying to access order they don't own",
+        {
+          userId,
+          orderId: id,
+          orderUserId,
+        },
+      );
       throw new AppError("FORBIDDEN");
     }
 
@@ -1143,9 +1205,13 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
     }
 
     const isAdmin = requester.role === "Admin";
-    const orderUserId = order.user?._id?.toString?.() || order.user?.toString?.();
+    const orderUserId =
+      order.user?._id?.toString?.() || order.user?.toString?.();
 
-    if (!isAdmin && (!orderUserId || orderUserId !== requester._id.toString())) {
+    if (
+      !isAdmin &&
+      (!orderUserId || orderUserId !== requester._id.toString())
+    ) {
       throw new AppError("FORBIDDEN");
     }
 
@@ -1197,7 +1263,10 @@ export const createOrder = asyncHandler(async (req, res) => {
   try {
     const maintenanceMode = await isMaintenanceMode();
     if (maintenanceMode) {
-      logger.warn("createOrder", "Maintenance mode enabled - blocking checkout");
+      logger.warn(
+        "createOrder",
+        "Maintenance mode enabled - blocking checkout",
+      );
       return res.status(503).json({
         error: true,
         success: false,
@@ -1250,13 +1319,17 @@ export const createOrder = asyncHandler(async (req, res) => {
       dbProductMap,
     });
     const subtotal = round2(
-      normalizedProducts.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
+      normalizedProducts.reduce(
+        (sum, item) => sum + Number(item.subTotal || 0),
+        0,
+      ),
     );
 
     const checkoutContact = await resolveCheckoutContact({
       userId,
       deliveryAddressId: delivery_address || null,
-      guestDetails: guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
+      guestDetails:
+        guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
     });
 
     const membershipResult = userId
@@ -1304,14 +1377,7 @@ export const createOrder = asyncHandler(async (req, res) => {
     );
     const membershipDiscount = round2(membershipResult.discount || 0);
 
-    // GST is system-controlled and must be calculated on the original subtotal
-    // (before coupon/coins). Coupon must NOT reduce GST.
-    const taxData = splitGstInclusiveAmount(
-      subtotalBeforeCoupon,
-      5,
-      checkoutContact.state,
-    );
-
+    // Apply coupon discount to get post-coupon inclusive amount
     workingAmount = Math.max(round2(subtotalBeforeCoupon - couponDiscount), 0);
 
     const totalDiscountBeforeCoins = round2(
@@ -1319,9 +1385,20 @@ export const createOrder = asyncHandler(async (req, res) => {
     );
     const subtotalAfterDiscount = workingAmount;
 
+    // GST is calculated on the post-coupon amount. Coupons are trade discounts
+    // that reduce the taxable value per Indian GST rules. Coin redemptions are
+    // a payment method and do NOT reduce the taxable value.
+    const taxData = splitGstInclusiveAmount(
+      subtotalAfterDiscount,
+      5,
+      checkoutContact.state,
+    );
+
     let coinBalance = 0;
     if (userId) {
-      const user = await UserModel.findById(userId).select("coinBalance").lean();
+      const user = await UserModel.findById(userId)
+        .select("coinBalance")
+        .lean();
       coinBalance = Number(user?.coinBalance || 0);
     }
 
@@ -1422,8 +1499,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       influencerDiscount,
       influencerCommission,
       affiliateCode: affiliateCode || influencerCode || null,
-      affiliateSource:
-        affiliateSource || (influencerData ? "referral" : null),
+      affiliateSource: affiliateSource || (influencerData ? "referral" : null),
       purchaseOrder: checkoutPurchaseOrder?._id || null,
     });
 
@@ -1441,7 +1517,9 @@ export const createOrder = asyncHandler(async (req, res) => {
       };
 
       if (checkoutContact?.addressId) {
-        const addressDoc = await AddressModel.findById(checkoutContact.addressId)
+        const addressDoc = await AddressModel.findById(
+          checkoutContact.addressId,
+        )
           .select(
             [
               "address_line1",
@@ -1459,11 +1537,20 @@ export const createOrder = asyncHandler(async (req, res) => {
 
         if (addressDoc) {
           addressFieldsForLog = {
-            street: String(addressDoc.address_line1 || addressFieldsForLog.street || "").trim(),
+            street: String(
+              addressDoc.address_line1 || addressFieldsForLog.street || "",
+            ).trim(),
             city: String(addressDoc.city || "").trim(),
-            state: String(addressDoc.state || addressFieldsForLog.state || "").trim(),
-            pincode: String(addressDoc.pincode || addressFieldsForLog.pincode || "").trim(),
-            country: String(addressDoc.country || addressFieldsForLog.country || "India").trim() || "India",
+            state: String(
+              addressDoc.state || addressFieldsForLog.state || "",
+            ).trim(),
+            pincode: String(
+              addressDoc.pincode || addressFieldsForLog.pincode || "",
+            ).trim(),
+            country:
+              String(
+                addressDoc.country || addressFieldsForLog.country || "India",
+              ).trim() || "India",
           };
 
           const addrLoc = addressDoc.location || null;
@@ -1509,7 +1596,9 @@ export const createOrder = asyncHandler(async (req, res) => {
     });
 
     if (PAYMENT_PROVIDER === "PHONEPE") {
-      const primaryOrigin = (process.env.FRONTEND_URL || "http://localhost:3000")
+      const primaryOrigin = (
+        process.env.FRONTEND_URL || "http://localhost:3000"
+      )
         .split(",")[0]
         .trim();
       const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
@@ -1533,7 +1622,9 @@ export const createOrder = asyncHandler(async (req, res) => {
         redirectUrl,
         callbackUrl,
         mobileNumber:
-          checkoutContact.contact.phone || req.body?.shippingAddress?.mobile || null,
+          checkoutContact.contact.phone ||
+          req.body?.shippingAddress?.mobile ||
+          null,
       });
 
       const paymentUrl =
@@ -1549,8 +1640,7 @@ export const createOrder = asyncHandler(async (req, res) => {
 
       order.phonepeMerchantTransactionId = merchantTransactionId;
       order.paymentId = merchantTransactionId;
-      order.phonepeTransactionId =
-        phonepeResponse?.data?.transactionId || null;
+      order.phonepeTransactionId = phonepeResponse?.data?.transactionId || null;
       await order.save();
 
       return sendSuccess(
@@ -1562,7 +1652,7 @@ export const createOrder = asyncHandler(async (req, res) => {
           merchantTransactionId,
         },
         "Order created successfully",
-        201
+        201,
       );
     }
 
@@ -1574,7 +1664,7 @@ export const createOrder = asyncHandler(async (req, res) => {
         message: "Order created. Payment provider not configured.",
       },
       "Order created successfully",
-      201
+      201,
     );
   } catch (error) {
     if (error instanceof AppError) {
@@ -1623,7 +1713,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
     const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
     if (missingIds.length > 0) {
-      logger.warn("saveOrderForLater", "Some products not found", { missingIds });
+      logger.warn("saveOrderForLater", "Some products not found", {
+        missingIds,
+      });
       throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
     }
 
@@ -1632,13 +1724,17 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       dbProductMap,
     });
     const subtotal = round2(
-      normalizedProducts.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
+      normalizedProducts.reduce(
+        (sum, item) => sum + Number(item.subTotal || 0),
+        0,
+      ),
     );
 
     const checkoutContact = await resolveCheckoutContact({
       userId,
       deliveryAddressId: delivery_address || null,
-      guestDetails: guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
+      guestDetails:
+        guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
     });
 
     const membershipResult = userId
@@ -1653,7 +1749,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     let influencerCommission = 0;
     let couponDiscount = 0;
     const membershipDiscount = round2(membershipResult.discount || 0);
-    let normalizedCouponCode = couponCode ? couponCode.toUpperCase().trim() : null;
+    let normalizedCouponCode = couponCode
+      ? couponCode.toUpperCase().trim()
+      : null;
 
     // Apply influencer discount first
     if (influencerCode) {
@@ -1665,7 +1763,10 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         if (referralResult.influencer) {
           influencerDiscount = referralResult.discount;
           influencerData = referralResult.influencer;
-          workingAmount = Math.max(round2(workingAmount - influencerDiscount), 0);
+          workingAmount = Math.max(
+            round2(workingAmount - influencerDiscount),
+            0,
+          );
           logger.info("saveOrderForLater", "Influencer discount applied", {
             code: influencerCode,
             discount: influencerDiscount,
@@ -1719,7 +1820,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
 
     let coinBalance = 0;
     if (userId) {
-      const user = await UserModel.findById(userId).select("coinBalance").lean();
+      const user = await UserModel.findById(userId)
+        .select("coinBalance")
+        .lean();
       coinBalance = Number(user?.coinBalance || 0);
     }
 
@@ -1822,8 +1925,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         amount: Number(redemption.redeemAmount || 0),
       },
       affiliateCode: affiliateCode || influencerCode || null,
-      affiliateSource:
-        affiliateSource || (influencerCode ? "referral" : null),
+      affiliateSource: affiliateSource || (influencerCode ? "referral" : null),
       purchaseOrder: checkoutPurchaseOrder?._id || null,
       isSavedOrder: true,
       notes: notes || "Order saved - awaiting payment gateway activation",
@@ -1843,7 +1945,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       };
 
       if (checkoutContact?.addressId) {
-        const addressDoc = await AddressModel.findById(checkoutContact.addressId)
+        const addressDoc = await AddressModel.findById(
+          checkoutContact.addressId,
+        )
           .select(
             [
               "address_line1",
@@ -1861,11 +1965,20 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
 
         if (addressDoc) {
           addressFieldsForLog = {
-            street: String(addressDoc.address_line1 || addressFieldsForLog.street || "").trim(),
+            street: String(
+              addressDoc.address_line1 || addressFieldsForLog.street || "",
+            ).trim(),
             city: String(addressDoc.city || "").trim(),
-            state: String(addressDoc.state || addressFieldsForLog.state || "").trim(),
-            pincode: String(addressDoc.pincode || addressFieldsForLog.pincode || "").trim(),
-            country: String(addressDoc.country || addressFieldsForLog.country || "India").trim() || "India",
+            state: String(
+              addressDoc.state || addressFieldsForLog.state || "",
+            ).trim(),
+            pincode: String(
+              addressDoc.pincode || addressFieldsForLog.pincode || "",
+            ).trim(),
+            country:
+              String(
+                addressDoc.country || addressFieldsForLog.country || "India",
+              ).trim() || "India",
           };
 
           const addrLoc = addressDoc.location || null;
@@ -1905,11 +2018,17 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       });
     }
 
-    logger.info("saveOrderForLater", "Order saved for later", { orderId: savedOrder._id });
+    logger.info("saveOrderForLater", "Order saved for later", {
+      orderId: savedOrder._id,
+    });
 
     // Update influencer stats
     if (influencerData) {
-      await updateInfluencerStats(influencerData._id, finalOrderAmount, influencerCommission);
+      await updateInfluencerStats(
+        influencerData._id,
+        finalOrderAmount,
+        influencerCommission,
+      );
     }
 
     // Sync to Firestore
@@ -1917,7 +2036,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       logger.error("saveOrderForLater", "Failed to sync to Firestore", {
         orderId: savedOrder._id,
         error: err.message,
-      })
+      }),
     );
 
     return sendSuccess(
@@ -1944,7 +2063,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         },
       },
       "Order saved successfully",
-      201
+      201,
     );
   } catch (error) {
     if (error instanceof AppError) {
@@ -2005,7 +2124,9 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     const payload = req.body?.data || req.body || {};
     const merchantTransactionId =
-      payload?.merchantTransactionId || payload?.merchant_transaction_id || null;
+      payload?.merchantTransactionId ||
+      payload?.merchant_transaction_id ||
+      null;
     const transactionId =
       payload?.transactionId || payload?.transaction_id || null;
     const state =
@@ -2069,20 +2190,28 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
             coinsUsed: Number(order.coinRedemption.coinsUsed || 0),
           });
         } catch (coinError) {
-          logger.error("handlePhonePeWebhook", "Failed to deduct redeemed coins", {
-            orderId: order._id,
-            error: coinError.message,
-          });
+          logger.error(
+            "handlePhonePeWebhook",
+            "Failed to deduct redeemed coins",
+            {
+              orderId: order._id,
+              error: coinError.message,
+            },
+          );
         }
       }
 
       // Record coupon usage (idempotent)
       if (order.couponCode) {
         recordCouponUsage(order).catch((err) =>
-          logger.error("handlePhonePeWebhook", "Failed to record coupon usage", {
-            orderId: order._id,
-            error: err.message,
-          }),
+          logger.error(
+            "handlePhonePeWebhook",
+            "Failed to record coupon usage",
+            {
+              orderId: order._id,
+              error: err.message,
+            },
+          ),
         );
       }
 
@@ -2100,17 +2229,20 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           await order.save();
         }
 
-        updateInfluencerStats(order.influencerId, effectiveAmount, commission)
-          .catch((err) =>
-            logger.error(
-              "handlePhonePeWebhook",
-              "Failed to update influencer stats",
-              {
-                orderId: order._id,
-                error: err.message,
-              },
-            ),
-          );
+        updateInfluencerStats(
+          order.influencerId,
+          effectiveAmount,
+          commission,
+        ).catch((err) =>
+          logger.error(
+            "handlePhonePeWebhook",
+            "Failed to update influencer stats",
+            {
+              orderId: order._id,
+              error: err.message,
+            },
+          ),
+        );
       }
 
       if (order.user) {
@@ -2187,7 +2319,9 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     const products = await ProductModel.find().limit(3);
     if (products.length === 0) {
       logger.warn("createTestOrder", "No products found in database");
-      throw new AppError("PRODUCT_NOT_FOUND", { message: "No products available" });
+      throw new AppError("PRODUCT_NOT_FOUND", {
+        message: "No products available",
+      });
     }
 
     // Create order items
@@ -2200,7 +2334,10 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       subTotal: product.price * (Math.floor(Math.random() * 3) + 1),
     }));
 
-    const totalAmount = orderProducts.reduce((sum, item) => sum + item.subTotal, 0);
+    const totalAmount = orderProducts.reduce(
+      (sum, item) => sum + item.subTotal,
+      0,
+    );
 
     // Create test order
     const testOrder = new OrderModel({
@@ -2223,7 +2360,9 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       );
     }
 
-    logger.info("createTestOrder", "Test order created", { orderId: testOrder._id });
+    logger.info("createTestOrder", "Test order created", {
+      orderId: testOrder._id,
+    });
 
     return sendSuccess(
       res,
@@ -2232,7 +2371,7 @@ export const createTestOrder = asyncHandler(async (req, res) => {
         order: testOrder,
       },
       "Test order created successfully",
-      201
+      201,
     );
   } catch (error) {
     if (error instanceof AppError) {

@@ -37,11 +37,6 @@ const MyWishlistPage = () => {
   const handleAddToCart = async (product) => {
     try {
       await addToCart(product, 1);
-      setSnackbar({
-        open: true,
-        message: "Product added to cart",
-        severity: "success",
-      });
     } catch (error) {
       setSnackbar({
         open: true,

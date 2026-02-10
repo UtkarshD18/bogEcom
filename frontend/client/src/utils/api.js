@@ -8,14 +8,33 @@ const appUrl = (
   .trim()
   .replace(/\/+$/, "");
 
+const clearAuthCookies = () => {
+  Cookies.remove("accessToken");
+  Cookies.remove("refreshToken");
+  Cookies.remove("userName");
+  Cookies.remove("userEmail");
+  Cookies.remove("userPhoto");
+};
+
 const refreshAccessToken = async () => {
   try {
+    const refreshToken = Cookies.get("refreshToken");
+    if (!refreshToken) {
+      clearAuthCookies();
+      return null;
+    }
+
     const response = await fetch(`${appUrl}/api/user/refresh-token`, {
       method: "POST",
       credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refreshToken }),
     });
 
     if (!response.ok) {
+      clearAuthCookies();
       return null;
     }
 
@@ -27,6 +46,7 @@ const refreshAccessToken = async () => {
     return token;
   } catch (error) {
     console.error("refreshAccessToken error:", error);
+    clearAuthCookies();
     return null;
   }
 };

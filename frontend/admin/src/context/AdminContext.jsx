@@ -100,6 +100,19 @@ export const AdminProvider = ({ children }) => {
     checkAdminSession();
   }, [checkAdminSession]);
 
+  useEffect(() => {
+    const handleTokenRefreshed = (event) => {
+      const nextToken = event?.detail;
+      if (nextToken && typeof nextToken === "string") {
+        setToken(nextToken);
+      }
+    };
+
+    window.addEventListener("adminTokenRefreshed", handleTokenRefreshed);
+    return () =>
+      window.removeEventListener("adminTokenRefreshed", handleTokenRefreshed);
+  }, []);
+
   const login = async (email, password) => {
     try {
       const response = await postData("/api/user/login", { email, password });

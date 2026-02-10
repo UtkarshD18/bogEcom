@@ -1,8 +1,9 @@
 "use client";
 
 import { firebaseApp } from "@/firebase";
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import { deleteToken, getMessaging, getToken, onMessage } from "firebase/messaging";
 import { useCallback, useEffect, useRef, useState } from "react";
+import cookies from "js-cookie";
 
 const API_URL = (
   process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000"
@@ -33,6 +34,55 @@ export const useNotifications = (options = {}) => {
   const [foregroundMessage, setForegroundMessage] = useState(null);
 
   const messagingRef = useRef(null);
+  const lastRegisterKeyRef = useRef(null);
+
+  const getAuthToken = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    return (
+      cookies.get("accessToken") ||
+      localStorage.getItem("accessToken") ||
+      localStorage.getItem("token")
+    );
+  }, []);
+
+  const registerTokenWithBackend = useCallback(
+    async (fcmToken) => {
+      const headers = {
+        "Content-Type": "application/json",
+      };
+
+      const authToken = getAuthToken();
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
+
+      const response = await fetch(`${API_URL}/api/notifications/register`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({
+          token: fcmToken,
+          userType,
+          userId: userType === "user" ? userId : null,
+          platform: "web",
+        }),
+      });
+
+      if (!response.ok) {
+        let serverMessage = "Failed to register token with backend";
+        try {
+          const data = await response.json();
+          serverMessage = data?.message || data?.error || serverMessage;
+        } catch {
+          // ignore
+        }
+        throw new Error(serverMessage);
+      }
+
+      return true;
+    },
+    [getAuthToken, userId, userType],
+  );
 
   // Check if notifications are supported
   useEffect(() => {
@@ -84,6 +134,39 @@ export const useNotifications = (options = {}) => {
     initMessaging();
   }, [isSupported, permission]);
 
+  // Hydrate token from localStorage when permission already granted
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (permission !== "granted") return;
+    if (token) return;
+
+    const storedToken = localStorage.getItem("fcmToken");
+    if (storedToken) {
+      setToken(storedToken);
+    }
+  }, [permission, token]);
+
+  // Keep backend registration in sync (e.g., login/logout changes)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (permission !== "granted") return;
+
+    const storedToken = token || localStorage.getItem("fcmToken");
+    if (!storedToken) return;
+
+    const authToken = getAuthToken();
+    const registerKey = `${storedToken}|${userType}|${userId || ""}|${
+      authToken ? "auth" : "guest"
+    }`;
+
+    if (lastRegisterKeyRef.current === registerKey) return;
+    lastRegisterKeyRef.current = registerKey;
+
+    registerTokenWithBackend(storedToken).catch((err) => {
+      console.error("Error syncing notification token:", err);
+    });
+  }, [getAuthToken, permission, registerTokenWithBackend, token, userId, userType]);
+
   /**
    * Request notification permission and register token
    * Call this only after user interaction (button click, etc.)
@@ -125,10 +208,23 @@ export const useNotifications = (options = {}) => {
 
       // Get FCM token
       const messaging = getMessaging(firebaseApp);
-      const fcmToken = await getToken(messaging, {
-        vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+      const tokenOptions = {
         serviceWorkerRegistration: registration,
-      });
+      };
+      const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+      if (vapidKey) {
+        tokenOptions.vapidKey = vapidKey;
+      }
+
+      // If the browser has an old/invalid token, force a fresh one.
+      try {
+        await deleteToken(messaging);
+      } catch (deleteErr) {
+        // Best-effort only.
+        console.log("FCM deleteToken skipped:", deleteErr?.message || deleteErr);
+      }
+
+      const fcmToken = await getToken(messaging, tokenOptions);
 
       if (!fcmToken) {
         throw new Error("Failed to get FCM token");
@@ -138,22 +234,7 @@ export const useNotifications = (options = {}) => {
       console.log("FCM Token obtained:", fcmToken.substring(0, 20) + "...");
 
       // Register token with backend
-      const response = await fetch(`${API_URL}/api/notifications/register`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          token: fcmToken,
-          userType: userType,
-          userId: userType === "user" ? userId : null,
-          platform: "web",
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to register token with backend");
-      }
+      await registerTokenWithBackend(fcmToken);
 
       // Store permission state
       localStorage.setItem("notificationPermission", "granted");
@@ -167,7 +248,7 @@ export const useNotifications = (options = {}) => {
     } finally {
       setIsRegistering(false);
     }
-  }, [isSupported, permission, userId, userType]);
+  }, [isSupported, permission, registerTokenWithBackend]);
 
   /**
    * Unregister from notifications
@@ -178,6 +259,19 @@ export const useNotifications = (options = {}) => {
     if (!storedToken) return;
 
     try {
+      // Best-effort: revoke the token at Firebase so the next enable generates a fresh token.
+      if (firebaseApp) {
+        try {
+          const messaging = getMessaging(firebaseApp);
+          await deleteToken(messaging);
+        } catch (deleteErr) {
+          console.log(
+            "FCM deleteToken during unregister skipped:",
+            deleteErr?.message || deleteErr,
+          );
+        }
+      }
+
       await fetch(`${API_URL}/api/notifications/unregister`, {
         method: "DELETE",
         headers: {

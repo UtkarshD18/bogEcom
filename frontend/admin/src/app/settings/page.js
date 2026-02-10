@@ -32,7 +32,7 @@ const API_URL = (
 
 /**
  * Store Settings Page
- * Admin panel for managing shipping, tax, and order settings
+ * Admin panel for managing shipping, store, and order settings
  */
 const SettingsPage = () => {
   const { token } = useAdmin();
@@ -54,13 +54,6 @@ const SettingsPage = () => {
       standard: "5-7 business days",
       express: "2-3 business days",
     },
-  });
-
-  const [taxSettings, setTaxSettings] = useState({
-    enabled: true,
-    taxRate: 5,
-    taxName: "GST",
-    taxIncludedInPrice: true,
   });
 
   const [orderSettings, setOrderSettings] = useState({
@@ -138,15 +131,6 @@ const SettingsPage = () => {
           switch (setting.key) {
             case "shippingSettings":
               setShippingSettings(setting.value);
-              break;
-            case "taxSettings":
-              // GST is fixed and system-controlled (admin cannot disable/modify)
-              setTaxSettings({
-                enabled: true,
-                taxRate: 5,
-                taxName: "GST",
-                taxIncludedInPrice: true,
-              });
               break;
             case "orderSettings":
               setOrderSettings(setting.value);
@@ -248,7 +232,6 @@ const SettingsPage = () => {
     try {
       const results = await Promise.all([
         saveSetting("shippingSettings", shippingSettings),
-        saveSetting("taxSettings", taxSettings),
         saveSetting("orderSettings", orderSettings),
         saveSetting("discountSettings", discountSettings),
         saveSetting("storeInfo", storeInfo),
@@ -303,7 +286,7 @@ const SettingsPage = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Store Settings</h1>
           <p className="text-gray-500 mt-1">
-            Manage shipping, tax, and order configurations
+            Manage shipping, order, and store configurations
           </p>
         </div>
         <div className="flex gap-3">
@@ -450,68 +433,6 @@ const SettingsPage = () => {
             placeholder="e.g., 2-3 business days"
           />
         </div>
-      </div>
-
-      {/* Tax Settings */}
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <MdPercent className="text-2xl text-blue-500" />
-          <h2 className="text-lg font-semibold text-gray-800">
-            Tax Settings (GST)
-          </h2>
-        </div>
-        <Divider className="mb-4" />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormControlLabel
-            control={
-              <Switch
-                checked={taxSettings.taxIncludedInPrice}
-                color="warning"
-                disabled
-              />
-            }
-            label="Tax Included in Product Price"
-          />
-
-          <TextField
-            label="Tax Name"
-            value={taxSettings.taxName}
-            onChange={(e) =>
-              setTaxSettings({
-                ...taxSettings,
-                taxName: e.target.value,
-              })
-            }
-            size="small"
-            fullWidth
-            placeholder="e.g., GST, VAT"
-            disabled
-          />
-
-          <TextField
-            label="Tax Rate"
-            type="number"
-            value={taxSettings.taxRate}
-            onChange={(e) =>
-              setTaxSettings({
-                ...taxSettings,
-                taxRate: Number(e.target.value),
-              })
-            }
-            InputProps={{
-              endAdornment: <InputAdornment position="end">%</InputAdornment>,
-            }}
-            size="small"
-            fullWidth
-            disabled
-          />
-        </div>
-
-        <p className="text-sm text-gray-500 mt-3">
-          GST is always enabled and system-controlled. Customers will see a GST
-          breakdown at checkout.
-        </p>
       </div>
 
       {/* Order Settings */}

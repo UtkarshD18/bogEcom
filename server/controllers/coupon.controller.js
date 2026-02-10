@@ -93,7 +93,9 @@ export const validateCoupon = async (req, res) => {
       });
     }
 
-    const maxDiscountPercentage = Number(discountSettings?.maxDiscountPercentage);
+    const maxDiscountPercentage = Number(
+      discountSettings?.maxDiscountPercentage,
+    );
     const maxDiscountByPercent =
       Number.isFinite(maxDiscountPercentage) && maxDiscountPercentage > 0
         ? (safeOrderAmount * maxDiscountPercentage) / 100
@@ -115,7 +117,11 @@ export const validateCoupon = async (req, res) => {
       .trim()
       .toUpperCase();
 
-    if (firstOrderEnabled && offerCouponCode && normalizedCode === offerCouponCode) {
+    if (
+      firstOrderEnabled &&
+      offerCouponCode &&
+      normalizedCode === offerCouponCode
+    ) {
       if (userId) {
         const hasPriorOrders = await OrderModel.exists({ user: userId });
         if (hasPriorOrders) {
@@ -127,8 +133,19 @@ export const validateCoupon = async (req, res) => {
         }
       }
 
-      const percentage = Math.max(Number(firstOrderConfig?.percentage || 0), 0);
-      const maxDiscount = Math.max(Number(firstOrderConfig?.maxDiscount || 0), 0);
+      // Use actual coupon document values if the coupon exists in the DB,
+      // otherwise fall back to firstOrderDiscount settings
+      const offerCoupon = await CouponModel.findOne({
+        code: normalizedCode,
+        isActive: true,
+      });
+
+      const percentage = offerCoupon
+        ? Math.max(Number(offerCoupon.discountValue || 0), 0)
+        : Math.max(Number(firstOrderConfig?.percentage || 0), 0);
+      const maxDiscount = offerCoupon
+        ? Math.max(Number(offerCoupon.maxDiscountAmount || 0), 0)
+        : Math.max(Number(firstOrderConfig?.maxDiscount || 0), 0);
 
       const computed = (safeOrderAmount * percentage) / 100;
       const discountAmount = applyGlobalDiscountCaps(
@@ -141,11 +158,12 @@ export const validateCoupon = async (req, res) => {
         message: "Coupon applied successfully",
         data: {
           code: normalizedCode,
-          discountType: "percentage",
+          discountType: offerCoupon?.discountType || "percentage",
           discountValue: percentage,
           discountAmount,
-          finalAmount: Math.round((safeOrderAmount - discountAmount) * 100) / 100,
-          description: "First order discount",
+          finalAmount:
+            Math.round((safeOrderAmount - discountAmount) * 100) / 100,
+          description: offerCoupon?.description || "First order discount",
           isAffiliateCoupon: false,
           affiliateSource: null,
         },
@@ -272,7 +290,8 @@ export const validateCoupon = async (req, res) => {
 
     discountAmount = applyGlobalDiscountCaps(discountAmount);
 
-    const finalAmount = Math.round((safeOrderAmount - discountAmount) * 100) / 100;
+    const finalAmount =
+      Math.round((safeOrderAmount - discountAmount) * 100) / 100;
 
     // Check if this coupon is an affiliate/referral code
     const isAffiliateCoupon =
@@ -476,10 +495,7 @@ export const updateCoupon = async (req, res) => {
     }
 
     if (updateData.endDate) {
-      const normalizedEndDate = normalizeCouponDate(
-        updateData.endDate,
-        "end",
-      );
+      const normalizedEndDate = normalizeCouponDate(updateData.endDate, "end");
       if (!normalizedEndDate) {
         return res.status(400).json({
           error: true,

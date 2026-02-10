@@ -102,11 +102,6 @@ const Sidebar = () => {
       href: "/coins",
     },
     {
-      name: "Policies",
-      icon: <MdOutlinePolicy size={22} />,
-      href: "/policies",
-    },
-    {
       name: "Cancellation & Return",
       icon: <MdOutlinePolicy size={22} />,
       href: "/cancellation-policy",

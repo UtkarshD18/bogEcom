@@ -3,6 +3,7 @@
 import Cookies from "js-cookie";
 import { createContext, useContext, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
+import { round2 } from "@/utils/gst";
 
 /**
  * Cart Context
@@ -76,7 +77,7 @@ export const CartProvider = ({ children }) => {
       if (data.success && data.data) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
-        setCartTotal(data.data.subtotal || 0);
+        setCartTotal(round2(data.data.subtotal || 0));
       } else {
         // Fallback to local storage
         loadFromLocalStorage();
@@ -114,10 +115,20 @@ export const CartProvider = ({ children }) => {
 
   // Calculate totals
   const calculateTotals = (items) => {
-    const count = items.reduce((sum, item) => sum + item.quantity, 0);
-    const total = items.reduce(
-      (sum, item) => sum + item.price * item.quantity,
+    const safeItems = Array.isArray(items) ? items : [];
+
+    const count = safeItems.reduce(
+      (sum, item) => sum + Math.max(Number(item?.quantity || 0), 0),
       0,
+    );
+
+    // Prices are GST-inclusive; keep totals rounded to 2 decimals to avoid drift.
+    const total = round2(
+      safeItems.reduce((sum, item) => {
+        const price = Number(item?.price || 0);
+        const quantity = Math.max(Number(item?.quantity || 0), 0);
+        return sum + round2(price * quantity);
+      }, 0),
     );
     setCartCount(count);
     setCartTotal(total);
@@ -158,8 +169,7 @@ export const CartProvider = ({ children }) => {
       if (data.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
-        setCartTotal(data.data.subtotal || 0);
-        toast.success(`${product.name} added to cart!`);
+        setCartTotal(round2(data.data.subtotal || 0));
         setIsDrawerOpen(true); // Auto-open drawer
         return { success: true };
       } else {
@@ -205,7 +215,6 @@ export const CartProvider = ({ children }) => {
     setCartItems(newItems);
     calculateTotals(newItems);
     saveToLocalStorage(newItems);
-    toast.success(`${product.name} added to cart!`);
   };
 
   // Update quantity
@@ -242,7 +251,7 @@ export const CartProvider = ({ children }) => {
       if (data.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
-        setCartTotal(data.data.subtotal || 0);
+        setCartTotal(round2(data.data.subtotal || 0));
       } else {
         updateQuantityLocal(productId, quantity);
       }
@@ -297,7 +306,7 @@ export const CartProvider = ({ children }) => {
       if (data.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
-        setCartTotal(data.data.subtotal || 0);
+        setCartTotal(round2(data.data.subtotal || 0));
         toast.success("Item removed from cart");
       } else {
         removeFromCartLocal(productId);

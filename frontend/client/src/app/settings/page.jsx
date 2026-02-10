@@ -1,6 +1,8 @@
 "use client";
 import AccountSidebar from "@/components/AccountSiderbar";
+import { useNotifications } from "@/hooks/useNotifications";
 import { Button, CircularProgress, Switch } from "@mui/material";
+import cookies from "js-cookie";
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
@@ -11,6 +13,7 @@ const API_URL = (
 ).replace(/\/+$/, "");
 
 const Settings = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [settings, setSettings] = useState({
     emailNotifications: true,
     pushNotifications: true,
@@ -20,6 +23,32 @@ const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const saveQueueRef = useRef(Promise.resolve());
+
+  useEffect(() => {
+    const checkAuth = () => setIsLoggedIn(!!cookies.get("accessToken"));
+    checkAuth();
+
+    window.addEventListener("loginSuccess", checkAuth);
+    window.addEventListener("storage", checkAuth);
+    window.addEventListener("focus", checkAuth);
+    return () => {
+      window.removeEventListener("loginSuccess", checkAuth);
+      window.removeEventListener("storage", checkAuth);
+      window.removeEventListener("focus", checkAuth);
+    };
+  }, []);
+
+  const {
+    isSupported,
+    permission,
+    isRegistered,
+    isRegistering,
+    error: notificationError,
+    requestPermission,
+    unregister,
+  } = useNotifications({
+    userType: isLoggedIn ? "user" : "guest",
+  });
 
   // Fetch settings from backend on mount
   useEffect(() => {
@@ -149,6 +178,33 @@ const Settings = () => {
     });
   };
 
+  const handlePushNotificationsToggle = async () => {
+    const nextValue = !settings.pushNotifications;
+    const nextSettings = { ...settings, pushNotifications: nextValue };
+
+    // Optimistic UI update for better UX.
+    setSettings(nextSettings);
+
+    if (nextValue) {
+      // Turning ON: ask browser permission and register token (user action).
+      const ok = await requestPermission();
+      if (!ok) {
+        // Revert if browser permission wasn't granted / token couldn't be registered.
+        setSettings((prev) => ({ ...prev, pushNotifications: false }));
+        await queueSaveSettings(
+          { ...nextSettings, pushNotifications: false },
+          { showSuccessToast: false },
+        );
+        return;
+      }
+    } else {
+      // Turning OFF: unregister token so user stops receiving pushes.
+      await unregister();
+    }
+
+    await queueSaveSettings(nextSettings, { showSuccessToast: false });
+  };
+
   const handleSave = async () => {
     await queueSaveSettings(settings, { showSuccessToast: true });
   };
@@ -208,11 +264,68 @@ const Settings = () => {
                   <p className="text-[14px] text-gray-500">
                     Receive push notifications on your device
                   </p>
+                  {settings.pushNotifications && permission !== "granted" && (
+                    <p className="text-[13px] text-gray-500 mt-1">
+                      Browser permission:{" "}
+                      <span className="font-medium">{permission}</span>
+                    </p>
+                  )}
+                  {settings.pushNotifications && isSupported && (
+                    <p className="text-[13px] text-gray-500 mt-1">
+                      Status:{" "}
+                      <span className="font-medium">
+                        {isRegistered ? "Enabled" : "Not registered"}
+                      </span>
+                    </p>
+                  )}
+                  {settings.pushNotifications && !isSupported && (
+                    <p className="text-[13px] text-gray-500 mt-1">
+                      Push notifications are not supported in this browser.
+                    </p>
+                  )}
+                  {settings.pushNotifications &&
+                    isSupported &&
+                    (permission !== "granted" || !isRegistered) && (
+                      <div className="mt-2">
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={async () => {
+                            const ok = await requestPermission();
+                            if (ok && isLoggedIn) {
+                              await queueSaveSettings(
+                                { ...settings, pushNotifications: true },
+                                { showSuccessToast: false },
+                              );
+                            }
+                          }}
+                          disabled={isRegistering}
+                          sx={{
+                            borderColor: "#f59e0b",
+                            color: "#b45309",
+                            "&:hover": {
+                              borderColor: "#d97706",
+                              backgroundColor: "rgba(245,158,11,0.08)",
+                            },
+                          }}
+                        >
+                          {permission === "granted"
+                            ? "Register device"
+                            : "Enable now"}
+                        </Button>
+                      </div>
+                    )}
+                  {notificationError && (
+                    <p className="text-[13px] text-red-500 mt-1">
+                      {notificationError}
+                    </p>
+                  )}
                 </div>
                 <Switch
                   checked={settings.pushNotifications}
-                  onChange={() => handleToggle("pushNotifications")}
+                  onChange={handlePushNotificationsToggle}
                   color="warning"
+                  disabled={isRegistering}
                 />
               </div>
 

@@ -11,7 +11,12 @@ import {
   initAffiliateTracking,
   setAffiliateFromCoupon,
 } from "@/utils/affiliateTracking";
-import { round2, splitGstInclusiveAmount } from "@/utils/gst";
+import {
+  calculateCheckoutTotals,
+  calculatePercentageDiscount,
+  getGstRatePercentFromSettings,
+  round2,
+} from "@/utils/gst";
 import {
   Alert,
   Button,
@@ -201,7 +206,9 @@ const Checkout = () => {
   ];
 
   const normalizeStateValue = (value) => {
-    const incoming = String(value || "").trim().toLowerCase();
+    const incoming = String(value || "")
+      .trim()
+      .toLowerCase();
     if (!incoming) return "";
     const match = INDIAN_STATES.find(
       (s) => String(s).trim().toLowerCase() === incoming,
@@ -210,24 +217,41 @@ const Checkout = () => {
   };
 
   // Prices are GST-inclusive throughout the storefront.
-  // GST is fixed at 5% (IGST) for all orders.
-  const gstRatePercent = 5;
+  // GST rate comes from settings (defaults to 5% if missing).
+  const gstRatePercent = getGstRatePercentFromSettings(taxSettings);
 
   // Derive the delivery state for GST display (CGST+SGST vs IGST)
   const checkoutStateForPreview = isGuestCheckout
     ? guestDetails.state
     : addresses.find((a) => a._id === selectedAddress)?.state || "";
 
-  const cartGrossSubtotal = round2(
-    (cartItems || []).reduce((sum, item) => {
-      const data = getItemData(item);
-      const quantity = Math.max(Number(data.quantity || 1), 0);
-      const unitPrice = Number(data.price || 0);
-      const lineAmount = round2(unitPrice * quantity);
-      return sum + lineAmount;
-    }, 0),
-  );
+  // ── Price Calculation (GST-exclusive model) ──────────────────────────
+  // Product prices are GST-inclusive. We extract base (excl. GST) first,
+  // apply trade discounts on the base, then recalculate GST on the discounted base.
+  //
+  // NOTE: All GST + payable calculations are delegated to calculateCheckoutTotals()
+  // (paise-safe) which acts as the single source of truth for checkout totals.
 
+  const checkoutItems = (cartItems || []).map((item) => {
+    const data = getItemData(item);
+    return {
+      price: Number(data.price || 0), // GST-inclusive unit price
+      quantity: Math.max(Number(data.quantity || 1), 0),
+    };
+  });
+
+  // Step 1: Subtotals (before discounts)
+  const preDiscountTotals = calculateCheckoutTotals({
+    items: checkoutItems,
+    gstRatePercent,
+  });
+
+  // GST-inclusive cart total (for shipping thresholds etc.)
+  const cartGrossSubtotal = preDiscountTotals.originalInclusiveTotal;
+  // GST-exclusive base subtotal (used for all trade discounts)
+  const cartBaseSubtotal = preDiscountTotals.baseSubtotal;
+
+  // Step 2: Membership discount on GST-exclusive base (trade discount)
   const membershipDiscountPercentage =
     membershipStatus?.isMember && !membershipStatus?.isExpired
       ? Number(
@@ -236,38 +260,52 @@ const Checkout = () => {
             0,
         )
       : 0;
-  const membershipDiscount = Math.max(
-    round2((cartGrossSubtotal * membershipDiscountPercentage) / 100),
-    0,
+  const membershipDiscount = calculatePercentageDiscount(
+    cartBaseSubtotal,
+    membershipDiscountPercentage,
   );
-  const subtotalAfterMembership = Math.max(
-    cartGrossSubtotal - membershipDiscount,
-    0,
+  const baseAfterMembership = round2(
+    Math.max(cartBaseSubtotal - membershipDiscount, 0),
   );
 
-  // Referral/Influencer discount (applied FIRST, calculated on subtotal)
-  // Note: Backend will recalculate this for security - this is for display only
+  // Step 3: Referral/Influencer discount on GST-exclusive base (trade discount)
+  // Note: Backend will recalculate for security — this is for display only.
   const referralDiscount = referralCode
-    ? calculateReferralDiscount(subtotalAfterMembership)
+    ? round2(
+        Math.min(
+          Math.max(Number(calculateReferralDiscount(baseAfterMembership) || 0), 0),
+          baseAfterMembership,
+        ),
+      )
     : 0;
-
-  // Coupon discount (applied SECOND, on amount after referral discount)
-  const couponDiscount = appliedCoupon?.discountAmount || 0;
-
-  // IMPORTANT: GST is calculated on the original subtotal (before coupon),
-  // and coupon must not reduce GST.
-  const baseInclusiveSubtotalBeforeCoupon = Math.max(
-    round2(subtotalAfterMembership - referralDiscount),
-    0,
+  const baseBeforeCoupon = round2(
+    Math.max(baseAfterMembership - referralDiscount, 0),
   );
 
-  const subtotalAfterCoupon = Math.max(
-    round2(baseInclusiveSubtotalBeforeCoupon - couponDiscount),
-    0,
+  // Step 4: Coupon applies ONLY on GST-exclusive base (after membership/referral)
+  const couponDiscount = round2(
+    Math.min(
+      Math.max(Number(appliedCoupon?.discountAmount || 0), 0),
+      baseBeforeCoupon,
+    ),
   );
+
+  // Step 5: GST recalculated on discounted base (coupon is a trade discount)
+  const tradeDiscountBeforeCoupon = round2(membershipDiscount + referralDiscount);
+  const productTotalsAfterCoupon = calculateCheckoutTotals({
+    items: checkoutItems,
+    gstRatePercent,
+    baseDiscountBeforeCoupon: tradeDiscountBeforeCoupon,
+    couponDiscount,
+  });
+  const subtotal = productTotalsAfterCoupon.discountedSubtotal; // GST-exclusive after coupon
+  const tax = productTotalsAfterCoupon.gstAmount; // GST on discounted base
+
+  const productCostAfterCoupon = round2(subtotal + tax); // GST-inclusive after coupon (no shipping)
+
+  // Step 6: Coin redemption (payment method, NOT a trade discount)
   const maxCoinRedeemValue = Math.floor(
-    (subtotalAfterCoupon * Number(coinSettings.maxRedeemPercentage || 0)) /
-      100,
+    (productCostAfterCoupon * Number(coinSettings.maxRedeemPercentage || 0)) / 100,
   );
   const safeRequestedCoins = Math.max(Number(requestedCoins || 0), 0);
   const effectiveRedeemCoins = Math.min(
@@ -275,27 +313,23 @@ const Checkout = () => {
     Number(coinBalance || 0),
     Math.floor(maxCoinRedeemValue / Number(coinSettings.redeemRate || 1)),
   );
-  const coinRedeemAmount = Math.round(
+  const coinRedeemAmount = round2(
     effectiveRedeemCoins * Number(coinSettings.redeemRate || 0),
   );
-  const netInclusiveSubtotal = Math.max(
-    round2(subtotalAfterCoupon - coinRedeemAmount),
-    0,
-  );
 
-  const preCouponSplit = splitGstInclusiveAmount(
-    baseInclusiveSubtotalBeforeCoupon,
+  // Step 7: Shipping — GST-free, coupon-free; thresholds use pre-discount GST-inclusive total
+  const shipping = calculateShipping(cartGrossSubtotal);
+
+  // Step 8: Final payable = discounted base + GST + shipping − coinRedeem
+  const finalTotals = calculateCheckoutTotals({
+    items: checkoutItems,
     gstRatePercent,
-  );
-  const subtotal = preCouponSplit.taxableAmount; // Subtotal (Excl. GST)
-  const tax = preCouponSplit.gstAmount; // GST (IGST)
-
-  // Shipping calculation from context settings (thresholds use inclusive subtotal).
-  // Coupon must NOT affect shipping.
-  const shipping = calculateShipping(baseInclusiveSubtotalBeforeCoupon);
-
-  // Final total
-  const total = Math.max(0, round2(netInclusiveSubtotal + shipping));
+    baseDiscountBeforeCoupon: tradeDiscountBeforeCoupon,
+    couponDiscount,
+    shippingCost: shipping,
+    coinRedeemAmount,
+  });
+  const total = finalTotals.totalPayable;
 
   // Fetch addresses from database
   const fetchAddresses = useCallback(async () => {
@@ -703,9 +737,9 @@ const Checkout = () => {
         },
         body: JSON.stringify({
           code: couponCode.trim(),
-          // Backend validates coupon against the net order amount
+          // Backend validates coupon against the GST-exclusive base amount
           // (after membership/referral, before coupon/shipping).
-          orderAmount: Math.max(subtotalAfterMembership - referralDiscount, 0),
+          orderAmount: baseBeforeCoupon,
           influencerCode: referralCode || null,
         }),
       });
@@ -1205,13 +1239,19 @@ const Checkout = () => {
                           setGuestDetails((prev) => ({
                             ...prev,
                             address:
-                              loc.street || loc.formattedAddress || prev.address,
+                              loc.street ||
+                              loc.formattedAddress ||
+                              prev.address,
                             pincode: loc.pincode || prev.pincode,
                             state: normalizeStateValue(loc.state) || prev.state,
                           }));
                         }}
                         onError={(message) =>
-                          setSnackbar({ open: true, message, severity: "error" })
+                          setSnackbar({
+                            open: true,
+                            message,
+                            severity: "error",
+                          })
                         }
                       />
                       {guestLocationPayload?.formattedAddress && (
@@ -1580,9 +1620,30 @@ const Checkout = () => {
                 </h3>
                 <div className="space-y-3 text-base">
                   <div className="flex justify-between text-gray-600">
-                    <span>Subtotal (Excl. GST)</span>
-                    <span>₹{subtotal.toFixed(2)}</span>
+                    <span>Product Total (Incl. GST)</span>
+                    <span>₹{cartGrossSubtotal.toFixed(2)}</span>
                   </div>
+
+                  <div className="flex justify-between text-gray-600">
+                    <span>Subtotal (Excl. GST)</span>
+                    <span>₹{cartBaseSubtotal.toFixed(2)}</span>
+                  </div>
+
+                  {couponDiscount > 0 && (
+                    <div className="flex justify-between text-green-600 font-medium">
+                      <span className="flex items-center gap-2">
+                        <FiTag className="w-4 h-4" />
+                        Coupon Discount
+                      </span>
+                      <span>-₹{couponDiscount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {couponDiscount > 0 && (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Discounted Subtotal (Excl. GST)</span>
+                      <span>₹{subtotal.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-gray-600">
                     <span>
                       {checkoutStateForPreview.toLowerCase() === "rajasthan"
@@ -1598,7 +1659,7 @@ const Checkout = () => {
                       <MdLocalShipping />
                       Shipping
                       {shippingSettings?.freeShippingEnabled &&
-                        baseInclusiveSubtotalBeforeCoupon <
+                        cartGrossSubtotal <
                           shippingSettings?.freeShippingThreshold && (
                           <span className="text-xs text-orange-500">
                             (Free over ₹
@@ -1616,13 +1677,13 @@ const Checkout = () => {
                         : `₹${Number(shipping || 0).toFixed(2)}`}
                     </span>
                   </div>
-                  {couponDiscount > 0 && (
+                  {/* Coin redemption (payment method, shown when used) */}
+                  {coinRedeemAmount > 0 && (
                     <div className="flex justify-between text-green-600 font-medium">
                       <span className="flex items-center gap-2">
-                        <FiTag className="w-4 h-4" />
-                        Coupon Discount
+                        🪙 Coin Redemption
                       </span>
-                      <span>-₹{couponDiscount.toFixed(2)}</span>
+                      <span>-₹{coinRedeemAmount.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="border-t border-gray-200 pt-3">
@@ -1662,12 +1723,16 @@ const Checkout = () => {
               <Button
                 onClick={handlePayNow}
                 disabled={
-                  maintenanceMode || isPayButtonDisabled || cartItems.length === 0
+                  maintenanceMode ||
+                  isPayButtonDisabled ||
+                  cartItems.length === 0
                 }
                 fullWidth
                 sx={{
                   backgroundColor:
-                    maintenanceMode || isPayButtonDisabled ? "#9ca3af" : "#059669",
+                    maintenanceMode || isPayButtonDisabled
+                      ? "#9ca3af"
+                      : "#059669",
                   color: "white",
                   padding: "16px 24px",
                   borderRadius: "12px",
@@ -1691,8 +1756,8 @@ const Checkout = () => {
                 {maintenanceMode
                   ? "Maintenance Mode"
                   : isPayButtonDisabled
-                  ? "Please Wait..."
-                  : `Pay ₹${total.toFixed(0)}`}
+                    ? "Please Wait..."
+                    : `Pay ₹${total.toFixed(0)}`}
               </Button>
 
               {/* Security Badge */}
@@ -1772,7 +1837,8 @@ const Checkout = () => {
                   setLocationPayload(loc);
                   setFormData((prev) => ({
                     ...prev,
-                    address_line1: loc.street || loc.formattedAddress || prev.address_line1,
+                    address_line1:
+                      loc.street || loc.formattedAddress || prev.address_line1,
                     city: loc.city || prev.city,
                     pincode: loc.pincode || prev.pincode,
                     state: normalizeStateValue(loc.state) || prev.state,
@@ -1783,9 +1849,7 @@ const Checkout = () => {
                 }
               />
               {locationPayload?.formattedAddress && (
-                <span className="text-xs text-gray-500">
-                  Location selected
-                </span>
+                <span className="text-xs text-gray-500">Location selected</span>
               )}
             </div>
 

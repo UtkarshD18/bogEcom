@@ -90,14 +90,69 @@ const ThemeProvider = ({ children }) => {
     setMounted(true);
 
     const token = Cookies.get("accessToken");
-    if (token !== undefined && token !== null && token !== "") {
+    let tokenValid = false;
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        tokenValid = payload.exp * 1000 > Date.now();
+      } catch {}
+    }
+    if (tokenValid) {
       Cookies.remove("actionType");
       setIsLogin(true);
       setUser({
         name: Cookies.get("userName"),
         email: Cookies.get("userEmail"),
       });
-      router.push("/");
+    } else if (token) {
+      // Token expired — try refreshing before giving up
+      const refreshToken = Cookies.get("refreshToken");
+      if (refreshToken) {
+        fetch(
+          `${(process.env.NEXT_PUBLIC_APP_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").trim().replace(/\/+$/, "")}/api/user/refresh-token`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken }),
+          },
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            const newToken = data?.data?.accessToken;
+            if (newToken) {
+              Cookies.set("accessToken", newToken, { expires: 7 });
+              setIsLogin(true);
+              setUser({
+                name: Cookies.get("userName"),
+                email: Cookies.get("userEmail"),
+              });
+            } else {
+              // Refresh failed — clear stale cookies
+              Cookies.remove("accessToken");
+              Cookies.remove("refreshToken");
+              Cookies.remove("userName");
+              Cookies.remove("userEmail");
+              Cookies.remove("userPhoto");
+              setIsLogin(false);
+            }
+          })
+          .catch(() => {
+            Cookies.remove("accessToken");
+            Cookies.remove("refreshToken");
+            Cookies.remove("userName");
+            Cookies.remove("userEmail");
+            Cookies.remove("userPhoto");
+            setIsLogin(false);
+          });
+      } else {
+        // No refresh token — clear stale cookies
+        Cookies.remove("accessToken");
+        Cookies.remove("userName");
+        Cookies.remove("userEmail");
+        Cookies.remove("userPhoto");
+        setIsLogin(false);
+      }
     }
   }, []);
 

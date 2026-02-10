@@ -14,6 +14,48 @@ import { FiMapPin } from "react-icons/fi";
 const CONSENT_TEXT =
   "We use Google Maps to fetch your current location to autofill your address.\nYour location data is stored securely for order processing and support purposes for up to 90 days.";
 
+const toErrorDetails = (err) => {
+  if (err instanceof Error) {
+    return {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+      code: err.code,
+      cause: err.cause,
+    };
+  }
+
+  if (!err || typeof err !== "object") return err;
+
+  const details = { type: err?.constructor?.name };
+  for (const key of Object.getOwnPropertyNames(err)) {
+    try {
+      details[key] = err[key];
+    } catch {
+      details[key] = "[unavailable]";
+    }
+  }
+  return details;
+};
+
+const getErrorMessage = (err) => {
+  const code = err?.code;
+  if (code === 1) {
+    return "Location permission denied. Please allow location access and try again.";
+  }
+  if (code === 2) {
+    return "Location unavailable. Please enable location services and try again.";
+  }
+  if (code === 3) {
+    return "Location request timed out. Please try again.";
+  }
+
+  const message = err?.message;
+  if (typeof message === "string" && message.trim()) return message.trim();
+
+  return "Failed to fetch location";
+};
+
 const GOOGLE_MAPS_API_KEY = (
   process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""
 )
@@ -66,11 +108,21 @@ const getCurrentPosition = () =>
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0,
-    });
+    navigator.geolocation.getCurrentPosition(
+      resolve,
+      (err) => {
+        const error = new Error(getErrorMessage(err));
+        error.name = "GeolocationError";
+        error.code = err?.code;
+        error.cause = err;
+        reject(error);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      },
+    );
   });
 
 const pickComponent = (components, type) =>
@@ -114,7 +166,11 @@ const geocodeLatLng = ({ lat, lng }) =>
     const geocoder = new window.google.maps.Geocoder();
     geocoder.geocode({ location: { lat, lng } }, (results, status) => {
       if (status !== "OK" || !results || results.length === 0) {
-        reject(new Error("Unable to resolve address from location"));
+        reject(
+          new Error(
+            `Unable to resolve address from location (status: ${status || "UNKNOWN"})`,
+          ),
+        );
         return;
       }
       resolve(results[0]);
@@ -164,8 +220,15 @@ export default function UseCurrentLocationGoogleMaps({
 
       setConsentOpen(false);
     } catch (err) {
-      const message = err?.message || "Failed to fetch location";
-      console.error("UseCurrentLocationGoogleMaps error:", err);
+      const message = getErrorMessage(err);
+      const details = toErrorDetails(err);
+      const isPermissionDenied =
+        err?.code === 1 || err?.cause?.code === 1 || err?.name === "NotAllowedError";
+
+      (isPermissionDenied ? console.warn : console.error)(
+        "UseCurrentLocationGoogleMaps error:",
+        details,
+      );
       onError?.(message);
       setConsentOpen(false);
     } finally {

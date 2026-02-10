@@ -7,6 +7,7 @@ import {
 } from "../controllers/notification.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import authOptional from "../middlewares/authOptional.js";
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ const router = express.Router();
 // ==================== PUBLIC ROUTES ====================
 
 // Register notification token
-router.post("/register", registerToken);
+router.post("/register", authOptional, registerToken);
 
 // Unregister notification token
 router.delete("/unregister", unregisterToken);

@@ -59,9 +59,8 @@ notificationTokenSchema.index({ userId: 1, isActive: 1 });
 notificationTokenSchema.index({ lastUsedAt: 1 });
 
 // Pre-save middleware to update lastUsedAt
-notificationTokenSchema.pre("save", function (next) {
+notificationTokenSchema.pre("save", function () {
   this.lastUsedAt = new Date();
-  next();
 });
 
 // Static method to get all active guest tokens
