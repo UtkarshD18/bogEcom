@@ -74,13 +74,28 @@ export default function ClientLayout({ children }) {
     <div className="overflow-x-hidden w-full max-w-full">
       <style>{`body { font-family: inherit; }`}</style>
       <Toaster
-        position="top-right"
+        position="bottom-right"
         toastOptions={{
-          duration: 3000,
+          duration: 1800,
           style: {
-            background: "#333",
+            background: "#1f2937",
             color: "#fff",
+            fontSize: "14px",
+            borderRadius: "10px",
+            padding: "10px 16px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+            maxWidth: "340px",
           },
+          success: {
+            iconTheme: {
+              primary: "#059669",
+              secondary: "#fff",
+            },
+          },
+        }}
+        containerStyle={{
+          bottom: 24,
+          right: 16,
         }}
       />
       <SettingsProvider>

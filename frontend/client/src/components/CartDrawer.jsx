@@ -4,10 +4,90 @@ import { useCart } from "@/context/CartContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { Button, Drawer, IconButton, TextField } from "@mui/material";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { MdClose, MdDeleteOutline, MdShoppingCart } from "react-icons/md";
 
 const API_URL = process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
+
+/**
+ * Memoized CartItemRow — prevents re-renders of all items
+ * when only one item's quantity changes
+ */
+const CartItemRow = memo(function CartItemRow({
+  item,
+  product,
+  productId,
+  updateQuantity,
+  removeFromCart,
+  loading,
+}) {
+  const productName = product.name || "Product";
+  const productImage =
+    product.image ||
+    product.images?.[0] ||
+    product.thumbnail ||
+    "/product_1.png";
+  const price = item.price || product.price || 0;
+  const quantity = item.quantity || 1;
+
+  return (
+    <div
+      className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 transition-all duration-200 ease-out"
+      style={{ animation: "cartItemSlideIn 200ms ease-out" }}
+    >
+      <div className="flex gap-3">
+        <img
+          src={productImage}
+          alt={productName}
+          className="w-16 h-16 object-cover rounded-md"
+          loading="lazy"
+        />
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-semibold text-gray-800 truncate">
+            {productName}
+          </h3>
+          <p className="text-xs text-gray-500 mt-1">
+            ₹{price} × {quantity}
+          </p>
+          <p className="text-sm font-bold text-gray-900 mt-1">
+            ₹{(price * quantity).toFixed(2)}
+          </p>
+
+          {/* Quantity Controls */}
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden select-none">
+              <button
+                onClick={() => updateQuantity(productId, quantity - 1)}
+                disabled={loading || quantity <= 1}
+                className="px-2.5 py-1 text-gray-600 hover:bg-gray-100 active:bg-gray-200 disabled:opacity-40 transition-colors duration-100 text-base font-medium"
+              >
+                −
+              </button>
+              <span className="px-3 py-1 border-l border-r border-gray-300 text-sm font-semibold min-w-9 text-center tabular-nums">
+                {quantity}
+              </span>
+              <button
+                onClick={() => updateQuantity(productId, quantity + 1)}
+                disabled={loading}
+                className="px-2.5 py-1 text-gray-600 hover:bg-gray-100 active:bg-gray-200 disabled:opacity-40 transition-colors duration-100 text-base font-medium"
+              >
+                +
+              </button>
+            </div>
+            <button
+              onClick={() => removeFromCart(productId)}
+              disabled={loading}
+              className="text-red-400 hover:text-red-600 p-1 transition-colors duration-150"
+              title="Remove"
+            >
+              <MdDeleteOutline size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 /**
  * CartDrawer Component
@@ -79,24 +159,27 @@ const CartDrawer = () => {
     setSimilarProducts((prev) => prev.filter((p) => p._id !== product._id));
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setIsDrawerOpen(false);
-  };
+  }, [setIsDrawerOpen]);
 
   return (
     <Drawer
       anchor="right"
       open={isDrawerOpen}
       onClose={handleClose}
+      transitionDuration={{ enter: 250, exit: 200 }}
       PaperProps={{
         sx: {
           width: { xs: "100%", sm: "400px", md: "450px" },
           maxWidth: "100vw",
+          willChange: "transform",
         },
       }}
       sx={{
         "& .MuiBackdrop-root": {
-          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          backgroundColor: "rgba(0, 0, 0, 0.35)",
+          transition: "opacity 250ms ease-in-out !important",
         },
       }}
     >
@@ -127,74 +210,16 @@ const CartDrawer = () => {
                 {cartItems.map((item, index) => {
                   const product = item.productData || item.product || {};
                   const productId = product._id || item.product;
-                  const productName = product.name || "Product";
-                  const productImage =
-                    product.image ||
-                    product.images?.[0] ||
-                    product.thumbnail ||
-                    "/product_1.png";
-                  const price = item.price || product.price || 0;
-                  const quantity = item.quantity || 1;
-
                   return (
-                    <div
+                    <CartItemRow
                       key={productId || index}
-                      className="bg-white rounded-lg p-3 shadow-sm border border-gray-100"
-                    >
-                      <div className="flex gap-3">
-                        <img
-                          src={productImage}
-                          alt={productName}
-                          className="w-16 h-16 object-cover rounded-md"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-semibold text-gray-800 truncate">
-                            {productName}
-                          </h3>
-                          <p className="text-xs text-gray-500 mt-1">
-                            ₹{price} × {quantity}
-                          </p>
-                          <p className="text-sm font-bold text-gray-900 mt-1">
-                            ₹{(price * quantity).toFixed(2)}
-                          </p>
-
-                          {/* Quantity Controls */}
-                          <div className="flex items-center gap-2 mt-2">
-                            <div className="flex items-center border border-gray-300 rounded">
-                              <button
-                                onClick={() =>
-                                  updateQuantity(productId, quantity - 1)
-                                }
-                                disabled={loading || quantity <= 1}
-                                className="px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-50"
-                              >
-                                −
-                              </button>
-                              <span className="px-3 py-1 border-l border-r border-gray-300 text-sm font-medium">
-                                {quantity}
-                              </span>
-                              <button
-                                onClick={() =>
-                                  updateQuantity(productId, quantity + 1)
-                                }
-                                disabled={loading}
-                                className="px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-50"
-                              >
-                                +
-                              </button>
-                            </div>
-                            <button
-                              onClick={() => removeFromCart(productId)}
-                              disabled={loading}
-                              className="text-red-500 hover:text-red-700 p-1"
-                              title="Remove"
-                            >
-                              <MdDeleteOutline size={18} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                      item={item}
+                      product={product}
+                      productId={productId}
+                      updateQuantity={updateQuantity}
+                      removeFromCart={removeFromCart}
+                      loading={loading}
+                    />
                   );
                 })}
               </div>

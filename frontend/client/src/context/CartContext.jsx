@@ -1,7 +1,7 @@
 "use client";
 
 import Cookies from "js-cookie";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 
 /**
@@ -41,6 +41,25 @@ export const CartProvider = ({ children }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [orderNote, setOrderNote] = useState("");
 
+  // Session-based sidebar trigger: opens once per browser session on first add-to-cart
+  const handleAddToCartUI = useCallback((productName) => {
+    if (typeof window === "undefined") return;
+    const firstAddDone = sessionStorage.getItem("cartFirstAddDone");
+    console.log("[Cart] First add flag:", firstAddDone, "| Product:", productName);
+    if (!firstAddDone) {
+      console.log("[Cart] Opening sidebar (first add this session)");
+      setIsDrawerOpen(true);
+      sessionStorage.setItem("cartFirstAddDone", "true");
+    } else {
+      console.log("[Cart] Showing toast (sidebar already shown this session)");
+      toast.success(`${productName} added to cart!`);
+    }
+  }, []);
+
+  const handleSetIsDrawerOpen = useCallback((open) => {
+    setIsDrawerOpen(open);
+  }, []);
+
   // Get user token if logged in
   const getToken = () => {
     if (typeof window === "undefined") return null;
@@ -74,16 +93,20 @@ export const CartProvider = ({ children }) => {
       const data = await response.json();
 
       if (data.success && data.data) {
-        setCartItems(data.data.items || []);
-        setCartCount(data.data.itemCount || 0);
-        setCartTotal(data.data.subtotal || 0);
-      } else {
-        // Fallback to local storage
-        loadFromLocalStorage();
+        const apiItems = data.data.items || [];
+        if (apiItems.length > 0) {
+          // API has items — use as source of truth & sync to localStorage
+          setCartItems(apiItems);
+          setCartCount(data.data.itemCount || 0);
+          setCartTotal(data.data.subtotal || 0);
+          saveToLocalStorage(apiItems);
+        }
+        // If API returned empty, keep whatever localStorage already hydrated
       }
+      // If API returned !success, keep whatever localStorage already hydrated
     } catch (error) {
       console.error("Error fetching cart:", error);
-      loadFromLocalStorage();
+      // localStorage items already loaded in init, nothing extra needed
     } finally {
       setLoading(false);
       setIsInitialized(true);
@@ -98,10 +121,24 @@ export const CartProvider = ({ children }) => {
     if (savedCart) {
       try {
         const parsed = JSON.parse(savedCart);
-        setCartItems(parsed.items || []);
-        calculateTotals(parsed.items || []);
+        const rawItems = parsed.items;
+
+        // Validate: items must be a non-empty array of objects with product & quantity
+        if (
+          !Array.isArray(rawItems) ||
+          rawItems.length === 0 ||
+          !rawItems.every((i) => i && (i.product || i.productData) && typeof i.quantity === "number")
+        ) {
+          // Corrupted or empty — reset safely
+          localStorage.removeItem("cart");
+          return;
+        }
+
+        setCartItems(rawItems);
+        calculateTotals(rawItems);
       } catch (e) {
         console.error("Error parsing cart from localStorage:", e);
+        localStorage.removeItem("cart");
       }
     }
   };
@@ -156,22 +193,21 @@ export const CartProvider = ({ children }) => {
       const data = await response.json();
 
       if (data.success) {
-        setCartItems(data.data.items || []);
+        const newItems = data.data.items || [];
+        setCartItems(newItems);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(data.data.subtotal || 0);
-        toast.success(`${product.name} added to cart!`);
-        setIsDrawerOpen(true); // Auto-open drawer
+        saveToLocalStorage(newItems);
+        handleAddToCartUI(product.name);
         return { success: true };
       } else {
         // Fallback to local storage
         addToCartLocal(product, quantity);
-        setIsDrawerOpen(true); // Auto-open drawer
         return { success: true };
       }
     } catch (error) {
       console.error("Error adding to cart:", error);
       addToCartLocal(product, quantity);
-      setIsDrawerOpen(true); // Auto-open drawer
       return { success: true };
     } finally {
       setLoading(false);
@@ -205,7 +241,7 @@ export const CartProvider = ({ children }) => {
     setCartItems(newItems);
     calculateTotals(newItems);
     saveToLocalStorage(newItems);
-    toast.success(`${product.name} added to cart!`);
+    handleAddToCartUI(product.name);
   };
 
   // Update quantity
@@ -240,9 +276,11 @@ export const CartProvider = ({ children }) => {
       const data = await response.json();
 
       if (data.success) {
-        setCartItems(data.data.items || []);
+        const newItems = data.data.items || [];
+        setCartItems(newItems);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(data.data.subtotal || 0);
+        saveToLocalStorage(newItems);
       } else {
         updateQuantityLocal(productId, quantity);
       }
@@ -256,16 +294,15 @@ export const CartProvider = ({ children }) => {
 
   // Update quantity locally
   const updateQuantityLocal = (productId, quantity) => {
-    setCartItems((prev) => {
-      const newItems = prev.map((item) =>
-        (item.product?._id || item.product) === productId
-          ? { ...item, quantity }
-          : item,
-      );
-      calculateTotals(newItems);
-      saveToLocalStorage(newItems);
-      return newItems;
-    });
+    // Compute once from current state, use everywhere (avoids stale closure)
+    const newItems = cartItems.map((item) =>
+      (item.product?._id || item.product) === productId
+        ? { ...item, quantity }
+        : item,
+    );
+    setCartItems(newItems);
+    calculateTotals(newItems);
+    saveToLocalStorage(newItems);
   };
 
   // Remove from cart
@@ -295,9 +332,11 @@ export const CartProvider = ({ children }) => {
       const data = await response.json();
 
       if (data.success) {
-        setCartItems(data.data.items || []);
+        const newItems = data.data.items || [];
+        setCartItems(newItems);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(data.data.subtotal || 0);
+        saveToLocalStorage(newItems);
         toast.success("Item removed from cart");
       } else {
         removeFromCartLocal(productId);
@@ -312,15 +351,14 @@ export const CartProvider = ({ children }) => {
 
   // Remove locally
   const removeFromCartLocal = (productId) => {
-    setCartItems((prev) => {
-      const newItems = prev.filter(
-        (item) => (item.product?._id || item.product) !== productId,
-      );
-      calculateTotals(newItems);
-      saveToLocalStorage(newItems);
-      toast.success("Item removed from cart");
-      return newItems;
-    });
+    // Compute once from current state, use everywhere (avoids stale closure)
+    const newItems = cartItems.filter(
+      (item) => (item.product?._id || item.product) !== productId,
+    );
+    setCartItems(newItems);
+    calculateTotals(newItems);
+    saveToLocalStorage(newItems);
+    toast.success("Item removed from cart");
   };
 
   // Clear cart
@@ -373,8 +411,21 @@ export const CartProvider = ({ children }) => {
     return item?.quantity || 0;
   };
 
+  // Auto-persist cart to localStorage whenever it changes (safety net)
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (cartItems.length > 0) {
+      saveToLocalStorage(cartItems);
+    } else {
+      localStorage.removeItem("cart");
+    }
+  }, [cartItems, isInitialized]);
+
   // Initialize cart on mount
   useEffect(() => {
+    // Step 1: Hydrate immediately from localStorage so UI shows data before API responds
+    loadFromLocalStorage();
+    // Step 2: Then sync with server (overrides only if server has actual items)
     fetchCart();
   }, []);
 
@@ -394,7 +445,7 @@ export const CartProvider = ({ children }) => {
         getItemQuantity,
         fetchCart,
         isDrawerOpen,
-        setIsDrawerOpen,
+        setIsDrawerOpen: handleSetIsDrawerOpen,
         orderNote,
         setOrderNote,
       }}

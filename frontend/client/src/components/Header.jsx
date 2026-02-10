@@ -356,7 +356,8 @@ const Header = () => {
                 >
                   {cartCount > 0 && (
                     <div
-                      className="absolute -top-1.5 -right-1.5 bg-[#059669] text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm"
+                      key={cartCount}
+                      className="absolute -top-1.5 -right-1.5 bg-[#059669] text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm cart-badge-bump"
                       style={{
                         boxShadow: "0 0 0 2px var(--flavor-card-bg, #fffbf5)",
                       }}

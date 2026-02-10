@@ -303,3 +303,26 @@ input[type="number"] {
 .myAcc .active svg {
   color: #059669 !important;
 }
+
+/* Cart badge bump animation */
+@keyframes cartBadgeBump {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.35); }
+  60% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+.cart-badge-bump {
+  animation: cartBadgeBump 350ms ease-out;
+}
+
+/* Cart item slide-in inside drawer */
+@keyframes cartItemSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
