@@ -2,9 +2,10 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
-  --primary: #059669;
-  --secondary: #f3f4f6;
+  --foreground: #111111;
+  --primary: #5A3A22;
+  --secondary: #F8F6F2;
+  --accent: #FF8C42;
 
   /* Header Height Variable for consistent spacing */
   --header-height: 85px;
@@ -84,10 +85,10 @@ body {
   height: 8px !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--flavor-color, #059669);
+  background: var(--flavor-color, var(--primary));
 }
 ::-webkit-scrollbar-track {
-  background: var(--flavor-surface, #fff8ed);
+  background: var(--flavor-surface, var(--secondary));
 }
 
 .container {
@@ -107,17 +108,17 @@ body {
   position: absolute !important;
   top: 45% !important;
   z-index: 99 !important;
-  border: 1px solid var(--flavor-color, #059669) !important;
+  border: 1px solid var(--flavor-color, var(--primary)) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
 }
 .swiper-button-next svg,
 .swiper-button-prev svg {
-  color: var(--flavor-color, #059669) !important;
+  color: var(--flavor-color, var(--primary)) !important;
   width: 15px !important;
 }
 .swiper-button-next:hover,
 .swiper-button-prev:hover {
-  background: var(--flavor-color, #059669) !important;
+  background: var(--flavor-color, var(--primary)) !important;
 }
 .swiper-button-next:hover svg,
 .swiper-button-prev:hover svg {
@@ -140,10 +141,10 @@ body {
   font-weight: 600 !important;
 }
 .MuiTabs-list .Mui-selected {
-  color: #059669 !important;
+  color: var(--primary) !important;
 }
 .MuiTabs-indicator {
-  background-color: #059669 !important;
+  background-color: var(--primary) !important;
 }
 
 .MuiTabScrollButton-root svg {
@@ -153,32 +154,36 @@ body {
 }
 
 .btn-border-g {
-  border: 1px solid #059669 !important;
+  border: 1px solid var(--primary) !important;
   font-weight: 600 !important;
-  color: #059669 !important;
+  color: var(--primary) !important;
   background-color: transparent !important;
-  padding: 8px 15px !important;
-  transition: all 0.3s ease !important;
+  padding: 8px 18px !important;
+  border-radius: 0.75rem !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .btn-border-g:hover {
-  background-color: #059669 !important;
+  background-color: var(--primary) !important;
   color: #fff !important;
-  border-color: #059669 !important;
+  border-color: var(--primary) !important;
+  transform: translateY(-1px);
 }
 
 .btn-g {
-  border: 1px solid #059669 !important;
+  border: 1px solid var(--primary) !important;
   font-weight: 600 !important;
   color: #fff !important;
-  background: #059669 !important;
-  padding: 8px 15px !important;
-  transition: all 0.3s ease !important;
+  background: var(--primary) !important;
+  padding: 8px 18px !important;
+  border-radius: 0.75rem !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 .btn-g:hover {
-  background: #a34617 !important;
+  background: var(--accent, #FF8C42) !important;
   color: #fff !important;
-  border-color: #a34617 !important;
+  border-color: var(--accent, #FF8C42) !important;
+  transform: translateY(-1px);
 }
 
 hr {
@@ -193,7 +198,7 @@ hr {
   font-size: 14px !important;
 }
 .Mui-checked .MuiSvgIcon-root {
-  fill: #059669 !important;
+  fill: var(--primary) !important;
 }
 .MuiFormGroup-root .MuiFormControlLabel-root .MuiCheckBox-root {
   padding: 5px !important;
@@ -227,7 +232,7 @@ hr {
 }
 
 .MuiPaginationItem-circular.Mui-selected {
-  background-color: #059669 !important;
+  background-color: var(--primary) !important;
   color: #fff !important;
 }
 
@@ -297,9 +302,9 @@ input[type="number"] {
   position: absolute;
   left: 0px;
   top: 0px;
-  background: #059669 !important;
+  background: var(--primary) !important;
 }
 
 .myAcc .active svg {
-  color: #059669 !important;
+  color: var(--primary) !important;
 }

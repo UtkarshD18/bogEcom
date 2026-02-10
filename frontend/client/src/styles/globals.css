@@ -9,6 +9,7 @@
 @theme {
   --color-primary: var(--color-primary);
   --color-secondary: var(--color-secondary);
+  --color-accent: var(--color-accent);
 }
 
 /* ========== SCROLLBAR STYLING ========== */
@@ -50,7 +51,8 @@ body {
   font-family: var(--font-primary);
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
-  line-height: 1.6;
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -63,7 +65,42 @@ h5,
 h6 {
   font-family: var(--font-heading);
   font-weight: 700;
-  line-height: 1.2;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-primary);
+}
+
+h1 { font-size: var(--text-4xl); }
+h2 { font-size: var(--text-3xl); }
+h3 { font-size: var(--text-2xl); }
+h4 { font-size: var(--text-xl); }
+h5 { font-size: var(--text-lg); }
+h6 { font-size: var(--text-base); font-weight: 600; }
+
+p {
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-secondary);
+}
+
+small {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* ========== SECTION HEADINGS (reusable) ========== */
+.section-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-primary);
+}
+
+.section-subtitle {
+  font-size: var(--text-lg);
+  color: var(--color-text-muted);
+  max-width: 38rem;
+  line-height: var(--leading-relaxed);
 }
 
 /* ========== BUTTONS ========== */
@@ -72,9 +109,10 @@ h6 {
   border: 1px solid var(--color-primary) !important;
   color: white !important;
   font-weight: 600 !important;
-  padding: 10px 20px !important;
-  border-radius: var(--radius-lg) !important;
+  padding: 10px 24px !important;
+  border-radius: var(--radius-md) !important;
   transition: all var(--transition-normal) !important;
+  letter-spacing: var(--tracking-wide);
 }
 
 .btn-primary:hover {
@@ -88,8 +126,8 @@ h6 {
   border: 1px solid var(--color-secondary) !important;
   color: white !important;
   font-weight: 600 !important;
-  padding: 10px 20px !important;
-  border-radius: var(--radius-lg) !important;
+  padding: 10px 24px !important;
+  border-radius: var(--radius-md) !important;
   transition: all var(--transition-normal) !important;
 }
 
@@ -99,13 +137,32 @@ h6 {
   box-shadow: var(--shadow-lg);
 }
 
+/* CTA / accent button — use for Add to Cart, Buy Now, etc. */
+.btn-accent {
+  background: var(--gradient-accent) !important;
+  border: none !important;
+  color: white !important;
+  font-weight: 700 !important;
+  padding: 12px 28px !important;
+  border-radius: var(--radius-md) !important;
+  transition: all var(--transition-normal) !important;
+  box-shadow: var(--shadow-btn);
+  letter-spacing: var(--tracking-wide);
+}
+
+.btn-accent:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 140, 66, 0.35);
+  filter: brightness(1.05);
+}
+
 .btn-outline {
   background: transparent !important;
   border: 2px solid var(--color-primary) !important;
   color: var(--color-primary) !important;
   font-weight: 600 !important;
-  padding: 10px 20px !important;
-  border-radius: var(--radius-lg) !important;
+  padding: 10px 24px !important;
+  border-radius: var(--radius-md) !important;
   transition: all var(--transition-normal) !important;
 }
 
@@ -114,20 +171,37 @@ h6 {
   color: white !important;
 }
 
+.btn-outline-accent {
+  background: transparent !important;
+  border: 2px solid var(--color-accent) !important;
+  color: var(--color-accent) !important;
+  font-weight: 600 !important;
+  padding: 10px 24px !important;
+  border-radius: var(--radius-md) !important;
+  transition: all var(--transition-normal) !important;
+}
+
+.btn-outline-accent:hover {
+  background: var(--color-accent) !important;
+  color: white !important;
+  box-shadow: var(--shadow-btn);
+}
+
 /* Legacy button class support */
 .btn-g {
   border: 1px solid var(--color-primary) !important;
   font-weight: 600 !important;
   color: #fff !important;
   background: var(--color-primary) !important;
-  padding: 8px 15px !important;
-  border-radius: var(--radius-lg) !important;
+  padding: 8px 18px !important;
+  border-radius: var(--radius-md) !important;
   transition: all var(--transition-normal) !important;
 }
 
 .btn-g:hover {
   color: #fff !important;
-  background-color: var(--color-text-primary) !important;
+  background-color: var(--color-primary-dark) !important;
+  border-color: var(--color-primary-dark) !important;
   transform: translateY(-1px);
 }
 
@@ -258,24 +332,39 @@ select:focus {
 /* ========== CARD STYLES ========== */
 .card {
   background: var(--color-bg-primary);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   border: 1px solid var(--color-border-light);
   transition: all var(--transition-normal);
 }
 
 .card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-3px);
+}
+
+.card-premium {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--color-border-light);
+  transition: all var(--transition-normal);
+  overflow: hidden;
+}
+
+.card-premium:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-4px);
+  border-color: rgba(var(--color-accent-rgb), 0.2);
 }
 
 .card-glass {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-glass);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 /* ========== BADGE STYLES ========== */
@@ -284,16 +373,21 @@ select:focus {
   align-items: center;
   justify-content: center;
   padding: 0.25rem 0.75rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   border-radius: var(--radius-full);
   text-transform: uppercase;
-  letter-spacing: 0.025em;
+  letter-spacing: var(--tracking-wider);
 }
 
 .badge-primary {
   background: rgba(var(--color-primary-rgb), 0.1);
   color: var(--color-primary);
+}
+
+.badge-accent {
+  background: rgba(var(--color-accent-rgb), 0.12);
+  color: var(--color-accent-dark);
 }
 
 .badge-secondary {
@@ -302,13 +396,49 @@ select:focus {
 }
 
 .badge-success {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(31, 122, 99, 0.1);
   color: var(--color-success);
 }
 
 .badge-error {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(212, 70, 56, 0.1);
   color: var(--color-error);
+}
+
+/* Trust / health label — "100% Natural", "High Protein", etc. */
+.trust-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-secondary);
+  background: rgba(var(--color-secondary-rgb), 0.08);
+  border: 1px solid rgba(var(--color-secondary-rgb), 0.15);
+  border-radius: var(--radius-full);
+  letter-spacing: var(--tracking-wide);
+}
+
+.trust-label svg,
+.trust-label .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--color-secondary);
+}
+
+/* Offer / promo tag */
+.promo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: white;
+  background: var(--gradient-accent);
+  border-radius: var(--radius-full);
+  box-shadow: 0 2px 8px rgba(255, 140, 66, 0.3);
 }
 
 /* ========== PRICE STYLES ========== */
@@ -453,11 +583,13 @@ select:focus {
 /* ========== PRODUCT SPECIFIC ========== */
 .product-card {
   transition: all var(--transition-normal);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .product-card:hover {
   transform: translateY(-4px);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-card-hover);
 }
 
 .product-image {
@@ -473,13 +605,14 @@ select:focus {
   position: absolute;
   top: 0.75rem;
   left: 0.75rem;
-  background: linear-gradient(135deg, #ef4444, #dc2626);
+  background: var(--gradient-accent);
   color: white;
   padding: 0.25rem 0.75rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   border-radius: var(--radius-full);
   z-index: 10;
+  box-shadow: 0 2px 8px rgba(255, 140, 66, 0.3);
 }
 
 /* ========== WISHLIST BUTTON ========== */
