@@ -100,11 +100,6 @@ const ProductDetailPage = () => {
       } else {
         // Add to cart
         await addToCart(product, quantity);
-        setSnackbar({
-          open: true,
-          message: "Added to cart!",
-          severity: "success",
-        });
       }
     } catch (error) {
       setSnackbar({

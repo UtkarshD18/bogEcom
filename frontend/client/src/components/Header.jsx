@@ -67,13 +67,23 @@ const Header = () => {
     const userNameCookie = cookies.get("userName");
     const userPhotoCookie = cookies.get("userPhoto");
 
+    // Validate that the JWT is not expired
+    let tokenValid = false;
+    if (accessToken) {
+      try {
+        const payload = JSON.parse(atob(accessToken.split(".")[1]));
+        tokenValid = payload.exp * 1000 > Date.now();
+      } catch {}
+    }
+
     console.log("Header checkLoginStatus:", {
       accessToken: accessToken ? "present" : "missing",
+      tokenValid,
       userEmail: userEmailCookie,
       userName: userNameCookie,
     });
 
-    if (accessToken) {
+    if (tokenValid) {
       setIsLoggedIn(true);
       setUserEmail(userEmailCookie || "user@example.com");
       setUserName(userNameCookie || userEmailCookie?.split("@")[0] || "User");
@@ -101,13 +111,7 @@ const Header = () => {
     const handleLoginSuccess = () => {
       console.log("Login success event received in Header");
       // Force immediate state update
-      const accessToken = cookies.get("accessToken");
-      if (accessToken) {
-        setIsLoggedIn(true);
-        setUserEmail(cookies.get("userEmail") || "user@example.com");
-        setUserName(cookies.get("userName") || "User");
-        setUserPhoto(cookies.get("userPhoto") || "");
-      }
+      checkLoginStatus();
     };
 
     // Listen for storage events (cross-tab sync)

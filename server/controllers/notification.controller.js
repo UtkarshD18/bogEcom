@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { getMessaging, isFirebaseReady } from "../config/firebaseAdmin.js";
 import NotificationTokenModel from "../models/notificationToken.model.js";
+import UserModel from "../models/user.model.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 // Debug-only logging to keep production output clean
@@ -8,6 +9,20 @@ const debugLog = (...args) => {
   if (!isProduction) {
     console.log(...args);
   }
+};
+
+const INVALID_FCM_TOKEN_CODES = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+]);
+
+const getFrontendBaseUrl = () => {
+  const raw =
+    process.env.SITE_BASE_URL ||
+    process.env.FRONTEND_URL ||
+    "http://localhost:3000";
+  const first = String(raw).split(",")[0].trim();
+  return first.replace(/\/+$/, "");
 };
 
 /**
@@ -33,7 +48,10 @@ const debugLog = (...args) => {
  */
 export const registerToken = async (req, res) => {
   try {
-    const { token, userType, userId, platform } = req.body;
+    const { token, platform } = req.body;
+
+    const resolvedUserId = req.user || null;
+    const resolvedUserType = resolvedUserId ? "user" : "guest";
 
     // Validate token
     if (!token || typeof token !== "string" || token.length < 50) {
@@ -44,33 +62,13 @@ export const registerToken = async (req, res) => {
       });
     }
 
-    // Validate userType
-    if (!userType || !["guest", "user"].includes(userType)) {
+    // Validate resolved userId if present
+    if (resolvedUserId && !mongoose.Types.ObjectId.isValid(resolvedUserId)) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "userType must be 'guest' or 'user'",
+        message: "Invalid authenticated userId",
       });
-    }
-
-    // If user type, require userId
-    if (userType === "user") {
-      if (!userId) {
-        return res.status(400).json({
-          error: true,
-          success: false,
-          message: "userId is required for user tokens",
-        });
-      }
-
-      // Validate userId format
-      if (!mongoose.Types.ObjectId.isValid(userId)) {
-        return res.status(400).json({
-          error: true,
-          success: false,
-          message: "Invalid userId format",
-        });
-      }
     }
 
     // Upsert token (update if exists, create if not)
@@ -78,8 +76,8 @@ export const registerToken = async (req, res) => {
       { token },
       {
         token,
-        userType,
-        userId: userType === "user" ? userId : null,
+        userType: resolvedUserType,
+        userId: resolvedUserId,
         platform: platform || "web",
         isActive: true,
         failureCount: 0,
@@ -183,7 +181,28 @@ export const sendOfferNotification = async (coupon, options = {}) => {
         : Promise.resolve([]),
     ]);
 
-    const allTokens = [...guestTokens, ...userTokens].map((t) => t.token);
+    let allowedUserTokens = userTokens;
+    if (allowedUserTokens.length > 0) {
+      const userIds = [
+        ...new Set(allowedUserTokens.map((t) => String(t.userId || ""))),
+      ].filter(Boolean);
+
+      if (userIds.length > 0) {
+        const usersWithPushEnabled = await UserModel.find({
+          _id: { $in: userIds },
+          "notificationSettings.pushNotifications": { $ne: false },
+        }).select("_id");
+
+        const allowedUserIdSet = new Set(
+          usersWithPushEnabled.map((u) => String(u._id)),
+        );
+        allowedUserTokens = allowedUserTokens.filter((t) =>
+          allowedUserIdSet.has(String(t.userId)),
+        );
+      }
+    }
+
+    const allTokens = [...guestTokens, ...allowedUserTokens].map((t) => t.token);
 
     if (allTokens.length === 0) {
       debugLog("No tokens to send offer notification to");
@@ -196,9 +215,13 @@ export const sendOfferNotification = async (coupon, options = {}) => {
         ? `${coupon.discountValue}% OFF`
         : `₹${coupon.discountValue} OFF`;
 
+    const customTitle = String(options.title || "").trim();
+    const customBody = String(options.body || "").trim();
+
     const notification = {
-      title: `🎉 New Offer: ${discountText}`,
+      title: customTitle || `🎉 New Offer: ${discountText}`,
       body:
+        customBody ||
         coupon.description ||
         `Use code ${coupon.code} to get ${discountText} on your order!`,
     };
@@ -216,7 +239,9 @@ export const sendOfferNotification = async (coupon, options = {}) => {
     const batchSize = 500;
     let successCount = 0;
     let failureCount = 0;
-    const failedTokens = [];
+    const successfulTokens = [];
+    const failedTokenDetails = [];
+    const failureCodes = {};
 
     for (let i = 0; i < allTokens.length; i += batchSize) {
       const batch = allTokens.slice(i, i + batchSize);
@@ -228,7 +253,7 @@ export const sendOfferNotification = async (coupon, options = {}) => {
           data,
           webpush: {
             fcmOptions: {
-              link: process.env.FRONTEND_URL || "http://localhost:3000",
+              link: getFrontendBaseUrl(),
             },
           },
         });
@@ -236,22 +261,52 @@ export const sendOfferNotification = async (coupon, options = {}) => {
         successCount += response.successCount;
         failureCount += response.failureCount;
 
-        // Track failed tokens
+        // Track per-token success/failure
         response.responses.forEach((resp, idx) => {
-          if (!resp.success) {
-            failedTokens.push(batch[idx]);
+          const token = batch[idx];
+          if (!token) return;
+
+          if (resp.success) {
+            successfulTokens.push(token);
+            return;
           }
+
+          const code = resp.error?.code || "unknown";
+          failureCodes[code] = (failureCodes[code] || 0) + 1;
+          failedTokenDetails.push({ token, code });
         });
       } catch (batchError) {
         console.error("Batch send error:", batchError.message);
-        failureCount += batch.length;
+        // A batch-level error usually indicates a config/credential issue.
+        return {
+          success: false,
+          reason: batchError.code || batchError.message || "batch_send_error",
+        };
       }
     }
 
-    // Mark failed tokens
-    for (const failedToken of failedTokens) {
-      await NotificationTokenModel.markTokenFailed(failedToken);
-    }
+    // Keep token health in sync (never fail the send result because of a DB write)
+    await Promise.allSettled([
+      ...successfulTokens.map((t) =>
+        NotificationTokenModel.markTokenSuccess(t).catch(() => {}),
+      ),
+      ...failedTokenDetails.map(({ token, code }) => {
+        if (INVALID_FCM_TOKEN_CODES.has(code)) {
+          return NotificationTokenModel.updateOne(
+            { token },
+            {
+              $set: {
+                isActive: false,
+                failureCount: 5,
+                lastUsedAt: new Date(),
+              },
+            },
+          ).catch(() => {});
+        }
+
+        return NotificationTokenModel.markTokenFailed(token).catch(() => {});
+      }),
+    ]);
 
     debugLog(
       `Offer notification sent: ${successCount} success, ${failureCount} failed`,
@@ -262,6 +317,7 @@ export const sendOfferNotification = async (coupon, options = {}) => {
       sent: successCount,
       failed: failureCount,
       totalTokens: allTokens.length,
+      failureCodes,
     };
   } catch (error) {
     console.error("Error sending offer notification:", error);
@@ -296,6 +352,16 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
   }
 
   try {
+    const user = await UserModel.findById(userId).select("notificationSettings");
+    const pushNotificationsEnabled =
+      user?.notificationSettings?.pushNotifications !== false;
+    const orderUpdatesEnabled = user?.notificationSettings?.orderUpdates !== false;
+
+    if (!pushNotificationsEnabled || !orderUpdatesEnabled) {
+      debugLog(`User ${userId} has disabled order update notifications`);
+      return { success: true, sent: 0, reason: "disabled_by_user_settings" };
+    }
+
     // Get tokens for this specific user
     const userTokens = await NotificationTokenModel.getTokensByUserId(userId);
 
@@ -334,19 +400,40 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
       data,
       webpush: {
         fcmOptions: {
-          link: `${process.env.FRONTEND_URL || "http://localhost:3000"}/orders/${order._id}`,
+          link: `${getFrontendBaseUrl()}/orders/${order._id}`,
         },
       },
     });
 
-    // Mark failed tokens
-    response.responses.forEach(async (resp, idx) => {
-      if (!resp.success) {
-        await NotificationTokenModel.markTokenFailed(tokens[idx]);
-      } else {
-        await NotificationTokenModel.markTokenSuccess(tokens[idx]);
-      }
-    });
+    const failureCodes = {};
+    await Promise.allSettled(
+      response.responses.map((resp, idx) => {
+        const token = tokens[idx];
+        if (!token) return Promise.resolve();
+
+        if (resp.success) {
+          return NotificationTokenModel.markTokenSuccess(token).catch(() => {});
+        }
+
+        const code = resp.error?.code || "unknown";
+        failureCodes[code] = (failureCodes[code] || 0) + 1;
+
+        if (INVALID_FCM_TOKEN_CODES.has(code)) {
+          return NotificationTokenModel.updateOne(
+            { token },
+            {
+              $set: {
+                isActive: false,
+                failureCount: 5,
+                lastUsedAt: new Date(),
+              },
+            },
+          ).catch(() => {});
+        }
+
+        return NotificationTokenModel.markTokenFailed(token).catch(() => {});
+      }),
+    );
 
     debugLog(
       `Order notification sent to user ${userId}: ${response.successCount} success, ${response.failureCount} failed`,
@@ -356,6 +443,7 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
       success: true,
       sent: response.successCount,
       failed: response.failureCount,
+      failureCodes,
     };
   } catch (error) {
     console.error("Error sending order notification:", error);
@@ -387,6 +475,7 @@ export const getNotificationStats = async (req, res) => {
       error: false,
       success: true,
       data: {
+        firebaseReady: isFirebaseReady(),
         guestTokens: guestCount,
         userTokens: userCount,
         inactiveTokens: inactiveCount,
@@ -432,7 +521,42 @@ export const manualSendOffer = async (req, res) => {
 
     const result = await sendOfferNotification(pseudoCoupon, {
       includeUsers: includeUsers !== false,
+      title,
+      body,
     });
+
+    if (result.success && (result.reason === "no_tokens" || result.totalTokens === 0)) {
+      return res.status(409).json({
+        error: true,
+        success: false,
+        message:
+          "No active notification tokens found. Open the client site and enable Push Notifications, then try again.",
+        data: result,
+      });
+    }
+
+    if (!result.success) {
+      const reason = result.reason || "unknown_error";
+      const baseMessage =
+        reason === "firebase_not_ready" || reason === "messaging_not_available"
+          ? "Push notifications are not configured on the server. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in server/.env and restart the server."
+          : "Failed to send offer notification";
+
+      const message =
+        baseMessage +
+        (reason &&
+        reason !== "firebase_not_ready" &&
+        reason !== "messaging_not_available"
+          ? ` (${reason})`
+          : "");
+
+      return res.status(503).json({
+        error: true,
+        success: false,
+        message,
+        data: result,
+      });
+    }
 
     res.status(200).json({
       error: false,

@@ -91,7 +91,31 @@ const NotificationsPage = () => {
       );
 
       if (response.success) {
-        toast.success("Notification sent");
+        const sent = response.data?.sent ?? 0;
+        const failed = response.data?.failed ?? 0;
+        const totalTokens = response.data?.totalTokens ?? sent + failed;
+        const failureCodes = response.data?.failureCodes || {};
+        const codeEntries = Object.entries(failureCodes);
+        const codesLabel =
+          codeEntries.length > 0
+            ? ` (${codeEntries
+                .slice(0, 2)
+                .map(([code, count]) => `${code}:${count}`)
+                .join(", ")}${codeEntries.length > 2 ? ", ..." : ""})`
+            : "";
+
+        if (sent === 0 && failed > 0) {
+          toast.error(
+            `No devices received the notification (${failed} failed)${codesLabel}`,
+          );
+        } else {
+          toast.success(
+            `Notification sent (${sent}/${totalTokens} delivered${
+              failed ? `, ${failed} failed` : ""
+            })${codesLabel}`,
+          );
+        }
+        fetchStats();
       } else {
         toast.error(response.message || "Failed to send notification");
       }
@@ -134,10 +158,26 @@ const NotificationsPage = () => {
             <CircularProgress size={24} />
           ) : (
             <div className="space-y-2 text-sm text-gray-600">
+              <p>
+                Firebase:{" "}
+                <span className="font-medium">
+                  {stats?.firebaseReady ? "Configured" : "Not configured"}
+                </span>
+              </p>
               <p>Total Active: {stats?.totalActive || 0}</p>
               <p>Guest Tokens: {stats?.guestTokens || 0}</p>
               <p>User Tokens: {stats?.userTokens || 0}</p>
               <p>Inactive Tokens: {stats?.inactiveTokens || 0}</p>
+
+              {(stats?.totalActive || 0) === 0 && (
+                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                  <p className="font-semibold">No devices registered</p>
+                  <p className="text-[13px]">
+                    Open the client site → Settings → enable Push Notifications
+                    and allow browser permission, then click Send again.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

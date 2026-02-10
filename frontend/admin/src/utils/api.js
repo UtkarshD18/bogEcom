@@ -24,6 +24,12 @@ const refreshAdminToken = async () => {
     const token = data?.data?.accessToken || null;
     if (token) {
       localStorage.setItem("adminToken", token);
+      // Notify the app so AdminContext (and other listeners) can update immediately.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("adminTokenRefreshed", { detail: token }),
+        );
+      }
     }
     return token;
   } catch (error) {

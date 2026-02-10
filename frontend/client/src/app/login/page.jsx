@@ -43,9 +43,23 @@ const LoginForm = () => {
 
   useEffect(() => {
     const token = cookies.get("accessToken");
-    if (token !== undefined && token !== null && token !== "") {
-      context?.alertBox("info", "You are already logged in.");
-      router.push("/");
+    if (token) {
+      // Check if the JWT is actually still valid (not expired)
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        if (payload.exp * 1000 > Date.now()) {
+          context?.alertBox("info", "You are already logged in.");
+          router.push("/");
+          cookies.remove("actionType");
+          return;
+        }
+      } catch {}
+      // Token is expired or invalid — clear stale cookies so user can login fresh
+      cookies.remove("accessToken");
+      cookies.remove("refreshToken");
+      cookies.remove("userName");
+      cookies.remove("userEmail");
+      cookies.remove("userPhoto");
     }
     cookies.remove("actionType");
   }, []);

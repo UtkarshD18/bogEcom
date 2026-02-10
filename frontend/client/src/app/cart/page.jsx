@@ -4,6 +4,7 @@ import { Button, CircularProgress } from "@mui/material";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MdRemoveShoppingCart } from "react-icons/md";
+import { round2 } from "@/utils/gst";
 import CartItems from "./cartItems";
 
 const Cart = () => {
@@ -11,12 +12,16 @@ const Cart = () => {
   const router = useRouter();
 
   // Calculate totals
-  const subtotal = cartItems.reduce(
-    (sum, item) => sum + (item.price || 0) * (item.quantity || 1),
-    0,
+  const subtotal = round2(
+    (cartItems || []).reduce(
+      (sum, item) =>
+        sum +
+        round2(Number(item?.price || 0) * Math.max(Number(item?.quantity || 1), 0)),
+      0,
+    ),
   );
   const shipping = subtotal > 500 ? 0 : 50; // Free shipping over ₹500
-  const total = subtotal + shipping;
+  const total = round2(subtotal + shipping);
 
   if (loading && cartItems.length === 0) {
     return (

@@ -14,39 +14,30 @@ import NotificationToast from "./NotificationToast";
  * Place this in the main layout to handle notifications app-wide.
  */
 const NotificationHandler = () => {
-  const [userId, setUserId] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   // Check login status
   useEffect(() => {
     const checkAuth = () => {
       const token = cookies.get("accessToken");
-      const storedUser = localStorage.getItem("user");
-
-      if (token && storedUser) {
-        try {
-          const user = JSON.parse(storedUser);
-          setUserId(user._id || user.id);
-          setIsLoggedIn(true);
-        } catch {
-          setIsLoggedIn(false);
-        }
-      } else {
-        setIsLoggedIn(false);
-        setUserId(null);
-      }
+      setIsLoggedIn(!!token);
     };
 
     checkAuth();
 
     // Listen for auth changes
+    window.addEventListener("loginSuccess", checkAuth);
     window.addEventListener("storage", checkAuth);
-    return () => window.removeEventListener("storage", checkAuth);
+    window.addEventListener("focus", checkAuth);
+    return () => {
+      window.removeEventListener("loginSuccess", checkAuth);
+      window.removeEventListener("storage", checkAuth);
+      window.removeEventListener("focus", checkAuth);
+    };
   }, []);
 
   const { foregroundMessage, clearForegroundMessage, isRegistered } =
     useNotifications({
-      userId,
       userType: isLoggedIn ? "user" : "guest",
     });
 
