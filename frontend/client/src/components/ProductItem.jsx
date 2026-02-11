@@ -124,7 +124,7 @@ const ProductItem = (props) => {
                             ? "bg-gradient-to-r from-red-500 to-pink-500 text-white"
                             : productData.stock === 0
                                 ? "bg-gray-200 text-gray-400"
-                                : "bg-linear-to-r from-primary to-[var(--flavor-hover)] text-black"
+                                : "bg-[var(--color-primary)]/20 text-[var(--color-primary)] border border-[var(--color-primary)]/30"
                             }`}
                     >
                         {isAddingToCart ? (

@@ -16,6 +16,44 @@ import { splitGstInclusiveAmount } from "../services/tax.service.js";
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
+const resolvePackingFromProduct = (item, product) => {
+  if (item?.packing) return String(item.packing);
+  if (item?.packSize) return String(item.packSize);
+  if (!product) return "";
+
+  const weight = Number(product.weight || 0);
+  const unit = String(product.unit || "").toLowerCase();
+
+  if (weight > 0) {
+    if (["g", "gm", "gram", "grams"].includes(unit)) {
+      return weight >= 1000 ? `${weight / 1000}kg` : `${weight}g`;
+    }
+    if (["kg", "kilogram", "kilograms"].includes(unit)) {
+      return `${weight}kg`;
+    }
+    return `${weight}${product.unit || ""}`;
+  }
+
+  return product.unit || "";
+};
+
+const getFiscalYearRange = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const fyStartYear = month >= 3 ? year : year - 1;
+  const fyEndYear = fyStartYear + 1;
+  const start = new Date(fyStartYear, 3, 1, 0, 0, 0, 0);
+  const end = new Date(fyEndYear, 2, 31, 23, 59, 59, 999);
+  return { fyStartYear, fyEndYear, start, end };
+};
+
+const buildPoNumber = ({ fyStartYear, fyEndYear, sequence }) => {
+  const fyStart = String(fyStartYear % 100).padStart(2, "0");
+  const fyEnd = String(fyEndYear % 100).padStart(2, "0");
+  const seq = String(sequence || 1).padStart(3, "0");
+  return `BOGPO${fyStart}-${fyEnd}/${seq}`;
+};
+
 const normalizeGuestDetails = (guestDetails = {}) => ({
   fullName: String(guestDetails.fullName || "").trim(),
   phone: String(guestDetails.phone || "").trim(),
@@ -115,18 +153,51 @@ const validateAndNormalizeItems = async (itemsInput = []) => {
     const quantity = Math.max(Number(item.quantity || 1), 1);
     const price = round2(Number(item.price || product.price || 0));
     const subTotal = round2(price * quantity);
+    const receivedQuantity = Math.max(Number(item.receivedQuantity || 0), 0);
+    const packing = resolvePackingFromProduct(item, product);
 
     return {
       productId,
       productTitle: item.productTitle || product.name,
       quantity,
+      receivedQuantity: Math.min(receivedQuantity, quantity),
       price,
       subTotal,
+      packing,
       image: item.image || product.images?.[0] || "",
     };
   });
 
   return normalizedItems;
+};
+
+const formatPdfDate = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const datePart = date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const timePart = date
+    .toLocaleTimeString("en-IN", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toLowerCase();
+  return `${datePart} at ${timePart}`;
+};
+
+const formatPdfStatus = (status) => {
+  const raw = String(status || "").toLowerCase();
+  if (raw === "converted") return "PLACED";
+  if (raw === "received") return "RECEIVED";
+  if (raw === "approved") return "APPROVED";
+  if (raw === "draft") return "DRAFT";
+  if (raw) return raw.toUpperCase();
+  return "N/A";
 };
 
 const buildPdfBuffer = (purchaseOrder) =>
@@ -138,37 +209,243 @@ const buildPdfBuffer = (purchaseOrder) =>
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    doc.fontSize(18).font("Helvetica-Bold").text("Purchase Order", {
-      align: "center",
-    });
-    doc.moveDown(1);
+    const pageWidth = doc.page.width;
+    const margin = doc.page.margins.left;
+    const contentWidth = pageWidth - margin * 2;
 
-    doc.fontSize(10).font("Helvetica");
-    doc.text(`PO ID: ${purchaseOrder._id}`);
-    doc.text(`Status: ${String(purchaseOrder.status || "").toUpperCase()}`);
-    doc.text(`Date: ${new Date(purchaseOrder.createdAt).toLocaleString("en-IN")}`);
-    doc.moveDown(1);
+    const formatMoney = (value) =>
+      `Rs. ${Number(value || 0).toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
 
-    doc.font("Helvetica-Bold").text("Items");
+    doc.fontSize(18).font("Helvetica-Bold").fillColor("#111");
+    doc.text("Purchase Order", { align: "center" });
+    doc.moveDown(0.4);
+
+    doc
+      .strokeColor("#1e88e5")
+      .lineWidth(1)
+      .moveTo(margin, doc.y)
+      .lineTo(margin + contentWidth, doc.y)
+      .stroke();
+
+    doc.moveDown(0.8);
+    doc.fontSize(10).font("Helvetica").fillColor("#111");
+    doc.text(`PO Number: ${purchaseOrder.poNumber || purchaseOrder._id}`);
+    doc.text(`Date: ${formatPdfDate(purchaseOrder.createdAt)}`);
+    doc.text(`Status: ${formatPdfStatus(purchaseOrder.status)}`);
+    doc.moveDown(0.6);
+
+    doc.font("Helvetica-Bold").fillColor("#1e88e5").text("Vendor Details");
     doc.moveDown(0.3);
+    doc.font("Helvetica").fillColor("#111");
+    doc.text(`Name: ${purchaseOrder.guestDetails?.fullName || "N/A"}`);
+    doc.text(`Phone: ${purchaseOrder.guestDetails?.phone || "N/A"}`);
+    doc.text(`Address: ${purchaseOrder.guestDetails?.address || "N/A"}`);
+    doc.text(`State: ${purchaseOrder.guestDetails?.state || "N/A"}`);
+    doc.moveDown(0.8);
+
+    const tableStartX = margin;
+    let tableY = doc.y;
+    const colWidths = {
+      sn: 30,
+      product: 220,
+      packing: 70,
+      qty: 50,
+      rate: 70,
+      amount: 75,
+    };
+
+    // Header background
+    doc
+      .fillColor("#EAF4FF")
+      .rect(tableStartX, tableY, contentWidth, 22)
+      .fill();
+    doc.fillColor("#1e88e5").font("Helvetica-Bold").fontSize(9);
+    doc.text("S.N", tableStartX + 6, tableY + 6);
+    doc.text("Product", tableStartX + colWidths.sn + 6, tableY + 6);
+    doc.text(
+      "Packing",
+      tableStartX + colWidths.sn + colWidths.product + 6,
+      tableY + 6,
+    );
+    doc.text(
+      "Qty",
+      tableStartX +
+        colWidths.sn +
+        colWidths.product +
+        colWidths.packing +
+        6,
+      tableY + 6,
+    );
+    doc.text(
+      "Rate/kg",
+      tableStartX +
+        colWidths.sn +
+        colWidths.product +
+        colWidths.packing +
+        colWidths.qty +
+        6,
+      tableY + 6,
+    );
+    doc.text(
+      "Amount",
+      tableStartX +
+        colWidths.sn +
+        colWidths.product +
+        colWidths.packing +
+        colWidths.qty +
+        colWidths.rate +
+        6,
+      tableY + 6,
+    );
+
+    tableY += 22;
+    doc.fillColor("#111").font("Helvetica").fontSize(9);
 
     purchaseOrder.items.forEach((item, index) => {
+      const rowHeight = 20;
+      const productText = item.productTitle || "Product";
+      const packing = item.packing || "-";
+
+      doc.text(String(index + 1), tableStartX + 6, tableY + 6);
+      doc.text(
+        productText,
+        tableStartX + colWidths.sn + 6,
+        tableY + 6,
+        { width: colWidths.product - 10 },
+      );
+      doc.text(
+        packing,
+        tableStartX + colWidths.sn + colWidths.product + 6,
+        tableY + 6,
+      );
+      doc.text(
+        String(item.quantity || 0),
+        tableStartX +
+          colWidths.sn +
+          colWidths.product +
+          colWidths.packing +
+          6,
+        tableY + 6,
+      );
+      doc.text(
+        formatMoney(item.price),
+        tableStartX +
+          colWidths.sn +
+          colWidths.product +
+          colWidths.packing +
+          colWidths.qty +
+          6,
+        tableY + 6,
+      );
+      doc.text(
+        formatMoney(item.subTotal),
+        tableStartX +
+          colWidths.sn +
+          colWidths.product +
+          colWidths.packing +
+          colWidths.qty +
+          colWidths.rate +
+          6,
+        tableY + 6,
+      );
+
       doc
-        .font("Helvetica")
-        .text(
-          `${index + 1}. ${item.productTitle} | Qty: ${item.quantity} | Price: Rs. ${item.price.toFixed(2)} | Subtotal: Rs. ${item.subTotal.toFixed(2)}`,
-        );
+        .strokeColor("#E5E7EB")
+        .lineWidth(1)
+        .moveTo(tableStartX, tableY + rowHeight)
+        .lineTo(tableStartX + contentWidth, tableY + rowHeight)
+        .stroke();
+
+      tableY += rowHeight;
     });
 
-    doc.moveDown(1);
-    doc.font("Helvetica-Bold");
-    doc.text(`Subtotal: Rs. ${Number(purchaseOrder.subtotal || 0).toFixed(2)}`);
-    doc.text(`Tax: Rs. ${Number(purchaseOrder.tax || 0).toFixed(2)}`);
-    doc.text(`Shipping: Rs. ${Number(purchaseOrder.shipping || 0).toFixed(2)}`);
-    doc.text(`Total: Rs. ${Number(purchaseOrder.total || 0).toFixed(2)}`);
+    // Total row
+    doc
+      .fillColor("#E8F5E9")
+      .rect(tableStartX, tableY + 6, contentWidth, 24)
+      .fill();
+    doc.fillColor("#2E7D32").font("Helvetica-Bold").fontSize(10);
+    doc.text("Total", tableStartX + contentWidth - 140, tableY + 12);
+    doc.text(
+      formatMoney(purchaseOrder.total),
+      tableStartX + contentWidth - 70,
+      tableY + 12,
+    );
+
+    doc.moveDown(4.2);
+
+    const receipt = purchaseOrder.receipt || {};
+    const hasReceipt =
+      receipt.invoiceNumber ||
+      receipt.vehicleNumber ||
+      receipt.notes ||
+      receipt.receivedAt ||
+      (purchaseOrder.items || []).some(
+        (item) => Number(item.receivedQuantity || 0) > 0,
+      );
+
+    if (hasReceipt) {
+      doc.font("Helvetica-Bold").fillColor("#1e88e5").text("Receipt History");
+      doc.moveDown(0.4);
+
+      const boxY = doc.y;
+      const boxHeight = 48;
+      doc
+        .fillColor("#FFF7DF")
+        .rect(margin, boxY, contentWidth, boxHeight)
+        .fill();
+
+      doc.fillColor("#111").font("Helvetica-Bold").fontSize(9);
+      const firstItem =
+        purchaseOrder.items?.find(
+          (item) => Number(item.receivedQuantity || 0) > 0,
+        ) || purchaseOrder.items?.[0];
+      const productName = firstItem?.productTitle || "Product";
+      const receivedQty = Number(firstItem?.receivedQuantity || 0);
+      const receivedLine = receipt.receivedAt
+        ? `Received ${receivedQty || 0} on ${formatPdfDate(receipt.receivedAt)}`
+        : "";
+
+      doc.text(productName, margin + 12, boxY + 10);
+      doc
+        .font("Helvetica")
+        .fillColor("#333")
+        .text(receivedLine, margin + 12, boxY + 24);
+      const metaParts = [];
+      if (receipt.vehicleNumber) metaParts.push(`Vehicle: ${receipt.vehicleNumber}`);
+      if (receipt.invoiceNumber) metaParts.push(`Invoice: ${receipt.invoiceNumber}`);
+      if (receipt.notes) metaParts.push(`Notes: ${receipt.notes}`);
+      if (metaParts.length > 0) {
+        doc.text(metaParts.join(" | "), margin + 12, boxY + 36);
+      }
+    }
 
     doc.end();
   });
+
+const ensurePoNumber = async (purchaseOrder) => {
+  if (purchaseOrder?.poNumber) return purchaseOrder.poNumber;
+  if (!purchaseOrder?.createdAt) return "";
+
+  const fyRange = getFiscalYearRange(new Date(purchaseOrder.createdAt));
+  const sequence = await PurchaseOrderModel.countDocuments({
+    createdAt: { $gte: fyRange.start, $lte: purchaseOrder.createdAt },
+  });
+  const poNumber = buildPoNumber({
+    fyStartYear: fyRange.fyStartYear,
+    fyEndYear: fyRange.fyEndYear,
+    sequence,
+  });
+  await PurchaseOrderModel.updateOne(
+    { _id: purchaseOrder._id },
+    { $set: { poNumber } },
+  );
+  purchaseOrder.poNumber = poNumber;
+  return poNumber;
+};
 
 export const createPurchaseOrder = async (req, res) => {
   try {
@@ -205,6 +482,16 @@ export const createPurchaseOrder = async (req, res) => {
     });
 
     const total = round2(grossInclusiveSubtotal + shippingQuote.amount);
+    const poDate = new Date();
+    const fyRange = getFiscalYearRange(poDate);
+    const existingCount = await PurchaseOrderModel.countDocuments({
+      createdAt: { $gte: fyRange.start, $lte: fyRange.end },
+    });
+    const poNumber = buildPoNumber({
+      fyStartYear: fyRange.fyStartYear,
+      fyEndYear: fyRange.fyEndYear,
+      sequence: existingCount + 1,
+    });
 
     const purchaseOrder = await PurchaseOrderModel.create({
       userId,
@@ -221,6 +508,7 @@ export const createPurchaseOrder = async (req, res) => {
         sgst: taxData.sgst,
         igst: taxData.igst,
       },
+      poNumber,
       status: "draft",
       guestDetails: deliveryInfo.guest,
       deliveryAddressId: deliveryAddressId || delivery_address || null,
@@ -310,6 +598,28 @@ export const downloadPurchaseOrderPdf = async (req, res) => {
       });
     }
 
+    const missingPackingIds = (po.items || [])
+      .filter((item) => !item.packing && item.productId)
+      .map((item) => String(item.productId));
+    if (missingPackingIds.length > 0) {
+      const products = await ProductModel.find({
+        _id: { $in: missingPackingIds },
+      })
+        .select("_id weight unit")
+        .lean();
+      const productMap = new Map(
+        products.map((product) => [String(product._id), product]),
+      );
+      po.items = po.items.map((item) => {
+        if (item.packing) return item;
+        const product = productMap.get(String(item.productId));
+        return {
+          ...item,
+          packing: resolvePackingFromProduct(item, product),
+        };
+      });
+    }
+
     const requesterId = req.user || null;
     let isAdmin = false;
     if (requesterId) {
@@ -336,6 +646,10 @@ export const downloadPurchaseOrderPdf = async (req, res) => {
           });
         }
       }
+    }
+
+    if (!po.poNumber) {
+      await ensurePoNumber(po);
     }
 
     const buffer = await buildPdfBuffer(po);
@@ -386,6 +700,77 @@ export const getAllPurchaseOrdersAdmin = async (req, res) => {
       error: true,
       success: false,
       message: "Failed to fetch purchase orders",
+    });
+  }
+};
+
+export const updatePurchaseOrderReceipt = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items = [], invoiceNumber, vehicleNumber, notes } = req.body || {};
+
+    const po = await PurchaseOrderModel.findById(id);
+    if (!po) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Purchase order not found",
+      });
+    }
+
+    const normalizedItems = Array.isArray(items) ? items : [];
+    normalizedItems.forEach((item) => {
+      const productId = String(item.productId || item._id || item.id || "");
+      if (!productId) return;
+      const receivedNow = Math.max(Number(item.receivedQuantity || 0), 0);
+      if (!receivedNow) return;
+
+      const line = po.items.find(
+        (poItem) => String(poItem.productId) === productId,
+      );
+      if (!line) return;
+
+      const orderedQty = Math.max(Number(line.quantity || 0), 0);
+      const currentReceived = Math.max(Number(line.receivedQuantity || 0), 0);
+      const nextReceived = Math.min(orderedQty, currentReceived + receivedNow);
+      line.receivedQuantity = nextReceived;
+    });
+
+    if (!po.receipt) po.receipt = {};
+    if (invoiceNumber !== undefined) {
+      po.receipt.invoiceNumber = String(invoiceNumber || "").trim();
+    }
+    if (vehicleNumber !== undefined) {
+      po.receipt.vehicleNumber = String(vehicleNumber || "").trim();
+    }
+    if (notes !== undefined) {
+      po.receipt.notes = String(notes || "").trim();
+    }
+
+    const hasReceiptUpdate =
+      normalizedItems.some((item) => Number(item.receivedQuantity || 0) > 0) ||
+      invoiceNumber ||
+      vehicleNumber ||
+      notes;
+
+    if (hasReceiptUpdate) {
+      po.receipt.receivedAt = new Date();
+      po.status = "received";
+    }
+
+    await po.save();
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Receipt details updated",
+      data: po,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: error.message || "Failed to update receipt",
     });
   }
 };
@@ -600,4 +985,6 @@ export default {
   downloadPurchaseOrderPdf,
   getPurchaseOrderById,
   updatePurchaseOrderStatus,
+  getAllPurchaseOrdersAdmin,
+  updatePurchaseOrderReceipt,
 };

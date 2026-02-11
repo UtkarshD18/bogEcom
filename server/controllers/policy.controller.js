@@ -4,6 +4,28 @@ import {
   slugifyPolicyTitle,
 } from "../utils/policySanitizer.js";
 
+const THEME_STYLES = [
+  "mint",
+  "sky",
+  "aurora",
+  "lavender",
+  "sunset",
+  "midnight",
+];
+const THEME_LAYOUTS = ["glass", "minimal"];
+
+const normalizeTheme = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const next = {};
+  if (THEME_STYLES.includes(value.style)) {
+    next.style = value.style;
+  }
+  if (THEME_LAYOUTS.includes(value.layout)) {
+    next.layout = value.layout;
+  }
+  return Object.keys(next).length ? next : null;
+};
+
 const toPublicPolicy = (policy) => ({
   _id: policy._id,
   title: policy.title,
@@ -12,6 +34,7 @@ const toPublicPolicy = (policy) => ({
   version: policy.version,
   effectiveDate: policy.effectiveDate,
   updatedAt: policy.updatedAt,
+  theme: policy.theme,
 });
 
 export const getActivePolicies = async (req, res) => {
@@ -89,7 +112,14 @@ export const getAllPoliciesAdmin = async (req, res) => {
 
 export const createPolicy = async (req, res) => {
   try {
-    const { title, slug, content, isActive = true, effectiveDate } = req.body;
+    const {
+      title,
+      slug,
+      content,
+      isActive = true,
+      effectiveDate,
+      theme,
+    } = req.body;
     const adminId = req.user?._id || req.user?.id || req.user || null;
 
     if (!title || !content) {
@@ -110,6 +140,7 @@ export const createPolicy = async (req, res) => {
     }
 
     const sanitizedContent = sanitizePolicyHtml(content);
+    const normalizedTheme = normalizeTheme(theme);
 
     const existing = await PolicyModel.findOne({ slug: normalizedSlug }).lean();
     if (existing) {
@@ -129,6 +160,7 @@ export const createPolicy = async (req, res) => {
       effectiveDate: effectiveDate ? new Date(effectiveDate) : new Date(),
       createdBy: adminId,
       updatedBy: adminId,
+      ...(normalizedTheme ? { theme: normalizedTheme } : {}),
     });
 
     return res.status(201).json({
@@ -149,7 +181,7 @@ export const createPolicy = async (req, res) => {
 export const updatePolicy = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, slug, content, isActive, effectiveDate } = req.body;
+    const { title, slug, content, isActive, effectiveDate, theme } = req.body;
     const adminId = req.user?._id || req.user?.id || req.user || null;
 
     const policy = await PolicyModel.findById(id);
@@ -198,6 +230,17 @@ export const updatePolicy = async (req, res) => {
     }
     if (effectiveDate !== undefined) {
       policy.effectiveDate = new Date(effectiveDate);
+    }
+    if (theme !== undefined) {
+      const normalizedTheme = normalizeTheme(theme);
+      if (normalizedTheme) {
+        const existingTheme =
+          policy.theme?.toObject?.() || policy.theme || {};
+        policy.theme = {
+          ...existingTheme,
+          ...normalizedTheme,
+        };
+      }
     }
 
     policy.version = Number(policy.version || 1) + 1;

@@ -48,6 +48,16 @@ const policySchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    theme: {
+      style: {
+        type: String,
+        default: "mint",
+      },
+      layout: {
+        type: String,
+        default: "glass",
+      },
+    },
   },
   { timestamps: true },
 );

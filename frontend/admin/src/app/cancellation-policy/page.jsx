@@ -2,7 +2,15 @@
 
 import { useAdmin } from "@/context/AdminContext";
 import { getData, putData } from "@/utils/api";
-import { Button, CircularProgress, TextField } from "@mui/material";
+import {
+  Button,
+  CircularProgress,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  TextField,
+} from "@mui/material";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -18,6 +26,11 @@ const CancellationPolicyAdmin = () => {
 
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
+  const [theme, setTheme] = useState({ style: "mint", layout: "glass" });
+  const [originalTheme, setOriginalTheme] = useState({
+    style: "mint",
+    layout: "glass",
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -31,6 +44,12 @@ const CancellationPolicyAdmin = () => {
         const policyContent = response.data.content || "";
         setContent(policyContent);
         setOriginalContent(policyContent);
+        const nextTheme = {
+          style: response.data.theme?.style || "mint",
+          layout: response.data.theme?.layout || "glass",
+        };
+        setTheme(nextTheme);
+        setOriginalTheme(nextTheme);
       } else {
         toast.error("Failed to load cancellation policy");
       }
@@ -56,8 +75,12 @@ const CancellationPolicyAdmin = () => {
 
   // Track changes
   useEffect(() => {
-    setHasChanges(content !== originalContent);
-  }, [content, originalContent]);
+    setHasChanges(
+      content !== originalContent ||
+        theme.style !== originalTheme.style ||
+        theme.layout !== originalTheme.layout,
+    );
+  }, [content, originalContent, theme, originalTheme]);
 
   const handleSave = async () => {
     if (!content.trim()) {
@@ -69,13 +92,14 @@ const CancellationPolicyAdmin = () => {
     try {
       const response = await putData(
         "/api/cancellation/admin",
-        { content },
+        { content, theme },
         token,
       );
 
       if (response.success) {
         toast.success("Cancellation policy updated successfully");
         setOriginalContent(content);
+        setOriginalTheme(theme);
         setHasChanges(false);
       } else {
         toast.error(response.message || "Failed to update policy");
@@ -93,6 +117,7 @@ const CancellationPolicyAdmin = () => {
       return;
     }
     setContent(originalContent);
+    setTheme(originalTheme);
   };
 
   if (loading || !isAuthenticated) {
@@ -159,6 +184,46 @@ const CancellationPolicyAdmin = () => {
             policy page. Customers can access it from the footer and legal
             sections.
           </p>
+        </div>
+      </div>
+
+      {/* Theme */}
+      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">
+          Page Theme
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormControl fullWidth size="small">
+            <InputLabel>Theme</InputLabel>
+            <Select
+              label="Theme"
+              value={theme.style}
+              onChange={(e) =>
+                setTheme((prev) => ({ ...prev, style: e.target.value }))
+              }
+            >
+              <MenuItem value="mint">Mint</MenuItem>
+              <MenuItem value="sky">Sky</MenuItem>
+              <MenuItem value="aurora">Aurora</MenuItem>
+              <MenuItem value="lavender">Lavender</MenuItem>
+              <MenuItem value="sunset">Sunset</MenuItem>
+              <MenuItem value="midnight">Midnight</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth size="small">
+            <InputLabel>Layout</InputLabel>
+            <Select
+              label="Layout"
+              value={theme.layout}
+              onChange={(e) =>
+                setTheme((prev) => ({ ...prev, layout: e.target.value }))
+              }
+            >
+              <MenuItem value="glass">Liquid Glass</MenuItem>
+              <MenuItem value="minimal">Minimal</MenuItem>
+            </Select>
+          </FormControl>
         </div>
       </div>
 

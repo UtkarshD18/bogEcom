@@ -34,6 +34,16 @@ const cancellationPolicySchema = new mongoose.Schema(
       required: true,
       default: DEFAULT_POLICY_CONTENT,
     },
+    theme: {
+      style: {
+        type: String,
+        default: "mint",
+      },
+      layout: {
+        type: String,
+        default: "glass",
+      },
+    },
     isActive: {
       type: Boolean,
       default: true,

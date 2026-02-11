@@ -34,10 +34,21 @@ export default function MembershipCTA() {
     ];
 
     return (
-        <section className="membership-content relative mt-0 mb-0 pb-16 sm:pb-20 overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+        <section
+            className="membership-content relative mt-0 mb-0 pb-16 sm:pb-20 overflow-hidden"
+            style={{
+                background: `linear-gradient(135deg, color-mix(in srgb, ${flavor.color} 85%, #1a1a2e), color-mix(in srgb, ${flavor.hover} 70%, #1a1a2e) 50%, color-mix(in srgb, ${flavor.color} 60%, #2d1b4e))`,
+            }}
+        >
             {/* Decorative blobs */}
-            <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/30 rounded-full blur-[100px] pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-80 h-80 bg-pink-600/30 rounded-full blur-[100px] pointer-events-none" />
+            <div
+                className="absolute top-0 right-0 w-96 h-96 rounded-full blur-[100px] pointer-events-none"
+                style={{ backgroundColor: `color-mix(in srgb, ${flavor.color} 30%, transparent)` }}
+            />
+            <div
+                className="absolute bottom-0 left-0 w-80 h-80 rounded-full blur-[100px] pointer-events-none"
+                style={{ backgroundColor: `color-mix(in srgb, ${flavor.hover} 30%, transparent)` }}
+            />
 
             <div className="container mx-auto px-4 relative z-10">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
@@ -52,7 +63,7 @@ export default function MembershipCTA() {
                         <h2 className="text-4xl sm:text-5xl font-black mb-6 leading-tight">
                             Join Our Buy One <br />Gram Club
                         </h2>
-                        <p className="text-lg text-purple-100 font-medium mb-8 max-w-md">
+                        <p className="text-lg font-medium mb-8 max-w-md" style={{ color: `color-mix(in srgb, ${flavor.light} 80%, white)` }}>
                             Unlock premium benefits, exclusive savings, and prioritize your health journey with us.
                         </p>
 
@@ -66,7 +77,10 @@ export default function MembershipCTA() {
                                     transition={{ duration: 0.5, delay: i * 0.1 }}
                                     className="flex items-center gap-4"
                                 >
-                                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-white shrink-0 shadow-lg shadow-primary/30">
+                                    <span
+                                        className="flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0"
+                                        style={{ backgroundColor: flavor.color, boxShadow: `0 4px 12px color-mix(in srgb, ${flavor.color} 40%, transparent)` }}
+                                    >
                                         <AiOutlineCheck size={12} />
                                     </span>
                                     <span className="text-sm font-semibold text-white/90">{item}</span>
@@ -78,7 +92,9 @@ export default function MembershipCTA() {
                             onClick={() => router.push("/membership")}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-indigo-900 rounded-full font-bold shadow-xl hover:bg-primary hover:text-white transition-all active:scale-95"
+                            className="group inline-flex items-center gap-3 px-8 py-4 bg-white rounded-full font-bold shadow-xl transition-all active:scale-95"
+                            style={{ color: `color-mix(in srgb, ${flavor.color} 80%, #1a1a2e)` }}
+                            onHoverStart={() => { }}
                         >
                             Explore Plans
                             <svg className="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -115,7 +131,7 @@ export default function MembershipCTA() {
                             >
                                 <div className="text-4xl mb-4 grayscale mix-blend-screen">{item.emoji}</div>
                                 <h3 className="text-lg font-bold text-white mb-1">{item.title}</h3>
-                                <p className="text-xs text-purple-200 font-medium">{item.desc}</p>
+                                <p className="text-xs font-medium" style={{ color: `color-mix(in srgb, ${flavor.light} 60%, white)` }}>{item.desc}</p>
                             </motion.div>
                         ))}
                     </motion.div>

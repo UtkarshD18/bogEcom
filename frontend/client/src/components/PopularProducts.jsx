@@ -1,10 +1,10 @@
 "use client";
 
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { useContext } from "react";
 import ProductSlider from "./ProductSlider";
-import { motion } from "framer-motion";
 
 const PopularProducts = () => {
     const context = useContext(MyContext);
@@ -12,7 +12,8 @@ const PopularProducts = () => {
 
     return (
         <section
-            className="relative py-12 sm:py-16 md:py-20 overflow-hidden transition-all duration-500 bg-orange-50/50"
+            className="relative py-12 sm:py-16 md:py-20 overflow-hidden transition-all duration-500"
+            style={{ backgroundColor: flavor.light }}
         >
             {/* Decorative blobs */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -39,7 +40,7 @@ const PopularProducts = () => {
                             Trending Now
                         </span>
 
-                        <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-gray-900 tracking-tight">
+                        <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight transition-colors duration-500" style={{ color: 'var(--color-primary)' }}>
                             Popular Products
                         </h2>
 

@@ -1,9 +1,11 @@
 "use client";
 
 import { useProducts } from "@/context/ProductContext";
+import { postData } from "@/utils/api";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_APP_API_URL ||
@@ -113,12 +115,15 @@ const staggerContainer = {
 export default function BlogPage() {
   const { blogs = [], fetchBlogs } = useProducts();
   const [pageConfig, setPageConfig] = useState(DEFAULT_PAGE);
+  const [newsletterEmail, setNewsletterEmail] = useState("");
+  const [newsletterStatus, setNewsletterStatus] = useState(null);
+  const [newsletterMessage, setNewsletterMessage] = useState("");
 
   const themeStyle = pageConfig?.theme?.style || DEFAULT_PAGE.theme.style;
   const layout = pageConfig?.theme?.layout || DEFAULT_PAGE.theme.layout;
   const theme = useMemo(
     () => THEME_PRESETS[themeStyle] || THEME_PRESETS.mint,
-    [themeStyle]
+    [themeStyle],
   );
 
   const sections = pageConfig?.sections || DEFAULT_PAGE.sections;
@@ -129,6 +134,74 @@ export default function BlogPage() {
 
   const featuredBlog = blogs.length > 0 ? blogs[0] : null;
   const otherBlogs = blogs.slice(1);
+
+  // Email validation helper - matches server-side validation
+  const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Sanitize email - remove invisible/zero-width characters
+  const sanitizeEmail = (email) => {
+    return email
+      .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "") // Remove zero-width & non-breaking spaces
+      .replace(/[^\x20-\x7E]/g, "") // Keep only printable ASCII
+      .trim()
+      .toLowerCase();
+  };
+
+  const handleNewsletterEmailChange = (event) => {
+    setNewsletterEmail(event.target.value);
+    // Reset error state when user starts typing again
+    if (newsletterStatus === "error") {
+      setNewsletterStatus(null);
+      setNewsletterMessage("");
+    }
+  };
+
+  const handleNewsletterSubmit = async (event) => {
+    event.preventDefault();
+    const emailValue = sanitizeEmail(newsletterEmail);
+    if (!emailValue) {
+      setNewsletterStatus("error");
+      setNewsletterMessage("Please enter your email address.");
+      toast.error("Please enter your email address.");
+      return;
+    }
+    if (!isValidEmail(emailValue)) {
+      setNewsletterStatus("error");
+      setNewsletterMessage("Please enter a valid email address.");
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+    setNewsletterStatus("loading");
+    setNewsletterMessage("");
+    try {
+      const response = await postData("/api/newsletter/subscribe", {
+        email: emailValue,
+        source: "blogs",
+      });
+      if (response?.success) {
+        setNewsletterStatus("success");
+        setNewsletterMessage(response.message || "Thank you for subscribing!");
+        setNewsletterEmail("");
+        toast.success(response.message || "Thank you for subscribing!");
+      } else {
+        setNewsletterStatus("error");
+        setNewsletterMessage(
+          response?.message || "Failed to subscribe. Please try again.",
+        );
+        toast.error(
+          response?.message || "Failed to subscribe. Please try again.",
+        );
+      }
+    } catch (error) {
+      console.error("Blog newsletter subscription error:", error);
+      setNewsletterStatus("error");
+      setNewsletterMessage("Failed to subscribe. Please try again.");
+      toast.error("Failed to subscribe. Please try again.");
+    }
+  };
 
   useEffect(() => {
     const fetchPage = async () => {
@@ -283,25 +356,55 @@ export default function BlogPage() {
                     {pageConfig.newsletter.description}
                   </p>
                 )}
-                <div className="mt-8 flex flex-col sm:flex-row gap-3 max-w-xl">
+                <form
+                  onSubmit={handleNewsletterSubmit}
+                  className="mt-8 flex flex-col sm:flex-row gap-3 max-w-xl"
+                >
                   <input
                     type="email"
+                    value={newsletterEmail}
+                    onChange={handleNewsletterEmailChange}
                     placeholder={
                       pageConfig?.newsletter?.inputPlaceholder ||
                       DEFAULT_PAGE.newsletter.inputPlaceholder
                     }
+                    required
+                    disabled={
+                      newsletterStatus === "loading" ||
+                      newsletterStatus === "success"
+                    }
                     className="flex-1 px-5 py-3.5 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-black/5 transition-shadow"
                   />
                   <button
-                    className={`px-8 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r ${theme.accent} shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300`}
+                    type="submit"
+                    disabled={
+                      newsletterStatus === "loading" ||
+                      newsletterStatus === "success"
+                    }
+                    className={`px-8 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r ${theme.accent} shadow-md transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed ${newsletterStatus === "loading" || newsletterStatus === "success" ? "" : "hover:shadow-lg hover:-translate-y-0.5"}`}
                   >
-                    {pageConfig?.newsletter?.buttonText ||
-                      DEFAULT_PAGE.newsletter.buttonText}
+                    {newsletterStatus === "loading"
+                      ? "Subscribing..."
+                      : newsletterStatus === "success"
+                        ? "Subscribed"
+                        : pageConfig?.newsletter?.buttonText ||
+                          DEFAULT_PAGE.newsletter.buttonText}
                   </button>
-                </div>
+                </form>
                 {pageConfig?.newsletter?.note && (
                   <p className="mt-4 text-xs text-gray-500">
                     {pageConfig.newsletter.note}
+                  </p>
+                )}
+                {newsletterStatus === "success" && (
+                  <p className="mt-2 text-xs font-semibold text-emerald-600">
+                    {newsletterMessage || "Thank you for subscribing!"}
+                  </p>
+                )}
+                {newsletterStatus === "error" && (
+                  <p className="mt-2 text-xs font-semibold text-rose-600">
+                    {newsletterMessage ||
+                      "Failed to subscribe. Please try again."}
                   </p>
                 )}
               </div>
@@ -535,8 +638,12 @@ export default function BlogPage() {
       {showNewsletter && (
         <section className="relative py-24 overflow-hidden">
           <div className="absolute inset-0 bg-[#0f1016]">
-            <div className={`absolute top-0 right-0 w-[600px] h-[600px] ${theme.glowA} rounded-full blur-[120px] opacity-20`} />
-            <div className={`absolute bottom-0 left-0 w-[600px] h-[600px] ${theme.glowB} rounded-full blur-[120px] opacity-20`} />
+            <div
+              className={`absolute top-0 right-0 w-[600px] h-[600px] ${theme.glowA} rounded-full blur-[120px] opacity-20`}
+            />
+            <div
+              className={`absolute bottom-0 left-0 w-[600px] h-[600px] ${theme.glowB} rounded-full blur-[120px] opacity-20`}
+            />
           </div>
 
           <motion.div
@@ -557,21 +664,43 @@ export default function BlogPage() {
                 DEFAULT_PAGE.newsletter.description}
             </p>
 
-            <form className="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto">
+            <form
+              onSubmit={handleNewsletterSubmit}
+              className="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto"
+            >
               <input
                 type="email"
+                value={newsletterEmail}
+                onChange={handleNewsletterEmailChange}
                 placeholder={
                   pageConfig?.newsletter?.inputPlaceholder ||
                   DEFAULT_PAGE.newsletter.inputPlaceholder
                 }
+                required
+                disabled={
+                  newsletterStatus === "loading" ||
+                  newsletterStatus === "success"
+                }
                 className="flex-1 px-6 py-4 rounded-xl text-gray-900 bg-white focus:outline-none focus:ring-4 focus:ring-white/10 transition-all shadow-xl"
               />
               <button
-                className={`flex-none bg-gradient-to-r ${theme.accentStrong} text-white font-bold px-8 py-4 rounded-xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 whitespace-nowrap`}
+                type="submit"
+                disabled={
+                  newsletterStatus === "loading" ||
+                  newsletterStatus === "success"
+                }
+                className={`flex-none bg-gradient-to-r ${theme.accentStrong} text-white font-bold px-8 py-4 rounded-xl transition-all shadow-lg whitespace-nowrap disabled:opacity-70 disabled:cursor-not-allowed ${newsletterStatus === "loading" || newsletterStatus === "success" ? "" : "hover:shadow-xl hover:-translate-y-0.5"}`}
               >
-                {pageConfig?.newsletter?.buttonText ||
-                  DEFAULT_PAGE.newsletter.buttonText}{" "}
-                →
+                {newsletterStatus === "loading"
+                  ? "Subscribing..."
+                  : newsletterStatus === "success"
+                    ? "Subscribed"
+                    : pageConfig?.newsletter?.buttonText ||
+                      DEFAULT_PAGE.newsletter.buttonText}{" "}
+                {newsletterStatus === "loading" ||
+                newsletterStatus === "success"
+                  ? ""
+                  : "→"}
               </button>
             </form>
 
@@ -580,10 +709,19 @@ export default function BlogPage() {
                 {pageConfig.newsletter.note}
               </p>
             )}
+            {newsletterStatus === "success" && (
+              <p className="text-xs font-semibold text-emerald-400 mt-3">
+                {newsletterMessage || "Thank you for subscribing!"}
+              </p>
+            )}
+            {newsletterStatus === "error" && (
+              <p className="text-xs font-semibold text-rose-400 mt-3">
+                {newsletterMessage || "Failed to subscribe. Please try again."}
+              </p>
+            )}
           </motion.div>
         </section>
       )}
     </main>
   );
 }
-

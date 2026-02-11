@@ -34,6 +34,7 @@ const EMPTY_ITEM = {
   productId: "",
   quantity: 1,
   price: 0,
+  packing: "",
 };
 
 export default function PurchaseOrdersPage() {
@@ -56,6 +57,15 @@ export default function PurchaseOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
+  const [receiveTarget, setReceiveTarget] = useState(null);
+  const [receiveForm, setReceiveForm] = useState({
+    invoiceNumber: "",
+    vehicleNumber: "",
+    notes: "",
+    items: [],
+  });
+  const [receiving, setReceiving] = useState(false);
 
   // Vendor management state
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
@@ -216,11 +226,59 @@ export default function PurchaseOrdersPage() {
       const quantity = Number(item.quantity || 0);
       const price = Number(item.price || product?.price || 0);
       const amount = quantity * price;
-      return { ...item, product, quantity, price, amount, index };
+      const packing = item.packing || "";
+      return { ...item, product, quantity, price, amount, packing, index };
     });
   }, [items, products]);
 
   const totalAmount = itemRows.reduce((sum, row) => sum + row.amount, 0);
+  const productLookup = useMemo(() => {
+    return new Map(
+      (products || []).map((product) => [String(product._id), product]),
+    );
+  }, [products]);
+
+  const formatPoStatus = (status) => {
+    const raw = String(status || "").toLowerCase();
+    if (raw === "converted") return "PLACED";
+    if (raw === "approved") return "APPROVED";
+    if (raw === "draft") return "DRAFT";
+    if (raw) return raw.toUpperCase();
+    return "N/A";
+  };
+
+  const formatPoNumber = (order, index = 0) => {
+    if (!order) return "N/A";
+    if (order.poNumber) return String(order.poNumber);
+    const created = order.createdAt ? new Date(order.createdAt) : new Date();
+    const year = created.getFullYear();
+    const month = created.getMonth();
+    const fyStartYear = month >= 3 ? year : year - 1;
+    const fyEndYear = fyStartYear + 1;
+    const fyStart = String(fyStartYear % 100).padStart(2, "0");
+    const fyEnd = String(fyEndYear % 100).padStart(2, "0");
+    const seq = String((index ?? 0) + 1).padStart(3, "0");
+    return `BOGPO${fyStart}-${fyEnd}/${seq}`;
+  };
+
+  const formatPacking = (item) => {
+    if (!item) return "-";
+    if (item.packing) return item.packing;
+    if (item.packSize) return item.packSize;
+    const product = productLookup.get(String(item.productId || ""));
+    const weight = Number(product?.weight || 0);
+    const unit = String(product?.unit || "").toLowerCase();
+    if (weight > 0) {
+      if (unit === "g" || unit === "gm" || unit === "gram" || unit === "grams") {
+        return weight >= 1000 ? `${weight / 1000}kg` : `${weight}g`;
+      }
+      if (unit === "kg" || unit === "kilogram" || unit === "kilograms") {
+        return `${weight}kg`;
+      }
+      return `${weight}${product?.unit || ""}`;
+    }
+    return product?.unit || "-";
+  };
 
   const handleCreateOrder = async () => {
     const validItems = itemRows.filter((row) => row.product?._id);
@@ -243,6 +301,7 @@ export default function PurchaseOrdersPage() {
         productId: row.product._id,
         productTitle: row.product.name,
         quantity: row.quantity,
+        packing: row.packing,
         price: row.price,
         subTotal: row.amount,
         image: row.product.thumbnail || row.product.images?.[0] || "",
@@ -274,18 +333,57 @@ export default function PurchaseOrdersPage() {
 
   const handleDownload = async (orderId) => {
     try {
-      const response = await fetch(
-        `${API_URL}/api/purchase-orders/${orderId}/pdf`,
-        {
+      const downloadRequest = async (authToken) =>
+        fetch(`${API_URL}/api/purchase-orders/${orderId}/pdf`, {
           method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-      if (!response.ok) {
-        throw new Error("Failed to download PDF");
+          headers: authToken
+            ? {
+                Authorization: `Bearer ${authToken}`,
+              }
+            : undefined,
+          credentials: "include",
+        });
+
+      let response = await downloadRequest(token);
+
+      if (response.status === 401) {
+        try {
+          const refreshResponse = await fetch(
+            `${API_URL}/api/user/refresh-token`,
+            {
+              method: "POST",
+              credentials: "include",
+            },
+          );
+          if (refreshResponse.ok) {
+            const refreshData = await refreshResponse.json();
+            const newToken = refreshData?.data?.accessToken || null;
+            if (newToken) {
+              localStorage.setItem("adminToken", newToken);
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(
+                  new CustomEvent("adminTokenRefreshed", { detail: newToken }),
+                );
+              }
+              response = await downloadRequest(newToken);
+            }
+          }
+        } catch (refreshError) {
+          // Ignore refresh errors and fall through to error handler
+        }
       }
+
+      if (!response.ok) {
+        let message = "Failed to download PDF";
+        try {
+          const errorData = await response.json();
+          message = errorData?.message || message;
+        } catch {
+          // ignore parsing errors for non-JSON responses
+        }
+        throw new Error(message);
+      }
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -320,7 +418,73 @@ export default function PurchaseOrdersPage() {
       toast.error("Failed to mark as received");
     }
   };
+  const handleOpenReceiveDialog = (order) => {
+    if (!order) return;
+    setReceiveTarget(order);
+    setReceiveForm({
+      invoiceNumber: order.receipt?.invoiceNumber || "",
+      vehicleNumber: order.receipt?.vehicleNumber || "",
+      notes: order.receipt?.notes || "",
+      items: (order.items || []).map((item) => ({
+        productId: item.productId,
+        productTitle: item.productTitle,
+        orderedQty: Number(item.quantity || 0),
+        receivedQty: Number(item.receivedQuantity || 0),
+        receiveNow: 0,
+      })),
+    });
+    setReceiveDialogOpen(true);
+  };
 
+  const updateReceiveItem = (index, value) => {
+    setReceiveForm((prev) => {
+      const next = [...(prev.items || [])];
+      next[index] = { ...next[index], receiveNow: value };
+      return { ...prev, items: next };
+    });
+  };
+
+  const handleSubmitReceive = async () => {
+    if (!receiveTarget?._id) return;
+    const payload = {
+      invoiceNumber: receiveForm.invoiceNumber,
+      vehicleNumber: receiveForm.vehicleNumber,
+      notes: receiveForm.notes,
+      items: (receiveForm.items || [])
+        .filter((item) => Number(item.receiveNow || 0) > 0)
+        .map((item) => ({
+          productId: item.productId,
+          receivedQuantity: Number(item.receiveNow || 0),
+        })),
+    };
+
+    setReceiving(true);
+    try {
+      const res = await patchData(
+        `/api/purchase-orders/${receiveTarget._id}/receive`,
+        payload,
+        token,
+      );
+      if (res.success) {
+        toast.success("Receipt updated");
+        setReceiveDialogOpen(false);
+        setReceiveTarget(null);
+        fetchOrders();
+      } else {
+        toast.error(res.message || "Failed to update receipt");
+      }
+    } catch (error) {
+      toast.error(error.message || "Failed to update receipt");
+    }
+    setReceiving(false);
+  };
+
+  const selectedOrderData = selectedOrder?.order || null;
+  const selectedOrderIndex = selectedOrder
+    ? Number.isInteger(selectedOrder.index)
+      ? selectedOrder.index
+      : orders.findIndex((o) => o._id === selectedOrder?.order?._id)
+    : -1;
   return (
     <div className="min-h-screen bg-[#EAF6FF] px-6 py-6">
       <div className="flex items-center justify-between mb-6">
@@ -462,9 +626,10 @@ export default function PurchaseOrdersPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            <div className="grid grid-cols-6 text-xs text-gray-500 font-semibold border-b pb-2">
+            <div className="grid grid-cols-7 text-xs text-gray-500 font-semibold border-b pb-2">
               <div className="col-span-2">Product</div>
               <div>Quantity</div>
+              <div>Packing</div>
               <div>Rate (₹)</div>
               <div>Amount</div>
               <div className="text-right">Action</div>
@@ -473,7 +638,7 @@ export default function PurchaseOrdersPage() {
             {itemRows.map((row) => (
               <div
                 key={row.index}
-                className="grid grid-cols-6 items-center gap-3 bg-[#F2F8FF] p-3 rounded-lg"
+                className="grid grid-cols-7 items-center gap-3 bg-[#F2F8FF] p-3 rounded-lg"
               >
                 <div className="col-span-2">
                   <select
@@ -496,6 +661,14 @@ export default function PurchaseOrdersPage() {
                   value={row.quantity}
                   onChange={(e) =>
                     updateItem(row.index, "quantity", e.target.value)
+                  }
+                />
+                <TextField
+                  size="small"
+                  placeholder="e.g. 1kg"
+                  value={row.packing}
+                  onChange={(e) =>
+                    updateItem(row.index, "packing", e.target.value)
                   }
                 />
                 <TextField
@@ -571,14 +744,14 @@ export default function PurchaseOrdersPage() {
               No purchase orders found.
             </div>
           ) : (
-            orders.map((order) => (
+            orders.map((order, index) => (
               <div
                 key={order._id}
                 className="bg-white rounded-xl shadow p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
               >
                 <div>
                   <div className="text-lg font-semibold text-gray-800">
-                    PO {String(order._id).slice(-10).toUpperCase()}
+                    {formatPoNumber(order, index)}
                   </div>
                   <div className="text-sm text-gray-500">
                     {order.guestDetails?.fullName ||
@@ -592,13 +765,19 @@ export default function PurchaseOrdersPage() {
                     ₹{Number(order.total || 0).toLocaleString("en-IN")}
                   </div>
                   <div className="text-xs text-gray-500 capitalize">
-                    Status: {order.status}
+                    Status: {formatPoStatus(order.status)}
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <Button
                     variant="outlined"
-                    onClick={() => setSelectedOrder(order)}
+                    onClick={() => handleOpenReceiveDialog(order)}
+                  >
+                    Receive Items
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => setSelectedOrder({ order, index })}
                   >
                     View/Download
                   </Button>
@@ -609,7 +788,7 @@ export default function PurchaseOrdersPage() {
         </div>
       )}
 
-      {selectedOrder && (
+      {selectedOrderData && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-[#EAF6FF] rounded-2xl shadow-xl w-full max-w-3xl p-6 relative">
             <button
@@ -620,36 +799,140 @@ export default function PurchaseOrdersPage() {
             </button>
             <h3 className="text-lg font-semibold text-gray-800 mb-2">
               Purchase Order:{" "}
-              {String(selectedOrder._id).slice(-10).toUpperCase()}
+              {formatPoNumber(selectedOrderData, selectedOrderIndex)}
             </h3>
             <p className="text-sm text-gray-500 mb-4">
-              {selectedOrder.guestDetails?.fullName ||
-                selectedOrder.userId?.name ||
+              {selectedOrderData.guestDetails?.fullName ||
+                selectedOrderData.userId?.name ||
                 "Vendor"}{" "}
-              • {new Date(selectedOrder.createdAt).toLocaleString()}
+              • {new Date(selectedOrderData.createdAt).toLocaleString()}
             </p>
 
-            <div className="bg-white/70 rounded-xl p-4">
-              <div className="grid grid-cols-5 text-xs text-gray-500 font-semibold border-b pb-2">
+            <div className="bg-white/70 rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-700">
+              <div>
+                <div className="text-xs uppercase text-gray-500">PO Number</div>
+                <div className="font-semibold">
+                  {formatPoNumber(selectedOrderData, selectedOrderIndex)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase text-gray-500">Date</div>
+                <div className="font-semibold">
+                  {new Date(selectedOrderData.createdAt).toLocaleString()}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase text-gray-500">Status</div>
+                <div className="font-semibold">
+                  {formatPoStatus(selectedOrderData.status)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 bg-white/70 rounded-xl p-4">
+              <div className="text-sm font-semibold text-gray-800 mb-3">
+                Vendor Details
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
+                <div>
+                  <span className="text-gray-500 text-xs uppercase">Name</span>
+                  <div className="font-medium">
+                    {selectedOrderData.guestDetails?.fullName ||
+                      selectedOrderData.userId?.name ||
+                      "Vendor"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-500 text-xs uppercase">Phone</span>
+                  <div className="font-medium">
+                    {selectedOrderData.guestDetails?.phone || "N/A"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-500 text-xs uppercase">Address</span>
+                  <div className="font-medium">
+                    {selectedOrderData.guestDetails?.address || "N/A"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-500 text-xs uppercase">State</span>
+                  <div className="font-medium">
+                    {selectedOrderData.guestDetails?.state || "N/A"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 bg-white/70 rounded-xl p-4">
+              <div className="text-sm font-semibold text-gray-800 mb-3">
+                Receipt Details
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
+                <div>
+                  <span className="text-gray-500 text-xs uppercase">
+                    Invoice Number
+                  </span>
+                  <div className="font-medium">
+                    {selectedOrderData.receipt?.invoiceNumber || "N/A"}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-500 text-xs uppercase">
+                    Vehicle Number
+                  </span>
+                  <div className="font-medium">
+                    {selectedOrderData.receipt?.vehicleNumber || "N/A"}
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <span className="text-gray-500 text-xs uppercase">Notes</span>
+                  <div className="font-medium">
+                    {selectedOrderData.receipt?.notes || "N/A"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 bg-white/70 rounded-xl p-4">
+              <div className="grid grid-cols-7 text-xs text-gray-500 font-semibold border-b pb-2">
+                <div>S.N</div>
                 <div className="col-span-2">Product</div>
+                <div>Packing</div>
                 <div>Qty</div>
-                <div>Rate</div>
+                <div>Rate/kg</div>
                 <div>Amount</div>
               </div>
-              {selectedOrder.items?.map((item, index) => (
+              {selectedOrderData.items?.map((item, index) => (
                 <div
                   key={index}
-                  className="grid grid-cols-5 text-sm text-gray-700 py-2 border-b last:border-b-0"
+                  className="grid grid-cols-7 text-sm text-gray-700 py-2 border-b last:border-b-0"
                 >
+                  <div>{index + 1}</div>
                   <div className="col-span-2">{item.productTitle}</div>
-                  <div>{item.quantity}</div>
-                  <div>₹{item.price}</div>
-                  <div className="font-semibold">₹{item.subTotal}</div>
+                  <div>{formatPacking(item)}</div>
+                  <div>
+                    {item.quantity}
+                    {Number(item.receivedQuantity || 0) > 0
+                      ? ` (${item.receivedQuantity} rec)`
+                      : ""}
+                  </div>
+                  <div>₹{Number(item.price || 0).toLocaleString("en-IN")}</div>
+                  <div className="font-semibold">
+                    ₹{Number(item.subTotal || 0).toLocaleString("en-IN")}
+                  </div>
                 </div>
               ))}
-              <div className="flex justify-end mt-3 text-gray-800 font-bold">
-                Total: ₹
-                {Number(selectedOrder.total || 0).toLocaleString("en-IN")}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mt-4 text-sm text-gray-700">
+                <div className="text-xs text-gray-500">
+                  Generated on{" "}
+                  {new Date(selectedOrderData.createdAt).toLocaleString()}
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">
+                    Total: ₹
+                    {Number(selectedOrderData.total || 0).toLocaleString("en-IN")}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -657,11 +940,11 @@ export default function PurchaseOrdersPage() {
               <Button variant="outlined" onClick={() => setSelectedOrder(null)}>
                 Close
               </Button>
-              {selectedOrder.status !== "received" && (
+              {selectedOrderData?.status !== "received" && (
                 <Button
                   variant="contained"
                   color="success"
-                  onClick={() => handleMarkReceived(selectedOrder._id)}
+                  onClick={() => handleMarkReceived(selectedOrderData._id)}
                 >
                   Mark Received
                 </Button>
@@ -669,7 +952,7 @@ export default function PurchaseOrdersPage() {
               <Button
                 variant="contained"
                 startIcon={<FaDownload />}
-                onClick={() => handleDownload(selectedOrder._id)}
+                onClick={() => handleDownload(selectedOrderData._id)}
               >
                 Download PDF
               </Button>
@@ -677,6 +960,111 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
       )}
+
+      <Dialog
+        open={receiveDialogOpen}
+        onClose={() => setReceiveDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Receive Items
+          {receiveTarget
+            ? ` — ${formatPoNumber(
+                receiveTarget,
+                orders.findIndex((o) => o._id === receiveTarget?._id),
+              )}`
+            : ""}
+        </DialogTitle>
+        <DialogContent>
+          <div className="space-y-4 mt-2">
+            {(receiveForm.items || []).map((item, index) => {
+              const orderedQty = Number(item.orderedQty || 0);
+              const receivedQty = Number(item.receivedQty || 0);
+              const remaining = Math.max(orderedQty - receivedQty, 0);
+              return (
+                <div
+                  key={item.productId || index}
+                  className="border rounded-lg p-4 bg-gray-50"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-semibold text-gray-800">
+                      {item.productTitle || "Product"}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Ordered: {orderedQty} | Received: {receivedQty} |
+                      Remaining: {remaining}
+                    </div>
+                  </div>
+                  <TextField
+                    label="Qty Receiving"
+                    type="number"
+                    size="small"
+                    value={item.receiveNow}
+                    onChange={(e) =>
+                      updateReceiveItem(index, Number(e.target.value || 0))
+                    }
+                    inputProps={{ min: 0, max: remaining }}
+                    fullWidth
+                  />
+                </div>
+              );
+            })}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <TextField
+                label="Invoice / Bill Number"
+                size="small"
+                value={receiveForm.invoiceNumber}
+                onChange={(e) =>
+                  setReceiveForm((prev) => ({
+                    ...prev,
+                    invoiceNumber: e.target.value,
+                  }))
+                }
+                fullWidth
+              />
+              <TextField
+                label="Vehicle Number"
+                size="small"
+                value={receiveForm.vehicleNumber}
+                onChange={(e) =>
+                  setReceiveForm((prev) => ({
+                    ...prev,
+                    vehicleNumber: e.target.value,
+                  }))
+                }
+                fullWidth
+              />
+              <TextField
+                label="Notes (Optional)"
+                size="small"
+                value={receiveForm.notes}
+                onChange={(e) =>
+                  setReceiveForm((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
+                fullWidth
+                multiline
+                rows={3}
+              />
+            </div>
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReceiveDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={receiving}
+            onClick={handleSubmitReceive}
+          >
+            {receiving ? "Saving..." : "Confirm Receipt"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Vendor Management Dialog */}
       <Dialog
         open={vendorDialogOpen}

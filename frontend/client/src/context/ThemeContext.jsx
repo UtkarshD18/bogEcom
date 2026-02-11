@@ -20,13 +20,13 @@ export const FLAVORS = {
   },
   chocolate: {
     name: "Chocolate",
-    color: "#8B4513",
-    hover: "#A0522D",
-    light: "#F5F5DC",
-    glass: "rgba(139,69,19,0.15)",
-    gradient: "linear-gradient(135deg, #F5EFED 0%, #FAF7F6 50%, #FFFFFF 100%)",
-    cardBg: "#FBF8F7",
-    badge: "#A0522D",
+    color: "#A0694B",
+    hover: "#8B5A3C",
+    light: "#FBF3EE",
+    glass: "rgba(160,105,75,0.15)",
+    gradient: "linear-gradient(135deg, #FBF3EE 0%, #FDF8F5 50%, #FFFFFF 100%)",
+    cardBg: "#FDF8F5",
+    badge: "#8B5A3C",
   },
   millets: {
     name: "Millets",
@@ -192,6 +192,7 @@ const ThemeProvider = ({ children }) => {
       `linear-gradient(180deg, ${themeColor.light} 0%, #FFFFFF 100%)`,
     );
     root.style.setProperty("--primary", themeColor.color);
+    root.style.setProperty("--color-primary", themeColor.color);
 
     // Update body background
     document.body.style.background = `linear-gradient(180deg, ${themeColor.light} 0%, #FFFFFF 100%)`;
