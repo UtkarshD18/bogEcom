@@ -80,3 +80,4 @@ next-env.d.ts
 .tmp
 .temp
 .aider*
+server/invoices/
