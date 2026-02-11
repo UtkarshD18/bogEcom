@@ -33,7 +33,7 @@ const Header = () => {
   const [hideHeader, setHideHeader] = useState(false);
   const router = useRouter();
   const context = useContext(MyContext);
-  const { cartCount } = useCart();
+  const { cartCount, setIsDrawerOpen } = useCart();
   const { wishlistCount } = useWishlist();
 
   const open = Boolean(anchorEl);
@@ -41,23 +41,15 @@ const Header = () => {
   // ============ MOBILE MENU: Auto-close on scroll ============
   useEffect(() => {
     if (!mobileMenuOpen) return;
-
     let lastScrollY = window.scrollY;
-
     const handleScrollClose = () => {
       const currentScrollY = window.scrollY;
-      // Close menu if user scrolls more than 10px in any direction
       if (Math.abs(currentScrollY - lastScrollY) > 10) {
         setMobileMenuOpen(false);
       }
     };
-
-    // Add listener with passive for better performance
     window.addEventListener("scroll", handleScrollClose, { passive: true });
-
-    return () => {
-      window.removeEventListener("scroll", handleScrollClose);
-    };
+    return () => window.removeEventListener("scroll", handleScrollClose);
   }, [mobileMenuOpen]);
 
   // Function to check login status
@@ -67,21 +59,13 @@ const Header = () => {
     const userNameCookie = cookies.get("userName");
     const userPhotoCookie = cookies.get("userPhoto");
 
-    // Validate that the JWT is not expired
     let tokenValid = false;
     if (accessToken) {
       try {
         const payload = JSON.parse(atob(accessToken.split(".")[1]));
         tokenValid = payload.exp * 1000 > Date.now();
-      } catch {}
+      } catch { }
     }
-
-    console.log("Header checkLoginStatus:", {
-      accessToken: accessToken ? "present" : "missing",
-      tokenValid,
-      userEmail: userEmailCookie,
-      userName: userNameCookie,
-    });
 
     if (tokenValid) {
       setIsLoggedIn(true);
@@ -96,28 +80,13 @@ const Header = () => {
     }
   };
 
-  // Check login status on mount and when route changes
   useEffect(() => {
     setIsMounted(true);
-    // Check immediately
     checkLoginStatus();
+    const timer = setTimeout(() => checkLoginStatus(), 150);
 
-    // Also check after a small delay to catch redirects from login
-    const timer = setTimeout(() => {
-      checkLoginStatus();
-    }, 150);
-
-    // Listen for custom login event
-    const handleLoginSuccess = () => {
-      console.log("Login success event received in Header");
-      // Force immediate state update
-      checkLoginStatus();
-    };
-
-    // Listen for storage events (cross-tab sync)
-    const handleStorageChange = () => {
-      checkLoginStatus();
-    };
+    const handleLoginSuccess = () => checkLoginStatus();
+    const handleStorageChange = () => checkLoginStatus();
 
     window.addEventListener("loginSuccess", handleLoginSuccess);
     window.addEventListener("storage", handleStorageChange);
@@ -131,53 +100,35 @@ const Header = () => {
     };
   }, []);
 
-  // Detect scroll to adjust glass intensity and hide/show header
+  // Scroll detection
   useEffect(() => {
     let lastScrollY = window.scrollY;
-
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-
-      // Set scrolled state
       setScrolled(currentScrollY > 20);
-
-      // Hide header when scrolling down past threshold
       if (currentScrollY > 100) {
-        // Scrolling down - hide header
         if (currentScrollY > lastScrollY) {
           setHideHeader(true);
-          setMobileMenuOpen(false); // Close mobile menu if open
-        }
-        // Scrolling up - show header
-        else if (currentScrollY < lastScrollY - 10) {
+          setMobileMenuOpen(false);
+        } else if (currentScrollY < lastScrollY - 10) {
           setHideHeader(false);
         }
       } else {
-        // Near top - always show header
         setHideHeader(false);
       }
-
       lastScrollY = currentScrollY;
     };
-
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const handleClick = (event) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
+  const handleClick = (event) => setAnchorEl(event.currentTarget);
+  const handleClose = () => setAnchorEl(null);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
       await postData("/api/user/logout", {});
-
-      // Clear cookies and user data regardless of API response
       context?.setIsLogin?.(false);
       cookies.remove("accessToken");
       cookies.remove("refreshToken");
@@ -187,12 +138,10 @@ const Header = () => {
       context?.setUser?.({});
       setIsLoggedIn(false);
       setAnchorEl(null);
-
       context?.alertBox("success", "Logged out successfully");
       router.push("/logout-confirmation");
     } catch (error) {
       console.error("Logout error:", error);
-      // Logout locally even if API fails
       cookies.remove("accessToken");
       cookies.remove("refreshToken");
       cookies.remove("userEmail");
@@ -207,13 +156,20 @@ const Header = () => {
     }
   };
 
+  const mobileNavItems = [
+    { name: "Home", href: "/", icon: "🏠" },
+    { name: "Products", href: "/products", icon: "🛍️" },
+    { name: "Membership", href: "/membership", icon: "💎" },
+    { name: "Blogs", href: "/blogs", icon: "📝" },
+    { name: "About Us", href: "/about-us", icon: "✨" },
+  ];
+
   return (
     <>
       {/* Main Header Container */}
       <div
-        className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 backdrop-blur-xl ${
-          scrolled ? "shadow-md border-b" : "border-b border-transparent"
-        } ${hideHeader ? "-translate-y-full" : "translate-y-0"}`}
+        className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 backdrop-blur-xl ${scrolled ? "shadow-md border-b" : "border-b border-transparent"
+          } ${hideHeader ? "-translate-y-full" : "translate-y-0"}`}
         style={{
           backgroundColor: scrolled
             ? `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 85%, transparent)`
@@ -225,11 +181,10 @@ const Header = () => {
       >
         {/* ================= TOP HEADER ================= */}
         <div
-          className={`w-full transition-all duration-300 overflow-hidden md:overflow-visible ${
-            scrolled
+          className={`w-full transition-all duration-300 overflow-hidden md:overflow-visible ${scrolled
               ? "max-h-0 opacity-0 -mt-2 md:max-h-[220px] md:opacity-100 md:mt-0"
               : "max-h-[220px] opacity-100 mt-0"
-          }`}
+            }`}
         >
           {/* Removed Decorative Top Line Gradient */}
           <div className="w-full px-3 sm:px-4 md:px-6 py-0.5">
@@ -290,11 +245,10 @@ const Header = () => {
                       <Link
                         key={item.name}
                         href={item.href}
-                        className={`font-semibold text-base px-2 py-1 rounded-lg transition ${
-                          isActive
+                        className={`font-semibold text-base px-2 py-1 rounded-lg transition ${isActive
                             ? "text-[#059669] bg-[#a7f3d0]/20"
                             : "text-gray-700 hover:bg-[#a7f3d0]/20"
-                        }`}
+                          }`}
                       >
                         {item.name}
                       </Link>
@@ -454,16 +408,13 @@ const Header = () => {
                       </div>
                     </button>
 
-                    {/* Dropdown Menu - Production Ready */}
+                    {/* Menu */}
                     {open && (
                       <>
-                        {/* Backdrop */}
                         <div
                           className="fixed inset-0 z-30"
                           onClick={handleClose}
                         />
-
-                        {/* Menu */}
                         <div
                           className="absolute right-0 mt-3 w-64 rounded-xl shadow-xl border py-2 z-40 animate-in fade-in slide-in-from-top-2"
                           style={{
@@ -582,11 +533,10 @@ const Header = () => {
         {/* ============ MOBILE DROPDOWN MENU ============ */}
         {/* Backdrop - Mobile only */}
         <div
-          className={`md:hidden fixed inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ${
-            mobileMenuOpen
+          className={`md:hidden fixed inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ${mobileMenuOpen
               ? "opacity-100 pointer-events-auto"
               : "opacity-0 pointer-events-none"
-          }`}
+            }`}
           style={{ zIndex: 9997 }}
           onClick={() => setMobileMenuOpen(false)}
           aria-hidden="true"
@@ -594,11 +544,10 @@ const Header = () => {
 
         {/* Dropdown Panel - Mobile only */}
         <div
-          className={`md:hidden fixed left-0 right-0 transition-all duration-300 ease-out ${
-            mobileMenuOpen
+          className={`md:hidden fixed left-0 right-0 transition-all duration-300 ease-out ${mobileMenuOpen
               ? "translate-y-0 opacity-100 pointer-events-auto"
               : "-translate-y-4 opacity-0 pointer-events-none"
-          }`}
+            }`}
           style={{
             top: "calc(var(--header-height, 100px) - 8px)",
             zIndex: 9998,
@@ -615,13 +564,7 @@ const Header = () => {
           >
             {/* Navigation Links */}
             <nav className="py-2">
-              {[
-                { name: "Home", href: "/", icon: "🏠" },
-                { name: "Products", href: "/products", icon: "🛒" },
-                { name: "Membership", href: "/membership", icon: "⭐" },
-                { name: "Blogs", href: "/blogs", icon: "📝" },
-                { name: "About Us", href: "/about-us", icon: "ℹ️" },
-              ].map((item) => {
+              {mobileNavItems.map((item) => {
                 const isActive =
                   item.href === "/"
                     ? pathname === "/"
@@ -630,11 +573,10 @@ const Header = () => {
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`flex items-center gap-3 mx-2 px-4 py-3 rounded-xl text-[15px] font-semibold transition-all duration-200 ${
-                      isActive
+                    className={`flex items-center gap-3 mx-2 px-4 py-3 rounded-xl text-[15px] font-semibold transition-all duration-200 ${isActive
                         ? "text-[#059669] bg-[#a7f3d0]/20"
                         : "text-gray-700 hover:bg-[#a7f3d0]/15 hover:text-[#059669] active:bg-[#a7f3d0]/25"
-                    }`}
+                      }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <span className="text-lg w-6 text-center">{item.icon}</span>
@@ -713,24 +655,22 @@ const Header = () => {
 
       {/* Floating Search Bar - Shows when header is hidden */}
       <div
-        className={`fixed left-0 right-0 z-50 transition-all duration-300 ${
-          hideHeader
+        className={`fixed left-0 right-0 z-50 transition-all duration-300 ${hideHeader
             ? "translate-y-0 opacity-100"
             : "-translate-y-full opacity-0 pointer-events-none"
-        }`}
+          }`}
         style={{ top: 0 }}
       >
         <div className="backdrop-blur-xl bg-white/95 shadow-lg border-b border-gray-200/50 px-3 sm:px-4 md:px-6 py-2.5">
           <div className="max-w-2xl mx-auto">
             <div
-              className="rounded-full border overflow-hidden shadow-sm"
+              className="rounded-full border overflow-hidden"
               style={{
                 backgroundColor: "#fff",
-                borderColor:
-                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
+                borderColor: "#e5e5e5",
               }}
             >
-              <div className="h-11 flex items-center">
+              <div className="h-10 flex items-center">
                 <Search />
               </div>
             </div>

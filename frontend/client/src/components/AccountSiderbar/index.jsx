@@ -15,21 +15,96 @@ const AccountSidebar = () => {
   const router = useRouter();
   const pathname = usePathname();
   const fileInputRef = useRef(null);
+  const API_URL =
+    (
+      process.env.NEXT_PUBLIC_APP_API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      "http://localhost:8000"
+    ).replace(/\/+$/, "");
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userName, setUserName] = useState("User");
   const [userEmail, setUserEmail] = useState("");
   const [userPhoto, setUserPhoto] = useState("");
+  const [userPhone, setUserPhone] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
-  // Load user data from cookies
-  useEffect(() => {
+  const syncFromCookies = () => {
     const name = cookies.get("userName") || "User";
     const email = cookies.get("userEmail") || "";
     const photo = cookies.get("userPhoto") || "";
     setUserName(name);
     setUserEmail(email);
     setUserPhoto(photo);
+  };
+
+  const formatPhone = (value) => {
+    const digits = String(value || "").replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.startsWith("91") && digits.length > 10) {
+      return `+${digits}`;
+    }
+    return `+91 ${digits}`;
+  };
+
+  const fetchProfile = async () => {
+    const token = cookies.get("accessToken");
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_URL}/api/user/user-details`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        const name = data.data?.name || "User";
+        const email = data.data?.email || "";
+        setUserName(name);
+        setUserEmail(email);
+        cookies.set("userName", name, { expires: 7 });
+        cookies.set("userEmail", email, { expires: 7 });
+      }
+    } catch (error) {
+      // Silent fallback to cookies
+    }
+  };
+
+  const fetchPrimaryPhone = async () => {
+    const token = cookies.get("accessToken");
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_URL}/api/address`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+      const data = await response.json();
+      if (data.success && Array.isArray(data.data)) {
+        const preferred =
+          data.data.find((addr) => addr.selected) || data.data[0];
+        const phone = preferred?.mobile ? formatPhone(preferred.mobile) : "";
+        setUserPhone(phone);
+      }
+    } catch (error) {
+      // Silent failure for phone display
+    }
+  };
+
+  // Load user data from cookies + API
+  useEffect(() => {
+    const handleAuthChange = () => {
+      syncFromCookies();
+      fetchProfile();
+      fetchPrimaryPhone();
+    };
+
+    handleAuthChange();
+    window.addEventListener("loginSuccess", handleAuthChange);
+    window.addEventListener("focus", handleAuthChange);
+
+    return () => {
+      window.removeEventListener("loginSuccess", handleAuthChange);
+      window.removeEventListener("focus", handleAuthChange);
+    };
   }, []);
 
   const Navinks = [
@@ -195,7 +270,7 @@ const AccountSidebar = () => {
             />
           ) : null}
           <div
-            className={`w-full h-full bg-gradient-to-br from-[#059669] to-[#10b981] flex items-center justify-center text-white text-2xl font-bold ${userPhoto ? "hidden" : "flex"}`}
+            className={`w-full h-full bg-gradient-to-br from-primary to-[var(--flavor-hover)] flex items-center justify-center text-white text-2xl font-bold ${userPhoto ? "hidden" : "flex"}`}
           >
             {getInitials(userName)}
           </div>
@@ -226,6 +301,9 @@ const AccountSidebar = () => {
         <div className="text-center mt-3">
           <h4 className="text-[18px] font-[600] text-gray-700">{userName}</h4>
           <p className="text-[14px] text-gray-600">{userEmail}</p>
+          {userPhone && (
+            <p className="text-[13px] text-gray-500 mt-0.5">{userPhone}</p>
+          )}
         </div>
 
         <div className="bg-[#f1f1f1] mt-4 flex flex-col gap-[2px] py-2 myAcc">
@@ -234,9 +312,8 @@ const AccountSidebar = () => {
             return (
               <Link href={item.href} className="flex" key={index}>
                 <Button
-                  className={`!text-gray-600 !capitalize !w-full !justify-start !px-5 !py-[8px] gap-2 !text-[15px] !font-[600] ${
-                    isActive === true && "active"
-                  }`}
+                  className={`!text-gray-600 !capitalize !w-full !justify-start !px-5 !py-[8px] gap-2 !text-[15px] !font-[600] ${isActive === true && "active"
+                    }`}
                 >
                   {item.icon} {item.name}
                 </Button>

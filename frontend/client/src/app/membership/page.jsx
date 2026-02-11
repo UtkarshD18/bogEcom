@@ -18,7 +18,7 @@ const THEME_PRESETS = {
     bg: "from-emerald-50/80 via-white to-teal-50/80",
     glowA: "bg-emerald-200/40",
     glowB: "bg-teal-200/30",
-    glowC: "bg-green-200/30",
+    glowC: "bg-[var(--flavor-glass)]",
     accent: "from-emerald-600 via-teal-600 to-green-600",
     badge: "from-emerald-500 to-teal-500",
     glass: "bg-white/70",
@@ -57,6 +57,28 @@ const THEME_PRESETS = {
     glass: "bg-white/70",
     border: "border-indigo-200/50",
     text: "text-indigo-700",
+  },
+  sunset: {
+    bg: "from-orange-50/70 via-white to-rose-50/80",
+    glowA: "bg-orange-200/35",
+    glowB: "bg-rose-200/30",
+    glowC: "bg-pink-200/25",
+    accent: "from-orange-600 via-rose-600 to-pink-600",
+    badge: "from-orange-500 to-rose-500",
+    glass: "bg-white/70",
+    border: "border-rose-200/50",
+    text: "text-rose-700",
+  },
+  midnight: {
+    bg: "from-slate-50/70 via-white to-gray-50/80",
+    glowA: "bg-slate-200/35",
+    glowB: "bg-gray-200/30",
+    glowC: "bg-zinc-200/25",
+    accent: "from-slate-700 via-gray-800 to-zinc-800",
+    badge: "from-slate-700 to-gray-800",
+    glass: "bg-white/70",
+    border: "border-slate-200/50",
+    text: "text-slate-700",
   },
 };
 
@@ -456,10 +478,9 @@ export default function MembershipPage() {
               className={`
                 relative group inline-flex items-center gap-3 px-10 py-4 rounded-2xl text-white font-bold text-lg
                 transition-all duration-300 transform
-                ${
-                  isMemberActive
-                    ? `bg-gradient-to-r ${theme.badge} cursor-default opacity-90`
-                    : `bg-gradient-to-r ${theme.accent} bg-[length:200%_100%] hover:bg-right hover:scale-105 hover:shadow-2xl hover:shadow-black/20 active:scale-[0.98]`
+                ${isMemberActive
+                  ? `bg-gradient-to-r ${theme.badge} cursor-default opacity-90`
+                  : `bg-gradient-to-r ${theme.accent} bg-[length:200%_100%] hover:bg-right hover:scale-105 hover:shadow-2xl hover:shadow-black/20 active:scale-[0.98]`
                 }
                 shadow-xl shadow-black/15
               `}
@@ -524,7 +545,7 @@ export default function MembershipPage() {
                 onClick={() =>
                   router.push(
                     pageContent?.cta?.buttonLink ||
-                      DEFAULT_CONTENT.cta.buttonLink,
+                    DEFAULT_CONTENT.cta.buttonLink,
                   )
                 }
                 className={`inline-flex items-center justify-center px-8 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r ${theme.accent} shadow-lg shadow-black/15 hover:scale-[1.02] transition-transform`}

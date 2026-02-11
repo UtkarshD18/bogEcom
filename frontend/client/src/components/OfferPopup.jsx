@@ -212,25 +212,25 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
 
       {/* Popup */}
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[9999] w-[90%] max-w-md">
-        <div className="bg-emerald-50 rounded-2xl shadow-2xl overflow-hidden border border-emerald-200">
+        <div className="bg-[var(--flavor-card-bg)] rounded-2xl shadow-2xl overflow-hidden border border-primary/20">
           {/* Header */}
-          <div className="bg-gradient-to-r from-emerald-100 to-green-100 px-6 py-4 relative border-b border-emerald-200">
+          <div className="bg-linear-to-r from-[var(--flavor-light)] to-white px-6 py-4 relative border-b border-primary/20">
             <button
               onClick={handleDismiss}
-              className="absolute top-3 right-3 text-emerald-600/70 hover:text-emerald-700 transition-colors"
+              className="absolute top-3 right-3 text-primary/70 hover:text-primary transition-colors"
               aria-label="Close"
             >
               <MdClose size={24} />
             </button>
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-emerald-200/60 rounded-full flex items-center justify-center">
-                <MdLocalOffer size={28} className="text-emerald-700" />
+              <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center">
+                <MdLocalOffer size={28} className="text-primary" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-emerald-800">
+                <h2 className="text-xl font-bold text-primary">
                   {offer.title}
                 </h2>
-                <p className="text-emerald-700/80 text-sm">
+                <p className="text-primary/80 text-sm">
                   {offer.discountText}
                 </p>
               </div>
@@ -238,23 +238,22 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
           </div>
 
           {/* Body */}
-          <div className="p-6 bg-gradient-to-b from-emerald-50 to-green-50">
-            <p className="text-emerald-900/70 mb-4">{offer.description}</p>
+          <div className="p-6 bg-linear-to-b from-[var(--flavor-light)] to-white">
+            <p className="text-primary/70 mb-4">{offer.description}</p>
 
             {/* Coupon Code */}
-            <div className="bg-white border-2 border-dashed border-emerald-300 rounded-lg p-4 mb-4 shadow-sm">
-              <p className="text-xs text-emerald-600 mb-1">Your coupon code:</p>
+            <div className="bg-white border-2 border-dashed border-primary/40 rounded-lg p-4 mb-4 shadow-sm">
+              <p className="text-xs text-primary/80 mb-1">Your coupon code:</p>
               <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold text-emerald-700 tracking-wider">
+                <span className="text-2xl font-bold text-primary tracking-wider">
                   {offer.couponCode}
                 </span>
                 <button
                   onClick={handleOfferAccept}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    copied
-                      ? "bg-green-500 text-white"
-                      : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-md"
-                  }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${copied
+                    ? "bg-primary text-white"
+                    : "bg-primary text-white hover:brightness-110 shadow-md"
+                    }`}
                 >
                   {copied ? "Copied!" : "Copy Code"}
                 </button>
@@ -292,7 +291,7 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
 
             {/* Already registered message */}
             {isRegistered && (
-              <div className="flex items-center gap-2 text-green-600 text-sm">
+              <div className="flex items-center gap-2 text-primary text-sm">
                 <MdNotifications size={18} />
                 <span>You&apos;ll be notified about new offers!</span>
               </div>
@@ -303,7 +302,7 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
           <div className="px-6 pb-6 bg-green-50">
             <button
               onClick={handleDismiss}
-              className="w-full py-3 text-emerald-600 hover:text-emerald-800 text-sm transition-colors font-medium"
+              className="w-full py-3 text-primary hover:text-primary/80 text-sm transition-colors font-medium"
             >
               Maybe later
             </button>

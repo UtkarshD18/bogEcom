@@ -21,8 +21,8 @@ const perks = [
     icon: Percent,
     title: "Special Discounts",
     text: "Members Only: Unlock exclusive pricing, flash sales, and secret promotions.",
-    gradient: "from-emerald-400 to-teal-500",
-    bgGlow: "bg-emerald-500/20",
+    gradient: "from-primary to-[var(--flavor-hover)]",
+    bgGlow: "bg-primary/20",
   },
   {
     icon: Package,
@@ -61,7 +61,7 @@ const MembershipPerks = () => {
       <div className="relative max-w-7xl mx-auto">
         {/* Section Header */}
         <div className="text-center mb-10 sm:mb-16">
-          <span className="inline-block px-3 sm:px-4 py-1 sm:py-1.5 mb-3 sm:mb-4 text-xs sm:text-sm font-semibold text-[#059669] bg-[#059669]/10 rounded-full">
+          <span className="inline-block px-3 sm:px-4 py-1 sm:py-1.5 mb-3 sm:mb-4 text-xs sm:text-sm font-semibold text-primary bg-[var(--flavor-glass)] rounded-full">
             ✨ Exclusive Benefits
           </span>
           <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-gray-900 mb-3 sm:mb-5 tracking-tight">
@@ -126,7 +126,7 @@ const MembershipPerks = () => {
           <div className="inline-flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
             <a
               href="/membership"
-              className="group inline-flex items-center gap-2 sm:gap-3 px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-[#059669] to-[#10b981] 
+              className="group inline-flex items-center gap-2 sm:gap-3 px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-primary to-[var(--flavor-hover)] 
                          text-white font-semibold text-base sm:text-lg rounded-xl sm:rounded-2xl
                          shadow-xl shadow-orange-500/25
                          hover:shadow-2xl hover:shadow-orange-500/30 

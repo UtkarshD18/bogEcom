@@ -1,9 +1,10 @@
 "use client";
 
+import { useSettings } from "@/context/SettingsContext";
+import { round2 } from "@/utils/gst";
 import Cookies from "js-cookie";
 import { createContext, useContext, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
-import { round2 } from "@/utils/gst";
 
 /**
  * Cart Context
@@ -41,6 +42,7 @@ export const CartProvider = ({ children }) => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [orderNote, setOrderNote] = useState("");
+  const { calculateShipping } = useSettings();
 
   // Get user token if logged in
   const getToken = () => {
@@ -84,6 +86,7 @@ export const CartProvider = ({ children }) => {
       }
     } catch (error) {
       console.error("Error fetching cart:", error);
+      toast.error("Failed to fetch cart. Using local data.");
       loadFromLocalStorage();
     } finally {
       setLoading(false);
@@ -111,27 +114,6 @@ export const CartProvider = ({ children }) => {
   const saveToLocalStorage = (items) => {
     if (typeof window === "undefined") return;
     localStorage.setItem("cart", JSON.stringify({ items }));
-  };
-
-  // Calculate totals
-  const calculateTotals = (items) => {
-    const safeItems = Array.isArray(items) ? items : [];
-
-    const count = safeItems.reduce(
-      (sum, item) => sum + Math.max(Number(item?.quantity || 0), 0),
-      0,
-    );
-
-    // Prices are GST-inclusive; keep totals rounded to 2 decimals to avoid drift.
-    const total = round2(
-      safeItems.reduce((sum, item) => {
-        const price = Number(item?.price || 0);
-        const quantity = Math.max(Number(item?.quantity || 0), 0);
-        return sum + round2(price * quantity);
-      }, 0),
-    );
-    setCartCount(count);
-    setCartTotal(total);
   };
 
   // Add to cart
@@ -170,41 +152,107 @@ export const CartProvider = ({ children }) => {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
-        setIsDrawerOpen(true); // Auto-open drawer
+
+        // Auto-open drawer only if it was the first item added
+        if (cartItems.length === 0) {
+          setIsDrawerOpen(true);
+        }
         return { success: true };
       } else {
-        // Fallback to local storage
+        // If server says "Only X items available", SHOW ERROR and DO NOT FALLBACK
+        if (response.status === 400 && data.message && data.message.includes("items available")) {
+          toast.error(data.message);
+          return { success: false, message: data.message };
+        }
+
+        // Fallback to local storage ONLY for other errors (e.g. network/auth issues that aren't business logic rejections)
+        // But for "Out of Stock", we should trust the server.
+        // If it's a 404 (product not found) or 500, maybe fallback?
+        // Actually, for consistent "Out of Stock" behavior, better to NOT fallback if we know the stock.
+        // However, the original code fell back for *everything*.
+        // Let's refine: If 400, it's likely a business rule violation (stock).
+
+        if (response.status === 400) {
+          toast.error(data.message || "Cannot add item");
+          return { success: false, message: data.message };
+        }
+
         addToCartLocal(product, quantity);
-        setIsDrawerOpen(true); // Auto-open drawer
+        if (cartItems.length === 0) {
+          setIsDrawerOpen(true);
+        }
         return { success: true };
       }
     } catch (error) {
       console.error("Error adding to cart:", error);
       addToCartLocal(product, quantity);
-      setIsDrawerOpen(true); // Auto-open drawer
+      if (cartItems.length === 0) {
+        setIsDrawerOpen(true);
+      }
       return { success: true };
     } finally {
       setLoading(false);
     }
   };
 
+  // Calculate totals
+  const calculateTotals = (items) => {
+    const { total, count } = items.reduce(
+      (acc, item) => {
+        const quantity = Number(item.quantity) || 1;
+        const price =
+          Number(item.price) ||
+          Number(item.product?.price) ||
+          Number(item.productData?.price) ||
+          0;
+
+        acc.total += price * quantity;
+        acc.count += quantity;
+        return acc;
+      },
+      { total: 0, count: 0 },
+    );
+
+    setCartTotal(round2(total));
+    setCartCount(count);
+  };
+
   // Add to cart locally (fallback)
   const addToCartLocal = (product, quantity = 1) => {
-    const existingIndex = cartItems.findIndex(
-      (item) =>
-        (item.product?._id || item.product) === (product._id || product.id),
-    );
+    // Check stock if available in product object
+    const stock = product.stock !== undefined ? product.stock : Infinity;
+
+    // If we're adding NEW item, check if quantum <= stock
+    // If we're updating existing, check if (existing + quantity) <= stock
+
+    const existingIndex = cartItems.findIndex((item) => {
+      const itemId =
+        item.product?._id || item.product?.id || item.product || item.id;
+      const productId = product._id || product.id;
+      return String(itemId) === String(productId);
+    });
 
     let newItems;
     if (existingIndex > -1) {
+      const currentQty = cartItems[existingIndex].quantity;
+      if (currentQty + quantity > stock) {
+        toast.error(`Only ${stock} items available`);
+        return;
+      }
       newItems = [...cartItems];
       newItems[existingIndex].quantity += quantity;
     } else {
+      if (quantity > stock) {
+        toast.error(`Only ${stock} items available`);
+        return;
+      }
       newItems = [
         ...cartItems,
         {
-          product: product._id || product.id,
+          // Standardize structure
+          product: product, // Store full object if possible or ID.
           productData: product,
+          _id: product._id || product.id,
           quantity,
           price: product.price,
           originalPrice: product.originalPrice || product.oldPrice,
@@ -252,7 +300,12 @@ export const CartProvider = ({ children }) => {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
+        return { success: true };
       } else {
+        if (response.status === 400) {
+          toast.error(data.message || "Cannot update quantity");
+          return { success: false, message: data.message };
+        }
         updateQuantityLocal(productId, quantity);
       }
     } catch (error) {
@@ -267,7 +320,9 @@ export const CartProvider = ({ children }) => {
   const updateQuantityLocal = (productId, quantity) => {
     setCartItems((prev) => {
       const newItems = prev.map((item) =>
-        (item.product?._id || item.product) === productId
+        String(
+          item.product?._id || item.product?.id || item.product || item.id,
+        ) === String(productId)
           ? { ...item, quantity }
           : item,
       );
@@ -307,7 +362,7 @@ export const CartProvider = ({ children }) => {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
-        toast.success("Item removed from cart");
+        // toast.success("Item removed from cart");
       } else {
         removeFromCartLocal(productId);
       }
@@ -323,11 +378,14 @@ export const CartProvider = ({ children }) => {
   const removeFromCartLocal = (productId) => {
     setCartItems((prev) => {
       const newItems = prev.filter(
-        (item) => (item.product?._id || item.product) !== productId,
+        (item) =>
+          String(
+            item.product?._id || item.product?.id || item.product || item.id,
+          ) !== String(productId),
       );
       calculateTotals(newItems);
       saveToLocalStorage(newItems);
-      toast.success("Item removed from cart");
+      // toast.success("Item removed from cart");
       return newItems;
     });
   };
@@ -370,14 +428,20 @@ export const CartProvider = ({ children }) => {
   // Check if product is in cart
   const isInCart = (productId) => {
     return cartItems.some(
-      (item) => (item.product?._id || item.product) === productId,
+      (item) =>
+        String(
+          item.product?._id || item.product?.id || item.product || item.id,
+        ) === String(productId),
     );
   };
 
   // Get item quantity in cart
   const getItemQuantity = (productId) => {
     const item = cartItems.find(
-      (item) => (item.product?._id || item.product) === productId,
+      (item) =>
+        String(
+          item.product?._id || item.product?.id || item.product || item.id,
+        ) === String(productId),
     );
     return item?.quantity || 0;
   };
@@ -387,12 +451,39 @@ export const CartProvider = ({ children }) => {
     fetchCart();
   }, []);
 
+  // Refresh cart after login or auth changes
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleAuthChange = () => {
+      if (getToken()) {
+        fetchCart();
+      } else {
+        loadFromLocalStorage();
+      }
+    };
+
+    window.addEventListener("loginSuccess", handleAuthChange);
+    window.addEventListener("storage", handleAuthChange);
+    window.addEventListener("focus", handleAuthChange);
+
+    return () => {
+      window.removeEventListener("loginSuccess", handleAuthChange);
+      window.removeEventListener("storage", handleAuthChange);
+      window.removeEventListener("focus", handleAuthChange);
+    };
+  }, []);
+
   return (
     <CartContext.Provider
       value={{
         cartItems,
         cartCount,
         cartTotal,
+        cartTotalAmount: cartTotal,
+        cartSubTotalAmount: cartTotal,
+        shippingAmount:
+          cartTotal > 0 ? round2(calculateShipping(cartTotal)) : 0,
         loading,
         isInitialized,
         addToCart,

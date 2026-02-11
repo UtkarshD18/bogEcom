@@ -52,8 +52,8 @@ const Contact = () => {
             {/* Address Card */}
             <div className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition-shadow">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-[#059669]/10 rounded-full flex items-center justify-center shrink-0">
-                  <FiMapPin className="text-[#059669] text-xl" />
+                <div className="w-12 h-12 bg-[var(--flavor-glass)] rounded-full flex items-center justify-center shrink-0">
+                  <FiMapPin className="text-primary text-xl" />
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-800 mb-2">Our Address</h3>
@@ -71,14 +71,14 @@ const Contact = () => {
             {/* Phone Card */}
             <div className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition-shadow">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-[#059669]/10 rounded-full flex items-center justify-center shrink-0">
-                  <FiPhone className="text-[#059669] text-xl" />
+                <div className="w-12 h-12 bg-[var(--flavor-glass)] rounded-full flex items-center justify-center shrink-0">
+                  <FiPhone className="text-primary text-xl" />
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-800 mb-2">Phone Number</h3>
                   <a
                     href="tel:+918619641968"
-                    className="text-[#059669] font-semibold hover:underline"
+                    className="text-primary font-semibold hover:underline"
                   >
                     (+91) 8619-641-968
                   </a>
@@ -92,8 +92,8 @@ const Contact = () => {
             {/* Email Card */}
             <div className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition-shadow">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-[#059669]/10 rounded-full flex items-center justify-center shrink-0">
-                  <FiMail className="text-[#059669] text-xl" />
+                <div className="w-12 h-12 bg-[var(--flavor-glass)] rounded-full flex items-center justify-center shrink-0">
+                  <FiMail className="text-primary text-xl" />
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-800 mb-2">
@@ -101,7 +101,7 @@ const Contact = () => {
                   </h3>
                   <a
                     href="mailto:support@healthyonegram.com"
-                    className="text-[#059669] font-semibold hover:underline"
+                    className="text-primary font-semibold hover:underline"
                   >
                     support@healthyonegram.com
                   </a>
@@ -130,8 +130,8 @@ const Contact = () => {
             {/* Business Hours */}
             <div className="bg-white rounded-xl p-6 shadow-md">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-[#059669]/10 rounded-full flex items-center justify-center shrink-0">
-                  <FiClock className="text-[#059669] text-xl" />
+                <div className="w-12 h-12 bg-[var(--flavor-glass)] rounded-full flex items-center justify-center shrink-0">
+                  <FiClock className="text-primary text-xl" />
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-800 mb-3">
@@ -171,7 +171,7 @@ const Contact = () => {
               </p>
 
               {success && (
-                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+                <div className="mb-6 p-4 bg-[var(--flavor-card-bg)] border border-primary rounded-lg text-primary">
                   ✓ Thank you! Your message has been sent successfully. We'll
                   get back to you soon.
                 </div>
@@ -236,7 +236,7 @@ const Contact = () => {
                   type="submit"
                   disabled={loading}
                   sx={{
-                    backgroundColor: "#059669",
+                    backgroundColor: "var(--primary)",
                     color: "white",
                     textTransform: "none",
                     fontWeight: 600,

@@ -16,6 +16,7 @@ import {
   registerUserController,
   resendOTPController,
   setBackupPassword,
+  updateUserProfile,
   updateUserRole,
   updateUserSettings,
   updateUserStatus,
@@ -46,6 +47,7 @@ userRouter.post("/set-backup-password", auth, setBackupPassword); // Protected r
 // User settings routes
 userRouter.get("/settings", auth, getUserSettings);
 userRouter.put("/settings", auth, updateUserSettings);
+userRouter.put("/profile", auth, updateUserProfile);
 userRouter.put("/gst", auth, updateUserGstNumber);
 
 // Get current user details (for session verification)

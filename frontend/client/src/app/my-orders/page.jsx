@@ -118,7 +118,7 @@ const Orders = () => {
   const getStatusColor = (status) => {
     switch (status) {
       case "delivered":
-        return "bg-green-100 text-green-800";
+        return "bg-[var(--flavor-glass)] text-primary";
       case "shipped":
         return "bg-blue-100 text-blue-800";
       case "confirmed":
@@ -137,7 +137,7 @@ const Orders = () => {
   const getPaymentStatusColor = (status) => {
     switch (status) {
       case "paid":
-        return "bg-green-100 text-green-800";
+        return "bg-[var(--flavor-glass)] text-primary";
       case "pending":
         return "bg-yellow-100 text-yellow-800";
       case "unavailable":
@@ -356,7 +356,7 @@ const Orders = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Discount:</span>
-                        <span className="text-green-600">
+                        <span className="text-primary">
                           -₹
                           {Number(order.discount || 0).toLocaleString("en-IN", {
                             minimumFractionDigits: 2,
@@ -397,28 +397,28 @@ const Orders = () => {
                   {(order.phonepeMerchantTransactionId ||
                     order.phonepeTransactionId ||
                     order.paymentId) && (
-                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                      <p className="text-sm font-semibold text-gray-900 mb-2">
-                        Payment Details
-                      </p>
-                      <div className="text-xs text-gray-600 space-y-1">
-                        <p>
-                          PhonePe Transaction ID:{" "}
-                          <span className="font-mono">
-                            {order.phonepeTransactionId ||
-                              order.paymentId ||
-                              "N/A"}
-                          </span>
+                      <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                        <p className="text-sm font-semibold text-gray-900 mb-2">
+                          Payment Details
                         </p>
-                        <p>
-                          PhonePe Merchant Txn ID:{" "}
-                          <span className="font-mono">
-                            {order.phonepeMerchantTransactionId || "N/A"}
-                          </span>
-                        </p>
+                        <div className="text-xs text-gray-600 space-y-1">
+                          <p>
+                            PhonePe Transaction ID:{" "}
+                            <span className="font-mono">
+                              {order.phonepeTransactionId ||
+                                order.paymentId ||
+                                "N/A"}
+                            </span>
+                          </p>
+                          <p>
+                            PhonePe Merchant Txn ID:{" "}
+                            <span className="font-mono">
+                              {order.phonepeMerchantTransactionId || "N/A"}
+                            </span>
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
                   {/* View Order Details Link */}
                   <div className="px-6 py-4 bg-white border-t border-gray-200 flex justify-end">

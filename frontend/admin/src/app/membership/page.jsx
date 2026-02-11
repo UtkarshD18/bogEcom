@@ -20,6 +20,8 @@ const PAGE_THEMES = [
   { key: "sky", label: "Sky Glass" },
   { key: "aurora", label: "Aurora Glass" },
   { key: "lavender", label: "Lavender Glass" },
+  { key: "sunset", label: "Sunset Glass" },
+  { key: "midnight", label: "Midnight Glass" },
 ];
 
 const DEFAULT_PAGE_CONTENT = {
@@ -816,9 +818,8 @@ export default function MembershipPage() {
             plans.map((plan) => (
               <div
                 key={plan._id}
-                className={`bg-white rounded-lg shadow p-4 border-2 ${
-                  plan.isActive ? "border-green-500" : "border-transparent"
-                }`}
+                className={`bg-white rounded-lg shadow p-4 border-2 ${plan.isActive ? "border-green-500" : "border-transparent"
+                  }`}
               >
                 <div className="flex justify-between items-start">
                   <div>

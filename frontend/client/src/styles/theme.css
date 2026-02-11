@@ -6,40 +6,58 @@
 
 :root {
   /* ========== BRAND COLORS ========== */
-  --color-primary: #5A3A22; /* Rich brown — brand anchor */
-  --color-primary-light: #7A5A3A; /* Lighter brown */
-  --color-primary-dark: #3E2714; /* Deep brown */
-  --color-primary-rgb: 90, 58, 34; /* RGB for opacity usage */
+  --color-primary: #5A3A22;
+  /* Rich brown — brand anchor */
+  --color-primary-light: #7A5A3A;
+  /* Lighter brown */
+  --color-primary-dark: #3E2714;
+  /* Deep brown */
+  --color-primary-rgb: 90, 58, 34;
+  /* RGB for opacity usage */
 
   /* ========== ACCENT COLORS ========== */
-  --color-accent: #FF8C42; /* Warm orange — CTA / energy */
+  --color-accent: #FF8C42;
+  /* Warm orange — CTA / energy */
   --color-accent-light: #FFA96B;
   --color-accent-dark: #E07530;
   --color-accent-rgb: 255, 140, 66;
 
   /* ========== SECONDARY (HEALTH GREEN) ========== */
-  --color-secondary: #1F7A63; /* Health green — trust / health */
+  --color-secondary: #1F7A63;
+  /* Health green — trust / health */
   --color-secondary-light: #2A9E80;
   --color-secondary-dark: #155D4B;
   --color-secondary-rgb: 31, 122, 99;
 
   /* ========== NEUTRAL / TEXT COLORS ========== */
-  --color-text-primary: #111111; /* Near-black for readability */
-  --color-text-secondary: #333333; /* Slightly lighter body */
-  --color-text-muted: #555555; /* Muted body text */
-  --color-text-light: #888888; /* Captions, helpers */
+  --color-text-primary: #111111;
+  /* Near-black for readability */
+  --color-text-secondary: #333333;
+  /* Slightly lighter body */
+  --color-text-muted: #555555;
+  /* Muted body text */
+  --color-text-light: #888888;
+  /* Captions, helpers */
 
   /* ========== BACKGROUND COLORS ========== */
-  --color-bg-primary: #ffffff; /* Main background */
-  --color-bg-secondary: #F8F6F2; /* Soft warm off-white */
-  --color-bg-tertiary: #F0EDE8; /* Warm grey */
-  --color-bg-accent: #FFF9F0; /* Warm highlight background */
+  --color-bg-primary: #ffffff;
+  /* Main background */
+  --color-bg-secondary: #F8F6F2;
+  /* Soft warm off-white */
+  --color-bg-tertiary: #F0EDE8;
+  /* Warm grey */
+  --color-bg-accent: #FFF9F0;
+  /* Warm highlight background */
 
   /* ========== STATUS COLORS ========== */
-  --color-success: #1F7A63; /* Health green */
-  --color-warning: #F5A623; /* Warm amber */
-  --color-error: #D44638; /* Warm red */
-  --color-info: #3B82F6; /* Info blue */
+  --color-success: #1F7A63;
+  /* Health green */
+  --color-warning: #F5A623;
+  /* Warm amber */
+  --color-error: #D44638;
+  /* Warm red */
+  --color-info: #3B82F6;
+  /* Info blue */
 
   /* ========== BORDER COLORS ========== */
   --color-border-light: rgba(90, 58, 34, 0.08);
@@ -55,49 +73,50 @@
   --shadow-card: 0 2px 16px rgba(90, 58, 34, 0.06);
   --shadow-card-hover: 0 8px 30px rgba(90, 58, 34, 0.12);
   --shadow-btn: 0 4px 14px rgba(255, 140, 66, 0.25);
+  --shadow-neon: 0 0 20px rgba(90, 58, 34, 0.15), 0 0 40px rgba(90, 58, 34, 0.05);
+  --shadow-neon-purple: 0 0 20px rgba(31, 122, 99, 0.15), 0 0 40px rgba(31, 122, 99, 0.05);
 
   /* ========== GRADIENTS ========== */
-  --gradient-primary: linear-gradient(
-    135deg,
-    var(--color-primary) 0%,
-    var(--color-primary-light) 100%
-  );
-  --gradient-accent: linear-gradient(
-    135deg,
-    var(--color-accent) 0%,
-    var(--color-accent-light) 100%
-  );
-  --gradient-secondary: linear-gradient(
-    135deg,
-    var(--color-secondary) 0%,
-    var(--color-secondary-light) 100%
-  );
-  --gradient-hero: linear-gradient(
-    135deg,
-    #F8F6F2 0%,
-    #FFF9F0 50%,
-    #ffffff 100%
-  );
-  --gradient-warm: linear-gradient(
-    180deg,
-    #FFF9F0 0%,
-    #ffffff 100%
-  );
+  --gradient-primary: linear-gradient(135deg,
+      var(--color-primary) 0%,
+      var(--color-primary-light) 100%);
+  --gradient-accent: linear-gradient(135deg,
+      var(--color-accent) 0%,
+      var(--color-accent-light) 100%);
+  --gradient-secondary: linear-gradient(135deg,
+      var(--color-secondary) 0%,
+      var(--color-secondary-light) 100%);
+  --gradient-hero: linear-gradient(135deg,
+      #F8F6F2 0%,
+      #FFF9F0 50%,
+      #ffffff 100%);
+  --gradient-warm: linear-gradient(180deg,
+      #FFF9F0 0%,
+      #ffffff 100%);
 
   /* ========== TYPOGRAPHY ========== */
   --font-primary: "Inter", system-ui, -apple-system, sans-serif;
   --font-heading: "Poppins", "Inter", system-ui, -apple-system, sans-serif;
 
   /* Typography Scale */
-  --text-xs: 0.75rem;     /* 12px */
-  --text-sm: 0.875rem;    /* 14px */
-  --text-base: 1rem;      /* 16px */
-  --text-lg: 1.125rem;    /* 18px */
-  --text-xl: 1.25rem;     /* 20px */
-  --text-2xl: 1.5rem;     /* 24px */
-  --text-3xl: 1.875rem;   /* 30px */
-  --text-4xl: 2.25rem;    /* 36px */
-  --text-5xl: 3rem;       /* 48px */
+  --text-xs: 0.75rem;
+  /* 12px */
+  --text-sm: 0.875rem;
+  /* 14px */
+  --text-base: 1rem;
+  /* 16px */
+  --text-lg: 1.125rem;
+  /* 18px */
+  --text-xl: 1.25rem;
+  /* 20px */
+  --text-2xl: 1.5rem;
+  /* 24px */
+  --text-3xl: 1.875rem;
+  /* 30px */
+  --text-4xl: 2.25rem;
+  /* 36px */
+  --text-5xl: 3rem;
+  /* 48px */
 
   --leading-tight: 1.2;
   --leading-normal: 1.6;
@@ -119,11 +138,16 @@
   --spacing-4xl: 6rem;
 
   /* ========== BORDER RADIUS (premium rounded) ========== */
-  --radius-sm: 0.5rem;    /* 8px */
-  --radius-md: 0.75rem;   /* 12px */
-  --radius-lg: 1rem;      /* 16px */
-  --radius-xl: 1.25rem;   /* 20px */
-  --radius-2xl: 1.5rem;   /* 24px */
+  --radius-sm: 0.5rem;
+  /* 8px */
+  --radius-md: 0.75rem;
+  /* 12px */
+  --radius-lg: 1rem;
+  /* 16px */
+  --radius-xl: 1.25rem;
+  /* 20px */
+  --radius-2xl: 1.5rem;
+  /* 24px */
   --radius-full: 9999px;
 
   /* ========== TRANSITIONS ========== */
@@ -131,6 +155,7 @@
   --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-bounce: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* ========== Z-INDEX ========== */
   --z-dropdown: 100;
@@ -141,11 +166,3 @@
   --z-popover: 600;
   --z-tooltip: 700;
 }
-
-/* ========== DARK MODE SUPPORT (FUTURE) ========== */
-/* [data-theme="dark"] {
-  --color-bg-primary: #1a1a1a;
-  --color-bg-secondary: #2d2d2d;
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #e5e5e5;
-} */

@@ -56,7 +56,7 @@ export default function PolicyPage() {
           <div className="mt-5">
             <Link
               href="/"
-              className="inline-block px-5 py-2 rounded-lg bg-[#059669] text-white"
+              className="inline-block px-5 py-2 rounded-lg bg-primary text-white"
             >
               Go Home
             </Link>

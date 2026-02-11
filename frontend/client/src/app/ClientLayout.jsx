@@ -1,16 +1,16 @@
 "use client";
 
-import CartDrawer from "@/components/CartDrawer";
-import ErrorBoundary from "@/components/ErrorBoundary";
-import Footer from "@/components/Footer";
-import Header from "@/components/Header";
-import NotificationHandler from "@/components/NotificationHandler";
-import OfferPopup from "@/components/OfferPopup";
-import { CartProvider } from "@/context/CartContext";
-import { ProductProvider } from "@/context/ProductContext";
-import { ReferralProvider } from "@/context/ReferralContext";
-import { SettingsProvider, useSettings } from "@/context/SettingsContext";
-import { WishlistProvider } from "@/context/WishlistContext";
+import CartDrawer from "../components/CartDrawer";
+import ErrorBoundary from "../components/ErrorBoundary";
+import Footer from "../components/Footer";
+import Header from "../components/Header";
+import NotificationHandler from "../components/NotificationHandler";
+import OfferPopup from "../components/OfferPopup";
+import { CartProvider } from "../context/CartContext";
+import { ProductProvider } from "../context/ProductContext";
+import { ReferralProvider } from "../context/ReferralContext";
+import { SettingsProvider, useSettings } from "../context/SettingsContext";
+import { WishlistProvider } from "../context/WishlistContext";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { Toaster } from "react-hot-toast";
@@ -65,8 +65,8 @@ export default function ClientLayout({ children }) {
   useEffect(() => {
     if (process.env.NODE_ENV === "production") {
       // Reduce client-side debug noise in production
-      console.log = () => {};
-      console.warn = () => {};
+      console.log = () => { };
+      console.warn = () => { };
     }
   }, []);
 

@@ -994,6 +994,82 @@ export async function updateUserSettings(req, res) {
   }
 }
 
+// Update user profile (name/email)
+export async function updateUserProfile(req, res) {
+  try {
+    const userId = req.user?._id || req.user;
+    const rawName = String(req.body?.name || "").trim();
+    const rawEmail = String(req.body?.email || "").trim().toLowerCase();
+
+    const updateData = {};
+
+    if (rawName) {
+      const sanitizedName = rawName.replace(/<[^>]*>/g, "");
+      updateData.name = sanitizedName;
+    }
+
+    if (rawEmail) {
+      if (!isValidEmail(rawEmail)) {
+        return res.status(400).json({
+          success: false,
+          error: true,
+          message: "Please provide a valid email address",
+        });
+      }
+
+      const existingUser = await UserModel.findOne({
+        email: rawEmail,
+        _id: { $ne: userId },
+      }).lean();
+
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          error: true,
+          message: "Email already in use",
+        });
+      }
+
+      updateData.email = rawEmail;
+    }
+
+    if (!Object.keys(updateData).length) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "No changes provided",
+      });
+    }
+
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { $set: updateData },
+      { new: true },
+    ).select("-password -otp -otpExpires -refreshToken");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: true,
+        message: "User not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      error: false,
+      message: "Profile updated successfully",
+      data: user,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: true,
+      message: error.message || error,
+    });
+  }
+}
+
 // Update GST number (User only)
 export async function updateUserGstNumber(req, res) {
   try {

@@ -17,7 +17,7 @@ const QtyBox = ({
   min = 1,
   max = 99,
   value = 1,
-  onChange = () => {},
+  onChange = () => { },
   size = "md",
   disabled = false,
 }) => {
@@ -60,9 +60,8 @@ const QtyBox = ({
 
   return (
     <div
-      className={`flex items-center border rounded-lg overflow-hidden ${sizes[size]} ${
-        disabled ? "opacity-50 cursor-not-allowed" : ""
-      }`}
+      className={`flex items-center border rounded-lg overflow-hidden ${sizes[size]} ${disabled ? "opacity-50 cursor-not-allowed" : ""
+        }`}
       style={{
         backgroundColor: "var(--flavor-card-bg, #fffbf5)",
         borderColor:
@@ -74,7 +73,7 @@ const QtyBox = ({
         type="button"
         onClick={handleDecrease}
         disabled={qty <= min || disabled}
-        className={`${buttonSizes[size]} flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-[#059669] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600`}
+        className={`${buttonSizes[size]} flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600`}
       >
         <FiMinus size={size === "sm" ? 12 : size === "md" ? 14 : 16} />
       </button>
@@ -95,7 +94,7 @@ const QtyBox = ({
         type="button"
         onClick={handleIncrease}
         disabled={qty >= max || disabled}
-        className={`${buttonSizes[size]} flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-[#059669] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600`}
+        className={`${buttonSizes[size]} flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600`}
       >
         <FiPlus size={size === "sm" ? 12 : size === "md" ? 14 : 16} />
       </button>
