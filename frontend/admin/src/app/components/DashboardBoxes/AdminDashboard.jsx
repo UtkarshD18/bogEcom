@@ -2,6 +2,7 @@ import { useAdmin } from "@/context/AdminContext";
 import { getDashboardStats } from "@/utils/api";
 import { CircularProgress } from "@mui/material";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Bar,
   BarChart,
@@ -54,7 +55,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-4">
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-6">
         <div className="bg-white p-4 rounded shadow">
           <div className="text-gray-500 text-sm">Total Revenue</div>
           <div className="text-2xl font-bold text-green-600">
@@ -78,6 +79,18 @@ export default function AdminDashboard() {
           <div className="text-2xl font-bold text-orange-600">
             {stats?.totalUsers || 0}
           </div>
+        </div>
+        <div className="bg-white p-4 rounded shadow">
+          <div className="text-gray-500 text-sm">Low Stock</div>
+          <div className="text-2xl font-bold text-red-600">
+            {stats?.lowStockCount || 0}
+          </div>
+          <Link
+            href="/products-list?lowStock=true"
+            className="text-xs text-red-600 hover:underline inline-block mt-1"
+          >
+            View low-stock products
+          </Link>
         </div>
       </div>
 
@@ -127,11 +140,17 @@ export default function AdminDashboard() {
                         className={`px-2 py-1 rounded text-xs font-semibold ${
                           order.order_status === "delivered"
                             ? "bg-green-100 text-green-700"
-                            : order.order_status === "shipped"
-                              ? "bg-blue-100 text-blue-700"
-                              : order.order_status === "confirmed"
-                                ? "bg-yellow-100 text-yellow-700"
-                                : "bg-gray-100 text-gray-700"
+                            : order.order_status === "out_for_delivery"
+                              ? "bg-teal-100 text-teal-700"
+                              : order.order_status === "shipped"
+                                ? "bg-blue-100 text-blue-700"
+                                : order.order_status === "in_warehouse"
+                                  ? "bg-indigo-100 text-indigo-700"
+                                  : ["accepted", "confirmed"].includes(
+                                        order.order_status,
+                                      )
+                                    ? "bg-yellow-100 text-yellow-700"
+                                    : "bg-gray-100 text-gray-700"
                         }`}
                       >
                         {order.order_status}

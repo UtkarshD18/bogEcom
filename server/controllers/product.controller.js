@@ -40,11 +40,13 @@ export const getProducts = async (req, res) => {
       newArrivals,
       onSale,
       inStock,
+      lowStock,
       exclude,
     } = req.query;
 
     // Build filter object
     const filter = { isActive: true };
+    const exprFilters = [];
 
     // Debug: Count all products first
     const totalAllProducts = await ProductModel.countDocuments({});
@@ -176,11 +178,77 @@ export const getProducts = async (req, res) => {
     if (featured === "true") filter.isFeatured = true;
     if (newArrivals === "true") filter.isNewArrival = true;
     if (onSale === "true") filter.isOnSale = true;
-    if (inStock === "true") filter.stock = { $gt: 0 };
+    if (inStock === "true") {
+      exprFilters.push({
+        $gt: [
+          {
+            $subtract: [
+              { $ifNull: ["$stock_quantity", "$stock"] },
+              { $ifNull: ["$reserved_quantity", 0] },
+            ],
+          },
+          0,
+        ],
+      });
+    }
+
+    if (lowStock === "true") {
+      const thresholdExpr = {
+        $ifNull: ["$low_stock_threshold", { $ifNull: ["$lowStockThreshold", 5] }],
+      };
+      const trackExpr = {
+        $ne: [
+          { $ifNull: ["$track_inventory", { $ifNull: ["$trackInventory", true] }] },
+          false,
+        ],
+      };
+      const productAvailableExpr = {
+        $subtract: [
+          { $ifNull: ["$stock_quantity", "$stock"] },
+          { $ifNull: ["$reserved_quantity", 0] },
+        ],
+      };
+      const variantAvailableExpr = {
+        $map: {
+          input: { $ifNull: ["$variants", []] },
+          as: "v",
+          in: {
+            $subtract: [
+              { $ifNull: ["$$v.stock_quantity", "$$v.stock"] },
+              { $ifNull: ["$$v.reserved_quantity", 0] },
+            ],
+          },
+        },
+      };
+      exprFilters.push({
+        $and: [
+          trackExpr,
+          {
+            $cond: [
+              { $eq: ["$hasVariants", true] },
+              {
+                $anyElementTrue: {
+                  $map: {
+                    input: variantAvailableExpr,
+                    as: "available",
+                    in: { $lte: ["$$available", thresholdExpr] },
+                  },
+                },
+              },
+              { $lte: [productAvailableExpr, thresholdExpr] },
+            ],
+          },
+        ],
+      });
+    }
 
     // Exclude specific product
     if (exclude) {
       filter._id = { $ne: exclude };
+    }
+
+    if (exprFilters.length > 0) {
+      filter.$expr = exprFilters.length === 1 ? exprFilters[0] : { $and: exprFilters };
     }
 
     // Build sort object
@@ -413,6 +481,18 @@ export const createProduct = async (req, res) => {
     }
 
     // Create product
+    const normalizedStock = Number(stock ?? req.body?.stock_quantity ?? 0);
+    const normalizedReserved = Number(req.body?.reserved_quantity ?? 0);
+    const normalizedLowStock = Number(
+      req.body?.low_stock_threshold ?? req.body?.lowStockThreshold ?? 5,
+    );
+    const normalizedTrackInventory =
+      typeof req.body?.track_inventory === "boolean"
+        ? req.body.track_inventory
+        : typeof req.body?.trackInventory === "boolean"
+          ? req.body.trackInventory
+          : true;
+
     const product = new ProductModel({
       name,
       description,
@@ -425,7 +505,11 @@ export const createProduct = async (req, res) => {
       category,
       subCategory,
       sku,
-      stock: stock || 0,
+      stock: normalizedStock,
+      stock_quantity: normalizedStock,
+      reserved_quantity: Math.max(normalizedReserved, 0),
+      low_stock_threshold: normalizedLowStock,
+      track_inventory: normalizedTrackInventory,
       hasVariants: hasVariants || false,
       variants: variants || [],
       variantType,
@@ -491,6 +575,25 @@ export const updateProduct = async (req, res) => {
     delete updateData.createdAt;
     delete updateData.viewCount;
     delete updateData.soldCount;
+
+    if ("stock" in updateData && !("stock_quantity" in updateData)) {
+      updateData.stock_quantity = updateData.stock;
+    }
+    if ("stock_quantity" in updateData && !("stock" in updateData)) {
+      updateData.stock = updateData.stock_quantity;
+    }
+    if (
+      "low_stock_threshold" in updateData &&
+      !("lowStockThreshold" in updateData)
+    ) {
+      updateData.lowStockThreshold = updateData.low_stock_threshold;
+    }
+    if (
+      "track_inventory" in updateData &&
+      !("trackInventory" in updateData)
+    ) {
+      updateData.trackInventory = updateData.track_inventory;
+    }
 
     const product = await ProductModel.findById(id);
     if (!product) {
@@ -593,6 +696,25 @@ export const bulkUpdateProducts = async (req, res) => {
       });
     }
 
+    if ("stock" in updateData && !("stock_quantity" in updateData)) {
+      updateData.stock_quantity = updateData.stock;
+    }
+    if ("stock_quantity" in updateData && !("stock" in updateData)) {
+      updateData.stock = updateData.stock_quantity;
+    }
+    if (
+      "low_stock_threshold" in updateData &&
+      !("lowStockThreshold" in updateData)
+    ) {
+      updateData.lowStockThreshold = updateData.low_stock_threshold;
+    }
+    if (
+      "track_inventory" in updateData &&
+      !("trackInventory" in updateData)
+    ) {
+      updateData.trackInventory = updateData.track_inventory;
+    }
+
     const result = await ProductModel.updateMany(
       { _id: { $in: ids } },
       { $set: updateData },
@@ -621,6 +743,7 @@ export const updateStock = async (req, res) => {
   try {
     const { id } = req.params;
     const { stock, variantId } = req.body;
+    const normalizedStock = Number(stock ?? 0);
 
     const product = await ProductModel.findById(id);
     if (!product) {
@@ -635,10 +758,12 @@ export const updateStock = async (req, res) => {
       // Update variant stock
       const variant = product.variants.id(variantId);
       if (variant) {
-        variant.stock = stock;
+        variant.stock = normalizedStock;
+        variant.stock_quantity = normalizedStock;
       }
     } else {
-      product.stock = stock;
+      product.stock = normalizedStock;
+      product.stock_quantity = normalizedStock;
     }
 
     await product.save();

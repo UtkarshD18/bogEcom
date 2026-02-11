@@ -94,10 +94,19 @@ const Checkout = () => {
   const getItemData = (item) => {
     // Check if item.product is an object (API) or ID (localStorage fallback)
     // If it's a string, we must use item.productData. If it's an object, we use it.
-    const product = (typeof item.product === 'object' && item.product)
-      ? item.product
-      : (item.productData || item);
+    const product =
+      typeof item.product === "object" && item.product
+        ? item.product
+        : item.productData || item;
 
+    const availableQuantity =
+      typeof product?.available_quantity === "number"
+        ? product.available_quantity
+        : Math.max(
+            Number(product?.stock_quantity ?? product?.stock ?? 0) -
+              Number(product?.reserved_quantity ?? 0),
+            0,
+          );
     return {
       id: product?._id || product?.id || item._id || item.id,
       name: product?.name || item.name || item.title || "Product",
@@ -110,6 +119,7 @@ const Checkout = () => {
       price: item.price || product?.price || 0,
       quantity: item.quantity || 1,
       demandStatus: product?.demandStatus || item.demandStatus || "NORMAL",
+      availableQuantity,
     };
   };
 
@@ -891,6 +901,19 @@ const Checkout = () => {
         throw new Error("Please complete all required guest details");
       }
 
+      const insufficientItems = (cartItems || [])
+        .map((item) => getItemData(item))
+        .filter((data) => data.quantity > data.availableQuantity);
+      if (insufficientItems.length > 0) {
+        const first = insufficientItems[0];
+        setSnackbar({
+          open: true,
+          message: `Only ${first.availableQuantity} left for ${first.name}. Update your cart to continue.`,
+          severity: "error",
+        });
+        return;
+      }
+
       const statusRes = await fetch(`${API_URL}/api/orders/payment-status`);
       const statusData = await statusRes.json();
 
@@ -1004,6 +1027,19 @@ const Checkout = () => {
     try {
       if (isGuestCheckout && !validateGuestCheckoutForm()) {
         throw new Error("Please complete all required guest details");
+      }
+
+      const insufficientItems = (cartItems || [])
+        .map((item) => getItemData(item))
+        .filter((data) => data.quantity > data.availableQuantity);
+      if (insufficientItems.length > 0) {
+        const first = insufficientItems[0];
+        setSnackbar({
+          open: true,
+          message: `Only ${first.availableQuantity} left for ${first.name}. Update your cart to continue.`,
+          severity: "error",
+        });
+        return;
       }
 
       const token = authToken;

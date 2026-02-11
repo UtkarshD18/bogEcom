@@ -1,6 +1,16 @@
 import ProductModel from "../models/product.model.js";
 import WishlistModel from "../models/wishlist.model.js";
 
+const getAvailableQuantity = (product) => {
+  if (!product) return 0;
+  if (product.track_inventory === false || product.trackInventory === false) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  const stock = Number(product.stock_quantity ?? product.stock ?? 0);
+  const reserved = Number(product.reserved_quantity ?? 0);
+  return Math.max(stock - reserved, 0);
+};
+
 /**
  * Wishlist Controller
  *
@@ -18,7 +28,7 @@ export const getWishlist = async (req, res) => {
     let wishlist = await WishlistModel.findOne({ user: userId }).populate({
       path: "items.product",
       select:
-        "name price originalPrice images thumbnail stock isActive rating brand",
+        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand",
     });
 
     if (!wishlist) {
@@ -115,7 +125,7 @@ export const addToWishlist = async (req, res) => {
     await wishlist.populate({
       path: "items.product",
       select:
-        "name price originalPrice images thumbnail stock isActive rating brand",
+        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand",
     });
 
     res.status(200).json({
@@ -172,7 +182,7 @@ export const removeFromWishlist = async (req, res) => {
     await wishlist.populate({
       path: "items.product",
       select:
-        "name price originalPrice images thumbnail stock isActive rating brand",
+        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand",
     });
 
     res.status(200).json({
@@ -234,7 +244,7 @@ export const toggleWishlist = async (req, res) => {
     await wishlist.populate({
       path: "items.product",
       select:
-        "name price originalPrice images thumbnail stock isActive rating brand",
+        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand",
     });
 
     res.status(200).json({
@@ -359,11 +369,12 @@ export const moveToCart = async (req, res) => {
       });
     }
 
-    if (product.stock < quantity) {
+    const availableStock = getAvailableQuantity(product);
+    if (Number.isFinite(availableStock) && availableStock < quantity) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: `Only ${product.stock} items available`,
+        message: `Only ${availableStock} items available`,
       });
     }
 

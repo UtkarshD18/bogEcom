@@ -16,6 +16,11 @@ export const ERROR_CODES = {
   INVALID_QUANTITY: { code: "INVALID_QUANTITY", status: 400, message: "Invalid product quantity" },
   INVALID_STATUS: { code: "INVALID_STATUS", status: 400, message: "Invalid status value" },
   CONFLICT: { code: "CONFLICT", status: 409, message: "Resource conflict" },
+  INSUFFICIENT_STOCK: {
+    code: "INSUFFICIENT_STOCK",
+    status: 409,
+    message: "Insufficient stock",
+  },
 
   // Authentication & Authorization (401-403)
   UNAUTHORIZED: { code: "UNAUTHORIZED", status: 401, message: "Authentication required" },

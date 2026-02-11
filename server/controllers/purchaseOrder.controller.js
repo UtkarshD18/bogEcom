@@ -4,6 +4,11 @@ import AddressModel from "../models/address.model.js";
 import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
 import PurchaseOrderModel from "../models/purchaseOrder.model.js";
+import {
+  applyPurchaseOrderInventory,
+  releaseInventory,
+  reserveInventory,
+} from "../services/inventory.service.js";
 import UserModel from "../models/user.model.js";
 import { getShippingQuote, validateIndianPincode } from "../services/shippingRate.service.js";
 import { splitGstInclusiveAmount } from "../services/tax.service.js";
@@ -434,7 +439,7 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
       }
     }
 
-    const order = await OrderModel.create({
+    const order = new OrderModel({
       user: po.userId || userId || null,
       products: po.items.map((item) => ({
         productId: String(item.productId),
@@ -474,6 +479,20 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
       purchaseOrder: po._id,
     });
 
+    try {
+      await reserveInventory(order, "PO_CONVERT");
+      await order.save();
+    } catch (inventoryError) {
+      if (order.inventoryStatus === "reserved") {
+        try {
+          await releaseInventory(order, "PO_CONVERT_FAIL");
+        } catch (releaseError) {
+          // Best-effort rollback
+        }
+      }
+      throw inventoryError;
+    }
+
     po.status = "converted";
     po.convertedOrderId = order._id;
     await po.save();
@@ -495,9 +514,90 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
   }
 };
 
+export const updatePurchaseOrderStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, items } = req.body || {};
+
+    const po = await PurchaseOrderModel.findById(id);
+    if (!po) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Purchase order not found",
+      });
+    }
+
+    const normalizedStatus = String(status || "").toLowerCase();
+    if (!normalizedStatus) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Status is required",
+      });
+    }
+
+    const allowedStatuses = ["draft", "approved", "received", "converted"];
+    if (!allowedStatuses.includes(normalizedStatus)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid status value",
+      });
+    }
+
+    if (normalizedStatus === "received") {
+      if (po.status === "received" && po.inventory_applied) {
+        return res.status(200).json({
+          error: false,
+          success: true,
+          message: "Purchase order already received",
+          data: { purchaseOrder: po },
+        });
+      }
+
+      if (!["draft", "approved"].includes(po.status)) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: `Cannot mark purchase order as received from status ${po.status}`,
+        });
+      }
+
+      const result = await applyPurchaseOrderInventory(po, {
+        receivedItems: Array.isArray(items) ? items : [],
+        adminId: req.user?._id || req.user?.id || req.user || null,
+      });
+
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Purchase order marked as received",
+        data: { purchaseOrder: result.purchaseOrder },
+      });
+    }
+
+    po.status = normalizedStatus;
+    await po.save();
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Purchase order status updated",
+      data: { purchaseOrder: po },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: error.message || "Failed to update purchase order",
+    });
+  }
+};
+
 export default {
   convertPurchaseOrderToOrder,
   createPurchaseOrder,
   downloadPurchaseOrderPdf,
   getPurchaseOrderById,
+  updatePurchaseOrderStatus,
 };

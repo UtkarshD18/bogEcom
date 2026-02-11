@@ -22,9 +22,14 @@ import { MdDateRange, MdLocalShipping } from "react-icons/md";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const OrderRow = ({ order, index, token, onStatusUpdate }) => {
+  const normalizeStatus = (status) => {
+    if (!status) return "pending";
+    const value = String(status).trim().toLowerCase().replace(/\s+/g, "_");
+    return value === "confirmed" ? "accepted" : value;
+  };
   const [expandIndex, setExpandIndex] = useState(false);
   const [orderStatus, setOrderStatus] = useState(
-    order?.order_status || "pending",
+    normalizeStatus(order?.order_status) || "pending",
   );
   const [updating, setUpdating] = useState(false);
   const [shippingEditorOpen, setShippingEditorOpen] = useState(false);
@@ -44,7 +49,8 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   })();
   const canDownloadInvoice =
     order?.order_status !== "cancelled" &&
-    (order?.payment_status === "paid" || order?.order_status === "confirmed");
+    (order?.payment_status === "paid" ||
+      normalizeStatus(order?.order_status) === "accepted");
 
   const buildShipmentPayload = () => {
     const addr = order?.delivery_address || {};
@@ -431,10 +437,13 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           >
             <MenuItem value="pending">Pending</MenuItem>
             <MenuItem value="pending_payment">Pending Payment</MenuItem>
-            <MenuItem value="confirmed">Confirmed</MenuItem>
+            <MenuItem value="accepted">Accepted</MenuItem>
+            <MenuItem value="in_warehouse">In Warehouse</MenuItem>
             <MenuItem value="shipped">Shipped</MenuItem>
+            <MenuItem value="out_for_delivery">Out for Delivery</MenuItem>
             <MenuItem value="delivered">Delivered</MenuItem>
             <MenuItem value="cancelled">Cancelled</MenuItem>
+            <MenuItem value="confirmed">Confirmed (Legacy)</MenuItem>
           </Select>
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 whitespace-nowrap">

@@ -2,7 +2,6 @@
 
 import {
   Button,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -24,12 +23,37 @@ import {
   MdReceipt,
   MdWarning,
 } from "react-icons/md";
+import { AnimatePresence, motion } from "framer-motion";
+import { io } from "socket.io-client";
 
 const API_URL = (
   process.env.NEXT_PUBLIC_APP_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
   "http://localhost:8000"
 ).replace(/\/+$/, "");
+
+const STATUS_STEPS = [
+  { key: "pending", label: "Pending", icon: MdAccessTime },
+  { key: "pending_payment", label: "Payment Pending", icon: MdAccessTime },
+  { key: "accepted", label: "Accepted", icon: MdCheckCircle },
+  { key: "in_warehouse", label: "In Warehouse", icon: MdLocalShipping },
+  { key: "shipped", label: "Shipped", icon: MdLocalShipping },
+  { key: "out_for_delivery", label: "Out for Delivery", icon: MdLocalShipping },
+  { key: "delivered", label: "Delivered", icon: MdCheckCircle },
+];
+
+const normalizeStatus = (status) => {
+  if (!status) return "pending";
+  const value = String(status).trim().toLowerCase().replace(/\s+/g, "_");
+  if (value === "confirmed") return "accepted";
+  return value;
+};
+
+const getStepIndex = (status) => {
+  const normalized = normalizeStatus(status);
+  const index = STATUS_STEPS.findIndex((step) => step.key === normalized);
+  return index === -1 ? 0 : index;
+};
 
 /**
  * Order Details Page
@@ -78,7 +102,7 @@ const OrderDetailsPage = () => {
 
       try {
         const response = await fetch(
-          `${API_URL}/api/orders/user/order/${orderId}`,
+          `${API_URL}/api/orders/${orderId}`,
           {
             method: "GET",
             headers: {
@@ -117,6 +141,39 @@ const OrderDetailsPage = () => {
     fetchOrder();
   }, [orderId, router]);
 
+  useEffect(() => {
+    if (!orderId) return;
+    const token = cookies.get("accessToken");
+    if (!token) return;
+
+    const socket = io(API_URL, {
+      withCredentials: true,
+      transports: ["websocket"],
+    });
+
+    socket.on("order:update", (payload) => {
+      if (!payload || payload.orderId !== orderId) return;
+      setOrder((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          order_status: payload.status || prev.order_status,
+          payment_status: payload.paymentStatus || prev.payment_status,
+          statusTimeline: payload.statusTimeline || prev.statusTimeline,
+          awb_number: payload.shipment?.awb || prev.awb_number,
+          shipment_status: payload.shipment?.status || prev.shipment_status,
+          shipping_provider: payload.shipment?.provider || prev.shipping_provider,
+          shipping_label: payload.shipment?.label || prev.shipping_label,
+          shipping_manifest: payload.shipment?.manifest || prev.shipping_manifest,
+        };
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [orderId]);
+
   // Format date
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -131,6 +188,7 @@ const OrderDetailsPage = () => {
 
   // Get status color and icon
   const getOrderStatusInfo = (status) => {
+    const normalizedStatus = normalizeStatus(status);
     const statusMap = {
       pending_payment: {
         color: "text-amber-600",
@@ -144,6 +202,18 @@ const OrderDetailsPage = () => {
         icon: MdAccessTime,
         label: "Pending",
       },
+      accepted: {
+        color: "text-blue-600",
+        bg: "bg-blue-50",
+        icon: MdCheckCircle,
+        label: "Accepted",
+      },
+      in_warehouse: {
+        color: "text-indigo-600",
+        bg: "bg-indigo-50",
+        icon: MdLocalShipping,
+        label: "In Warehouse",
+      },
       confirmed: {
         color: "text-blue-600",
         bg: "bg-blue-50",
@@ -155,6 +225,12 @@ const OrderDetailsPage = () => {
         bg: "bg-purple-50",
         icon: MdLocalShipping,
         label: "Shipped",
+      },
+      out_for_delivery: {
+        color: "text-teal-600",
+        bg: "bg-teal-50",
+        icon: MdLocalShipping,
+        label: "Out for Delivery",
       },
       delivered: {
         color: "text-primary",
@@ -170,7 +246,7 @@ const OrderDetailsPage = () => {
       },
     };
     return (
-      statusMap[status] || {
+      statusMap[normalizedStatus] || {
         color: "text-gray-600",
         bg: "bg-gray-50",
         icon: MdInfo,
@@ -279,10 +355,24 @@ const OrderDetailsPage = () => {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <CircularProgress sx={{ color: "var(--primary)" }} />
-          <p className="mt-4 text-gray-600">Loading order details...</p>
+      <div className="min-h-screen bg-gray-50 py-8 px-4">
+        <div className="container mx-auto max-w-4xl space-y-6">
+          <div className="bg-white rounded-xl shadow-sm p-6 animate-pulse">
+            <div className="h-6 w-40 bg-gray-200 rounded mb-3"></div>
+            <div className="h-4 w-64 bg-gray-100 rounded"></div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm p-6 animate-pulse">
+            <div className="h-4 w-32 bg-gray-200 rounded mb-4"></div>
+            <div className="h-2 w-full bg-gray-100 rounded mb-6"></div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+              {Array.from({ length: 7 }).map((_, idx) => (
+                <div key={idx} className="flex flex-col items-center gap-2">
+                  <div className="w-10 h-10 rounded-full bg-gray-100"></div>
+                  <div className="h-3 w-16 bg-gray-100 rounded"></div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -359,6 +449,16 @@ const OrderDetailsPage = () => {
   const paymentStatus = getPaymentStatusInfo(order.payment_status);
   const OrderStatusIcon = orderStatus.icon;
   const PaymentStatusIcon = paymentStatus.icon;
+  const currentStepIndex = getStepIndex(order.order_status);
+  const progressPercent =
+    STATUS_STEPS.length > 1
+      ? Math.min(100, (currentStepIndex / (STATUS_STEPS.length - 1)) * 100)
+      : 0;
+  const timeline = Array.isArray(order?.statusTimeline)
+    ? [...order.statusTimeline].sort(
+        (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+      )
+    : [];
   const displaySubtotal =
     Number(order?.subtotal || 0) > 0
       ? Number(order.subtotal || 0)
@@ -370,7 +470,8 @@ const OrderDetailsPage = () => {
       );
   const canDownloadInvoice =
     order?.order_status !== "cancelled" &&
-    (order?.payment_status === "paid" || order?.order_status === "confirmed");
+    (order?.payment_status === "paid" ||
+      normalizeStatus(order?.order_status) === "accepted");
   const purchaseOrderId =
     typeof order?.purchaseOrder === "object"
       ? order?.purchaseOrder?._id || order?.purchaseOrder?.toString?.() || null
@@ -431,6 +532,94 @@ const OrderDetailsPage = () => {
                   </span>
                 </div>
               </div>
+          </div>
+        </div>
+
+          {/* Order Tracker */}
+          <div className="bg-white rounded-xl shadow-sm p-5 md:p-6 mb-6">
+            <h2 className="text-lg font-semibold text-gray-800">
+              Order Tracking
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Live updates appear automatically as your order moves.
+            </p>
+
+            <div className="relative mt-6">
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-2 bg-emerald-500"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPercent}%` }}
+                  transition={{ duration: 0.6, ease: "easeInOut" }}
+                />
+              </div>
+              <div className="mt-6 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                {STATUS_STEPS.map((step, index) => {
+                  const StepIcon = step.icon;
+                  const isComplete = index < currentStepIndex;
+                  const isActive = index === currentStepIndex;
+                  return (
+                    <motion.div
+                      key={step.key}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: index * 0.03 }}
+                      className="flex flex-col items-center text-center gap-2"
+                    >
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          isActive
+                            ? "bg-emerald-600 text-white"
+                            : isComplete
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-gray-100 text-gray-400"
+                        }`}
+                      >
+                        <StepIcon />
+                      </div>
+                      <span
+                        className={`text-xs font-semibold ${
+                          isActive
+                            ? "text-emerald-700"
+                            : isComplete
+                              ? "text-emerald-600"
+                              : "text-gray-400"
+                        }`}
+                      >
+                        {step.label}
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {timeline.length > 0 && (
+                <div className="mt-6 border-t border-gray-100 pt-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                    Status Timeline
+                  </h3>
+                  <AnimatePresence>
+                    {timeline.map((entry, idx) => (
+                      <motion.div
+                        key={`${entry.status}-${entry.timestamp}-${idx}`}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="flex items-center justify-between text-sm text-gray-600 py-1"
+                      >
+                        <span className="font-medium text-gray-700">
+                          {STATUS_STEPS.find((s) => s.key === normalizeStatus(entry.status))
+                            ?.label || entry.status}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {formatDate(entry.timestamp)}
+                        </span>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
             </div>
           </div>
 

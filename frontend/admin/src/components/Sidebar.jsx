@@ -13,6 +13,7 @@ import {
   MdNotificationsActive,
   MdOutlineArticle,
   MdOutlineCategory,
+  MdOutlineInventory2,
   MdOutlinePolicy,
   MdSettings,
 } from "react-icons/md";
@@ -45,6 +46,11 @@ const Sidebar = () => {
       name: "Products",
       icon: <TbBrandProducthunt size={22} />,
       href: "/products-list",
+    },
+    {
+      name: "Low Stock",
+      icon: <MdOutlineInventory2 size={22} />,
+      href: "/products-list?lowStock=true",
     },
     {
       name: "Users",

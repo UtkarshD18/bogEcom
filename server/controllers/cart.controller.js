@@ -1,6 +1,24 @@
 import CartModel from "../models/cart.model.js";
 import ProductModel from "../models/product.model.js";
 
+const getAvailableQuantity = (product, variantId = null) => {
+  if (!product) return 0;
+  if (product.track_inventory === false || product.trackInventory === false) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  if (variantId && product.hasVariants && product.variants?.length) {
+    const variant = product.variants.id
+      ? product.variants.id(variantId)
+      : product.variants.find((v) => String(v._id) === String(variantId));
+    const variantStock = Number(variant?.stock_quantity ?? variant?.stock ?? 0);
+    const variantReserved = Number(variant?.reserved_quantity ?? 0);
+    return Math.max(variantStock - variantReserved, 0);
+  }
+  const stock = Number(product.stock_quantity ?? product.stock ?? 0);
+  const reserved = Number(product.reserved_quantity ?? 0);
+  return Math.max(stock - reserved, 0);
+};
+
 /**
  * Cart Controller
  *
@@ -21,13 +39,13 @@ export const getCart = async (req, res) => {
       cart = await CartModel.findOne({ user: userId }).populate({
         path: "items.product",
         select:
-          "name brand price originalPrice images thumbnail stock isActive demandStatus",
+          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus variants",
       });
     } else if (sessionId) {
       cart = await CartModel.findOne({ sessionId }).populate({
         path: "items.product",
         select:
-          "name brand price originalPrice images thumbnail stock isActive demandStatus",
+          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus variants",
       });
     }
 
@@ -109,20 +127,22 @@ export const addToCart = async (req, res) => {
     }
 
     // Check stock
-    let availableStock = product.stock;
+    let availableStock = getAvailableQuantity(product, variantId);
     let price = product.price;
     let originalPrice = product.originalPrice;
 
     if (variantId && product.hasVariants) {
       const variant = product.variants.id(variantId);
       if (variant) {
-        availableStock = variant.stock;
+        const variantStock = Number(variant.stock_quantity ?? variant.stock ?? 0);
+        const variantReserved = Number(variant.reserved_quantity ?? 0);
+        availableStock = Math.max(variantStock - variantReserved, 0);
         price = variant.price;
         originalPrice = variant.originalPrice || product.originalPrice;
       }
     }
 
-    if (availableStock < quantity) {
+    if (Number.isFinite(availableStock) && availableStock < quantity) {
       return res.status(400).json({
         error: true,
         success: false,
@@ -185,7 +205,8 @@ export const addToCart = async (req, res) => {
     // Populate and return
     await cart.populate({
       path: "items.product",
-      select: "name brand price originalPrice images thumbnail stock demandStatus",
+      select:
+        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus variants",
     });
 
     res.status(200).json({
@@ -263,14 +284,18 @@ export const updateCartItem = async (req, res) => {
     } else {
       // Check stock
       const product = await ProductModel.findById(productId);
-      let availableStock = product.stock;
+      let availableStock = getAvailableQuantity(product, variantId);
 
       if (variantId && product.hasVariants) {
         const variant = product.variants.id(variantId);
-        if (variant) availableStock = variant.stock;
+        if (variant) {
+          const variantStock = Number(variant.stock_quantity ?? variant.stock ?? 0);
+          const variantReserved = Number(variant.reserved_quantity ?? 0);
+          availableStock = Math.max(variantStock - variantReserved, 0);
+        }
       }
 
-      if (quantity > availableStock) {
+      if (Number.isFinite(availableStock) && quantity > availableStock) {
         return res.status(400).json({
           error: true,
           success: false,
@@ -285,7 +310,8 @@ export const updateCartItem = async (req, res) => {
 
     await cart.populate({
       path: "items.product",
-      select: "name brand price originalPrice images thumbnail stock demandStatus",
+      select:
+        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus variants",
     });
 
     res.status(200).json({

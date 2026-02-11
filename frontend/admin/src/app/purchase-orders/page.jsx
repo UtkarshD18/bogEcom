@@ -1,7 +1,7 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData, postData, putData } from "@/utils/api";
+import { deleteData, getData, patchData, postData, putData } from "@/utils/api";
 import {
   Button,
   CircularProgress,
@@ -297,6 +297,27 @@ export default function PurchaseOrdersPage() {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       toast.error(error.message || "Failed to download PDF");
+    }
+  };
+
+  const handleMarkReceived = async (orderId) => {
+    try {
+      const res = await patchData(
+        `/api/purchase-orders/admin/${orderId}/status`,
+        { status: "received" },
+        token,
+      );
+      if (res.success) {
+        toast.success("Purchase order marked as received");
+        fetchOrders();
+        setSelectedOrder((prev) =>
+          prev && prev._id === orderId ? res.data?.purchaseOrder || prev : prev,
+        );
+      } else {
+        toast.error(res.message || "Failed to mark as received");
+      }
+    } catch (error) {
+      toast.error("Failed to mark as received");
     }
   };
 
@@ -636,6 +657,15 @@ export default function PurchaseOrdersPage() {
               <Button variant="outlined" onClick={() => setSelectedOrder(null)}>
                 Close
               </Button>
+              {selectedOrder.status !== "received" && (
+                <Button
+                  variant="contained"
+                  color="success"
+                  onClick={() => handleMarkReceived(selectedOrder._id)}
+                >
+                  Mark Received
+                </Button>
+              )}
               <Button
                 variant="contained"
                 startIcon={<FaDownload />}

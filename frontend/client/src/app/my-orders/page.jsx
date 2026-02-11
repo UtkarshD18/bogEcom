@@ -50,7 +50,7 @@ const Orders = () => {
         }
 
         // Fetch orders from API
-        let response = await fetch(`${API_URL}/orders/user/my-orders`, {
+        let response = await fetch(`${API_URL}/orders/my-orders`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -72,7 +72,7 @@ const Orders = () => {
               if (newToken) {
                 localStorage.setItem("accessToken", newToken);
                 token = newToken;
-                response = await fetch(`${API_URL}/orders/user/my-orders`, {
+                response = await fetch(`${API_URL}/orders/my-orders`, {
                   method: "GET",
                   headers: {
                     "Content-Type": "application/json",
@@ -114,14 +114,25 @@ const Orders = () => {
     fetchOrders();
   }, [router]);
 
+  const normalizeStatus = (status) => {
+    if (!status) return "pending";
+    const value = String(status).trim().toLowerCase().replace(/\s+/g, "_");
+    return value === "confirmed" ? "accepted" : value;
+  };
+
   // Helper function to get status badge color
   const getStatusColor = (status) => {
-    switch (status) {
+    const normalized = normalizeStatus(status);
+    switch (normalized) {
       case "delivered":
         return "bg-[var(--flavor-glass)] text-primary";
+      case "out_for_delivery":
+        return "bg-teal-100 text-teal-800";
       case "shipped":
         return "bg-blue-100 text-blue-800";
-      case "confirmed":
+      case "in_warehouse":
+        return "bg-indigo-100 text-indigo-800";
+      case "accepted":
         return "bg-yellow-100 text-yellow-800";
       case "pending":
         return "bg-gray-100 text-gray-800";
@@ -152,7 +163,7 @@ const Orders = () => {
   // Format status for display
   const formatStatus = (status) => {
     if (!status) return "Unknown";
-    return status
+    return normalizeStatus(status)
       .split("_")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" ");

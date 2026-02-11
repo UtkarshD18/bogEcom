@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
+import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import connectDb from "./config/connectDb.js";
@@ -39,6 +40,12 @@ import userRouter from "./routes/user.route.js";
 import userLocationLogRouter from "./routes/userLocationLog.route.js";
 import vendorRouter from "./routes/vendor.routes.js";
 import wishlistRouter from "./routes/wishlist.route.js";
+import webhookRouter from "./routes/webhook.route.js";
+import adminOrdersRouter from "./routes/adminOrders.route.js";
+import inventoryAuditRouter from "./routes/inventoryAudit.route.js";
+import { initSocket } from "./realtime/socket.js";
+import { startExpressbeesPolling } from "./services/expressbeesPolling.service.js";
+import { startInventoryReservationExpiryJob } from "./services/inventoryReservationExpiry.service.js";
 
 // Rate limiting - only import if package is installed
 let generalLimiter, authLimiter, paymentLimiter, uploadLimiter, adminLimiter;
@@ -157,6 +164,7 @@ app.use("/api/banners", adminLimiter, bannerRouter);
 app.use("/api/home-slides", adminLimiter, homeSlideRouter);
 app.use("/api/blogs", adminLimiter, blogRouter);
 app.use("/api/orders", adminLimiter, orderRouter);
+app.use("/api/admin/orders", adminLimiter, adminOrdersRouter);
 app.use("/api/cart", generalLimiter, cartRouter);
 app.use("/api/wishlist", generalLimiter, wishlistRouter);
 app.use("/api/upload", uploadLimiter, uploadRouter);
@@ -171,12 +179,14 @@ app.use("/api/settings", adminLimiter, settingsRouter);
 app.use("/api/notifications", generalLimiter, notificationRouter);
 app.use("/api/newsletter", generalLimiter, newsletterRouter);
 app.use("/api/shipping", adminLimiter, shippingRouter);
+app.use("/api/webhooks", generalLimiter, webhookRouter);
 app.use("/api/policies", generalLimiter, policyRouter);
 app.use("/api/cancellation", generalLimiter, cancellationPolicyRouter);
 app.use("/api/location-logs", adminLimiter, userLocationLogRouter);
 app.use("/api/purchase-orders", generalLimiter, purchaseOrderRouter);
 app.use("/api/vendors", adminLimiter, vendorRouter);
 app.use("/api/refunds", adminLimiter, refundRouter);
+app.use("/api/admin/inventory", adminLimiter, inventoryAuditRouter);
 
 // 404 handler
 app.use((req, res, next) => {
@@ -221,8 +231,16 @@ connectDb().then(async () => {
   startLocationLogRetentionJob();
 
   const PORT = process.env.PORT || 8000;
-  app.listen(PORT, () => {
+  const server = http.createServer(app);
+  initSocket(server, {
+    origins: allowedOrigins,
+    jwtSecret: process.env.SECRET_KEY_ACCESS_TOKEN,
+  });
+  server.listen(PORT, () => {
     console.log(`🚀 Server is running on port ${PORT}`);
     console.log(`📦 API Base URL: http://localhost:${PORT}/api`);
   });
+
+  startExpressbeesPolling();
+  startInventoryReservationExpiryJob();
 });

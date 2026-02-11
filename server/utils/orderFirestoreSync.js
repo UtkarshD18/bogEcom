@@ -11,6 +11,7 @@
  */
 
 import { getFirestore, isFirebaseReady } from "../config/firebaseAdmin.js";
+import { normalizeOrderStatus } from "./orderStatus.js";
 
 const ORDERS_COLLECTION = "orders";
 const isProduction = process.env.NODE_ENV === "production";
@@ -52,7 +53,7 @@ export const syncOrderToFirestore = async (order, action = "update") => {
     const firestoreData = {
       orderId: order.orderId || orderId,
       userId: order.userId?.toString() || order.user?.toString() || null,
-      status: order.order_status || order.status || "pending",
+      status: normalizeOrderStatus(order.order_status || order.status || "pending"),
       paymentStatus: order.payment_status || order.paymentStatus || "pending",
 
       // Order amounts
@@ -65,11 +66,17 @@ export const syncOrderToFirestore = async (order, action = "update") => {
 
       // Status history for tracking
       statusHistory:
+        order.statusTimeline?.map((h) => ({
+          status: normalizeOrderStatus(h.status),
+          timestamp: h.timestamp,
+          note: h.source || null,
+        })) ||
         order.status_history?.map((h) => ({
-          status: h.status,
+          status: normalizeOrderStatus(h.status),
           timestamp: h.timestamp,
           note: h.note || null,
-        })) || [],
+        })) ||
+        [],
 
       // Delivery info
       delivery: {
@@ -122,7 +129,7 @@ export const syncOrderStatus = async (
     const docRef = db.collection(ORDERS_COLLECTION).doc(orderId.toString());
 
     const updateData = {
-      status,
+      status: normalizeOrderStatus(status),
       updatedAt: new Date(),
       lastSyncedAt: new Date(),
     };

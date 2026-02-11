@@ -77,6 +77,18 @@ const variantSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  stock_quantity: {
+    type: Number,
+    default: function () {
+      return typeof this.stock === "number" ? this.stock : 0;
+    },
+    min: [0, "Stock cannot be negative"],
+  },
+  reserved_quantity: {
+    type: Number,
+    default: 0,
+    min: [0, "Reserved stock cannot be negative"],
+  },
   image: {
     type: String,
     default: "",
@@ -186,13 +198,41 @@ const productSchema = new mongoose.Schema(
       default: 0,
       min: [0, "Stock cannot be negative"],
     },
+    stock_quantity: {
+      type: Number,
+      default: function () {
+        return typeof this.stock === "number" ? this.stock : 0;
+      },
+      min: [0, "Stock cannot be negative"],
+    },
+    reserved_quantity: {
+      type: Number,
+      default: 0,
+      min: [0, "Reserved stock cannot be negative"],
+    },
     lowStockThreshold: {
       type: Number,
       default: 10,
     },
+    low_stock_threshold: {
+      type: Number,
+      default: function () {
+        return typeof this.lowStockThreshold === "number"
+          ? this.lowStockThreshold
+          : 5;
+      },
+    },
     trackInventory: {
       type: Boolean,
       default: true,
+    },
+    track_inventory: {
+      type: Boolean,
+      default: function () {
+        return typeof this.trackInventory === "boolean"
+          ? this.trackInventory
+          : true;
+      },
     },
 
     // Variants
@@ -354,10 +394,37 @@ const productSchema = new mongoose.Schema(
 
 // Virtual for in-stock status
 productSchema.virtual("inStock").get(function () {
-  if (this.hasVariants && this.variants.length > 0) {
-    return this.variants.some((v) => v.stock > 0);
+  if (this.track_inventory === false || this.trackInventory === false) {
+    return true;
   }
-  return this.stock > 0;
+  if (this.hasVariants && this.variants.length > 0) {
+    return this.variants.some((v) => {
+      const variantStock = Number(v?.stock_quantity ?? v?.stock ?? 0);
+      const variantReserved = Number(v?.reserved_quantity ?? 0);
+      return variantStock - variantReserved > 0;
+    });
+  }
+  const stock = Number(
+    this.stock_quantity ?? this.stock ?? 0,
+  );
+  const reserved = Number(this.reserved_quantity ?? 0);
+  return stock - reserved > 0;
+});
+
+productSchema.virtual("available_quantity").get(function () {
+  if (this.track_inventory === false || this.trackInventory === false) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  if (this.hasVariants && this.variants.length > 0) {
+    return this.variants.reduce((sum, variant) => {
+      const variantStock = Number(variant?.stock_quantity ?? variant?.stock ?? 0);
+      const variantReserved = Number(variant?.reserved_quantity ?? 0);
+      return sum + Math.max(variantStock - variantReserved, 0);
+    }, 0);
+  }
+  const stock = Number(this.stock_quantity ?? this.stock ?? 0);
+  const reserved = Number(this.reserved_quantity ?? 0);
+  return Math.max(stock - reserved, 0);
 });
 
 // Virtual for calculated discount percentage
@@ -403,6 +470,48 @@ productSchema.pre("save", async function () {
   if (!this.thumbnail && this.images.length > 0) {
     this.thumbnail = this.images[0];
   }
+
+  if (this.stock_quantity == null) {
+    this.stock_quantity = typeof this.stock === "number" ? this.stock : 0;
+  }
+  if (this.stock == null) {
+    this.stock = typeof this.stock_quantity === "number" ? this.stock_quantity : 0;
+  }
+  if (this.reserved_quantity == null) {
+    this.reserved_quantity = 0;
+  }
+  if (this.low_stock_threshold == null) {
+    this.low_stock_threshold =
+      typeof this.lowStockThreshold === "number" ? this.lowStockThreshold : 5;
+  }
+  if (this.lowStockThreshold == null) {
+    this.lowStockThreshold =
+      typeof this.low_stock_threshold === "number"
+        ? this.low_stock_threshold
+        : 10;
+  }
+  if (this.track_inventory == null) {
+    this.track_inventory =
+      typeof this.trackInventory === "boolean" ? this.trackInventory : true;
+  }
+  if (this.trackInventory == null) {
+    this.trackInventory =
+      typeof this.track_inventory === "boolean" ? this.track_inventory : true;
+  }
+
+  if (Array.isArray(this.variants) && this.variants.length > 0) {
+    for (const variant of this.variants) {
+      if (variant.stock_quantity == null) {
+        variant.stock_quantity = typeof variant.stock === "number" ? variant.stock : 0;
+      }
+      if (variant.stock == null) {
+        variant.stock = typeof variant.stock_quantity === "number" ? variant.stock_quantity : 0;
+      }
+      if (variant.reserved_quantity == null) {
+        variant.reserved_quantity = 0;
+      }
+    }
+  }
 });
 
 // Calculate average rating
@@ -432,6 +541,8 @@ productSchema.index({ isFeatured: 1, isActive: 1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ soldCount: -1 });
 productSchema.index({ rating: -1 });
+productSchema.index({ stock_quantity: 1, reserved_quantity: 1 });
+productSchema.index({ track_inventory: 1 });
 
 const ProductModel = mongoose.model("Product", productSchema);
 export default ProductModel;
