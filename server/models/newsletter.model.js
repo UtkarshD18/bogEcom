@@ -9,7 +9,7 @@ const newsletterSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
         "Please enter a valid email address",
       ],
     },
@@ -27,7 +27,7 @@ const newsletterSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ["footer", "popup", "checkout", "other"],
+      enum: ["footer", "popup", "checkout", "blogs", "other"],
       default: "footer",
     },
   },

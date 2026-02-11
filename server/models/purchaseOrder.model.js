@@ -22,6 +22,11 @@ const purchaseOrderItemSchema = new mongoose.Schema(
       default: null,
       min: 0,
     },
+    receivedQuantity: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     price: {
       type: Number,
       required: true,
@@ -31,6 +36,10 @@ const purchaseOrderItemSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
+    },
+    packing: {
+      type: String,
+      default: "",
     },
     image: {
       type: String,
@@ -84,10 +93,21 @@ const purchaseOrderSchema = new mongoose.Schema(
       sgst: { type: Number, default: 0 },
       igst: { type: Number, default: 0 },
     },
+    receipt: {
+      invoiceNumber: { type: String, default: "" },
+      vehicleNumber: { type: String, default: "" },
+      notes: { type: String, default: "" },
+      receivedAt: { type: Date, default: null },
+    },
     status: {
       type: String,
-      enum: ["draft", "approved", "received", "converted"],
+      enum: ["draft", "approved", "converted", "received"],
       default: "draft",
+      index: true,
+    },
+    poNumber: {
+      type: String,
+      default: "",
       index: true,
     },
     inventory_applied: {

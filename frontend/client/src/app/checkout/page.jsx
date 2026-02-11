@@ -32,7 +32,6 @@ import {
   Snackbar,
   TextField,
 } from "@mui/material";
-import Radio from "@mui/material/Radio";
 import cookies from "js-cookie";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -43,9 +42,8 @@ import { IoCartOutline } from "react-icons/io5";
 import {
   MdHome,
   MdInfo,
-  MdLocalShipping,
   MdLocationOn,
-  MdWork,
+  MdWork
 } from "react-icons/md";
 
 const API_URL = (
@@ -1177,7 +1175,7 @@ const Checkout = () => {
 
         {/* Background Gradients */}
         <div className="fixed top-[-10%] right-[-10%] w-[50%] h-[50%] bg-primary/20 blur-[120px] rounded-full pointer-events-none -z-10" />
-        <div className="fixed bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-violet-400/20 blur-[120px] rounded-full pointer-events-none -z-10" />
+        <div className="fixed bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-[var(--flavor-glass)] blur-[120px] rounded-full pointer-events-none -z-10" />
       </section>
     );
   }
@@ -1187,7 +1185,7 @@ const Checkout = () => {
       <section className="min-h-screen pb-20 pt-10 px-4 md:px-8 relative overflow-hidden">
         {/* Background Gradients */}
         <div className="fixed top-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[150px] rounded-full pointer-events-none -z-10" />
-        <div className="fixed bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-violet-400/20 blur-[150px] rounded-full pointer-events-none -z-10" />
+        <div className="fixed bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-[var(--flavor-glass)] blur-[150px] rounded-full pointer-events-none -z-10" />
 
         <div className="container mx-auto max-w-7xl relative z-10">
           {/* Header */}
@@ -1419,7 +1417,7 @@ const Checkout = () => {
               {/* Order Items */}
               <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-8 border border-white/50 shadow-xl shadow-gray-200/50">
                 <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-3">
-                  <span className="w-10 h-10 rounded-2xl bg-violet-100/50 flex items-center justify-center text-violet-600">2</span>
+                  <span className="w-10 h-10 rounded-2xl bg-[var(--flavor-glass)] flex items-center justify-center text-primary">2</span>
                   Order Items <span className="text-gray-400 text-lg font-medium">({cartItems.length})</span>
                 </h2>
 
@@ -1469,7 +1467,7 @@ const Checkout = () => {
                 <div className="bg-gray-900 text-white rounded-[2.5rem] p-8 shadow-2xl overflow-hidden relative">
                   {/* Glow Effects */}
                   <div className="absolute top-[-20%] right-[-20%] w-40 h-40 bg-primary/20 blur-[80px] rounded-full pointer-events-none" />
-                  <div className="absolute bottom-[-10%] left-[-10%] w-32 h-32 bg-violet-500/20 blur-[60px] rounded-full pointer-events-none" />
+                  <div className="absolute bottom-[-10%] left-[-10%] w-32 h-32 bg-[var(--flavor-glass)] blur-[60px] rounded-full pointer-events-none" />
 
                   <h2 className="text-2xl font-black mb-6 border-b border-gray-700 pb-4">Summary</h2>
 
@@ -1562,7 +1560,7 @@ const Checkout = () => {
                         <button
                           onClick={handleApplyCoupon}
                           disabled={couponLoading}
-                          className="px-5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
+                          className="px-5 bg-primary text-white font-bold rounded-xl hover:brightness-110 transition-colors disabled:opacity-50"
                         >
                           {couponLoading ? "..." : "APPLY"}
                         </button>

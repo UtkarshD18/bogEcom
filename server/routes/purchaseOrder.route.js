@@ -9,6 +9,7 @@ import {
   getAllPurchaseOrdersAdmin,
   getPurchaseOrderById,
   updatePurchaseOrderStatus,
+  updatePurchaseOrderReceipt,
 } from "../controllers/purchaseOrder.controller.js";
 
 const router = express.Router();
@@ -19,5 +20,7 @@ router.post("/", optionalAuth, createPurchaseOrder);
 router.get("/:id", optionalAuth, getPurchaseOrderById);
 router.get("/:id/pdf", optionalAuth, downloadPurchaseOrderPdf);
 router.post("/:id/convert", optionalAuth, convertPurchaseOrderToOrder);
+router.patch("/:id/receive", auth, admin, updatePurchaseOrderReceipt);
+router.post("/:id/receive", auth, admin, updatePurchaseOrderReceipt);
 
 export default router;

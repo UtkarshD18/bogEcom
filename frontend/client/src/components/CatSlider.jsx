@@ -4,9 +4,9 @@ import FlavorSwitcherBar from "./FlavorSwitcherBar";
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { useContext, useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import { Navigation } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 
@@ -64,7 +64,7 @@ const CatSlider = () => {
                     className="max-w-7xl mx-auto px-4"
                 >
                     <div className="flex items-center justify-between mb-8">
-                        <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+                        <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight transition-colors duration-500" style={{ color: 'var(--color-primary)' }}>
                             Shop by Category
                         </h2>
                         <Link

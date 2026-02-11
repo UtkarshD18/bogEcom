@@ -465,12 +465,10 @@ export const CartProvider = ({ children }) => {
 
     window.addEventListener("loginSuccess", handleAuthChange);
     window.addEventListener("storage", handleAuthChange);
-    window.addEventListener("focus", handleAuthChange);
 
     return () => {
       window.removeEventListener("loginSuccess", handleAuthChange);
       window.removeEventListener("storage", handleAuthChange);
-      window.removeEventListener("focus", handleAuthChange);
     };
   }, []);
 

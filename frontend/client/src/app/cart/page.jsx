@@ -92,7 +92,11 @@ export default function CartPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                     {/* Cart Items List */}
                     <div className="lg:col-span-2 space-y-6">
-                        {cartItems.map((item, index) => {
+                        {cartItems.filter(item => {
+                            const pid = resolveProductId(item);
+                            const pd = resolveProductData(item);
+                            return pid && pd?.name;
+                        }).map((item, index) => {
                             const data = getItemData(item);
                             const productId = resolveProductId(item);
                             return (
@@ -115,7 +119,7 @@ export default function CartPage() {
                                             <div className="flex justify-between items-start mb-2">
                                                 <div>
                                                     <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">{data.brand}</p>
-                                                    <h3 className="text-lg font-black text-gray-900 leading-tight group-hover:text-emerald-600 transition-colors uppercase tracking-tight">
+                                                    <h3 className="text-lg font-black text-gray-900 leading-tight group-hover:text-primary transition-colors uppercase tracking-tight">
                                                         {data.name}
                                                     </h3>
                                                 </div>
@@ -160,7 +164,7 @@ export default function CartPage() {
                     <div className="lg:col-span-1">
                         <div className="sticky top-32 p-8 rounded-[3rem] bg-gray-900 text-white shadow-2xl overflow-hidden">
                             {/* Decorative Glow */}
-                            <div className="absolute top-[-20%] right-[-20%] w-40 h-40 bg-emerald-500/20 blur-[80px] rounded-full pointer-events-none" />
+                            <div className="absolute top-[-20%] right-[-20%] w-40 h-40 bg-primary/20 blur-[80px] rounded-full pointer-events-none" />
 
                             <h2 className="text-2xl font-black mb-8 border-b border-white/10 pb-4 tracking-tight">Summary</h2>
 
@@ -171,7 +175,7 @@ export default function CartPage() {
                                 </div>
                                 <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-[11px]">
                                     <span>Shipping</span>
-                                    <span className={isFreeShipping ? "text-emerald-400" : "text-white"}>
+                                    <span className={isFreeShipping ? "text-primary" : "text-white"}>
                                         {isFreeShipping ? "FREE" : `₹${shippingCost}`}
                                     </span>
                                 </div>
@@ -181,14 +185,14 @@ export default function CartPage() {
                                         <p className="text-3xl font-black text-white tracking-tight">₹{total}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-emerald-400 font-black text-xs">SAVING ₹450</p>
+                                        <p className="text-primary font-black text-xs">SAVING ₹450</p>
                                     </div>
                                 </div>
                             </div>
 
                             <Link
                                 href="/checkout"
-                                className="w-full py-5 bg-emerald-500 text-gray-900 font-black text-center rounded-2xl block shadow-xl shadow-emerald-500/20 hover:bg-emerald-400 transform hover:scale-[1.02] active:scale-95 transition-all"
+                                className="w-full py-5 bg-primary text-white font-black text-center rounded-2xl block shadow-xl shadow-primary/20 hover:brightness-110 transform hover:scale-[1.02] active:scale-95 transition-all"
                             >
                                 CHECKOUT NOW
                             </Link>

@@ -2,7 +2,15 @@
 
 import { useAdmin } from "@/context/AdminContext";
 import { getData, postData, putData } from "@/utils/api";
-import { Button, CircularProgress, TextField } from "@mui/material";
+import {
+    Button,
+    CircularProgress,
+    FormControl,
+    InputLabel,
+    MenuItem,
+    Select,
+    TextField,
+} from "@mui/material";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -18,6 +26,11 @@ const TermsConditionsAdmin = () => {
 
     const [content, setContent] = useState("");
     const [originalContent, setOriginalContent] = useState("");
+    const [theme, setTheme] = useState({ style: "mint", layout: "glass" });
+    const [originalTheme, setOriginalTheme] = useState({
+        style: "mint",
+        layout: "glass",
+    });
     const [policyId, setPolicyId] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -35,10 +48,18 @@ const TermsConditionsAdmin = () => {
                 if (termsPolicy) {
                     setContent(termsPolicy.content || "");
                     setOriginalContent(termsPolicy.content || "");
+                    const nextTheme = {
+                        style: termsPolicy.theme?.style || "mint",
+                        layout: termsPolicy.theme?.layout || "glass",
+                    };
+                    setTheme(nextTheme);
+                    setOriginalTheme(nextTheme);
                     setPolicyId(termsPolicy._id);
                 } else {
                     setContent("");
                     setOriginalContent("");
+                    setTheme({ style: "mint", layout: "glass" });
+                    setOriginalTheme({ style: "mint", layout: "glass" });
                     setPolicyId(null);
                 }
             } else {
@@ -66,8 +87,12 @@ const TermsConditionsAdmin = () => {
 
     // Track changes
     useEffect(() => {
-        setHasChanges(content !== originalContent);
-    }, [content, originalContent]);
+        setHasChanges(
+            content !== originalContent ||
+            theme.style !== originalTheme.style ||
+            theme.layout !== originalTheme.layout,
+        );
+    }, [content, originalContent, theme, originalTheme]);
 
     const handleSave = async () => {
         if (!content.trim()) {
@@ -82,7 +107,7 @@ const TermsConditionsAdmin = () => {
                 // Update existing policy
                 response = await putData(
                     `/api/policies/admin/${policyId}`,
-                    { content },
+                    { content, theme },
                     token,
                 );
             } else {
@@ -94,6 +119,7 @@ const TermsConditionsAdmin = () => {
                         slug: "terms-and-conditions",
                         content,
                         isActive: true,
+                        theme,
                     },
                     token,
                 );
@@ -102,6 +128,7 @@ const TermsConditionsAdmin = () => {
             if (response.success) {
                 toast.success("Terms & Conditions updated successfully");
                 setOriginalContent(content);
+                setOriginalTheme(theme);
                 setHasChanges(false);
                 if (!policyId && response.data) {
                     setPolicyId(response.data._id);
@@ -122,6 +149,7 @@ const TermsConditionsAdmin = () => {
             return;
         }
         setContent(originalContent);
+        setTheme(originalTheme);
     };
 
     if (loading || !isAuthenticated) {
@@ -192,6 +220,51 @@ const TermsConditionsAdmin = () => {
             </div>
 
             {/* Editor */}
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                    Page Theme
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormControl fullWidth size="small">
+                        <InputLabel>Theme</InputLabel>
+                        <Select
+                            label="Theme"
+                            value={theme.style}
+                            onChange={(e) =>
+                                setTheme((prev) => ({
+                                    ...prev,
+                                    style: e.target.value,
+                                }))
+                            }
+                        >
+                            <MenuItem value="mint">Mint</MenuItem>
+                            <MenuItem value="sky">Sky</MenuItem>
+                            <MenuItem value="aurora">Aurora</MenuItem>
+                            <MenuItem value="lavender">Lavender</MenuItem>
+                            <MenuItem value="sunset">Sunset</MenuItem>
+                            <MenuItem value="midnight">Midnight</MenuItem>
+                        </Select>
+                    </FormControl>
+
+                    <FormControl fullWidth size="small">
+                        <InputLabel>Layout</InputLabel>
+                        <Select
+                            label="Layout"
+                            value={theme.layout}
+                            onChange={(e) =>
+                                setTheme((prev) => ({
+                                    ...prev,
+                                    layout: e.target.value,
+                                }))
+                            }
+                        >
+                            <MenuItem value="glass">Liquid Glass</MenuItem>
+                            <MenuItem value="minimal">Minimal</MenuItem>
+                        </Select>
+                    </FormControl>
+                </div>
+            </div>
+
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <TextField
                     fullWidth

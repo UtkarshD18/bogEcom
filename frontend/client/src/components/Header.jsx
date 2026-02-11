@@ -182,8 +182,8 @@ const Header = () => {
         {/* ================= TOP HEADER ================= */}
         <div
           className={`w-full transition-all duration-300 overflow-hidden md:overflow-visible ${scrolled
-              ? "max-h-0 opacity-0 -mt-2 md:max-h-[220px] md:opacity-100 md:mt-0"
-              : "max-h-[220px] opacity-100 mt-0"
+            ? "max-h-0 opacity-0 -mt-2 md:max-h-[220px] md:opacity-100 md:mt-0"
+            : "max-h-[220px] opacity-100 mt-0"
             }`}
         >
           {/* Removed Decorative Top Line Gradient */}
@@ -191,7 +191,7 @@ const Header = () => {
             <div className="flex items-center justify-between gap-4 md:gap-8">
               {/* Mobile Menu Button */}
               <button
-                className="md:hidden p-2 text-gray-700 hover:text-[#059669] transition-colors"
+                className="md:hidden p-2 text-gray-700 hover:text-[var(--flavor-color)] transition-colors"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label="Toggle menu"
               >
@@ -246,8 +246,8 @@ const Header = () => {
                         key={item.name}
                         href={item.href}
                         className={`font-semibold text-base px-2 py-1 rounded-lg transition ${isActive
-                            ? "text-[#059669] bg-[#a7f3d0]/20"
-                            : "text-gray-700 hover:bg-[#a7f3d0]/20"
+                          ? "text-[var(--flavor-color)] bg-[var(--flavor-glass)]"
+                          : "text-gray-700 hover:bg-[var(--flavor-glass)] hover:text-[var(--flavor-color)]"
                           }`}
                       >
                         {item.name}
@@ -256,7 +256,7 @@ const Header = () => {
                   })}
                 </nav>
                 <div className="w-full max-w-sm relative group">
-                  <div className="absolute -inset-1 bg-linear-to-r from-[#059669]/10 to-[#10b981]/10 rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div className="absolute -inset-1 bg-[var(--flavor-glass)] rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                   <div
                     className="relative shadow-sm border rounded-full overflow-hidden transition-all duration-300 focus-within:shadow-md"
                     style={{
@@ -324,7 +324,7 @@ const Header = () => {
                   )}
                   <IoCartOutline
                     size={26}
-                    className="text-gray-700 group-hover:text-[#059669] transition-colors"
+                    className="text-gray-700 group-hover:text-[var(--flavor-color)] transition-colors"
                   />
                   {/* Custom Tooltip */}
                   <span
@@ -364,14 +364,14 @@ const Header = () => {
                   >
                     <Link
                       href="/login"
-                      className="hover:text-[#059669] transition-colors"
+                      className="hover:text-[var(--flavor-color)] transition-colors"
                     >
                       Login
                     </Link>
                     <span className="text-gray-300 mx-1.5">|</span>
                     <Link
                       href="/register"
-                      className="hover:text-[#059669] transition-colors"
+                      className="hover:text-[var(--flavor-color)] transition-colors"
                     >
                       Register
                     </Link>
@@ -380,7 +380,8 @@ const Header = () => {
                   <div className="relative">
                     <button
                       onClick={handleClick}
-                      className="hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full bg-linear-to-r from-[#059669]/10 to-[#10b981]/10 border border-[#059669]/30 hover:border-[#059669]/60 hover:shadow-md transition-all duration-200 group"
+                      className="hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full border hover:shadow-md transition-all duration-200 group"
+                      style={{ background: `linear-gradient(to right, color-mix(in srgb, var(--flavor-color) 10%, transparent), color-mix(in srgb, var(--flavor-hover) 10%, transparent))`, borderColor: `color-mix(in srgb, var(--flavor-color) 30%, transparent)` }}
                     >
                       {userPhoto ? (
                         <img
@@ -394,7 +395,8 @@ const Header = () => {
                         />
                       ) : null}
                       <div
-                        className={`flex items-center justify-center w-8 h-8 rounded-full bg-linear-to-br from-[#059669] to-[#10b981] text-white ${userPhoto ? "hidden" : "flex"}`}
+                        className={`flex items-center justify-center w-8 h-8 rounded-full text-white ${userPhoto ? "hidden" : "flex"}`}
+                        style={{ background: `linear-gradient(to bottom right, var(--flavor-color), var(--flavor-hover))` }}
                       >
                         <FaUser size={14} />
                       </div>
@@ -440,7 +442,7 @@ const Header = () => {
                           <div className="py-2">
                             <Link
                               href="/my-account"
-                              className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-[#059669] transition-colors group"
+                              className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-[var(--flavor-color)] transition-colors group"
                               onClick={handleClose}
                             >
                               <FaUser
@@ -452,7 +454,7 @@ const Header = () => {
 
                             <Link
                               href="/my-orders"
-                              className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-[#059669] transition-colors group"
+                              className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-[var(--flavor-color)] transition-colors group"
                               onClick={handleClose}
                             >
                               <MdOutlineShoppingBag
@@ -464,7 +466,7 @@ const Header = () => {
 
                             <Link
                               href="/address"
-                              className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-[#059669] transition-colors group"
+                              className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-[var(--flavor-color)] transition-colors group"
                               onClick={handleClose}
                             >
                               <MdOutlineLocationOn
@@ -476,7 +478,7 @@ const Header = () => {
 
                             <Link
                               href="/settings"
-                              className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-[#059669] transition-colors group"
+                              className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-[var(--flavor-color)] transition-colors group"
                               onClick={handleClose}
                             >
                               <MdOutlineSettings
@@ -534,8 +536,8 @@ const Header = () => {
         {/* Backdrop - Mobile only */}
         <div
           className={`md:hidden fixed inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ${mobileMenuOpen
-              ? "opacity-100 pointer-events-auto"
-              : "opacity-0 pointer-events-none"
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
             }`}
           style={{ zIndex: 9997 }}
           onClick={() => setMobileMenuOpen(false)}
@@ -545,8 +547,8 @@ const Header = () => {
         {/* Dropdown Panel - Mobile only */}
         <div
           className={`md:hidden fixed left-0 right-0 transition-all duration-300 ease-out ${mobileMenuOpen
-              ? "translate-y-0 opacity-100 pointer-events-auto"
-              : "-translate-y-4 opacity-0 pointer-events-none"
+            ? "translate-y-0 opacity-100 pointer-events-auto"
+            : "-translate-y-4 opacity-0 pointer-events-none"
             }`}
           style={{
             top: "calc(var(--header-height, 100px) - 8px)",
@@ -574,8 +576,8 @@ const Header = () => {
                     key={item.name}
                     href={item.href}
                     className={`flex items-center gap-3 mx-2 px-4 py-3 rounded-xl text-[15px] font-semibold transition-all duration-200 ${isActive
-                        ? "text-[#059669] bg-[#a7f3d0]/20"
-                        : "text-gray-700 hover:bg-[#a7f3d0]/15 hover:text-[#059669] active:bg-[#a7f3d0]/25"
+                      ? "text-[var(--flavor-color)] bg-[var(--flavor-glass)]"
+                      : "text-gray-700 hover:bg-[var(--flavor-glass)] hover:text-[var(--flavor-color)] active:bg-[var(--flavor-glass)]"
                       }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
@@ -595,7 +597,10 @@ const Header = () => {
                 <div className="flex gap-2">
                   <Link
                     href="/login"
-                    className="flex-1 py-2.5 text-center text-[14px] font-bold text-[#059669] border-2 border-[#059669] rounded-xl hover:bg-[#059669] hover:text-white active:scale-[0.98] transition-all duration-200"
+                    className="flex-1 py-2.5 text-center text-[14px] font-bold rounded-xl active:scale-[0.98] transition-all duration-200"
+                    style={{ color: 'var(--flavor-color)', border: '2px solid var(--flavor-color)' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--flavor-color)'; e.currentTarget.style.color = 'white'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--flavor-color)'; }}
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     Login
@@ -605,7 +610,7 @@ const Header = () => {
                     className="flex-1 py-2.5 text-center text-[14px] font-bold text-white rounded-xl active:scale-[0.98] transition-all duration-200"
                     style={{
                       background:
-                        "linear-gradient(135deg, #059669 0%, #10b981 100%)",
+                        "linear-gradient(135deg, var(--flavor-color) 0%, var(--flavor-hover) 100%)",
                     }}
                     onClick={() => setMobileMenuOpen(false)}
                   >
@@ -618,14 +623,15 @@ const Header = () => {
                     <img
                       src={userPhoto}
                       alt="Profile"
-                      className="w-10 h-10 rounded-full object-cover ring-2 ring-[#a7f3d0]/50"
+                      className="w-10 h-10 rounded-full object-cover ring-2"
+                      style={{ '--tw-ring-color': 'color-mix(in srgb, var(--flavor-color) 30%, transparent)' }}
                     />
                   ) : (
                     <div
                       className="flex items-center justify-center w-10 h-10 rounded-full text-white"
                       style={{
                         background:
-                          "linear-gradient(135deg, #059669 0%, #10b981 100%)",
+                          "linear-gradient(135deg, var(--flavor-color) 0%, var(--flavor-hover) 100%)",
                       }}
                     >
                       <FaUser size={14} />
@@ -641,7 +647,10 @@ const Header = () => {
                   </div>
                   <Link
                     href="/my-account"
-                    className="px-3 py-1.5 text-xs font-bold text-[#059669] border border-[#059669]/50 rounded-lg hover:bg-[#059669] hover:text-white transition-all"
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg transition-all"
+                    style={{ color: 'var(--flavor-color)', border: '1px solid color-mix(in srgb, var(--flavor-color) 50%, transparent)' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--flavor-color)'; e.currentTarget.style.color = 'white'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--flavor-color)'; }}
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     Account
@@ -656,8 +665,8 @@ const Header = () => {
       {/* Floating Search Bar - Shows when header is hidden */}
       <div
         className={`fixed left-0 right-0 z-50 transition-all duration-300 ${hideHeader
-            ? "translate-y-0 opacity-100"
-            : "-translate-y-full opacity-0 pointer-events-none"
+          ? "translate-y-0 opacity-100"
+          : "-translate-y-full opacity-0 pointer-events-none"
           }`}
         style={{ top: 0 }}
       >

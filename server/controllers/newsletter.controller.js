@@ -11,6 +11,19 @@ const debugLog = (...args) => {
   }
 };
 
+const ALLOWED_SOURCES = new Set([
+  "footer",
+  "popup",
+  "checkout",
+  "blogs",
+  "other",
+]);
+
+const normalizeSource = (source) => {
+  const value = String(source || "").trim().toLowerCase();
+  return ALLOWED_SOURCES.has(value) ? value : "other";
+};
+
 /**
  * Generate welcome email HTML template
  * @param {string} email - Subscriber email
@@ -199,6 +212,12 @@ const isValidEmail = (email) => {
 export const subscribe = async (req, res) => {
   try {
     const { email, source = "footer" } = req.body;
+    const normalizedSource = normalizeSource(source || "footer");
+    const schemaSources =
+      Newsletter?.schema?.path("source")?.enumValues || [];
+    const safeSource = schemaSources.includes(normalizedSource)
+      ? normalizedSource
+      : "other";
 
     // Validate email presence
     if (!email) {
@@ -253,13 +272,13 @@ export const subscribe = async (req, res) => {
     // Create new subscriber in MongoDB
     const newSubscriber = await Newsletter.create({
       email: normalizedEmail,
-      source,
+      source: safeSource,
     });
 
     // Also save to Firebase Firestore
     await saveToFirebase({
       email: normalizedEmail,
-      source,
+      source: safeSource,
     });
 
     // Send welcome email to new subscriber
@@ -287,9 +306,16 @@ export const subscribe = async (req, res) => {
 
     // Handle validation error
     if (error.name === "ValidationError") {
+      const errorMessages = Object.values(error.errors || {}).map(
+        (err) => err.message,
+      );
+      const message =
+        error.errors?.email?.message ||
+        errorMessages[0] ||
+        "Invalid subscription details";
       return res.status(400).json({
         success: false,
-        message: "Please enter a valid email address",
+        message,
       });
     }
 
