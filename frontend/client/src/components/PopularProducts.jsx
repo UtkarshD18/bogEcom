@@ -4,108 +4,81 @@ import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import Link from "next/link";
 import { useContext } from "react";
 import ProductSlider from "./ProductSlider";
+import { motion } from "framer-motion";
 
 const PopularProducts = () => {
-  const context = useContext(MyContext);
-  const flavor = context?.flavor || FLAVORS.creamy;
+    const context = useContext(MyContext);
+    const flavor = context?.flavor || FLAVORS.creamy;
 
-  return (
-    <section
-      className="relative py-10 sm:py-14 md:py-18 overflow-hidden transition-all duration-500"
-      style={{ background: flavor.gradient }}
-    >
-      <div className="pointer-events-none absolute inset-0">
-        <div
-          className="absolute -top-16 -right-24 h-64 w-64 rounded-full blur-3xl opacity-30"
-          style={{ background: flavor.color }}
-        />
-        <div
-          className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full blur-3xl opacity-25"
-          style={{ background: flavor.badge }}
-        />
-      </div>
-
-      <div className="relative max-w-7xl mx-auto px-4 z-10">
-        {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 sm:gap-8 mb-6 sm:mb-10">
-          <div className="max-w-lg space-y-3">
-            <span
-              className="inline-flex items-center gap-2 text-[12px] tracking-[0.24em] uppercase font-bold px-3 py-1 rounded-full shadow-sm transition-all duration-300"
-              style={{
-                color: flavor.color,
-                backgroundColor: flavor.glass,
-              }}
-            >
-              <svg
-                className="inline-block -mt-0.5"
-                width="18"
-                height="18"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  fill={flavor.color}
-                  opacity=".15"
-                />
-                <path
-                  d="M12 7v5l3 3"
-                  stroke={flavor.color}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              Trending Now
-            </span>
-
-            <h2 className="text-[26px] sm:text-[34px] md:text-[42px] font-extrabold text-gray-900 leading-tight tracking-tight drop-shadow-sm">
-              Popular Products
-            </h2>
-
-            <p className="text-[14px] sm:text-[17px] text-gray-600 font-medium">
-              Curated best-sellers with clean ingredients and bold flavor.
-            </p>
-          </div>
-
-          <Link
-            href="/products"
-            className="self-start md:self-auto px-7 py-2.5 rounded-full border-2 font-semibold transition-all duration-300 hover:text-white focus:ring-2"
-            style={{
-              borderColor: flavor.color,
-              color: flavor.color,
-              backgroundColor: flavor.cardBg,
-              boxShadow: `0 4px 16px 0 ${flavor.color}15`,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = flavor.color;
-              e.currentTarget.style.color = "#ffffff";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = flavor.cardBg;
-              e.currentTarget.style.color = flavor.color;
-            }}
-          >
-            View All
-          </Link>
-        </div>
-
-        {/* SLIDER */}
-        <div
-          className="relative animate-fadeUp rounded-3xl p-3 sm:p-4 md:p-5"
-          style={{
-            backgroundColor: flavor.cardBg,
-            border: `1px solid ${flavor.color}1f`,
-            boxShadow: `0 12px 30px ${flavor.color}14`,
-          }}
+    return (
+        <section
+            className="relative py-12 sm:py-16 md:py-20 overflow-hidden transition-all duration-500 bg-orange-50/50"
         >
-          <ProductSlider isFeatured={true} limit={10} />
-        </div>
-      </div>
-    </section>
-  );
+            {/* Decorative blobs */}
+            <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                <div className="absolute -top-20 -right-28 h-72 w-72 rounded-full bg-primary/20 blur-[100px]" />
+                <div className="absolute -bottom-28 -left-28 h-80 w-80 rounded-full bg-purple-500/10 blur-[100px]" />
+            </div>
+
+            <div className="relative max-w-7xl mx-auto px-4 z-10">
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 sm:gap-8 mb-8 sm:mb-12">
+                    <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.6 }}
+                        className="max-w-lg space-y-3 sm:space-y-4"
+                    >
+                        {/* Trending badge */}
+                        <span className="inline-flex items-center gap-2.5 text-[11px] uppercase tracking-widest font-extrabold px-4 py-2 rounded-full bg-[var(--flavor-glass)] text-primary border border-primary/20">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                            </span>
+                            Trending Now
+                        </span>
+
+                        <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-gray-900 tracking-tight">
+                            Popular Products
+                        </h2>
+
+                        <p className="text-sm sm:text-base text-gray-500 font-medium leading-relaxed max-w-md">
+                            Curated best-sellers with clean ingredients and bold flavor.
+                        </p>
+                    </motion.div>
+
+                    <motion.div
+                        initial={{ opacity: 0, x: 20 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.6, delay: 0.2 }}
+                    >
+                        <Link
+                            href="/products"
+                            className="self-start md:self-auto px-8 py-3 rounded-full font-bold text-sm bg-primary text-white shadow-lg shadow-primary/30 hover:-translate-y-1 hover:shadow-xl transition-all active:scale-95 flex items-center gap-2"
+                        >
+                            View All
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                            </svg>
+                        </Link>
+                    </motion.div>
+                </div>
+
+                {/* Product Slider Container */}
+                <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.6, delay: 0.4 }}
+                    className="relative rounded-3xl p-4 sm:p-6 bg-white shadow-xl shadow-gray-200/50 border border-gray-100"
+                >
+                    <ProductSlider isFeatured={true} limit={10} />
+                </motion.div>
+            </div>
+        </section >
+    );
 };
 
 export default PopularProducts;

@@ -107,6 +107,11 @@ const Sidebar = () => {
       href: "/cancellation-policy",
     },
     {
+      name: "Terms & Conditions",
+      icon: <MdOutlinePolicy size={22} />,
+      href: "/terms-and-conditions",
+    },
+    {
       name: "About Us",
       icon: <MdInfoOutline size={22} />,
       href: "/about-page",
@@ -146,11 +151,10 @@ const Sidebar = () => {
           <Link
             key={tab.name}
             href={tab.href}
-            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-              isActive(tab.href)
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${isActive(tab.href)
                 ? "bg-blue-50 text-blue-600 font-semibold"
                 : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-            }`}
+              }`}
           >
             <span
               className={isActive(tab.href) ? "text-blue-600" : "text-gray-500"}

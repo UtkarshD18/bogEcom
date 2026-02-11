@@ -21,13 +21,13 @@ export const getCart = async (req, res) => {
       cart = await CartModel.findOne({ user: userId }).populate({
         path: "items.product",
         select:
-          "name price originalPrice images thumbnail stock isActive demandStatus",
+          "name brand price originalPrice images thumbnail stock isActive demandStatus",
       });
     } else if (sessionId) {
       cart = await CartModel.findOne({ sessionId }).populate({
         path: "items.product",
         select:
-          "name price originalPrice images thumbnail stock isActive demandStatus",
+          "name brand price originalPrice images thumbnail stock isActive demandStatus",
       });
     }
 
@@ -185,7 +185,7 @@ export const addToCart = async (req, res) => {
     // Populate and return
     await cart.populate({
       path: "items.product",
-      select: "name price originalPrice images thumbnail stock demandStatus",
+      select: "name brand price originalPrice images thumbnail stock demandStatus",
     });
 
     res.status(200).json({
@@ -285,7 +285,7 @@ export const updateCartItem = async (req, res) => {
 
     await cart.populate({
       path: "items.product",
-      select: "name price originalPrice images thumbnail stock demandStatus",
+      select: "name brand price originalPrice images thumbnail stock demandStatus",
     });
 
     res.status(200).json({
@@ -336,12 +336,18 @@ export const removeFromCart = async (req, res) => {
     cart.items = cart.items.filter(
       (item) =>
         !(
-          item.product.toString() === productId &&
+          (item.product._id || item.product).toString() === productId &&
           (!variantId || item.variant?.toString() === variantId)
         ),
     );
 
     await cart.save();
+
+    // Populate product data before returning
+    await cart.populate({
+      path: "items.product",
+      select: "name brand price originalPrice images thumbnail stock demandStatus",
+    });
 
     res.status(200).json({
       error: false,

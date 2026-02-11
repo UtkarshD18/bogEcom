@@ -11,7 +11,7 @@ export default function LogoutConfirmationPage() {
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/login"
-            className="px-6 py-3 rounded-xl bg-[#059669] text-white font-medium hover:bg-[#047857] transition"
+            className="px-6 py-3 rounded-xl bg-primary text-white font-medium hover:brightness-110 transition"
           >
             Go to Login
           </Link>

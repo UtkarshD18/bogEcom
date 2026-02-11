@@ -25,11 +25,10 @@ const Nav = () => {
 
   return (
     <nav
-      className={`top-0 z-30 w-full transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-        scrolled
+      className={`top-0 z-30 w-full transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${scrolled
           ? "py-3 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-b"
           : "py-4 bg-transparent backdrop-blur-sm border-b border-transparent"
-      }`}
+        }`}
       style={{
         backgroundColor: scrolled
           ? `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 80%, transparent)`
@@ -51,10 +50,9 @@ const Nav = () => {
                 <Link
                   href={item.link}
                   className={`relative px-5 py-2.5 text-[14px] font-medium rounded-full transition-all duration-300 ease-out active:scale-95
-                    ${
-                      isActive
-                        ? "bg-[#059669]/15 text-[#059669] font-bold shadow-sm"
-                        : "text-neutral-600 hover:bg-[#059669] hover:text-white hover:shadow-lg"
+                    ${isActive
+                      ? "bg-[var(--flavor-glass)] text-primary font-bold shadow-sm"
+                      : "text-neutral-600 hover:bg-primary hover:text-white hover:shadow-lg"
                     }
                   `}
                 >

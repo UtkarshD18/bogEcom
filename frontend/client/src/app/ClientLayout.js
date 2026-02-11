@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import Header from "@/components/Header";
 import NotificationHandler from "@/components/NotificationHandler";
 import OfferPopup from "@/components/OfferPopup";
+import CartDrawer from "@/components/CartDrawer";
 import { CartProvider } from "@/context/CartContext";
 import { ProductProvider } from "@/context/ProductContext";
 import { ReferralProvider } from "@/context/ReferralContext";
@@ -50,6 +51,7 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
       <Footer />
       <OfferPopup />
       <NotificationHandler />
+      <CartDrawer />
     </>
   );
 };

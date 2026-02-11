@@ -1,108 +1,104 @@
 /* ============================================= */
-/* GLOBAL THEME CONFIGURATION                   */
-/* Change colors here to update entire site     */
+/* GEN-Z THEME CONFIGURATION                     */
+/* Vibrant, bold, glassmorphic e-commerce theme  */
 /* ============================================= */
 
 :root {
-  /* ========== PRIMARY COLORS ========== */
-  --color-primary: #059669; /* Main brand color (emerald green) */
-  --color-primary-light: #10b981; /* Lighter primary */
-  --color-primary-dark: #047857; /* Darker primary */
-  --color-primary-rgb: 5, 150, 105; /* RGB for opacity usage */
+    /* ========== PRIMARY COLORS — Vibrant Emerald ========== */
+    --color-primary: #F5C16C;
+    --color-primary-light: #34ffc6;
+    --color-primary-dark: #00b882;
+    --color-primary-rgb: 0, 216, 158;
 
-  /* ========== SECONDARY COLORS ========== */
-  --color-secondary: #02b290; /* Accent color (teal/green) */
-  --color-secondary-light: #04d4a9; /* Lighter secondary */
-  --color-secondary-dark: #019b7d; /* Darker secondary */
-  --color-secondary-rgb: 2, 178, 144; /* RGB for opacity usage */
+    /* ========== SECONDARY — Electric Violet accent ========== */
+    --color-secondary: #7c3aed;
+    --color-secondary-light: #a78bfa;
+    --color-secondary-dark: #5b21b6;
+    --color-secondary-rgb: 124, 58, 237;
 
-  /* ========== NEUTRAL COLORS ========== */
-  --color-text-primary: #1a1a1a; /* Main text */
-  --color-text-secondary: #4a4a4a; /* Secondary text */
-  --color-text-muted: #6b7280; /* Muted text */
-  --color-text-light: #9ca3af; /* Light text */
+    /* ========== ACCENT — Hot Pink / Coral ========== */
+    --color-accent: #ff6b9d;
+    --color-accent-light: #ff9ec0;
+    --color-accent-dark: #e0437a;
 
-  /* ========== BACKGROUND COLORS ========== */
-  --color-bg-primary: #ffffff; /* Main background */
-  --color-bg-secondary: #f9fafb; /* Secondary background */
-  --color-bg-tertiary: #f3f4f6; /* Tertiary background */
-  --color-bg-accent: #fdfbf7; /* Warm accent background */
+    /* ========== NEUTRAL COLORS — High contrast ========== */
+    --color-text-primary: #0f0f0f;
+    --color-text-secondary: #3a3a3a;
+    --color-text-muted: #6b7280;
+    --color-text-light: #9ca3af;
 
-  /* ========== STATUS COLORS ========== */
-  --color-success: #10b981; /* Success green */
-  --color-warning: #f59e0b; /* Warning yellow */
-  --color-error: #ef4444; /* Error red */
-  --color-info: #3b82f6; /* Info blue */
+    /* ========== BACKGROUND COLORS ========== */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f8fafc;
+    --color-bg-tertiary: #f1f5f9;
+    --color-bg-accent: #fdfbf7;
+    --color-bg-dark: #0a0a0a;
+    --color-bg-dark-secondary: #1a1a2e;
 
-  /* ========== BORDER COLORS ========== */
-  --color-border-light: rgba(0, 0, 0, 0.1);
-  --color-border-medium: rgba(0, 0, 0, 0.2);
-  --color-border-dark: rgba(0, 0, 0, 0.3);
+    /* ========== STATUS COLORS — Vivid ========== */
+    --color-success: #F5C16C;
+    --color-warning: #ffb020;
+    --color-error: #ff4757;
+    --color-info: #3b82f6;
 
-  /* ========== SHADOWS ========== */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-  --shadow-glass: 0 8px 30px rgba(0, 0, 0, 0.04);
+    /* ========== BORDER COLORS ========== */
+    --color-border-light: rgba(0, 0, 0, 0.06);
+    --color-border-medium: rgba(0, 0, 0, 0.12);
+    --color-border-dark: rgba(0, 0, 0, 0.2);
 
-  /* ========== GRADIENTS ========== */
-  --gradient-primary: linear-gradient(
-    135deg,
-    var(--color-primary) 0%,
-    var(--color-primary-light) 100%
-  );
-  --gradient-secondary: linear-gradient(
-    135deg,
-    var(--color-secondary) 0%,
-    var(--color-secondary-light) 100%
-  );
-  --gradient-hero: linear-gradient(
-    to right,
-    var(--color-primary),
-    var(--color-primary-light),
-    var(--color-primary)
-  );
+    /* ========== SHADOWS — Layered depth ========== */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+    --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.1), 0 8px 20px rgba(0, 0, 0, 0.06);
+    --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.04);
+    --shadow-neon: 0 0 20px rgba(0, 216, 158, 0.3), 0 0 40px rgba(0, 216, 158, 0.1);
+    --shadow-neon-purple: 0 0 20px rgba(124, 58, 237, 0.3), 0 0 40px rgba(124, 58, 237, 0.1);
 
-  /* ========== TYPOGRAPHY ========== */
-  --font-primary: "Inter", system-ui, -apple-system, sans-serif;
-  --font-heading: "Inter", system-ui, -apple-system, sans-serif;
+    /* ========== GRADIENTS — Bold & vibrant ========== */
+    --gradient-primary: linear-gradient(135deg, #F5C16C 0%, #E5A84D 100%);
+    --gradient-secondary: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+    --gradient-hero: linear-gradient(135deg, #F5C16C 0%, #7c3aed 50%, #ff6b9d 100%);
+    --gradient-sunset: linear-gradient(135deg, #ff6b9d 0%, #ffb020 100%);
+    --gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+    --gradient-dark: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+    --gradient-mesh: radial-gradient(at 40% 20%, rgba(0, 216, 158, 0.15) 0%, transparent 50%),
+        radial-gradient(at 80% 0%, rgba(124, 58, 237, 0.1) 0%, transparent 50%),
+        radial-gradient(at 0% 50%, rgba(255, 107, 157, 0.08) 0%, transparent 50%);
 
-  /* ========== SPACING ========== */
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
-  --spacing-2xl: 3rem;
+    /* ========== TYPOGRAPHY — Modern sans ========== */
+    --font-primary: "Inter", system-ui, -apple-system, sans-serif;
+    --font-heading: "Inter", system-ui, -apple-system, sans-serif;
 
-  /* ========== BORDER RADIUS ========== */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
-  --radius-2xl: 1.5rem;
-  --radius-full: 9999px;
+    /* ========== SPACING ========== */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    --spacing-2xl: 3rem;
 
-  /* ========== TRANSITIONS ========== */
-  --transition-fast: 150ms ease;
-  --transition-normal: 300ms ease;
-  --transition-slow: 500ms ease;
+    /* ========== BORDER RADIUS — Extra round, Gen-Z ========== */
+    --radius-sm: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.25rem;
+    --radius-2xl: 1.75rem;
+    --radius-3xl: 2rem;
+    --radius-full: 9999px;
 
-  /* ========== Z-INDEX ========== */
-  --z-dropdown: 100;
-  --z-sticky: 200;
-  --z-fixed: 300;
-  --z-modal-backdrop: 400;
-  --z-modal: 500;
-  --z-popover: 600;
-  --z-tooltip: 700;
+    /* ========== TRANSITIONS — Smooth & springy ========== */
+    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* ========== Z-INDEX ========== */
+    --z-dropdown: 100;
+    --z-sticky: 200;
+    --z-fixed: 300;
+    --z-modal-backdrop: 400;
+    --z-modal: 500;
+    --z-popover: 600;
+    --z-tooltip: 700;
 }
-
-/* ========== DARK MODE SUPPORT (FUTURE) ========== */
-/* [data-theme="dark"] {
-  --color-bg-primary: #1a1a1a;
-  --color-bg-secondary: #2d2d2d;
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #e5e5e5;
-} */

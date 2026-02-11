@@ -141,11 +141,10 @@ const Search = ({
         {/* Loading/Submit Button - Right side */}
         <button
           type="submit"
-          className={`absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 ${
-            searchTerm
-              ? "bg-[#059669] text-white hover:bg-[#047857]"
-              : "bg-transparent text-gray-400"
-          }`}
+          className={`absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 ${searchTerm
+            ? "bg-primary text-white hover:brightness-90"
+            : "bg-transparent text-gray-400"
+            }`}
           disabled={isLoading}
         >
           {isLoading ? (
@@ -161,7 +160,7 @@ const Search = ({
         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-100 z-50 max-h-96 overflow-y-auto">
           {isLoading ? (
             <div className="p-4 text-center text-gray-500">
-              <div className="w-5 h-5 border-2 border-gray-300 border-t-emerald-500 rounded-full animate-spin mx-auto mb-2" />
+              <div className="w-5 h-5 border-2 border-gray-300 border-t-primary rounded-full animate-spin mx-auto mb-2" />
               Searching...
             </div>
           ) : suggestions.length > 0 ? (
@@ -186,7 +185,7 @@ const Search = ({
                       {product.name}
                     </p>
                     <div className="flex items-center gap-2">
-                      <span className="text-emerald-600 font-semibold text-sm">
+                      <span className="text-primary font-semibold text-sm">
                         ₹{product.price}
                       </span>
                       {product.originalPrice > product.price && (
@@ -200,7 +199,7 @@ const Search = ({
               ))}
               <button
                 onClick={handleSubmit}
-                className="w-full p-3 text-center text-emerald-600 hover:bg-emerald-50 font-medium text-sm transition-colors"
+                className="w-full p-3 text-center text-primary hover:bg-[var(--flavor-glass)] font-medium text-sm transition-colors"
               >
                 View all results for "{searchTerm}"
               </button>

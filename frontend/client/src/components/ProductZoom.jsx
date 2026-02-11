@@ -70,16 +70,15 @@ const ProductZoom = ({
               <SwiperSlide key={index}>
                 <div
                   onClick={() => goToSlide(index)}
-                  className={`cursor-pointer border rounded-lg p-2 transition-all duration-300 ${
-                    activeIndex === index
-                      ? "border-[#059669] shadow-md"
+                  className={`cursor-pointer border rounded-lg p-2 transition-all duration-300 ${activeIndex === index
+                      ? "border-primary shadow-md"
                       : "hover:border-gray-300"
-                  }`}
+                    }`}
                   style={{
                     backgroundColor: "var(--flavor-card-bg, #fffbf5)",
                     borderColor:
                       activeIndex === index
-                        ? "#059669"
+                        ? "var(--primary)"
                         : "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
                   }}
                 >

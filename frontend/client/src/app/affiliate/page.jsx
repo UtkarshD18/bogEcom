@@ -235,7 +235,7 @@ const AffiliatePortalPage = () => {
               <Button
                 variant="contained"
                 sx={{
-                  backgroundColor: "#059669",
+                  backgroundColor: "var(--primary)",
                   "&:hover": { backgroundColor: "#047857" },
                 }}
                 onClick={() => router.push("/affiliate/login")}
@@ -315,7 +315,7 @@ const AffiliatePortalPage = () => {
 
             <div className="bg-white rounded-2xl shadow-sm p-6">
               <div className="flex items-center gap-2 mb-4">
-                <FiTrendingUp className="text-emerald-500" />
+                <FiTrendingUp className="text-primary" />
                 <h3 className="text-lg font-semibold text-gray-800">
                   Recent Orders
                 </h3>

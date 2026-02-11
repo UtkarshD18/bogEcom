@@ -128,7 +128,7 @@ const InfluencerLoginPage = () => {
             type="submit"
             variant="contained"
             sx={{
-              backgroundColor: "#059669",
+              backgroundColor: "var(--primary)",
               "&:hover": { backgroundColor: "#047857" },
             }}
             disabled={loading}

@@ -157,8 +157,8 @@ const OrderDetailsPage = () => {
         label: "Shipped",
       },
       delivered: {
-        color: "text-green-600",
-        bg: "bg-green-50",
+        color: "text-primary",
+        bg: "bg-[var(--flavor-glass)] text-primary",
         icon: MdCheckCircle,
         label: "Delivered",
       },
@@ -194,8 +194,8 @@ const OrderDetailsPage = () => {
         label: "Pending",
       },
       paid: {
-        color: "text-green-600",
-        bg: "bg-green-50",
+        color: "text-primary",
+        bg: "bg-[var(--flavor-glass)] text-primary",
         icon: MdCheckCircle,
         label: "Paid",
       },
@@ -281,7 +281,7 @@ const OrderDetailsPage = () => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <CircularProgress sx={{ color: "#059669" }} />
+          <CircularProgress sx={{ color: "var(--primary)" }} />
           <p className="mt-4 text-gray-600">Loading order details...</p>
         </div>
       </div>
@@ -304,7 +304,7 @@ const OrderDetailsPage = () => {
             <Link href="/my-orders">
               <Button
                 sx={{
-                  backgroundColor: "#059669",
+                  backgroundColor: "var(--primary)",
                   color: "white",
                   padding: "12px 24px",
                   borderRadius: "12px",
@@ -337,7 +337,7 @@ const OrderDetailsPage = () => {
             <Link href="/my-orders">
               <Button
                 sx={{
-                  backgroundColor: "#059669",
+                  backgroundColor: "var(--primary)",
                   color: "white",
                   padding: "12px 24px",
                   borderRadius: "12px",
@@ -363,11 +363,11 @@ const OrderDetailsPage = () => {
     Number(order?.subtotal || 0) > 0
       ? Number(order.subtotal || 0)
       : Math.max(
-          Number(order?.totalAmt || 0) -
-            Number(order?.tax || 0) -
-            Number(order?.shipping || 0),
-          0,
-        );
+        Number(order?.totalAmt || 0) -
+        Number(order?.tax || 0) -
+        Number(order?.shipping || 0),
+        0,
+      );
   const canDownloadInvoice =
     order?.order_status !== "cancelled" &&
     (order?.payment_status === "paid" || order?.order_status === "confirmed");
@@ -454,7 +454,7 @@ const OrderDetailsPage = () => {
                     onClick={handleRetryPayment}
                     variant="contained"
                     sx={{
-                      backgroundColor: "#059669",
+                      backgroundColor: "var(--primary)",
                       color: "white",
                       padding: "10px 24px",
                       borderRadius: "10px",
@@ -518,13 +518,13 @@ const OrderDetailsPage = () => {
                 <span>₹{displaySubtotal.toFixed(2)}</span>
               </div>
               {Number(order.membershipDiscount || 0) > 0 && (
-                <div className="flex justify-between text-green-600">
+                <div className="flex justify-between text-primary">
                   <span>Membership Discount</span>
                   <span>-₹{Number(order.membershipDiscount || 0).toFixed(2)}</span>
                 </div>
               )}
               {order.discount > 0 && (
-                <div className="flex justify-between text-green-600">
+                <div className="flex justify-between text-primary">
                   <span>
                     Discount {order.couponCode && `(${order.couponCode})`}
                   </span>
@@ -532,7 +532,7 @@ const OrderDetailsPage = () => {
                 </div>
               )}
               {Number(order?.coinRedemption?.amount || 0) > 0 && (
-                <div className="flex justify-between text-green-600">
+                <div className="flex justify-between text-primary">
                   <span>
                     Coin Redemption ({Number(order?.coinRedemption?.coinsUsed || 0)} coins)
                   </span>
@@ -541,7 +541,7 @@ const OrderDetailsPage = () => {
               )}
               {order.discountAmount > 0 &&
                 order.discountAmount !== order.discount && (
-                  <div className="flex justify-between text-green-600">
+                  <div className="flex justify-between text-primary">
                     <span>Coupon Discount</span>
                     <span>-₹{order.discountAmount?.toFixed(2)}</span>
                   </div>
@@ -557,7 +557,7 @@ const OrderDetailsPage = () => {
                 </span>
                 <span
                   className={
-                    order.shipping === 0 ? "text-green-600 font-medium" : ""
+                    order.shipping === 0 ? "text-primary font-medium" : ""
                   }
                 >
                   {order.shipping === 0
@@ -592,11 +592,11 @@ const OrderDetailsPage = () => {
                 </p>
                 {(order.delivery_address.address_line2 ||
                   order.delivery_address.addressLine2) && (
-                  <p>
-                    {order.delivery_address.address_line2 ||
-                      order.delivery_address.addressLine2}
-                  </p>
-                )}
+                    <p>
+                      {order.delivery_address.address_line2 ||
+                        order.delivery_address.addressLine2}
+                    </p>
+                  )}
                 <p>
                   {order.delivery_address.city
                     ? `${order.delivery_address.city}, `
@@ -704,8 +704,8 @@ const OrderDetailsPage = () => {
               <Button
                 variant="outlined"
                 sx={{
-                  borderColor: "#059669",
-                  color: "#059669",
+                  borderColor: "var(--primary)",
+                  color: "var(--primary)",
                   padding: "12px 24px",
                   borderRadius: "12px",
                   fontWeight: 600,
@@ -723,7 +723,7 @@ const OrderDetailsPage = () => {
             <Link href="/products">
               <Button
                 sx={{
-                  backgroundColor: "#059669",
+                  backgroundColor: "var(--primary)",
                   color: "white",
                   padding: "12px 24px",
                   borderRadius: "12px",
@@ -771,7 +771,7 @@ const OrderDetailsPage = () => {
             onClick={() => setShowPaymentModal(false)}
             fullWidth
             sx={{
-              backgroundColor: "#059669",
+              backgroundColor: "var(--primary)",
               color: "white",
               padding: "12px",
               borderRadius: "10px",

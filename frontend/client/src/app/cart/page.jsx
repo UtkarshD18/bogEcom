@@ -1,218 +1,205 @@
 "use client";
+
 import { useCart } from "@/context/CartContext";
-import { Button, CircularProgress } from "@mui/material";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { MdRemoveShoppingCart } from "react-icons/md";
+import { useProducts } from "@/context/ProductContext";
+import { useSettings } from "@/context/SettingsContext";
 import { round2 } from "@/utils/gst";
-import CartItems from "./cartItems";
+import { getImageUrl } from "@/utils/imageUtils";
+import Link from "next/link";
+import { MdAdd, MdDeleteOutline, MdRemove, MdShoppingBag } from "react-icons/md";
 
-const Cart = () => {
-  const { cartItems, cartCount, cartTotal, loading, clearCart } = useCart();
-  const router = useRouter();
+export default function CartPage() {
+    const {
+        cartItems,
+        removeFromCart,
+        updateQuantity,
+        cartSubTotalAmount,
+    } = useCart();
+    const { products } = useProducts();
+    const { calculateShipping } = useSettings();
+    const subtotal = round2(cartSubTotalAmount || 0);
+    const shippingCost =
+        cartItems.length > 0 ? round2(calculateShipping(subtotal)) : 0;
+    const total = round2(subtotal + shippingCost);
+    const isFreeShipping = shippingCost === 0;
 
-  // Calculate totals
-  const subtotal = round2(
-    (cartItems || []).reduce(
-      (sum, item) =>
-        sum +
-        round2(Number(item?.price || 0) * Math.max(Number(item?.quantity || 1), 0)),
-      0,
-    ),
-  );
-  const shipping = subtotal > 500 ? 0 : 50; // Free shipping over ₹500
-  const total = round2(subtotal + shipping);
+    const resolveProductId = (item) => {
+        if (!item) return null;
+        if (item.product && typeof item.product === "object") {
+            return item.product._id || item.product.id || null;
+        }
+        if (item.product) return item.product;
+        if (item.productData) return item.productData._id || item.productData.id || null;
+        return item._id || item.id || null;
+    };
 
-  if (loading && cartItems.length === 0) {
-    return (
-      <section className="bg-gray-100 py-8 min-h-[60vh]">
-        <div className="container mx-auto px-4 flex items-center justify-center">
-          <CircularProgress style={{ color: "#059669" }} />
-        </div>
-      </section>
-    );
-  }
+    const resolveProductData = (item) => {
+        if (item?.product && typeof item.product === "object") return item.product;
+        if (item?.productData) return item.productData;
+        const productId = resolveProductId(item);
+        const fallback = products?.find(
+            (p) => String(p?._id || p?.id) === String(productId),
+        );
+        return fallback || item;
+    };
 
-  if (cartItems.length === 0) {
-    return (
-      <section className="bg-gray-100 py-8 min-h-[60vh]">
-        <div className="container mx-auto px-4">
-          <div className="bg-white rounded-lg shadow-md p-10 text-center max-w-lg mx-auto">
-            <MdRemoveShoppingCart className="text-8xl text-gray-300 mx-auto mb-6" />
-            <h2 className="text-2xl font-semibold text-gray-800 mb-3">
-              Your Cart is Empty
-            </h2>
-            <p className="text-gray-500 mb-6">
-              Looks like you haven't added anything to your cart yet.
-            </p>
-            <Link href="/products">
-              <Button
-                sx={{
-                  backgroundColor: "#059669",
-                  color: "white",
-                  textTransform: "none",
-                  fontWeight: 600,
-                  padding: "12px 32px",
-                  borderRadius: "8px",
-                  "&:hover": {
-                    backgroundColor: "#a04a17",
-                  },
-                }}
-              >
-                Start Shopping
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </section>
-    );
-  }
+    // Helper to normalize cart item data
+    const getItemData = (item) => {
+        const product = resolveProductData(item);
+        const productId = resolveProductId(item);
 
-  return (
-    <section className="bg-gray-100 py-4 sm:py-8 min-h-[60vh]">
-      <div className="container mx-auto px-3 sm:px-4">
-        <div className="flex flex-col lg:flex-row w-full gap-4 sm:gap-8 items-start">
-          {/* Cart Items */}
-          <div className="col1 bg-white rounded-lg shadow-md flex-1 w-full">
-            <div className="p-3 sm:p-5 border-b border-gray-200 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg sm:text-xl text-gray-800 font-semibold">
-                  Shopping Cart
-                </h2>
-                <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                  {cartCount} {cartCount === 1 ? "item" : "items"} in your cart
-                </p>
-              </div>
-              <Button
-                variant="text"
-                onClick={clearCart}
-                disabled={loading}
-                sx={{
-                  color: "#dc2626",
-                  textTransform: "none",
-                  fontSize: "14px",
-                  "&:hover": {
-                    backgroundColor: "rgba(220, 38, 38, 0.05)",
-                  },
-                }}
-              >
-                Clear Cart
-              </Button>
-            </div>
+        return {
+            id: productId || product?._id || product?.id || item._id || item.id,
+            name: product?.name || item?.name || item?.title || "Product",
+            image:
+                product?.thumbnail ||
+                product?.images?.[0] ||
+                item?.image ||
+                "/product_1.png",
+            price: Number(product?.price || item?.price || 0),
+            brand: product?.brand || item?.brand || "BOG",
+            quantity: Number(item?.quantity || 1),
+            quantityUnit:
+                product?.quantityUnit || item?.quantityUnit || "Per Unit",
+        };
+    };
 
-            {/* Cart Items List */}
-            <div className="divide-y divide-gray-100">
-              {cartItems.map((item, index) => (
-                <CartItems
-                  key={item.product?._id || item.product || index}
-                  item={item}
-                />
-              ))}
-            </div>
-
-            {/* Continue Shopping */}
-            <div className="p-5 border-t border-gray-200">
-              <Link href="/products">
-                <Button
-                  variant="outlined"
-                  sx={{
-                    borderColor: "#059669",
-                    color: "#059669",
-                    textTransform: "none",
-                    fontWeight: 500,
-                    "&:hover": {
-                      borderColor: "#a04a17",
-                      backgroundColor: "rgba(193, 89, 28, 0.05)",
-                    },
-                  }}
+    if (cartItems.length === 0) {
+        return (
+            <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
+                <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-6 animate-bounce">
+                    <MdShoppingBag size={48} className="text-gray-300" />
+                </div>
+                <h1 className="text-2xl font-black text-gray-900 mb-2">Your cart is empty</h1>
+                <p className="text-gray-500 mb-8 max-w-xs">Looks like you haven't added any peanut butter goodness yet!</p>
+                <Link
+                    href="/products"
+                    className="px-8 py-4 bg-primary text-white font-black rounded-2xl shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95"
                 >
-                  ← Continue Shopping
-                </Button>
-              </Link>
-            </div>
-          </div>
-
-          {/* Cart Summary */}
-          <div className="col2 w-full lg:w-[350px]">
-            <div
-              className="bg-white rounded-lg shadow-md sticky"
-              style={{ top: "calc(var(--header-height, 60px) + 20px)" }}
-            >
-              <div className="p-5 border-b border-gray-200">
-                <h2 className="text-xl text-gray-800 font-semibold">
-                  Order Summary
-                </h2>
-              </div>
-
-              <div className="p-5 space-y-4">
-                <div className="flex items-center justify-between text-gray-600">
-                  <span>Subtotal ({cartCount} items)</span>
-                  <span className="font-medium">
-                    ₹{subtotal.toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-gray-600">
-                  <span>Shipping</span>
-                  <span
-                    className={`font-medium ${shipping === 0 ? "text-green-600" : ""}`}
-                  >
-                    {shipping === 0 ? "FREE" : `₹${shipping}`}
-                  </span>
-                </div>
-
-                {subtotal > 0 && subtotal < 500 && (
-                  <p className="text-xs text-gray-500 bg-yellow-50 p-2 rounded">
-                    Add ₹{(500 - subtotal).toLocaleString()} more for FREE
-                    shipping!
-                  </p>
-                )}
-
-                <div className="border-t pt-4 flex items-center justify-between text-lg font-bold text-gray-800">
-                  <span>Total</span>
-                  <span className="text-[#059669]">
-                    ₹{total.toLocaleString()}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-5 pt-0">
-                <Link href="/checkout" className="block">
-                  <Button
-                    fullWidth
-                    disabled={loading || cartItems.length === 0}
-                    sx={{
-                      backgroundColor: "#059669",
-                      color: "white",
-                      textTransform: "none",
-                      fontWeight: 600,
-                      padding: "14px 20px",
-                      borderRadius: "8px",
-                      fontSize: "16px",
-                      "&:hover": {
-                        backgroundColor: "#a04a17",
-                      },
-                      "&:disabled": {
-                        backgroundColor: "#ccc",
-                        color: "#666",
-                      },
-                    }}
-                  >
-                    Proceed to Checkout
-                  </Button>
+                    Start Shopping
                 </Link>
-
-                <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
-                  <span>🔒</span>
-                  <span>Secure checkout with PhonePe</span>
-                </div>
-              </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
+        );
+    }
 
-export default Cart;
+    return (
+        <div className="min-h-screen pb-20 pt-10 px-4">
+            <div className="max-w-6xl mx-auto">
+                <h1 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tight mb-10">
+                    Your <span className="text-primary">Cart</span>
+                </h1>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                    {/* Cart Items List */}
+                    <div className="lg:col-span-2 space-y-6">
+                        {cartItems.map((item, index) => {
+                            const data = getItemData(item);
+                            const productId = resolveProductId(item);
+                            return (
+                                <div
+                                    key={data.id || index}
+                                    className="group relative flex flex-col sm:flex-row gap-6 p-6 rounded-[2.5rem] bg-white border border-gray-100 shadow-sm hover:shadow-xl hover:border-primary/20 transition-all duration-500"
+                                >
+                                    {/* Image */}
+                                    <div className="w-full sm:w-32 h-32 rounded-3xl overflow-hidden bg-white flex items-center justify-center shrink-0 border border-gray-100 group-hover:scale-105 transition-transform duration-500 p-2">
+                                        <img
+                                            src={getImageUrl(data.image)}
+                                            alt={data.name}
+                                            className="w-full h-full object-contain"
+                                        />
+                                    </div>
+
+                                    {/* Details */}
+                                    <div className="flex-1 flex flex-col justify-between py-2">
+                                        <div>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">{data.brand}</p>
+                                                    <h3 className="text-lg font-black text-gray-900 leading-tight group-hover:text-emerald-600 transition-colors uppercase tracking-tight">
+                                                        {data.name}
+                                                    </h3>
+                                                </div>
+                                                <button
+                                                    onClick={() => removeFromCart(productId || data.id)}
+                                                    className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all active:scale-90"
+                                                >
+                                                    <MdDeleteOutline size={24} />
+                                                </button>
+                                            </div>
+                                            <p className="text-sm text-gray-400 font-medium">Quantity Basis: {data.quantityUnit}</p>
+                                        </div>
+
+                                        <div className="flex items-center justify-between mt-auto">
+                                            <div className="flex items-center gap-4 bg-gray-50 p-1 rounded-2xl border border-gray-100">
+                                                <button
+                                                    onClick={() => updateQuantity(productId || data.id, Number(data.quantity) - 1)}
+                                                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
+                                                >
+                                                    <MdRemove size={18} />
+                                                </button>
+                                                <span className="text-lg font-black w-6 text-center text-gray-900">{data.quantity}</span>
+                                                <button
+                                                    onClick={() => updateQuantity(productId || data.id, Number(data.quantity) + 1)}
+                                                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
+                                                >
+                                                    <MdAdd size={18} />
+                                                </button>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-xs text-gray-400 font-bold line-through">₹{data.price * 1.5 * data.quantity}</p>
+                                                <p className="text-2xl font-black text-primary tracking-tight">₹{data.price * data.quantity}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Order Summary */}
+                    <div className="lg:col-span-1">
+                        <div className="sticky top-32 p-8 rounded-[3rem] bg-gray-900 text-white shadow-2xl overflow-hidden">
+                            {/* Decorative Glow */}
+                            <div className="absolute top-[-20%] right-[-20%] w-40 h-40 bg-emerald-500/20 blur-[80px] rounded-full pointer-events-none" />
+
+                            <h2 className="text-2xl font-black mb-8 border-b border-white/10 pb-4 tracking-tight">Summary</h2>
+
+                            <div className="space-y-4 mb-8">
+                                <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-[11px]">
+                                    <span>Subtotal</span>
+                                    <span className="text-white">₹{subtotal}</span>
+                                </div>
+                                <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-[11px]">
+                                    <span>Shipping</span>
+                                    <span className={isFreeShipping ? "text-emerald-400" : "text-white"}>
+                                        {isFreeShipping ? "FREE" : `₹${shippingCost}`}
+                                    </span>
+                                </div>
+                                <div className="pt-6 border-t border-white/10 flex justify-between items-end">
+                                    <div>
+                                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[11px] mb-1">Total Amount</p>
+                                        <p className="text-3xl font-black text-white tracking-tight">₹{total}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-emerald-400 font-black text-xs">SAVING ₹450</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Link
+                                href="/checkout"
+                                className="w-full py-5 bg-emerald-500 text-gray-900 font-black text-center rounded-2xl block shadow-xl shadow-emerald-500/20 hover:bg-emerald-400 transform hover:scale-[1.02] active:scale-95 transition-all"
+                            >
+                                CHECKOUT NOW
+                            </Link>
+
+                            <p className="text-center text-[10px] text-gray-500 mt-6 font-bold uppercase tracking-widest">
+                                🔒 Secure Checkout Powered by Razorpay
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

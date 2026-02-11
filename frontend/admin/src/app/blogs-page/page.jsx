@@ -200,11 +200,48 @@ export default function BlogsPageEditor() {
                       theme: { ...content.theme, style: e.target.value },
                     })
                   }
+                  renderValue={(selected) => (
+                    <div className="flex items-center gap-2 capitalize">
+                      {selected}
+                    </div>
+                  )}
                 >
-                  <MenuItem value="mint">Mint</MenuItem>
-                  <MenuItem value="sky">Sky</MenuItem>
-                  <MenuItem value="aurora">Aurora</MenuItem>
-                  <MenuItem value="lavender">Lavender</MenuItem>
+                  <MenuItem value="mint">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full bg-emerald-500 shadow-sm" />
+                      Mint
+                    </div>
+                  </MenuItem>
+                  <MenuItem value="sky">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full bg-sky-500 shadow-sm" />
+                      Sky
+                    </div>
+                  </MenuItem>
+                  <MenuItem value="aurora">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full bg-lime-500 shadow-sm" />
+                      Aurora
+                    </div>
+                  </MenuItem>
+                  <MenuItem value="lavender">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full bg-indigo-500 shadow-sm" />
+                      Lavender
+                    </div>
+                  </MenuItem>
+                  <MenuItem value="sunset">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full bg-orange-500 shadow-sm" />
+                      Sunset
+                    </div>
+                  </MenuItem>
+                  <MenuItem value="midnight">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full bg-slate-800 shadow-sm" />
+                      Midnight
+                    </div>
+                  </MenuItem>
                 </Select>
               </FormControl>
               <FormControl fullWidth size="small">

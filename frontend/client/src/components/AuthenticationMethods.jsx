@@ -56,11 +56,10 @@ const AuthenticationMethods = () => {
               <MdVerifiedUser className="text-green-500" />
             )}
             <span
-              className={`text-sm px-2 py-1 rounded ${
-                authMethods.hasEmail
-                  ? "bg-green-100 text-green-700"
+              className={`text-sm px-2 py-1 rounded ${authMethods.hasEmail
+                  ? "bg-[var(--flavor-glass)] text-primary"
                   : "bg-gray-100 text-gray-500"
-              }`}
+                }`}
             >
               {authMethods.hasEmail ? "Active" : "Not Set"}
             </span>
@@ -85,11 +84,10 @@ const AuthenticationMethods = () => {
               <MdVerifiedUser className="text-green-500" />
             )}
             <span
-              className={`text-sm px-2 py-1 rounded ${
-                authMethods.hasGoogle
-                  ? "bg-green-100 text-green-700"
+              className={`text-sm px-2 py-1 rounded ${authMethods.hasGoogle
+                  ? "bg-[var(--flavor-glass)] text-primary"
                   : "bg-gray-100 text-gray-500"
-              }`}
+                }`}
             >
               {authMethods.hasGoogle ? "Connected" : "Not Connected"}
             </span>

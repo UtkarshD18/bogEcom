@@ -112,17 +112,19 @@ export const WishlistProvider = ({ children }) => {
         if (data.success) {
           setWishlistItems(data.data.items || []);
           setWishlistCount(data.data.itemCount || data.data.items?.length || 0);
-          toast.success(`${product.name} added to wishlist!`);
+          toast.success("Item added to wishlist");
           return { success: true };
         }
       }
 
       // Fallback to local storage
       addToWishlistLocal(product);
+      toast.success("Item added to wishlist");
       return { success: true };
     } catch (error) {
       console.error("Error adding to wishlist:", error);
       addToWishlistLocal(product);
+      toast.success("Item added to wishlist");
       return { success: true };
     } finally {
       setLoading(false);
@@ -157,8 +159,6 @@ export const WishlistProvider = ({ children }) => {
       saveToLocalStorage(newItems);
       return newItems;
     });
-
-    toast.success(`${product.name} added to wishlist!`);
   };
 
   // Remove from wishlist
@@ -185,17 +185,19 @@ export const WishlistProvider = ({ children }) => {
         if (data.success) {
           setWishlistItems(data.data.items || []);
           setWishlistCount(data.data.itemCount || data.data.items?.length || 0);
-          toast.success("Removed from wishlist");
+          toast.success("Item removed from wishlist");
           return { success: true };
         }
       }
 
       // Fallback to local storage
       removeFromWishlistLocal(productId);
+      toast.success("Item removed from wishlist");
       return { success: true };
     } catch (error) {
       console.error("Error removing from wishlist:", error);
       removeFromWishlistLocal(productId);
+      toast.success("Item removed from wishlist");
       return { success: true };
     } finally {
       setLoading(false);
@@ -212,7 +214,6 @@ export const WishlistProvider = ({ children }) => {
       saveToLocalStorage(newItems);
       return newItems;
     });
-    toast.success("Removed from wishlist");
   };
 
   // Toggle wishlist (add or remove)

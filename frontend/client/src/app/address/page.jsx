@@ -389,7 +389,7 @@ const AddressPage = () => {
             <AccountSidebar />
           </div>
           <div className="flex-1 flex items-center justify-center py-20">
-            <CircularProgress sx={{ color: "#059669" }} />
+            <CircularProgress sx={{ color: "var(--primary)" }} />
           </div>
         </div>
       </section>
@@ -417,7 +417,7 @@ const AddressPage = () => {
               <Button
                 onClick={handleAddNew}
                 sx={{
-                  backgroundColor: "#059669",
+                  backgroundColor: "var(--primary)",
                   color: "white",
                   textTransform: "none",
                   borderRadius: "8px",
@@ -441,7 +441,7 @@ const AddressPage = () => {
                   <Button
                     onClick={handleAddNew}
                     sx={{
-                      backgroundColor: "#059669",
+                      backgroundColor: "var(--primary)",
                       color: "white",
                       textTransform: "none",
                       borderRadius: "8px",
@@ -456,11 +456,10 @@ const AddressPage = () => {
                   {addresses.map((address) => (
                     <div
                       key={address._id}
-                      className={`relative p-4 rounded-lg border-2 transition-all ${
-                        address.selected
-                          ? "border-orange-500 bg-orange-50"
-                          : "border-gray-200 bg-gray-50 hover:border-orange-300"
-                      }`}
+                      className={`relative p-4 rounded-lg border-2 transition-all ${address.selected
+                        ? "border-orange-500 bg-orange-50"
+                        : "border-gray-200 bg-gray-50 hover:border-orange-300"
+                        }`}
                     >
                       {address.selected && (
                         <span className="absolute top-2 right-2 bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -493,7 +492,7 @@ const AddressPage = () => {
                           onClick={() => handleEdit(address)}
                           sx={{
                             textTransform: "none",
-                            color: "#059669",
+                            color: "var(--primary)",
                             minWidth: "auto",
                           }}
                         >
@@ -523,7 +522,7 @@ const AddressPage = () => {
                             onClick={() => handleSetDefault(address._id)}
                             sx={{
                               textTransform: "none",
-                              color: "#059669",
+                              color: "var(--primary)",
                               minWidth: "auto",
                               marginLeft: "auto",
                             }}
@@ -705,7 +704,7 @@ const AddressPage = () => {
             onClick={handleSave}
             disabled={saving}
             sx={{
-              backgroundColor: "#059669",
+              backgroundColor: "var(--primary)",
               color: "white",
               textTransform: "none",
               "&:hover": { backgroundColor: "#a04a17" },
