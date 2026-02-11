@@ -19,6 +19,11 @@ const normalizeState = (value) =>
     .trim()
     .toLowerCase();
 
+const normalizeStateCode = (value) => {
+  const cleaned = String(value || "").replace(/\D/g, "");
+  return cleaned ? cleaned.padStart(2, "0") : "";
+};
+
 const ensureInvoiceDirectory = async () => {
   await fsPromises.mkdir(INVOICE_DIR, { recursive: true });
 };
@@ -189,7 +194,7 @@ const drawTableHeader = (doc, y) => {
   doc.text("Gross", cols.gross + 2, y + 5, { width: 52 });
   doc.text("Discount", cols.discount + 2, y + 5, { width: 52 });
   doc.text("Taxable", cols.taxable + 2, y + 5, { width: 58 });
-  doc.text("Tax", cols.tax + 2, y + 5, { width: 58 });
+  doc.text("GST", cols.tax + 2, y + 5, { width: 58 });
   doc.text("Total", cols.total + 2, y + 5, { width: 56 });
   doc.fillColor("black");
 
@@ -261,8 +266,17 @@ const resolveSellerDetails = (sellerDetails = {}) => {
 const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
   const seller = resolveSellerDetails(sellerDetails);
   const buyerAddress = resolveBuyerAddress(order);
-  // Always treat GST as IGST-only for this project.
-  const isInterState = true;
+  const sellerState = normalizeState(seller.state);
+  const buyerState = normalizeState(buyerAddress?.state);
+  const sellerStateCode = normalizeStateCode(seller.placeOfSupplyStateCode);
+  const buyerStateCode = normalizeStateCode(
+    buyerAddress?.stateCode || buyerAddress?.state_code || "",
+  );
+  const isInterState = sellerStateCode && buyerStateCode
+    ? sellerStateCode !== buyerStateCode
+    : sellerState && buyerState
+      ? sellerState !== buyerState
+      : true;
   const gstRate = Number(order?.gst?.rate || DEFAULT_TAX_RATE);
 
   const products = Array.isArray(order?.products) ? order.products : [];
@@ -327,10 +341,9 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
     const lineTaxRate = Number(meta?.taxRate || gstRate || 0);
     const hsn = String(meta?.hsn || DEFAULT_HSN);
 
-    // IGST-only.
-    const igst = lineTax;
-    const cgst = 0;
-    const sgst = 0;
+    const igst = isInterState ? lineTax : 0;
+    const cgst = isInterState ? 0 : roundMoney(lineTax / 2);
+    const sgst = isInterState ? 0 : roundMoney(lineTax - cgst);
 
     return {
       description: item?.productTitle || "Product",
@@ -348,10 +361,11 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
     };
   });
 
+  const halfTax = roundMoney(taxTotal / 2);
   const taxBreakup = {
-    igst: taxTotal,
-    cgst: 0,
-    sgst: 0,
+    igst: isInterState ? taxTotal : 0,
+    cgst: isInterState ? 0 : halfTax,
+    sgst: isInterState ? 0 : roundMoney(taxTotal - halfTax),
   };
 
   return {
@@ -441,8 +455,19 @@ export const generateInvoicePdf = async ({
     const { lineItems, summary, taxBreakup } = invoiceData;
     const currencySymbol = seller.currencySymbol || "Rs. ";
 
-    doc.font("Helvetica-Bold").fontSize(14).text("TAX INVOICE - Original for Recipient", 40, y);
-    y += 22;
+    doc.fillColor("#111827");
+    doc.font("Helvetica-Bold").fontSize(18).text(seller.name, 40, y);
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(12)
+      .text("TAX INVOICE", 360, y + 2, { width: 175, align: "right" });
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .fillColor("#6b7280")
+      .text("Original for Recipient", 360, y + 18, { width: 175, align: "right" });
+    doc.fillColor("#111827");
+    y += 30;
 
     y = drawMetadataRow(doc, "Invoice Number:", invoiceNumber, "Order ID:", String(order._id), y);
     y = drawMetadataRow(doc, "Invoice Date:", formatDate(invoiceDate), "Order Date:", formatDate(orderDate), y);
@@ -516,7 +541,7 @@ export const generateInvoicePdf = async ({
       .fontSize(8)
       .fillColor("#374151")
       .text(
-        "This is a computer generated invoice and does not require signature.",
+        "This is a computer generated invoice and does not require a signature.",
         40,
         y,
         { width: 495, align: "center" },

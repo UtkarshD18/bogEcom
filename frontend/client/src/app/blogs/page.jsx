@@ -700,9 +700,19 @@ export default function BlogPage() {
                 {newsletterStatus === "loading" ||
                 newsletterStatus === "success"
                   ? ""
-                  : "→"}
-              </button>
+                  : "→"}              </button>
             </form>
+            {newsletterMessage && (
+              <p
+                className={`text-sm mt-4 ${
+                  newsletterStatus === "success"
+                    ? "text-emerald-400"
+                    : "text-rose-300"
+                }`}
+              >
+                {newsletterMessage}
+              </p>
+            )}
 
             {pageConfig?.newsletter?.note && (
               <p className="text-xs text-gray-500 mt-6">
@@ -725,3 +735,4 @@ export default function BlogPage() {
     </main>
   );
 }
+
