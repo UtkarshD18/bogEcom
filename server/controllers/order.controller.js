@@ -547,7 +547,7 @@ const getOrderProductMetadata = async (order) => {
   if (productIds.length === 0) return {};
 
   const products = await ProductModel.find({ _id: { $in: productIds } })
-    .select("_id specifications")
+    .select("_id specifications unit weight")
     .lean();
 
   const metadata = {};
@@ -555,6 +555,8 @@ const getOrderProductMetadata = async (order) => {
     const hsn = extractHsnFromSpecifications(product?.specifications);
     metadata[String(product._id)] = {
       hsn: hsn ? String(hsn) : process.env.INVOICE_DEFAULT_HSN || "2106",
+      unit: product?.unit || "",
+      weight: Number(product?.weight || 0),
     };
   });
 

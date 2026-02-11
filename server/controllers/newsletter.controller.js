@@ -96,7 +96,7 @@ const getWelcomeEmailTemplate = (email) => {
         © ${new Date().getFullYear()} BuyOneGram. All rights reserved.
       </p>
       <p style="color: #888888; font-size: 12px; margin: 0;">
-        You're receiving this email because you subscribed at ${email}
+        You're receiving this email because you subscribed to BuyOneGram updates.
       </p>
     </div>
   </div>
