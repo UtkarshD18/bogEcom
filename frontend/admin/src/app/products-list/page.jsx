@@ -15,8 +15,8 @@ import TableHead from "@mui/material/TableHead";
 import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FaRegTrashAlt } from "react-icons/fa";
 import { FiSearch } from "react-icons/fi";
@@ -31,14 +31,18 @@ const columns = [
   { id: "PRODUCT", label: "PRODUCT", minWidth: 300 },
   { id: "CATEGORY", label: "CATEGORY", minWidth: 100 },
   { id: "PRICE", label: "PRICE", minWidth: 100 },
+  { id: "AVAILABLE", label: "AVAILABLE", minWidth: 90 },
+  { id: "RESERVED", label: "RESERVED", minWidth: 90 },
+  { id: "LOWSTOCK", label: "LOW STOCK", minWidth: 120 },
   { id: "DEMAND", label: "DEMAND STATUS", minWidth: 120 },
   { id: "RATING", label: "RATING", minWidth: 100 },
   { id: "ACTIONS", label: "ACTIONS", minWidth: 200 },
 ];
 
-const ProductsList = () => {
+const ProductsListContent = () => {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -48,6 +52,7 @@ const ProductsList = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalProducts, setTotalProducts] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [lowStockOnly, setLowStockOnly] = useState(false);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -66,6 +71,7 @@ const ProductsList = () => {
       let url = `/api/products?page=${page + 1}&limit=${rowsPerPage}`;
       if (category) url += `&category=${category}`;
       if (search) url += `&search=${search}`;
+      if (lowStockOnly) url += `&lowStock=true`;
 
       const response = await getData(url, token);
       if (response.success) {
@@ -81,7 +87,7 @@ const ProductsList = () => {
       setTotalProducts(0);
     }
     setIsLoading(false);
-  }, [page, rowsPerPage, category, search, token]);
+  }, [page, rowsPerPage, category, search, lowStockOnly, token]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -102,6 +108,11 @@ const ProductsList = () => {
     fetchProducts,
     fetchCategories,
   ]);
+
+  useEffect(() => {
+    const lowStockParam = searchParams?.get("lowStock");
+    setLowStockOnly(lowStockParam === "true");
+  }, [searchParams]);
 
   const handleDeleteProduct = async (productId) => {
     if (!confirm("Are you sure you want to delete this product?")) return;
@@ -156,6 +167,20 @@ const ProductsList = () => {
     fetchProducts();
   };
 
+  const handleToggleLowStock = () => {
+    const next = !lowStockOnly;
+    setLowStockOnly(next);
+    setPage(0);
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    if (next) {
+      params.set("lowStock", "true");
+    } else {
+      params.delete("lowStock");
+    }
+    const queryString = params.toString();
+    router.push(`/products-list${queryString ? `?${queryString}` : ""}`);
+  };
+
   if (loading || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -179,9 +204,9 @@ const ProductsList = () => {
       </div>
 
       <div className="w-full p-4 rounded-md shadow-md bg-white mt-3">
-        <div className="flex items-center justify-between mb-3 gap-4 flex-wrap">
-          <div className="col w-[200px]">
-            <h6 className="mb-1 text-[14px] text-gray-700">Category By</h6>
+          <div className="flex items-center justify-between mb-3 gap-4 flex-wrap">
+            <div className="col w-[200px]">
+              <h6 className="mb-1 text-[14px] text-gray-700">Category By</h6>
             <Select
               value={category}
               onChange={handleChangeCategory}
@@ -199,11 +224,11 @@ const ProductsList = () => {
                 </MenuItem>
               ))}
             </Select>
-          </div>
+            </div>
 
-          <form onSubmit={handleSearch} className="flex items-center gap-2">
-            <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <form onSubmit={handleSearch} className="flex items-center gap-2">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search products..."
@@ -212,14 +237,20 @@ const ProductsList = () => {
                 className="pl-10 pr-4 py-2 border border-gray-300 rounded-md w-[300px] outline-none focus:border-blue-500"
               />
             </div>
-            <Button
-              type="submit"
-              className="!bg-blue-600 !text-white !px-4 !py-2 !rounded-md"
-            >
-              Search
-            </Button>
-          </form>
-        </div>
+              <Button
+                type="submit"
+                className="!bg-blue-600 !text-white !px-4 !py-2 !rounded-md"
+              >
+                Search
+              </Button>
+            </form>
+            <Chip
+              label="Low Stock Only"
+              onClick={handleToggleLowStock}
+              color={lowStockOnly ? "error" : "default"}
+              variant={lowStockOnly ? "filled" : "outlined"}
+            />
+          </div>
 
         {isLoading ? (
           <div className="flex justify-center py-8">
@@ -247,8 +278,25 @@ const ProductsList = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {products.map((product, index) => (
-                    <TableRow key={product._id || index}>
+                  {products.map((product, index) => {
+                    const available =
+                      typeof product.available_quantity === "number"
+                        ? product.available_quantity
+                        : Math.max(
+                            Number(product.stock_quantity ?? product.stock ?? 0) -
+                              Number(product.reserved_quantity ?? 0),
+                            0,
+                          );
+                    const reserved = Number(product.reserved_quantity ?? 0);
+                    const lowThreshold = Number(
+                      product.low_stock_threshold ??
+                        product.lowStockThreshold ??
+                        5,
+                    );
+                    const isLowStock = available <= lowThreshold;
+
+                    return (
+                      <TableRow key={product._id || index}>
                       <TableCell>
                         <Checkbox {...label} size="small" />
                       </TableCell>
@@ -287,6 +335,30 @@ const ProductsList = () => {
                             </span>
                           )}
                         </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <span className="text-sm font-semibold text-gray-700">
+                          {available}
+                        </span>
+                      </TableCell>
+
+                      <TableCell>
+                        <span className="text-sm text-gray-600">
+                          {reserved}
+                        </span>
+                      </TableCell>
+
+                      <TableCell>
+                        {isLowStock ? (
+                          <Chip
+                            label={`Low (${available})`}
+                            color="warning"
+                            size="small"
+                          />
+                        ) : (
+                          <Chip label="OK" color="success" size="small" />
+                        )}
                       </TableCell>
 
                       <TableCell>
@@ -349,7 +421,8 @@ const ProductsList = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -367,6 +440,20 @@ const ProductsList = () => {
         )}
       </div>
     </section>
+  );
+};
+
+const ProductsList = () => {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+        </div>
+      }
+    >
+      <ProductsListContent />
+    </Suspense>
   );
 };
 

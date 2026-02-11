@@ -71,6 +71,9 @@ router.post(
 // Get user's orders
 router.get("/user/my-orders", auth, getUserOrders);
 
+// Alias for authenticated user orders
+router.get("/my-orders", auth, getUserOrders);
+
 // Get user's single order (with ownership check)
 router.get(
   "/user/order/:orderId",
@@ -106,11 +109,10 @@ router.get("/admin/stats", auth, admin, getOrderStats);
 // Get dashboard statistics
 router.get("/admin/dashboard-stats", auth, admin, getDashboardStats);
 
-// Get single order
+// Get single order (admin or order owner)
 router.get(
   "/:id",
   auth,
-  admin,
   validateGetOrderRequest,
   getOrderById
 );
@@ -123,5 +125,7 @@ router.put(
   validateUpdateOrderStatusRequest,
   updateOrderStatus
 );
+
+// Admin status update via PATCH (Zod validated)
 
 export default router;

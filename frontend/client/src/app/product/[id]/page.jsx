@@ -43,6 +43,17 @@ const ProductDetailPage = () => {
     severity: "success",
   });
 
+  const availableQty = product
+    ? Math.max(
+        typeof product.available_quantity === "number"
+          ? product.available_quantity
+          : Number(product.stock_quantity ?? product.stock ?? 0) -
+              Number(product.reserved_quantity ?? 0),
+        0,
+      )
+    : 0;
+  const maxQty = availableQty > 0 ? availableQty : 1;
+
   // Fetch product details from API
   const fetchProduct = async () => {
     try {
@@ -98,6 +109,17 @@ const ProductDetailPage = () => {
           severity: "success",
         });
       } else {
+        if (availableQty < quantity) {
+          setSnackbar({
+            open: true,
+            message:
+              availableQty > 0
+                ? `Only ${availableQty} left in stock`
+                : "This product is currently out of stock",
+            severity: "error",
+          });
+          return;
+        }
         // Add to cart
         await addToCart(product, quantity);
       }
@@ -327,11 +349,22 @@ const ProductDetailPage = () => {
                 {!isInCart(product._id || product.id) && (
                   <div className="flex items-center gap-3">
                     <span className="text-gray-700 font-medium">Qty:</span>
-                    <QtyBox
-                      value={quantity}
-                      onChange={setQuantity}
-                      max={product.stock || 99}
-                    />
+                    <div className="flex flex-col">
+                      <QtyBox
+                        value={quantity}
+                        onChange={setQuantity}
+                        max={maxQty}
+                      />
+                      {availableQty === 0 ? (
+                        <span className="text-xs text-red-500 mt-1">
+                          Out of stock
+                        </span>
+                      ) : availableQty <= 10 ? (
+                        <span className="text-xs text-orange-600 mt-1">
+                          Only {availableQty} left
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 )}
 
@@ -340,6 +373,7 @@ const ProductDetailPage = () => {
                   size="large"
                   startIcon={<IoMdCart />}
                   onClick={handleAddToCart}
+                  disabled={!isInCart(product._id || product.id) && availableQty === 0}
                   sx={{
                     backgroundColor: isInCart(product._id || product.id)
                       ? "#dc2626"

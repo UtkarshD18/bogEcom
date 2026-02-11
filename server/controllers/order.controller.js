@@ -44,16 +44,25 @@ import {
   generateInvoicePdf,
   getAbsolutePathFromStoredInvoicePath,
 } from "../utils/generateInvoicePdf.js";
+import { syncOrderStatus, syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import {
-  syncOrderStatus,
-  syncOrderToFirestore,
-} from "../utils/orderFirestoreSync.js";
+  applyOrderStatusTransition,
+  normalizeOrderStatus,
+  ORDER_STATUS,
+} from "../utils/orderStatus.js";
 import {
   calculateInfluencerCommission,
   calculateReferralDiscount,
   updateInfluencerStats,
 } from "./influencer.controller.js";
+import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
 import { sendOrderUpdateNotification } from "./notification.controller.js";
+import {
+  confirmInventory,
+  releaseInventory,
+  reserveInventory,
+  restoreInventory,
+} from "../services/inventory.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -425,10 +434,14 @@ const normalizeOrderProducts = ({ products, dbProductMap }) => {
     const quantity = Math.max(Number(item.quantity || 1), 1);
     const price = round2(Number(dbProduct.price || 0));
     const subTotal = round2(price * quantity);
+    const variantId = item.variantId || item.variant || null;
+    const variantName = item.variantName || item.variantTitle || "";
 
     return {
       productId,
       productTitle: item.productTitle || dbProduct.name || "Product",
+      variantId: variantId ? String(variantId) : null,
+      variantName: variantName ? String(variantName) : "",
       quantity,
       price,
       image: item.image || dbProduct.images?.[0] || dbProduct.thumbnail || "",
@@ -480,8 +493,14 @@ logger.info(
 
 const isInvoiceEligible = (order) => {
   if (!order) return false;
-  if (order.order_status === "cancelled") return false;
-  return order.payment_status === "paid" || order.order_status === "confirmed";
+  if (normalizeOrderStatus(order.order_status) === ORDER_STATUS.CANCELLED) {
+    return false;
+  }
+  const normalizedStatus = normalizeOrderStatus(order.order_status);
+  return (
+    order.payment_status === "paid" ||
+    [ORDER_STATUS.ACCEPTED, ORDER_STATUS.IN_WAREHOUSE, ORDER_STATUS.SHIPPED, ORDER_STATUS.OUT_FOR_DELIVERY, ORDER_STATUS.DELIVERED].includes(normalizedStatus)
+  );
 };
 
 const getInvoiceEligibilityMessage = (order) => {
@@ -490,7 +509,7 @@ const getInvoiceEligibilityMessage = (order) => {
     return "Invoice is not available for cancelled orders.";
   }
   if (!isInvoiceEligible(order)) {
-    return "Invoice is available after order is paid or confirmed.";
+    return "Invoice is available after order is paid or accepted.";
   }
   return null;
 };
@@ -720,7 +739,7 @@ const ensureOrderInvoice = async (orderDoc) => {
 /**
  * Get all orders (Admin)
  * @route GET /api/orders/admin/all
- * @access Admin
+ * @access Admin or Order Owner
  * @param {number} page - Page number (default: 1)
  * @param {number} limit - Items per page (default: 20)
  * @param {string} search - Search by payment ID or user email
@@ -735,7 +754,14 @@ export const getAllOrders = asyncHandler(async (req, res) => {
 
     // Filter by status
     if (status && status !== "all") {
-      filter.order_status = status;
+      const normalizedStatus = normalizeOrderStatus(status);
+      if (normalizedStatus === ORDER_STATUS.ACCEPTED) {
+        filter.order_status = { $in: [ORDER_STATUS.ACCEPTED, "confirmed"] };
+      } else if (normalizedStatus === "confirmed") {
+        filter.order_status = { $in: [ORDER_STATUS.ACCEPTED, "confirmed"] };
+      } else {
+        filter.order_status = normalizedStatus;
+      }
     }
 
     // Search by paymentId, PhonePe IDs, or user email
@@ -802,7 +828,7 @@ export const getAllOrders = asyncHandler(async (req, res) => {
 /**
  * Get order statistics (Admin)
  * @route GET /api/orders/admin/stats
- * @access Admin
+ * @access Admin or Order Owner
  */
 export const getOrderStats = asyncHandler(async (req, res) => {
   try {
@@ -812,8 +838,10 @@ export const getOrderStats = asyncHandler(async (req, res) => {
       OrderModel.countDocuments(),
       OrderModel.countDocuments({ order_status: "pending" }),
       OrderModel.countDocuments({ order_status: "pending_payment" }),
-      OrderModel.countDocuments({ order_status: "confirmed" }),
+      OrderModel.countDocuments({ order_status: { $in: ["accepted", "confirmed"] } }),
+      OrderModel.countDocuments({ order_status: "in_warehouse" }),
       OrderModel.countDocuments({ order_status: "shipped" }),
+      OrderModel.countDocuments({ order_status: "out_for_delivery" }),
       OrderModel.countDocuments({ order_status: "delivered" }),
       OrderModel.countDocuments({ order_status: "cancelled" }),
       OrderModel.countDocuments({ payment_status: "paid" }),
@@ -861,20 +889,23 @@ export const getOrderStats = asyncHandler(async (req, res) => {
           byStatus: {
             pending: stats[1],
             pending_payment: stats[2],
+            accepted: stats[3],
+            in_warehouse: stats[4],
+            shipped: stats[5],
+            out_for_delivery: stats[6],
+            delivered: stats[7],
+            cancelled: stats[8],
             confirmed: stats[3],
-            shipped: stats[4],
-            delivered: stats[5],
-            cancelled: stats[6],
           },
         },
         payments: {
-          paid: stats[7],
-          failed: stats[8],
-          pending: stats[9],
+          paid: stats[9],
+          failed: stats[10],
+          pending: stats[11],
         },
         revenue: {
-          paid: stats[10][0]?.total || 0,
-          failed: stats[11][0]?.total || 0,
+          paid: stats[12][0]?.total || 0,
+          failed: stats[13][0]?.total || 0,
         },
       },
       "Statistics retrieved successfully",
@@ -973,7 +1004,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
  */
 export const getOrderById = asyncHandler(async (req, res) => {
   try {
-    const { id } = req.validatedData;
+    const { id } = req.validatedData || req.params || {};
+
+    validateMongoId(id, "orderId");
+
+    const requesterId = req.userId || req.user?._id || req.user;
+    if (!requesterId) {
+      throw new AppError("UNAUTHORIZED");
+    }
 
     logger.debug("getOrderById", "Fetching order", { id });
 
@@ -985,6 +1023,29 @@ export const getOrderById = asyncHandler(async (req, res) => {
     if (!order) {
       logger.warn("getOrderById", "Order not found", { id });
       throw new AppError("ORDER_NOT_FOUND");
+    }
+
+    let isAdmin = false;
+    if (req.user?.role) {
+      isAdmin = req.user.role === "Admin";
+    } else {
+      const viewer = await UserModel.findById(requesterId).select("role status");
+      if (!viewer) {
+        throw new AppError("UNAUTHORIZED");
+      }
+      isAdmin = viewer.role === "Admin";
+    }
+
+    if (!isAdmin) {
+      const orderUserId = order.user?._id?.toString() || order.user?.toString();
+      if (orderUserId !== requesterId?.toString()) {
+        logger.warn("getOrderById", "Access denied for order", {
+          requesterId,
+          orderId: id,
+          orderUserId,
+        });
+        throw new AppError("FORBIDDEN");
+      }
     }
 
     logger.info("getOrderById", "Order retrieved", { id });
@@ -1016,16 +1077,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       order_status,
     });
 
-    const order = await OrderModel.findByIdAndUpdate(
-      id,
-      {
-        order_status,
-        notes,
-        lastUpdatedBy: req.user?.id || req.user,
-        updatedAt: new Date(),
-      },
-      { new: true, runValidators: true },
-    )
+    const order = await OrderModel.findById(id)
       .populate("user", "name email")
       .populate("delivery_address");
 
@@ -1034,14 +1086,53 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       throw new AppError("ORDER_NOT_FOUND");
     }
 
+    const transition = applyOrderStatusTransition(order, order_status, {
+      source: "ADMIN",
+    });
+
+    if (!transition.updated) {
+      if (transition.reason === "invalid_transition") {
+        throw new AppError("CONFLICT", {
+          message: "Invalid status transition",
+          from: normalizeOrderStatus(order.order_status),
+          to: normalizeOrderStatus(order_status),
+        });
+      }
+
+      if (transition.reason === "final_state") {
+        throw new AppError("CONFLICT", {
+          message: "Order is already in a final state",
+          status: normalizeOrderStatus(order.order_status),
+        });
+      }
+    }
+
+    const normalizedNewStatus = normalizeOrderStatus(order.order_status);
+    const wasPaid = order.payment_status === "paid";
+
+    if (transition.updated && normalizedNewStatus === ORDER_STATUS.CANCELLED) {
+      if (wasPaid) {
+        await restoreInventory(order, "ADMIN_CANCELLED");
+      } else {
+        await releaseInventory(order, "ADMIN_CANCELLED");
+      }
+    }
+
+    if (typeof notes === "string") {
+      order.notes = notes;
+    }
+    order.lastUpdatedBy = req.user?.id || req.user?._id || req.user;
+    order.updatedAt = new Date();
+    await order.save();
+
     logger.info("updateOrderStatus", "Order status updated", {
       id,
-      newStatus: order_status,
+      newStatus: order.order_status,
     });
 
     // Send notification to user if order has user associated
     if (order.user) {
-      sendOrderUpdateNotification(order, order_status).catch((err) =>
+      sendOrderUpdateNotification(order, order.order_status).catch((err) =>
         logger.error("updateOrderStatus", "Failed to send notification", {
           orderId: id,
           error: err.message,
@@ -1050,7 +1141,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
     }
 
     // Sync to Firestore for real-time updates
-    syncOrderStatus(id, order_status).catch((err) =>
+    syncOrderStatus(id, order.order_status).catch((err) =>
       logger.error("updateOrderStatus", "Failed to sync to Firestore", {
         orderId: id,
         error: err.message,
@@ -1065,6 +1156,8 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
         }),
       );
     }
+
+    emitOrderStatusUpdate(order, "ADMIN");
 
     return sendSuccess(res, order, "Order status updated successfully");
   } catch (error) {
@@ -1461,6 +1554,9 @@ export const createOrder = asyncHandler(async (req, res) => {
       delivery_address: checkoutContact.addressId || null,
       payment_status: "pending",
       order_status: "pending",
+      statusTimeline: [
+        { status: ORDER_STATUS.PENDING, source: "ORDER_CREATE", timestamp: new Date() },
+      ],
       paymentMethod: PAYMENT_PROVIDER,
       originalPrice: subtotal,
       finalAmount: computedFinalAmount,
@@ -1503,7 +1599,22 @@ export const createOrder = asyncHandler(async (req, res) => {
       purchaseOrder: checkoutPurchaseOrder?._id || null,
     });
 
-    await order.save();
+    try {
+      await reserveInventory(order, "ORDER_CREATE");
+      await order.save();
+    } catch (inventoryError) {
+      if (order.inventoryStatus === "reserved") {
+        try {
+          await releaseInventory(order, "ORDER_CREATE_FAIL");
+        } catch (releaseError) {
+          logger.error("createOrder", "Failed to rollback inventory reservation", {
+            orderId: order._id,
+            error: releaseError.message,
+          });
+        }
+      }
+      throw inventoryError;
+    }
 
     // Location capture (90-day retention). Best-effort and non-blocking.
     try {
@@ -1887,6 +1998,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       delivery_address: checkoutContact.addressId || null,
       order_status: "pending_payment",
       payment_status: "unavailable",
+      statusTimeline: [
+        { status: ORDER_STATUS.PAYMENT_PENDING, source: "ORDER_SAVE", timestamp: new Date() },
+      ],
       paymentMethod: "PENDING",
       couponCode: normalizedCouponCode || null,
       discountAmount: couponDiscount,
@@ -1931,7 +2045,22 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       notes: notes || "Order saved - awaiting payment gateway activation",
     });
 
-    await savedOrder.save();
+    try {
+      await reserveInventory(savedOrder, "ORDER_SAVE");
+      await savedOrder.save();
+    } catch (inventoryError) {
+      if (savedOrder.inventoryStatus === "reserved") {
+        try {
+          await releaseInventory(savedOrder, "ORDER_SAVE_FAIL");
+        } catch (releaseError) {
+          logger.error("saveOrderForLater", "Failed to rollback inventory reservation", {
+            orderId: savedOrder._id,
+            error: releaseError.message,
+          });
+        }
+      }
+      throw inventoryError;
+    }
 
     // Location capture (90-day retention). Best-effort and non-blocking.
     try {
@@ -2161,10 +2290,14 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     if (normalizedState.includes("success")) {
       order.payment_status = "paid";
-      order.order_status = "confirmed";
+      applyOrderStatusTransition(order, ORDER_STATUS.ACCEPTED, {
+        source: "PAYMENT_WEBHOOK",
+      });
+      await confirmInventory(order, "PAYMENT_WEBHOOK");
     } else if (normalizedState.includes("fail")) {
       order.payment_status = "failed";
       order.failureReason = "PhonePe payment failed";
+      await releaseInventory(order, "PAYMENT_WEBHOOK");
     } else if (normalizedState.includes("pending")) {
       order.payment_status = "pending";
     }
@@ -2275,6 +2408,8 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
       }),
     );
 
+    emitOrderStatusUpdate(order, "PAYMENT_WEBHOOK");
+
     return sendSuccess(res, {}, "Webhook processed");
   } catch (error) {
     logger.error("handlePhonePeWebhook", "Webhook processing error", {
@@ -2345,7 +2480,11 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       products: orderProducts,
       totalAmt: totalAmount,
       payment_status: "paid",
-      order_status: "confirmed",
+      order_status: ORDER_STATUS.ACCEPTED,
+      statusTimeline: [
+        { status: ORDER_STATUS.PENDING, source: "TEST_CREATE", timestamp: new Date() },
+        { status: ORDER_STATUS.ACCEPTED, source: "TEST_CREATE", timestamp: new Date() },
+      ],
       paymentId: `TEST_${Date.now()}`,
     });
 

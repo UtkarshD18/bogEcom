@@ -508,7 +508,19 @@ export const validateUpdateOrderStatusRequest = (req, res, next) => {
     validateMongoId(id, "id");
 
     // Validate order status
-    const validStatuses = ["pending", "pending_payment", "confirmed", "shipped", "delivered", "cancelled"];
+    const validStatuses = [
+      "pending",
+      "pending_payment",
+      "accepted",
+      "in_warehouse",
+      "shipped",
+      "out_for_delivery",
+      "delivered",
+      "cancelled",
+      "rto",
+      "rto_completed",
+      "confirmed",
+    ];
     if (!order_status || !validStatuses.includes(order_status)) {
       throw new AppError("INVALID_STATUS", {
         field: "order_status",
@@ -612,10 +624,15 @@ export const validatePaginationQuery = (req, res, next) => {
         "all",
         "pending",
         "pending_payment",
+        "accepted",
+        "in_warehouse",
+        "out_for_delivery",
         "confirmed",
         "shipped",
         "delivered",
         "cancelled",
+        "rto",
+        "rto_completed",
       ];
       if (!validStatuses.includes(status)) {
         status = "all";

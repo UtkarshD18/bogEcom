@@ -59,6 +59,20 @@ const ViewProduct = () => {
     return null;
   }
 
+  const available =
+    typeof product.available_quantity === "number"
+      ? product.available_quantity
+      : Math.max(
+          Number(product.stock_quantity ?? product.stock ?? 0) -
+            Number(product.reserved_quantity ?? 0),
+          0,
+        );
+  const reserved = Number(product.reserved_quantity ?? 0);
+  const lowThreshold = Number(
+    product.low_stock_threshold ?? product.lowStockThreshold ?? 5,
+  );
+  const isLowStock = available <= lowThreshold;
+
   return (
     <section className="w-full py-3 px-5">
       <div className="flex items-center justify-between mb-5">
@@ -177,13 +191,35 @@ const ViewProduct = () => {
 
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-sm text-gray-500">Stock</p>
+                <p className="text-sm text-gray-500">Total Stock</p>
                 <p
-                  className={`font-bold ${product.stock > 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`font-bold ${Number(product.stock_quantity ?? product.stock ?? 0) > 0 ? "text-green-600" : "text-red-600"}`}
                 >
-                  {product.stock > 0
-                    ? `${product.stock} units`
+                  {Number(product.stock_quantity ?? product.stock ?? 0) > 0
+                    ? `${Number(product.stock_quantity ?? product.stock ?? 0)} units`
                     : "Out of Stock"}
+                </p>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-500">Available Stock</p>
+                <p
+                  className={`font-bold ${available > 0 ? "text-green-600" : "text-red-600"}`}
+                >
+                  {available > 0 ? `${available} units` : "Out of Stock"}
+                </p>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-500">Reserved Stock</p>
+                <p className="font-bold text-gray-700">{reserved} units</p>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-500">Low Stock</p>
+                <p
+                  className={`font-bold ${isLowStock ? "text-amber-600" : "text-green-600"}`}
+                >
+                  {isLowStock
+                    ? `Low (≤ ${lowThreshold})`
+                    : "Healthy"}
                 </p>
               </div>
               <div className="bg-gray-50 p-3 rounded-lg">

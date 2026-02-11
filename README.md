@@ -15,6 +15,21 @@ This repository now includes a phased, production-safe enterprise upgrade coveri
 11. Account/logout/settings improvements
 12. Service-oriented backend architecture upgrades
 
+## 🔄 Recent Updates
+- Added order status timeline with guarded transitions (PENDING → PAYMENT_PENDING → ACCEPTED → IN_WAREHOUSE → SHIPPED → OUT_FOR_DELIVERY → DELIVERED)
+- ExpressBees webhook sync with fallback polling for tracking updates, idempotent handling, and RTO safety
+- Real-time order updates via Socket.io with client-side order tracker animations
+- New admin status update endpoint: `PATCH /api/admin/orders/:id/status` (Zod validated)
+- Added user alias endpoint: `GET /api/orders/my-orders`
+- Added ExpressBees webhook endpoint: `POST /api/webhooks/expressbees`
+- Expanded admin UI status options for Accepted/In Warehouse/Out for Delivery
+- Firestore sync updated to mirror status timeline entries
+- Production inventory system with atomic reserve/deduct/release/restore and idempotent guards
+- Variant-aware inventory tracking with audit trail logging
+- Reservation expiry job for unpaid orders (configurable via env flags)
+- Low-stock dashboard card + admin filter link
+- Inventory audit APIs for admin monitoring
+
 ## Phase Plan
 
 ### Phase 1
@@ -104,6 +119,18 @@ What it does:
 - Seeds default policies (`terms-and-conditions`, `return-policy`)
 - Backfills order subtotal/GST/billing/coin fields
 
+Inventory backfill migration:
+
+```bash
+cd server
+node migrations/2026-02-inventory-backfill.mjs
+```
+
+What it does:
+- Backfills `stock_quantity`, `reserved_quantity`, `track_inventory`, `low_stock_threshold`
+- Syncs legacy `stock` values
+- Backfills variant stock/reserved fields
+
 ## New Environment Variables
 
 Add/update these in `server/.env`:
@@ -112,6 +139,10 @@ Add/update these in `server/.env`:
 - `XPRESSBEES_BASE_URL`
 - `XPRESSBEES_TOKEN_TTL_MINUTES`
 - `XPRESSBEES_TOKEN` or `XPRESSBEES_EMAIL` + `XPRESSBEES_PASSWORD`
+- `XPRESSBEES_WEBHOOK_SECRET` (optional)
+- `XPRESSBEES_POLL_ENABLED` (optional)
+- `XPRESSBEES_POLL_INTERVAL_MINUTES` (optional)
+- `XPRESSBEES_POLL_BATCH_SIZE` (optional)
 - `INVOICE_SELLER_NAME`
 - `INVOICE_SELLER_GSTIN`
 - `INVOICE_SELLER_ADDRESS`
@@ -124,6 +155,10 @@ Add/update these in `server/.env`:
 - `INVOICE_DEFAULT_GST_RATE` (set `5`)
 - `PHONEPE_ORDER_REDIRECT_URL` (optional override)
 - `PHONEPE_ORDER_CALLBACK_URL` (optional override)
+- `INVENTORY_RESERVATION_ENABLED` (optional, default false)
+- `INVENTORY_RESERVATION_MINUTES` (optional, default 30)
+- `INVENTORY_RESERVATION_INTERVAL_MINUTES` (optional, default 5)
+- `INVENTORY_RESERVATION_BATCH_SIZE` (optional, default 50)
 
 ## GST Rules
 
@@ -185,6 +220,11 @@ Invoice:
 - `GET /api/invoices/order/:orderId/download`
 - Existing download route also available: `GET /api/orders/:orderId/invoice`
 
+## Inventory APIs (Admin)
+
+- `GET /api/admin/inventory/audit`
+- `GET /api/admin/inventory/audit/:productId`
+
 ## Guest Checkout
 
 Required fields:
@@ -214,6 +254,12 @@ Manual regression checklist:
 - Dynamic policy rendering by slug
 - Footer policy links resolve dynamically
 - Refund eligibility matches policy
+- Inventory reserve on order creation
+- Inventory deduct on payment success
+- Inventory release on payment failure/cancel
+- Reservation expiry auto-release (if enabled)
+- Low-stock dashboard count updates
+- Inventory audit entries created
 
 ## Deployment Safety Plan
 

@@ -278,7 +278,12 @@ export const calculateDiscount = (originalPrice, salePrice) => {
  * Check if product is in stock
  */
 export const isInStock = (product) => {
-  return product.inStock && product.quantity > 0;
+  const available =
+    typeof product?.available_quantity === "number"
+      ? product.available_quantity
+      : Number(product?.stock_quantity ?? product?.stock ?? 0) -
+        Number(product?.reserved_quantity ?? 0);
+  return product.inStock && available > 0;
 };
 
 /**

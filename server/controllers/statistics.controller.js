@@ -51,6 +51,7 @@ export const getDashboardStats = async (req, res) => {
       totalProducts,
       averageOrderValue,
       ordersInPeriod,
+      lowStockAggregation,
     ] = await Promise.all([
       OrderModel.countDocuments(),
       OrderModel.aggregate([
@@ -76,7 +77,81 @@ export const getDashboardStats = async (req, res) => {
         },
       ]),
       OrderModel.countDocuments({ createdAt: { $gte: startDate } }),
+      ProductModel.aggregate([
+        {
+          $addFields: {
+            trackFlag: {
+              $ifNull: ["$track_inventory", { $ifNull: ["$trackInventory", true] }],
+            },
+            threshold: {
+              $ifNull: ["$low_stock_threshold", { $ifNull: ["$lowStockThreshold", 5] }],
+            },
+          },
+        },
+        { $match: { trackFlag: { $ne: false } } },
+        {
+          $addFields: {
+            productAvailable: {
+              $subtract: [
+                { $ifNull: ["$stock_quantity", "$stock"] },
+                { $ifNull: ["$reserved_quantity", 0] },
+              ],
+            },
+            variantAvailables: {
+              $map: {
+                input: { $ifNull: ["$variants", []] },
+                as: "v",
+                in: {
+                  $subtract: [
+                    { $ifNull: ["$$v.stock_quantity", "$$v.stock"] },
+                    { $ifNull: ["$$v.reserved_quantity", 0] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        {
+          $addFields: {
+            hasVariants: { $eq: ["$hasVariants", true] },
+            variantLowStock: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$hasVariants", true] },
+                    { $gt: [{ $size: "$variantAvailables" }, 0] },
+                  ],
+                },
+                {
+                  $anyElementTrue: {
+                    $map: {
+                      input: "$variantAvailables",
+                      as: "available",
+                      in: { $lte: ["$$available", "$threshold"] },
+                    },
+                  },
+                },
+                false,
+              ],
+            },
+            productLowStock: {
+              $lte: ["$productAvailable", "$threshold"],
+            },
+          },
+        },
+        {
+          $addFields: {
+            lowStockFlag: {
+              $cond: ["$hasVariants", "$variantLowStock", "$productLowStock"],
+            },
+          },
+        },
+        { $match: { lowStockFlag: true } },
+        { $count: "lowStockCount" },
+      ]),
     ]);
+
+    const lowStockCount = lowStockAggregation?.[0]?.lowStockCount || 0;
 
     // Monthly sales aggregation for dashboard graph
     const monthlySales = await OrderModel.aggregate([
@@ -108,6 +183,7 @@ export const getDashboardStats = async (req, res) => {
         ),
         ordersInPeriod,
         period,
+        lowStockCount,
         monthlySales, // <-- Add this line
       },
     });
@@ -287,10 +363,15 @@ export const getOrderStatus = async (req, res) => {
     const statuses = [
       "pending",
       "pending_payment",
-      "confirmed",
+      "accepted",
+      "in_warehouse",
       "shipped",
+      "out_for_delivery",
       "delivered",
       "cancelled",
+      "rto",
+      "rto_completed",
+      "confirmed",
     ];
     const result = {};
 

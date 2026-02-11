@@ -25,6 +25,14 @@ const orderSchema = new mongoose.Schema(
           type: String,
           required: true,
         },
+        variantId: {
+          type: String,
+          default: null,
+        },
+        variantName: {
+          type: String,
+          default: "",
+        },
         quantity: {
           type: Number,
           required: true,
@@ -92,14 +100,47 @@ const orderSchema = new mongoose.Schema(
       enum: [
         "pending",
         "pending_payment",
-        "confirmed",
+        "accepted",
+        "in_warehouse",
         "shipped",
+        "out_for_delivery",
         "delivered",
         "cancelled",
+        "rto",
+        "rto_completed",
+        "confirmed",
       ],
       default: "pending",
       index: true,
     },
+
+    inventoryStatus: {
+      type: String,
+      enum: ["none", "reserved", "deducted", "released", "restored"],
+      default: "none",
+      index: true,
+    },
+    inventoryUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+    inventorySource: {
+      type: String,
+      default: "",
+    },
+    reservationExpiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    statusTimeline: [
+      {
+        status: { type: String, required: true },
+        source: { type: String, default: "SYSTEM" },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
 
     // Delivery Information
     delivery_address: {
@@ -371,7 +412,16 @@ shipping_manifest: {
 
 shipment_status: {
   type: String,
-  enum: ["pending", "booked", "shipped", "delivered", "cancelled"],
+  enum: [
+    "pending",
+    "booked",
+    "shipped",
+    "delivered",
+    "cancelled",
+    "rto_initiated",
+    "rto_in_transit",
+    "rto_delivered",
+  ],
   default: "pending",
 },
 
@@ -423,6 +473,13 @@ orderSchema.index({ paymentId: 1 });
 orderSchema.index({ invoiceNumber: 1 }, { sparse: true });
 orderSchema.index({ "gst.state": 1, createdAt: -1 });
 orderSchema.index({ purchaseOrder: 1 }, { sparse: true });
+
+// Normalize legacy payment_status before validation
+orderSchema.pre("validate", function () {
+  if (this.payment_status === "confirmed") {
+    this.payment_status = "paid";
+  }
+});
 
 // Pre-save hook for validation
 orderSchema.pre("save", async function () {

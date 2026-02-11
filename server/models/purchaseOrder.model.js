@@ -17,6 +17,11 @@ const purchaseOrderItemSchema = new mongoose.Schema(
       required: true,
       min: 1,
     },
+    qty_received: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
     price: {
       type: Number,
       required: true,
@@ -81,9 +86,23 @@ const purchaseOrderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["draft", "approved", "converted"],
+      enum: ["draft", "approved", "received", "converted"],
       default: "draft",
       index: true,
+    },
+    inventory_applied: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    receivedAt: {
+      type: Date,
+      default: null,
+    },
+    receivedBy: {
+      type: mongoose.Schema.ObjectId,
+      ref: "User",
+      default: null,
     },
     guestDetails: {
       fullName: { type: String, default: "" },

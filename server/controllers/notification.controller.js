@@ -375,10 +375,16 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
     // Format status for display
     const statusMessages = {
       pending: "Your order is being processed",
-      confirmed: "Your order has been confirmed! 🎉",
-      shipped: "Your order is on the way! 🚚",
-      delivered: "Your order has been delivered! ✅",
+      pending_payment: "Your order is pending payment",
+      accepted: "Your order has been accepted",
+      in_warehouse: "Your order is in the warehouse",
+      confirmed: "Your order has been confirmed",
+      shipped: "Your order is on the way",
+      out_for_delivery: "Your order is out for delivery",
+      delivered: "Your order has been delivered",
       cancelled: "Your order has been cancelled",
+      rto: "Your order is returning to origin",
+      rto_completed: "Return to origin completed",
     };
 
     const notification = {

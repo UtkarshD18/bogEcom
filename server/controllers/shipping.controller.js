@@ -21,17 +21,12 @@ import {
 } from "../services/xpressbees.service.js";
 import { getShippingQuote, validateIndianPincode } from "../services/shippingRate.service.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
+import {
+  mapExpressbeesToShipmentStatus,
+} from "../utils/orderStatus.js";
 
 const normalizeShipmentStatus = (status) => {
-  if (!status) return "pending";
-  const value = String(status).toLowerCase();
-
-  if (value.includes("deliver")) return "delivered";
-  if (value.includes("cancel")) return "cancelled";
-  if (value.includes("ship") || value.includes("transit")) return "shipped";
-  if (value.includes("book")) return "booked";
-
-  return "pending";
+  return mapExpressbeesToShipmentStatus(status) || "pending";
 };
 
 const validatePincode = (value, field) => {
