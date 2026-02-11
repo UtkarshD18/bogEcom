@@ -11,8 +11,8 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { FiMapPin } from "react-icons/fi";
 
-const CONSENT_TEXT =
-  "We use Google Maps to fetch your current location to autofill your address.\nYour location data is stored securely for order processing and support purposes for up to 90 days.";
+const CONSENT_MAIN =
+  "We use Google Maps to fetch your current location to autofill your address.";
 
 const toErrorDetails = (err) => {
   if (err instanceof Error) {
@@ -53,12 +53,10 @@ const getErrorMessage = (err) => {
   const message = err?.message;
   if (typeof message === "string" && message.trim()) return message.trim();
 
-  return "Failed to fetch location";
+  return "Failed to fetch";
 };
 
-const GOOGLE_MAPS_API_KEY = (
-  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""
-)
+const GOOGLE_MAPS_API_KEY = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "")
   .trim()
   .replace(/^\"|\"$/g, "");
 
@@ -93,7 +91,8 @@ const loadGoogleMaps = (() => {
         GOOGLE_MAPS_API_KEY,
       )}`;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load Google Maps script"));
+      script.onerror = () =>
+        reject(new Error("Failed to load Google Maps script"));
       document.head.appendChild(script);
     });
 
@@ -223,7 +222,9 @@ export default function UseCurrentLocationGoogleMaps({
       const message = getErrorMessage(err);
       const details = toErrorDetails(err);
       const isPermissionDenied =
-        err?.code === 1 || err?.cause?.code === 1 || err?.name === "NotAllowedError";
+        err?.code === 1 ||
+        err?.cause?.code === 1 ||
+        err?.name === "NotAllowedError";
 
       (isPermissionDenied ? console.warn : console.error)(
         "UseCurrentLocationGoogleMaps error:",
@@ -252,12 +253,13 @@ export default function UseCurrentLocationGoogleMaps({
       <Dialog open={consentOpen} onClose={() => setConsentOpen(false)}>
         <DialogTitle>Use Current Location</DialogTitle>
         <DialogContent>
-          <div className="text-sm text-gray-700 whitespace-pre-line">
-            {CONSENT_TEXT}
-          </div>
+          <p className="text-sm text-gray-700">{CONSENT_MAIN}</p>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setConsentOpen(false)} sx={{ textTransform: "none" }}>
+          <Button
+            onClick={() => setConsentOpen(false)}
+            sx={{ textTransform: "none" }}
+          >
             Cancel
           </Button>
           <Button
@@ -265,7 +267,7 @@ export default function UseCurrentLocationGoogleMaps({
             disabled={loading}
             sx={{
               textTransform: "none",
-              backgroundColor: "#059669",
+              backgroundColor: "var(--primary)",
               color: "white",
               "&:hover": { backgroundColor: "#047857" },
               "&:disabled": { backgroundColor: "#cbd5e1", color: "white" },
@@ -278,4 +280,3 @@ export default function UseCurrentLocationGoogleMaps({
     </>
   );
 }
-

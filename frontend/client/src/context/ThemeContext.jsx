@@ -20,13 +20,13 @@ export const FLAVORS = {
   },
   chocolate: {
     name: "Chocolate",
-    color: "#4B2E2B",
-    hover: "#3A2321",
-    light: "#F5EFED",
-    glass: "rgba(75,46,43,0.15)",
+    color: "#8B4513",
+    hover: "#A0522D",
+    light: "#F5F5DC",
+    glass: "rgba(139,69,19,0.15)",
     gradient: "linear-gradient(135deg, #F5EFED 0%, #FAF7F6 50%, #FFFFFF 100%)",
     cardBg: "#FBF8F7",
-    badge: "#6B4A47",
+    badge: "#A0522D",
   },
   millets: {
     name: "Millets",
@@ -95,7 +95,7 @@ const ThemeProvider = ({ children }) => {
       try {
         const payload = JSON.parse(atob(token.split(".")[1]));
         tokenValid = payload.exp * 1000 > Date.now();
-      } catch {}
+      } catch { }
     }
     if (tokenValid) {
       Cookies.remove("actionType");

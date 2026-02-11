@@ -74,7 +74,7 @@ const PaymentUnavailableModal = ({
               disabled={isSaving}
               fullWidth
               sx={{
-                backgroundColor: "#059669",
+                backgroundColor: "var(--primary)",
                 color: "white",
                 padding: "14px 24px",
                 borderRadius: "12px",

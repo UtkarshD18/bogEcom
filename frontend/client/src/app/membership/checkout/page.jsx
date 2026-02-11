@@ -106,7 +106,7 @@ export default function MembershipCheckoutPage() {
         } else {
           setError(
             verifyData.message ||
-              "Payment not confirmed yet. Please wait a moment and retry.",
+            "Payment not confirmed yet. Please wait a moment and retry.",
           );
         }
       } catch (err) {
@@ -238,7 +238,7 @@ export default function MembershipCheckoutPage() {
           style={{
             marginTop: 20,
             padding: "12px 24px",
-            background: "#059669",
+            background: "var(--primary)",
             color: "#fff",
             border: "none",
             borderRadius: 8,
@@ -278,14 +278,14 @@ export default function MembershipCheckoutPage() {
           borderRadius: 16,
           padding: 32,
           boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-          border: "2px solid #059669",
+          border: "2px solid var(--primary)",
         }}
       >
         <h2
           style={{
             fontSize: "1.5rem",
             fontWeight: 700,
-            color: "#059669",
+            color: "var(--primary)",
             marginBottom: 16,
           }}
         >
@@ -384,7 +384,7 @@ export default function MembershipCheckoutPage() {
             padding: "16px",
             background: isProcessing
               ? "#ccc"
-              : "linear-gradient(135deg, #059669 0%, #059669 100%)",
+              : "linear-gradient(135deg, var(--flavor-hover) 0%, var(--primary) 100%)",
             color: "#fff",
             fontWeight: 700,
             fontSize: "1.1rem",

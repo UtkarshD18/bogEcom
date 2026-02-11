@@ -42,7 +42,7 @@ const SecurePayment = () => {
     },
     {
       name: "UPI",
-      icon: <span className="text-2xl font-bold text-green-600">UPI</span>,
+      icon: <span className="text-2xl font-bold text-primary">UPI</span>,
     },
     { name: "Net Banking", icon: <span className="text-2xl">🏦</span> },
     { name: "Wallets", icon: <span className="text-2xl">💳</span> },
@@ -62,7 +62,7 @@ const SecurePayment = () => {
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] text-white py-16">
         <div className="container mx-auto px-4 text-center">
-          <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="w-20 h-20 bg-[var(--flavor-glass)] rounded-full flex items-center justify-center mx-auto mb-6 text-primary">
             <FiShield className="text-green-400 text-4xl" />
           </div>
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
@@ -87,7 +87,7 @@ const SecurePayment = () => {
                 key={index}
                 className="bg-white rounded-xl p-8 shadow-md text-center hover:shadow-lg transition-shadow"
               >
-                <div className="w-16 h-16 bg-[#059669]/10 rounded-full flex items-center justify-center mx-auto mb-4 text-[#059669]">
+                <div className="w-16 h-16 bg-[var(--flavor-glass)] rounded-full flex items-center justify-center mx-auto mb-4 text-primary">
                   {feature.icon}
                 </div>
                 <h3 className="text-xl font-bold text-gray-800 mb-3">
@@ -127,7 +127,7 @@ const SecurePayment = () => {
               </ul>
             </div>
             <div className="flex items-center justify-center bg-gray-50 rounded-xl p-8">
-              <span className="text-3xl font-bold text-[#059669]">
+              <span className="text-3xl font-bold text-primary">
                 PhonePe
               </span>
             </div>
@@ -192,14 +192,14 @@ const SecurePayment = () => {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/contact"
-              className="inline-block px-8 py-3 bg-[#059669] text-white font-semibold rounded-lg hover:bg-[#047857] transition-colors"
+              className="inline-block px-8 py-3 bg-primary text-white font-semibold rounded-lg hover:brightness-110 transition-colors"
             >
               Contact Support
             </Link>
             <Link
               href="https://wa.me/918619641968"
               target="_blank"
-              className="inline-block px-8 py-3 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors"
+              className="inline-block px-8 py-3 bg-primary text-white font-semibold rounded-lg hover:brightness-110 transition-colors"
             >
               Chat on WhatsApp
             </Link>

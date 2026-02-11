@@ -30,8 +30,8 @@ const normalizeApiBaseUrl = (raw) => {
 
 const API_BASE_URL = normalizeApiBaseUrl(
   process.env.NEXT_PUBLIC_API_URL ||
-    process.env.NEXT_PUBLIC_APP_API_URL ||
-    "http://localhost:8000",
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  "http://localhost:8000",
 );
 
 const buildApiUrl = (path) => {
@@ -429,6 +429,8 @@ const AboutPageEditor = () => {
                 <MenuItem value="sky">Sky</MenuItem>
                 <MenuItem value="aurora">Aurora</MenuItem>
                 <MenuItem value="lavender">Lavender</MenuItem>
+                <MenuItem value="sunset">Sunset</MenuItem>
+                <MenuItem value="midnight">Midnight</MenuItem>
               </Select>
             </FormControl>
 

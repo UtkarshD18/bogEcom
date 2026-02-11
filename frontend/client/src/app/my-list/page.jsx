@@ -92,7 +92,7 @@ const MyWishlistPage = () => {
                 <FaHeart className="text-slate-300 text-6xl" />
                 <p className="text-slate-500">Your wishlist is empty</p>
                 <Link href="/products">
-                  <Button variant="contained" className="!bg-[#059669] !text-white">
+                  <Button variant="contained" className="!bg-primary !text-white">
                     Discover Products
                   </Button>
                 </Link>
@@ -133,7 +133,7 @@ const MyWishlistPage = () => {
                             {product.brand || "Healthy One Gram"}
                           </span>
                           <Link href={`/product/${productId}`}>
-                            <h3 className="text-sm md:text-base font-semibold text-slate-900 hover:text-[#059669] mt-1 line-clamp-2">
+                            <h3 className="text-sm md:text-base font-semibold text-slate-900 hover:text-primary mt-1 line-clamp-2">
                               {product.name || "Product"}
                             </h3>
                           </Link>
@@ -156,7 +156,7 @@ const MyWishlistPage = () => {
                                 <span className="text-sm text-slate-400 line-through">
                                   ₹{oldPrice}
                                 </span>
-                                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                <span className="text-xs font-semibold text-primary bg-[var(--flavor-glass)] px-2 py-0.5 rounded-full">
                                   {discount}% OFF
                                 </span>
                               </>
@@ -184,7 +184,7 @@ const MyWishlistPage = () => {
                         <Button
                           onClick={() => handleDirectOrder(product)}
                           variant="contained"
-                          className="!bg-[#059669] hover:!bg-[#047857] !font-medium !normal-case"
+                          className="!bg-primary hover:brightness-110 !font-medium !normal-case"
                         >
                           Direct Order
                         </Button>

@@ -146,7 +146,7 @@ const ProductDetailPage = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <CircularProgress style={{ color: "#059669" }} />
+        <CircularProgress style={{ color: "var(--primary)" }} />
       </div>
     );
   }
@@ -175,7 +175,7 @@ const ProductDetailPage = () => {
           The product you are looking for does not exist or has been removed.
         </p>
         <Link href="/products">
-          <Button variant="contained" style={{ backgroundColor: "#059669" }}>
+          <Button variant="contained" style={{ backgroundColor: "var(--primary)" }}>
             Browse Products
           </Button>
         </Link>
@@ -190,18 +190,18 @@ const ProductDetailPage = () => {
   const isWishlisted = productId ? isInWishlist(productId) : false;
 
   return (
-    <section className="py-4 sm:py-10 min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(5,150,105,0.12),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.12),_transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef9f2_100%)]">
+    <section className="py-4 sm:py-10 min-h-screen bg-[radial-gradient(circle_at_top_left,var(--flavor-glass),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.12),_transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef9f2_100%)]">
       <div
         className="container px-3 sm:px-4"
         style={{ fontFamily: "'Sora', 'Segoe UI', sans-serif" }}
       >
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-xs sm:text-sm text-gray-500 mb-4 sm:mb-6 overflow-x-auto whitespace-nowrap pb-2">
-          <Link href="/" className="hover:text-[#059669]">
+          <Link href="/" className="hover:text-primary">
             Home
           </Link>
           <span>/</span>
-          <Link href="/products" className="hover:text-[#059669]">
+          <Link href="/products" className="hover:text-primary">
             Products
           </Link>
           <span>/</span>
@@ -209,7 +209,7 @@ const ProductDetailPage = () => {
             <>
               <Link
                 href={`/products?category=${product.category._id || product.category}`}
-                className="hover:text-[#059669]"
+                className="hover:text-primary"
               >
                 {product.category.name || product.categoryName || "Category"}
               </Link>
@@ -238,7 +238,7 @@ const ProductDetailPage = () => {
             <div className="flex flex-col">
               {/* Brand */}
               {product.brand && (
-                <p className="text-xs font-bold uppercase tracking-wider text-[#059669] mb-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2">
                   {product.brand}
                 </p>
               )}
@@ -272,7 +272,7 @@ const ProductDetailPage = () => {
                   </span>
                 )}
                 {discount > 0 && (
-                  <span className="text-sm font-bold text-green-600 bg-green-50 px-2 py-1 rounded">
+                  <span className="text-sm font-bold text-primary bg-[var(--flavor-glass)] px-2 py-1 rounded">
                     Save ₹
                     {(product.originalPrice || product.regularPrice) -
                       (product.price || product.salePrice)}
@@ -315,8 +315,8 @@ const ProductDetailPage = () => {
                     High Demand
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold bg-green-100 text-green-600">
-                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold bg-[var(--flavor-glass)] text-primary">
+                    <span className="w-2 h-2 bg-primary rounded-full"></span>
                     Available
                   </span>
                 )}
@@ -343,11 +343,11 @@ const ProductDetailPage = () => {
                   sx={{
                     backgroundColor: isInCart(product._id || product.id)
                       ? "#dc2626"
-                      : "#059669",
+                      : "var(--primary)",
                     "&:hover": {
                       backgroundColor: isInCart(product._id || product.id)
                         ? "#b91c1c"
-                        : "#047857",
+                        : "var(--flavor-hover)",
                     },
                     padding: "12px 32px",
                     borderRadius: "14px",
@@ -356,7 +356,7 @@ const ProductDetailPage = () => {
                     fontSize: "16px",
                     boxShadow: isInCart(product._id || product.id)
                       ? "0 16px 30px -20px rgba(220,38,38,0.85)"
-                      : "0 16px 30px -20px rgba(5,150,105,0.85)",
+                      : "0 16px 30px -20px rgba(var(--flavor-badge),0.85)",
                   }}
                 >
                   {isInCart(product._id || product.id)
@@ -398,7 +398,7 @@ const ProductDetailPage = () => {
               {/* Features */}
               <div className="grid grid-cols-2 gap-4 py-6 border-t border-b border-gray-100">
                 <div className="flex items-center gap-3">
-                  <MdLocalShipping className="text-2xl text-[#059669]" />
+                  <MdLocalShipping className="text-2xl text-primary" />
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">
                       Free Delivery
@@ -407,7 +407,7 @@ const ProductDetailPage = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <MdVerified className="text-2xl text-[#059669]" />
+                  <MdVerified className="text-2xl text-primary" />
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">
                       Quality Products
@@ -418,7 +418,7 @@ const ProductDetailPage = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <MdVerified className="text-2xl text-[#059669]" />
+                  <MdVerified className="text-2xl text-primary" />
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">
                       100% Authentic
@@ -427,7 +427,7 @@ const ProductDetailPage = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <MdPolicy className="text-2xl text-[#059669]" />
+                  <MdPolicy className="text-2xl text-primary" />
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">
                       Secure Payment
@@ -451,7 +451,7 @@ const ProductDetailPage = () => {
                     <span className="font-medium">Category:</span>{" "}
                     <Link
                       href={`/products?category=${product.category._id || product.category}`}
-                      className="text-[#059669] hover:underline"
+                      className="text-primary hover:underline"
                     >
                       {product.category.name ||
                         product.categoryName ||
@@ -472,11 +472,10 @@ const ProductDetailPage = () => {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-6 py-3 font-semibold text-sm capitalize transition-colors ${
-                  activeTab === tab
-                    ? "text-[#059669] border-b-2 border-[#059669]"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
+                className={`px-6 py-3 font-semibold text-sm capitalize transition-colors ${activeTab === tab
+                  ? "text-primary border-b-2 border-primary"
+                  : "text-gray-500 hover:text-gray-700"
+                  }`}
               >
                 {tab === "reviews"
                   ? `Reviews (${product.numReviews || product.reviews?.length || 0})`

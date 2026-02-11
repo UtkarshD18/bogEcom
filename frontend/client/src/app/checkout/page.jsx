@@ -39,6 +39,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useContext, useEffect, useState } from "react";
 import { FiCheck, FiEdit2, FiPlus, FiTag, FiX } from "react-icons/fi";
 import { HiOutlineFire } from "react-icons/hi";
+import { IoCartOutline } from "react-icons/io5";
 import {
   MdHome,
   MdInfo,
@@ -91,7 +92,12 @@ const Checkout = () => {
 
   // Helper to normalize cart item data (handles both API and localStorage structures)
   const getItemData = (item) => {
-    const product = item.product || item.productData || item;
+    // Check if item.product is an object (API) or ID (localStorage fallback)
+    // If it's a string, we must use item.productData. If it's an object, we use it.
+    const product = (typeof item.product === 'object' && item.product)
+      ? item.product
+      : (item.productData || item);
+
     return {
       id: product?._id || product?.id || item._id || item.id,
       name: product?.name || item.name || item.title || "Product",
@@ -224,6 +230,8 @@ const Checkout = () => {
   const checkoutStateForPreview = isGuestCheckout
     ? guestDetails.state
     : addresses.find((a) => a._id === selectedAddress)?.state || "";
+  const normalizedCheckoutState = normalizeStateValue(checkoutStateForPreview);
+  const isRajasthanDelivery = normalizedCheckoutState === "Rajasthan";
 
   // ── Price Calculation (GST-exclusive model) ──────────────────────────
   // Product prices are GST-inclusive. We extract base (excl. GST) first,
@@ -255,10 +263,10 @@ const Checkout = () => {
   const membershipDiscountPercentage =
     membershipStatus?.isMember && !membershipStatus?.isExpired
       ? Number(
-          membershipStatus?.membershipPlan?.discountPercentage ??
-            membershipStatus?.membershipPlan?.discountPercent ??
-            0,
-        )
+        membershipStatus?.membershipPlan?.discountPercentage ??
+        membershipStatus?.membershipPlan?.discountPercent ??
+        0,
+      )
       : 0;
   const membershipDiscount = calculatePercentageDiscount(
     cartBaseSubtotal,
@@ -272,11 +280,11 @@ const Checkout = () => {
   // Note: Backend will recalculate for security — this is for display only.
   const referralDiscount = referralCode
     ? round2(
-        Math.min(
-          Math.max(Number(calculateReferralDiscount(baseAfterMembership) || 0), 0),
-          baseAfterMembership,
-        ),
-      )
+      Math.min(
+        Math.max(Number(calculateReferralDiscount(baseAfterMembership) || 0), 0),
+        baseAfterMembership,
+      ),
+    )
     : 0;
   const baseBeforeCoupon = round2(
     Math.max(baseAfterMembership - referralDiscount, 0),
@@ -302,6 +310,8 @@ const Checkout = () => {
   const tax = productTotalsAfterCoupon.gstAmount; // GST on discounted base
 
   const productCostAfterCoupon = round2(subtotal + tax); // GST-inclusive after coupon (no shipping)
+
+  // For Rajasthan, we show GST as a combined SGST+CGST line in the UI.
 
   // Step 6: Coin redemption (payment method, NOT a trade discount)
   const maxCoinRedeemValue = Math.floor(
@@ -407,10 +417,10 @@ const Checkout = () => {
           fetch(`${API_URL}/api/coins/settings/public`),
           authToken
             ? fetch(`${API_URL}/api/membership/status`, {
-                headers: {
-                  Authorization: `Bearer ${authToken}`,
-                },
-              })
+              headers: {
+                Authorization: `Bearer ${authToken}`,
+              },
+            })
             : Promise.resolve(null),
         ]);
 
@@ -933,24 +943,24 @@ const Checkout = () => {
         purchaseOrderId,
         shippingAddress: selectedAddrObj
           ? {
-              name: selectedAddrObj.name,
-              address: selectedAddrObj.address_line1,
-              landmark: selectedAddrObj.landmark,
-              city: selectedAddrObj.city,
-              state: selectedAddrObj.state,
-              pincode: selectedAddrObj.pincode,
-              mobile: selectedAddrObj.mobile,
-              addressType: selectedAddrObj.addressType,
-            }
+            name: selectedAddrObj.name,
+            address: selectedAddrObj.address_line1,
+            landmark: selectedAddrObj.landmark,
+            city: selectedAddrObj.city,
+            state: selectedAddrObj.state,
+            pincode: selectedAddrObj.pincode,
+            mobile: selectedAddrObj.mobile,
+            addressType: selectedAddrObj.addressType,
+          }
           : isGuestCheckout
             ? {
-                name: guestDetails.fullName,
-                address: guestDetails.address,
-                city: "",
-                state: guestDetails.state,
-                pincode: guestDetails.pincode,
-                mobile: guestDetails.phone,
-              }
+              name: guestDetails.fullName,
+              address: guestDetails.address,
+              city: "",
+              state: guestDetails.state,
+              pincode: guestDetails.pincode,
+              mobile: guestDetails.phone,
+            }
             : null,
       };
 
@@ -1023,24 +1033,24 @@ const Checkout = () => {
         location: isGuestCheckout ? guestLocationPayload : null,
         shippingAddress: selectedAddrObj
           ? {
-              name: selectedAddrObj.name,
-              address: selectedAddrObj.address_line1,
-              landmark: selectedAddrObj.landmark,
-              city: selectedAddrObj.city,
-              state: selectedAddrObj.state,
-              pincode: selectedAddrObj.pincode,
-              mobile: selectedAddrObj.mobile,
-              addressType: selectedAddrObj.addressType,
-            }
+            name: selectedAddrObj.name,
+            address: selectedAddrObj.address_line1,
+            landmark: selectedAddrObj.landmark,
+            city: selectedAddrObj.city,
+            state: selectedAddrObj.state,
+            pincode: selectedAddrObj.pincode,
+            mobile: selectedAddrObj.mobile,
+            addressType: selectedAddrObj.addressType,
+          }
           : isGuestCheckout
             ? {
-                name: guestDetails.fullName,
-                address: guestDetails.address,
-                city: "",
-                state: guestDetails.state,
-                pincode: guestDetails.pincode,
-                mobile: guestDetails.phone,
-              }
+              name: guestDetails.fullName,
+              address: guestDetails.address,
+              city: "",
+              state: guestDetails.state,
+              pincode: guestDetails.pincode,
+              mobile: guestDetails.phone,
+            }
             : null,
         guestDetails: buildGuestDetailsPayload(),
         // Coupon details
@@ -1114,96 +1124,87 @@ const Checkout = () => {
   // Empty cart state
   if (!cartItems || cartItems.length === 0) {
     return (
-      <section className="min-h-screen bg-gray-50 py-8 px-4">
-        <div className="container mx-auto max-w-lg text-center">
-          <div className="bg-white rounded-2xl shadow-lg p-8">
-            <div className="text-6xl mb-4">🛒</div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-3">
-              Your cart is empty
-            </h1>
-            <p className="text-gray-600 mb-6 text-base">
-              Add items to your cart to proceed with checkout
-            </p>
-            <Link href="/products">
-              <Button
-                sx={{
-                  backgroundColor: "#059669",
-                  color: "white",
-                  padding: "14px 32px",
-                  borderRadius: "12px",
-                  fontWeight: 600,
-                  fontSize: "16px",
-                  textTransform: "none",
-                  "&:hover": { backgroundColor: "#047857" },
-                }}
-              >
-                Continue Shopping
-              </Button>
-            </Link>
+      <section className="min-h-screen flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
+        <div className="relative z-10 bg-white/50 backdrop-blur-xl p-10 rounded-[3rem] border border-white/60 shadow-xl">
+          <div className="w-24 h-24 bg-linear-to-tr from-primary to-[var(--flavor-hover)] rounded-full flex items-center justify-center mb-6 mx-auto shadow-lg shadow-primary/30 animate-bounce">
+            <IoCartOutline size={48} className="text-white" />
           </div>
+          <h1 className="text-3xl font-black text-gray-900 mb-2">Your cart is empty</h1>
+          <p className="text-gray-500 mb-8 max-w-xs mx-auto font-medium">Looks like you haven't added any peanut butter goodness yet!</p>
+          <Link
+            href="/products"
+            className="inline-block px-8 py-4 bg-primary text-white font-black rounded-2xl shadow-lg shadow-primary/20 hover:brightness-110 hover:scale-105 transition-all active:scale-95"
+          >
+            Start Shopping
+          </Link>
         </div>
+
+        {/* Background Gradients */}
+        <div className="fixed top-[-10%] right-[-10%] w-[50%] h-[50%] bg-primary/20 blur-[120px] rounded-full pointer-events-none -z-10" />
+        <div className="fixed bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-violet-400/20 blur-[120px] rounded-full pointer-events-none -z-10" />
       </section>
     );
   }
 
   return (
     <>
-      <section className="bg-gray-50 py-6 min-h-screen">
-        <div className="container mx-auto px-4 max-w-6xl">
-          {/* Header */}
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6">
-            Checkout
-          </h1>
+      <section className="min-h-screen pb-20 pt-10 px-4 md:px-8 relative overflow-hidden">
+        {/* Background Gradients */}
+        <div className="fixed top-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[150px] rounded-full pointer-events-none -z-10" />
+        <div className="fixed bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-violet-400/20 blur-[150px] rounded-full pointer-events-none -z-10" />
 
-          {/* High Traffic Notice - Only show when enabled by admin */}
+        <div className="container mx-auto max-w-7xl relative z-10">
+          {/* Header */}
+          <div className="mb-10 text-center md:text-left">
+            <h1 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tight mb-2">
+              Checkout
+            </h1>
+            <p className="text-gray-500 font-bold">Complete your purchase securely</p>
+          </div>
+
+          {/* High Traffic Notice */}
           {highTrafficNotice?.enabled && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
-              <MdInfo className="text-amber-600 text-xl shrink-0 mt-0.5" />
-              <p className="text-amber-800 text-sm md:text-base">
-                {highTrafficNotice.message || (
-                  <>
-                    <strong>High traffic</strong> — availability may vary. Your
-                    order will be processed once confirmed.
-                  </>
-                )}
-              </p>
+            <div className="bg-amber-50/80 backdrop-blur-md border border-amber-200 rounded-3xl p-6 mb-8 flex items-start gap-4 shadow-sm animate-pulse-slow">
+              <div className="p-3 bg-amber-100 rounded-2xl text-amber-600">
+                <MdInfo size={24} />
+              </div>
+              <div>
+                <h3 className="font-black text-amber-900 text-lg mb-1">High Demand Alert</h3>
+                <p className="text-amber-800 font-medium">
+                  {highTrafficNotice.message || (
+                    <>
+                      <strong>High traffic</strong> — availability may vary. Your
+                      order will be processed once confirmed.
+                    </>
+                  )}
+                </p>
+              </div>
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Left Column - Address & Items */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Checkout Details */}
-              <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg md:text-xl font-semibold text-gray-800">
-                    {isGuestCheckout
-                      ? "Guest Checkout Details"
-                      : "Delivery Address"}
+            <div className="lg:col-span-8 space-y-8">
+
+              {/* Delivery Address */}
+              <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-8 border border-white/50 shadow-xl shadow-gray-200/50">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-2xl font-black text-gray-900 flex items-center gap-3">
+                    <span className="w-10 h-10 rounded-2xl bg-[var(--flavor-glass)] flex items-center justify-center text-primary">1</span>
+                    {isGuestCheckout ? "Guest Details" : "Delivery Address"}
                   </h2>
                   {!isGuestCheckout && (
-                    <Button
-                      variant="outlined"
-                      size="small"
+                    <button
                       onClick={handleAddNewAddress}
-                      sx={{
-                        borderColor: "#059669",
-                        color: "#059669",
-                        textTransform: "none",
-                        borderRadius: "8px",
-                        "&:hover": {
-                          borderColor: "#047857",
-                          backgroundColor: "#ecfdf5",
-                        },
-                      }}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-[var(--flavor-glass)] text-primary font-bold rounded-xl hover:bg-[var(--flavor-light)] transition-colors"
                     >
-                      <FiPlus className="mr-1" /> Add Address
-                    </Button>
+                      <FiPlus size={18} /> Add Address
+                    </button>
                   )}
                 </div>
 
-                {isGuestCheckout && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {isGuestCheckout ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <TextField
                       label="Full Name *"
                       name="fullName"
@@ -1211,7 +1212,9 @@ const Checkout = () => {
                       onChange={handleGuestChange}
                       error={!!guestErrors.fullName}
                       helperText={guestErrors.fullName}
-                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      InputProps={{ sx: { borderRadius: '16px', bgcolor: 'rgba(255,255,255,0.5)' } }}
                     />
                     <TextField
                       label="Phone *"
@@ -1220,7 +1223,9 @@ const Checkout = () => {
                       onChange={handleGuestChange}
                       error={!!guestErrors.phone}
                       helperText={guestErrors.phone}
-                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      InputProps={{ sx: { borderRadius: '16px', bgcolor: 'rgba(255,255,255,0.5)' } }}
                     />
                     <TextField
                       label="Email *"
@@ -1229,167 +1234,146 @@ const Checkout = () => {
                       onChange={handleGuestChange}
                       error={!!guestErrors.email}
                       helperText={guestErrors.email}
-                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      InputProps={{ sx: { borderRadius: '16px', bgcolor: 'rgba(255,255,255,0.5)' } }}
                     />
+                    <div className="md:col-span-2 space-y-4 p-5 bg-gray-50/50 rounded-3xl border border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <UseCurrentLocationGoogleMaps
+                          onResolved={(loc) => {
+                            setGuestLocationPayload(loc);
+                            setGuestDetails((prev) => ({
+                              ...prev,
+                              address: loc.street || loc.formattedAddress || prev.address,
+                              pincode: loc.pincode || prev.pincode,
+                              state: normalizeStateValue(loc.state) || prev.state,
+                            }));
+                          }}
+                          onError={(message) => setSnackbar({ open: true, message, severity: "error" })}
+                        />
+                        {guestLocationPayload?.formattedAddress && (
+                          <span className="text-xs font-bold text-primary bg-[var(--flavor-glass)] px-3 py-1 rounded-full">Location detected</span>
+                        )}
+                      </div>
 
-                    <div className="md:col-span-2 flex items-center gap-2 flex-wrap">
-                      <UseCurrentLocationGoogleMaps
-                        onResolved={(loc) => {
-                          setGuestLocationPayload(loc);
-                          setGuestDetails((prev) => ({
-                            ...prev,
-                            address:
-                              loc.street ||
-                              loc.formattedAddress ||
-                              prev.address,
-                            pincode: loc.pincode || prev.pincode,
-                            state: normalizeStateValue(loc.state) || prev.state,
-                          }));
-                        }}
-                        onError={(message) =>
-                          setSnackbar({
-                            open: true,
-                            message,
-                            severity: "error",
-                          })
-                        }
-                      />
-                      {guestLocationPayload?.formattedAddress && (
-                        <span className="text-xs text-gray-500">
-                          Location selected
-                        </span>
-                      )}
-                    </div>
-
-                    <TextField
-                      label="Address *"
-                      name="address"
-                      value={guestDetails.address}
-                      onChange={handleGuestChange}
-                      error={!!guestErrors.address}
-                      helperText={guestErrors.address}
-                      size="small"
-                      multiline
-                      rows={2}
-                      className="md:col-span-2"
-                    />
-                    <TextField
-                      label="Pincode *"
-                      name="pincode"
-                      value={guestDetails.pincode}
-                      onChange={handleGuestChange}
-                      error={!!guestErrors.pincode}
-                      helperText={guestErrors.pincode}
-                      size="small"
-                    />
-                    <FormControl size="small" error={!!guestErrors.state}>
-                      <InputLabel>State *</InputLabel>
-                      <Select
-                        name="state"
-                        value={guestDetails.state}
-                        label="State *"
+                      <TextField
+                        label="Full Address *"
+                        name="address"
+                        value={guestDetails.address}
                         onChange={handleGuestChange}
-                      >
-                        {INDIAN_STATES.map((state) => (
-                          <MenuItem key={state} value={state}>
-                            {state}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                        error={!!guestErrors.address}
+                        helperText={guestErrors.address}
+                        variant="outlined"
+                        fullWidth
+                        multiline
+                        rows={2}
+                        InputProps={{ sx: { borderRadius: '16px', bgcolor: 'white' } }}
+                      />
+                      <div className="grid grid-cols-2 gap-4">
+                        <TextField
+                          label="Pincode *"
+                          name="pincode"
+                          value={guestDetails.pincode}
+                          onChange={handleGuestChange}
+                          error={!!guestErrors.pincode}
+                          helperText={guestErrors.pincode}
+                          variant="outlined"
+                          fullWidth
+                          InputProps={{ sx: { borderRadius: '16px', bgcolor: 'white' } }}
+                        />
+                        <FormControl fullWidth error={!!guestErrors.state}>
+                          <InputLabel>State *</InputLabel>
+                          <Select
+                            name="state"
+                            value={guestDetails.state}
+                            label="State *"
+                            onChange={handleGuestChange}
+                            sx={{ borderRadius: '16px', bgcolor: 'white' }}
+                          >
+                            {INDIAN_STATES.map((state) => (
+                              <MenuItem key={state} value={state}>{state}</MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </div>
+                    </div>
                   </div>
-                )}
-                {!isGuestCheckout && (
-                  <div className="mt-4">
+                ) : (
+                  <div className="space-y-4">
                     {addressLoading ? (
-                      <div className="flex justify-center py-8">
-                        <CircularProgress size={32} sx={{ color: "#059669" }} />
+                      <div className="flex justify-center py-10">
+                        <CircularProgress sx={{ color: "#10b981" }} />
                       </div>
                     ) : addresses.length === 0 ? (
-                      <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl">
-                        <MdLocationOn
-                          className="mx-auto text-gray-300 mb-2"
-                          size={48}
-                        />
-                        <p className="text-gray-500 mb-3">
-                          No delivery address found
-                        </p>
+                      <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-[2rem]">
+                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
+                          <MdLocationOn size={32} />
+                        </div>
+                        <p className="text-gray-500 font-medium mb-6">No saved addresses found</p>
                         <Button
                           onClick={handleAddNewAddress}
+                          variant="contained"
                           sx={{
-                            backgroundColor: "#059669",
+                            backgroundColor: "#10b981",
                             color: "white",
                             textTransform: "none",
-                            borderRadius: "8px",
-                            "&:hover": { backgroundColor: "#047857" },
+                            borderRadius: "12px",
+                            padding: "10px 24px",
+                            fontWeight: "bold",
+                            "&:hover": { backgroundColor: "var(--flavor-hover)" },
                           }}
                         >
-                          <FiPlus className="mr-1" /> Add Address
+                          <FiPlus className="mr-2" /> Add New Address
                         </Button>
                       </div>
                     ) : (
-                      <div className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {addresses.map((addr) => (
-                          <label
+                          <div
                             key={addr._id}
-                            className={`flex items-start p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                              selectedAddress === addr._id
-                                ? "border-orange-500 bg-orange-50"
-                                : "border-gray-200 hover:border-orange-300"
-                            }`}
+                            onClick={() => setSelectedAddress(addr._id)}
+                            className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all duration-300 ${selectedAddress === addr._id
+                              ? "border-primary bg-[var(--flavor-glass)] shadow-lg shadow-primary/10"
+                              : "border-gray-100 bg-white hover:border-primary/40"
+                              }`}
                           >
-                            <Radio
-                              checked={selectedAddress === addr._id}
-                              onChange={() => setSelectedAddress(addr._id)}
-                              sx={{
-                                color: "#059669",
-                                "&.Mui-checked": { color: "#059669" },
-                              }}
-                            />
-                            <div className="ml-3 flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                                  {getAddressIcon(addr.addressType)}
-                                  {addr.addressType || "Home"}
-                                </span>
-                                {addr.selected && (
-                                  <span className="text-xs text-orange-600 font-medium">
-                                    Default
-                                  </span>
-                                )}
-                              </div>
-                              <p className="font-medium text-gray-800">
-                                {addr.name}
-                              </p>
-                              <p className="text-gray-600 text-sm">
-                                {addr.address_line1}
-                                {addr.landmark && `, ${addr.landmark}`}
-                              </p>
-                              <p className="text-gray-600 text-sm">
-                                {addr.city}, {addr.state} - {addr.pincode}
-                              </p>
-                              <p className="text-gray-600 text-sm">
-                                +91 {addr.mobile}
-                              </p>
+                            <div className="flex justify-between items-start mb-3">
+                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${selectedAddress === addr._id ? "bg-[var(--flavor-glass)] text-primary" : "bg-gray-100 text-gray-500"
+                                }`}>
+                                {getAddressIcon(addr.addressType)}
+                                {addr.addressType || "Home"}
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleEditAddress(addr);
+                                }}
+                                className="p-2 text-gray-400 hover:text-primary hover:bg-[var(--flavor-glass)] rounded-full transition-colors"
+                              >
+                                <FiEdit2 size={16} />
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleEditAddress(addr);
-                              }}
-                              className="text-orange-600 hover:text-orange-700 p-1"
-                            >
-                              <FiEdit2 size={16} />
-                            </button>
-                          </label>
+
+                            <h3 className="font-bold text-gray-900 mb-1">{addr.name}</h3>
+                            <p className="text-sm text-gray-500 leading-relaxed mb-3">
+                              {addr.address_line1} {addr.landmark && `, ${addr.landmark}`} <br />
+                              {addr.city}, {addr.state} - {addr.pincode}
+                            </p>
+                            <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-primary" /> +91 {addr.mobile}
+                            </p>
+
+                            {selectedAddress === addr._id && (
+                              <div className="absolute top-4 right-4 text-primary">
+                                <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                                  <FiCheck size={14} className="text-white" />
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         ))}
-                        <Link href="/address" className="block">
-                          <p className="text-center text-sm text-orange-600 hover:underline mt-2">
-                            Manage all addresses →
-                          </p>
-                        </Link>
                       </div>
                     )}
                   </div>
@@ -1397,51 +1381,32 @@ const Checkout = () => {
               </div>
 
               {/* Order Items */}
-              <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
-                <h2 className="text-lg md:text-xl font-semibold text-gray-800 mb-4">
-                  Order Items ({cartItems.length})
+              <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-8 border border-white/50 shadow-xl shadow-gray-200/50">
+                <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-2xl bg-violet-100/50 flex items-center justify-center text-violet-600">2</span>
+                  Order Items <span className="text-gray-400 text-lg font-medium">({cartItems.length})</span>
                 </h2>
-                <div className="space-y-4 max-h-80 overflow-y-auto">
+
+                <div className="space-y-4">
                   {cartItems.map((item, index) => {
                     const data = getItemData(item);
                     return (
-                      <div
-                        key={data.id || index}
-                        className="pb-4 border-b border-gray-100 last:border-0"
-                      >
-                        <div className="flex items-center gap-4">
-                          <img
-                            src={data.image}
-                            alt={data.name}
-                            className="w-16 h-16 md:w-20 md:h-20 object-cover rounded-lg"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-gray-800 text-sm md:text-base truncate">
-                              {data.name}
-                            </h3>
-                            {data.demandStatus === "HIGH" && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 mt-1">
-                                <HiOutlineFire className="w-3 h-3" />
-                                High Demand
-                              </span>
-                            )}
-                            <p className="text-gray-500 text-sm mt-1">
-                              Qty: {data.quantity} × ₹{data.price}
-                            </p>
-                          </div>
-                          <span className="font-semibold text-gray-800 text-sm md:text-base">
-                            ₹{(data.price * data.quantity).toFixed(0)}
-                          </span>
+                      <div key={data.id || index} className="flex gap-4 p-4 rounded-3xl bg-white border border-gray-50 items-center">
+                        <div className="w-20 h-20 rounded-2xl bg-gray-50 flex items-center justify-center p-2 shrink-0">
+                          <img src={data.image} alt={data.name} className="w-full h-full object-contain" />
                         </div>
-                        {data.demandStatus === "HIGH" && (
-                          <div className="mt-2 ml-20 md:ml-24 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                            <p className="text-xs text-amber-700 flex items-center gap-1.5">
-                              <HiOutlineFire className="w-3 h-3" />
-                              High traffic — availability will be confirmed
-                              after order processing.
-                            </p>
-                          </div>
-                        )}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-gray-900 truncate">{data.name}</h3>
+                          {data.demandStatus === "HIGH" && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full mt-1">
+                              <HiOutlineFire /> High Demand
+                            </span>
+                          )}
+                          <p className="text-sm text-gray-500 mt-1 font-medium">Qty: {data.quantity} × <span className="text-gray-900">₹{data.price}</span></p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-black text-lg text-gray-900">₹{(data.price * data.quantity).toFixed(0)}</p>
+                        </div>
                       </div>
                     );
                   })}
@@ -1449,322 +1414,166 @@ const Checkout = () => {
               </div>
 
               {/* Order Notes */}
-              <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
-                <h2 className="text-lg font-semibold text-gray-800 mb-3">
-                  Order Notes{" "}
-                  <span className="text-gray-400 font-normal">(Optional)</span>
-                </h2>
+              <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-8 border border-white/50 shadow-xl shadow-gray-200/50">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Order Notes <span className="text-gray-400 font-normal text-sm ml-2">(Optional)</span></h2>
                 <textarea
                   value={orderNote}
                   onChange={(e) => setOrderNote(e.target.value)}
-                  placeholder="Add special instructions for your order..."
-                  className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none text-base"
-                  rows="3"
+                  placeholder="Any special instructions for delivery?"
+                  className="w-full p-5 rounded-3xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all resize-none h-32 text-gray-700 bg-white"
                 />
               </div>
             </div>
 
-            {/* Right Column - Payment Summary */}
-            <div className="space-y-6">
-              {/* Coupon Section */}
-              <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
-                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                  <FiTag className="text-orange-500" />
-                  Apply Coupon
-                </h3>
+            {/* Right Column - Summary & Payment */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="sticky top-24 space-y-6">
 
-                {appliedCoupon ? (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold text-green-700 flex items-center gap-2">
-                          <FiCheck /> {appliedCoupon.code}
-                        </p>
-                        <p className="text-green-600 text-sm">
-                          You save ₹{appliedCoupon.discountAmount}
-                        </p>
+                {/* Order Summary Card */}
+                <div className="bg-gray-900 text-white rounded-[2.5rem] p-8 shadow-2xl overflow-hidden relative">
+                  {/* Glow Effects */}
+                  <div className="absolute top-[-20%] right-[-20%] w-40 h-40 bg-primary/20 blur-[80px] rounded-full pointer-events-none" />
+                  <div className="absolute bottom-[-10%] left-[-10%] w-32 h-32 bg-violet-500/20 blur-[60px] rounded-full pointer-events-none" />
+
+                  <h2 className="text-2xl font-black mb-6 border-b border-gray-700 pb-4">Summary</h2>
+
+                  <div className="space-y-4 mb-8">
+                    <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
+                      <span>Subtotal</span>
+                      <span className="text-white">₹{cartBaseSubtotal.toFixed(2)}</span>
+                    </div>
+
+                    {couponDiscount > 0 && (
+                      <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
+                        <span className="flex items-center gap-1"><FiTag /> Coupon</span>
+                        <span>-₹{couponDiscount.toFixed(2)}</span>
                       </div>
-                      <button
-                        onClick={handleRemoveCoupon}
-                        className="text-red-500 hover:text-red-600 p-2"
-                      >
-                        <FiX size={20} />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={couponCode}
-                        onChange={(e) => {
-                          setCouponCode(e.target.value.toUpperCase());
-                          setCouponError("");
-                        }}
-                        placeholder="Enter code"
-                        className="flex-1 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 text-base uppercase"
-                      />
-                      <Button
-                        onClick={handleApplyCoupon}
-                        disabled={couponLoading}
-                        sx={{
-                          backgroundColor: "#059669",
-                          color: "white",
-                          padding: "12px 20px",
-                          borderRadius: "12px",
-                          fontWeight: 600,
-                          textTransform: "none",
-                          minWidth: "80px",
-                          "&:hover": { backgroundColor: "#047857" },
-                          "&:disabled": { backgroundColor: "#ccc" },
-                        }}
-                      >
-                        {couponLoading ? (
-                          <CircularProgress size={20} color="inherit" />
-                        ) : (
-                          "Apply"
-                        )}
-                      </Button>
-                    </div>
-                    {couponError && (
-                      <p className="text-red-500 text-sm mt-2">{couponError}</p>
                     )}
-                  </>
-                )}
-              </div>
 
-              {/* GST Section */}
-              <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
-                <h3 className="font-semibold text-gray-800 mb-3">
-                  GST (Optional)
-                </h3>
-                <TextField
-                  label="GST Number"
-                  value={gstNumber}
-                  onChange={handleGstChange}
-                  onBlur={handleGstBlur}
-                  size="small"
-                  fullWidth
-                  placeholder="15-character GSTIN"
-                  error={!!gstError}
-                  helperText={
-                    gstError ||
-                    (authToken ? "Saved to your account for future orders" : "")
-                  }
-                />
-                {gstSaving && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Saving GST number...
-                  </p>
-                )}
-              </div>
+                    {coinRedeemAmount > 0 && (
+                      <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
+                        <span className="flex items-center gap-1">🪙 Coins</span>
+                        <span>-₹{coinRedeemAmount.toFixed(2)}</span>
+                      </div>
+                    )}
 
-              {/* Coins */}
-              {!isGuestCheckout && (
-                <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
-                  <h3 className="font-semibold text-gray-800 mb-3">
-                    Redeem Coins
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Balance: <strong>{coinBalance}</strong> coins
+                    {isRajasthanDelivery ? (
+                      <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
+                        <span>GST (S.GST+C.GST)</span>
+                        <span>₹{tax.toFixed(2)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
+                        <span>IGST</span>
+                        <span>₹{tax.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
+                      <span>Shipping</span>
+                      <span className={shipping === 0 ? "text-primary" : "text-white"}>
+                        {shipping === 0 ? "FREE" : `₹${shipping.toFixed(2)}`}
+                      </span>
+                    </div>
+
+                    <div className="pt-6 border-t border-gray-700 flex justify-between items-end">
+                      <div>
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1">Total Payable</p>
+                        <p className="text-3xl font-black text-white tracking-tight">₹{total.toFixed(0)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handlePayNow}
+                    disabled={maintenanceMode || isPayButtonDisabled || cartItems.length === 0}
+                    className="w-full py-4 bg-primary text-gray-900 font-black rounded-2xl shadow-lg shadow-primary/20 hover:brightness-110 transform hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isPayButtonDisabled ? (
+                      <span className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>PAY NOW <FiCheck className="stroke-[3px]" /></>
+                    )}
+                  </button>
+
+                  <p className="text-center text-[10px] text-gray-500 mt-4 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+                    <span>🔒 Secure by Razorpay</span>
                   </p>
-                  <div className="flex gap-2 items-center">
-                    <TextField
-                      label="Coins to redeem"
-                      type="number"
-                      size="small"
-                      value={requestedCoins}
-                      onChange={(e) =>
-                        setRequestedCoins(
-                          Math.max(0, Math.floor(Number(e.target.value || 0))),
-                        )
-                      }
-                      inputProps={{ min: 0 }}
-                      fullWidth
+                </div>
+
+                {/* Coupon & Extras */}
+                <div className="bg-white/60 backdrop-blur-xl rounded-[2rem] p-6 border border-white/50 shadow-xl shadow-gray-200/50 space-y-6">
+                  {/* Coupon Input */}
+                  <div>
+                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2"><FiTag className="text-primary" /> Apply Coupon</h3>
+                    {appliedCoupon ? (
+                      <div className="bg-[var(--flavor-glass)] border border-primary/20 p-4 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-primary flex items-center gap-2"><FiCheck /> {appliedCoupon.code}</p>
+                          <p className="text-xs text-primary font-bold">You saved ₹{appliedCoupon.discountAmount}</p>
+                        </div>
+                        <button onClick={handleRemoveCoupon} className="p-2 bg-white rounded-full text-red-500 hover:bg-red-50 hover:scale-110 transition-all"><FiX /></button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={couponCode}
+                          onChange={(e) => { setCouponCode(e.target.value.toUpperCase()); setCouponError(""); }}
+                          placeholder="ENTER CODE"
+                          className="flex-1 text-sm font-bold uppercase p-3 bg-white rounded-xl border border-gray-200 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        />
+                        <button
+                          onClick={handleApplyCoupon}
+                          disabled={couponLoading}
+                          className="px-5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
+                        >
+                          {couponLoading ? "..." : "APPLY"}
+                        </button>
+                      </div>
+                    )}
+                    {couponError && <p className="text-red-500 text-xs font-bold mt-2 ml-1">{couponError}</p>}
+                  </div>
+
+                  {/* GST Input */}
+                  <div>
+                    <h3 className="font-bold text-gray-800 mb-3 text-sm">GST Number <span className="text-gray-400 font-normal">(Optional)</span></h3>
+                    <input
+                      type="text"
+                      value={gstNumber}
+                      onChange={handleGstChange}
+                      onBlur={handleGstBlur}
+                      placeholder="15-digit GSTIN"
+                      className="w-full text-sm font-medium uppercase p-3 bg-white rounded-xl border border-gray-200 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                     />
-                    <Button
-                      variant="outlined"
-                      onClick={() =>
-                        setRequestedCoins(
-                          Math.min(
-                            coinBalance,
-                            Math.floor(
-                              maxCoinRedeemValue /
-                                Number(coinSettings.redeemRate || 1),
-                            ),
-                          ),
-                        )
-                      }
-                    >
-                      Max
-                    </Button>
+                    {gstSavedValue && <p className="text-primary text-[10px] font-bold mt-1 ml-1 flex items-center gap-1"><FiCheck /> Saved to profile</p>}
                   </div>
-                  <p className="text-xs text-slate-500 mt-2">
-                    Max redeem value: ₹{maxCoinRedeemValue.toFixed(0)} (
-                    {Number(coinSettings.maxRedeemPercentage || 0)}% cap)
-                  </p>
-                  {coinRedeemAmount > 0 && (
-                    <p className="text-sm text-emerald-700 mt-1">
-                      Applying {effectiveRedeemCoins} coins = ₹
-                      {coinRedeemAmount.toFixed(0)}
-                    </p>
+
+                  {/* Coins */}
+                  {!isGuestCheckout && coinBalance > 0 && (
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="font-bold text-gray-800 text-sm">Redeem Coins</h3>
+                        <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full">{coinBalance} Available</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          value={requestedCoins}
+                          onChange={(e) => setRequestedCoins(Math.max(0, Math.floor(Number(e.target.value || 0))))}
+                          className="w-20 text-center font-bold p-2 bg-white rounded-xl border border-gray-200"
+                        />
+                        <button
+                          onClick={() => setRequestedCoins(Math.min(coinBalance, Math.floor(maxCoinRedeemValue / Number(coinSettings.redeemRate || 1))))}
+                          className="flex-1 bg-amber-100 text-amber-700 font-bold rounded-xl text-xs hover:bg-amber-200 transition-colors"
+                        >
+                          MAX SAVE
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-2 font-medium">1 Coin = ₹{coinSettings.redeemRate}</p>
+                    </div>
                   )}
                 </div>
-              )}
-
-              {/* Price Summary */}
-              <div className="bg-white rounded-xl shadow-sm p-5 md:p-6">
-                <h3 className="font-semibold text-gray-800 mb-4">
-                  Order Summary
-                </h3>
-                <div className="space-y-3 text-base">
-                  <div className="flex justify-between text-gray-600">
-                    <span>Product Total (Incl. GST)</span>
-                    <span>₹{cartGrossSubtotal.toFixed(2)}</span>
-                  </div>
-
-                  <div className="flex justify-between text-gray-600">
-                    <span>Subtotal (Excl. GST)</span>
-                    <span>₹{cartBaseSubtotal.toFixed(2)}</span>
-                  </div>
-
-                  {couponDiscount > 0 && (
-                    <div className="flex justify-between text-green-600 font-medium">
-                      <span className="flex items-center gap-2">
-                        <FiTag className="w-4 h-4" />
-                        Coupon Discount
-                      </span>
-                      <span>-₹{couponDiscount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {couponDiscount > 0 && (
-                    <div className="flex justify-between text-gray-600">
-                      <span>Discounted Subtotal (Excl. GST)</span>
-                      <span>₹{subtotal.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-gray-600">
-                    <span>
-                      {checkoutStateForPreview.toLowerCase() === "rajasthan"
-                        ? `GST (CGST ${round2(gstRatePercent / 2)}% + SGST ${round2(
-                            gstRatePercent / 2,
-                          )}%)`
-                        : `GST (IGST ${round2(gstRatePercent)}%)`}
-                    </span>
-                    <span>₹{tax.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span className="flex items-center gap-2">
-                      <MdLocalShipping />
-                      Shipping
-                      {shippingSettings?.freeShippingEnabled &&
-                        cartGrossSubtotal <
-                          shippingSettings?.freeShippingThreshold && (
-                          <span className="text-xs text-orange-500">
-                            (Free over ₹
-                            {shippingSettings?.freeShippingThreshold})
-                          </span>
-                        )}
-                    </span>
-                    <span
-                      className={
-                        shipping === 0 ? "text-green-600 font-medium" : ""
-                      }
-                    >
-                      {shipping === 0
-                        ? "FREE"
-                        : `₹${Number(shipping || 0).toFixed(2)}`}
-                    </span>
-                  </div>
-                  {/* Coin redemption (payment method, shown when used) */}
-                  {coinRedeemAmount > 0 && (
-                    <div className="flex justify-between text-green-600 font-medium">
-                      <span className="flex items-center gap-2">
-                        🪙 Coin Redemption
-                      </span>
-                      <span>-₹{coinRedeemAmount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="border-t border-gray-200 pt-3">
-                    <div className="flex justify-between font-bold text-gray-800">
-                      <span className="text-lg">
-                        You Pay (Incl. GST + Shipping)
-                      </span>
-                      <span className="text-xl text-emerald-600">
-                        ₹{total.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Referral Applied Badge */}
-                {referralCode && (
-                  <div className="mt-4 bg-purple-50 rounded-lg p-3 text-sm text-purple-700 flex items-center gap-2">
-                    <HiOutlineFire className="w-4 h-4" />
-                    <span>
-                      Referral code <strong>{referralCode}</strong> applied!
-                      {referralData?.discountType === "PERCENT"
-                        ? ` (${referralData?.discountValue}% off)`
-                        : ` (₹${referralData?.discountValue} off)`}
-                    </span>
-                  </div>
-                )}
-
-                {/* Legacy Affiliate Tracking Badge */}
-                {affiliateData && !referralCode && (
-                  <div className="mt-4 bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
-                    Referral: {affiliateData.code}
-                  </div>
-                )}
-              </div>
-
-              {/* Payment Button */}
-              <Button
-                onClick={handlePayNow}
-                disabled={
-                  maintenanceMode ||
-                  isPayButtonDisabled ||
-                  cartItems.length === 0
-                }
-                fullWidth
-                sx={{
-                  backgroundColor:
-                    maintenanceMode || isPayButtonDisabled
-                      ? "#9ca3af"
-                      : "#059669",
-                  color: "white",
-                  padding: "16px 24px",
-                  borderRadius: "12px",
-                  fontWeight: 700,
-                  fontSize: "18px",
-                  textTransform: "none",
-                  boxShadow: isPayButtonDisabled
-                    ? "none"
-                    : "0 4px 14px rgba(193, 89, 28, 0.4)",
-                  "&:hover": {
-                    backgroundColor: isPayButtonDisabled
-                      ? "#9ca3af"
-                      : "#047857",
-                  },
-                  "&:disabled": {
-                    backgroundColor: "#9ca3af",
-                    color: "#fff",
-                  },
-                }}
-              >
-                {maintenanceMode
-                  ? "Maintenance Mode"
-                  : isPayButtonDisabled
-                    ? "Please Wait..."
-                    : `Pay ₹${total.toFixed(0)}`}
-              </Button>
-
-              {/* Security Badge */}
-              <div className="bg-gray-50 p-4 rounded-xl">
-                <p className="text-sm text-gray-600 text-center">
-                  🔒 Your payment information is secure and encrypted
-                </p>
               </div>
             </div>
           </div>
@@ -1780,7 +1589,7 @@ const Checkout = () => {
         orderTotal={total}
       />
 
-      {/* Snackbar for notifications */}
+      {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
@@ -1790,185 +1599,80 @@ const Checkout = () => {
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{ width: "100%", borderRadius: "12px" }}
+          sx={{ width: "100%", borderRadius: "16px", fontWeight: 'bold', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}
         >
           {snackbar.message}
         </Alert>
       </Snackbar>
 
-      {/* Add/Edit Address Dialog */}
+      {/* Address Dialog */}
       <Dialog
         open={isAddressDialogOpen}
         onClose={() => setIsAddressDialogOpen(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: { borderRadius: '24px', padding: '10px' }
+        }}
       >
-        <DialogTitle sx={{ borderBottom: "1px solid #e5e7eb" }}>
+        <DialogTitle sx={{ borderBottom: "1px solid #f3f4f6", fontWeight: '900', fontSize: '1.25rem' }}>
           {editingAddress ? "Edit Address" : "Add New Address"}
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
-          <div className="grid grid-cols-1 gap-4 mt-2">
-            <TextField
-              name="name"
-              label="Full Name *"
-              value={formData.name}
-              onChange={handleFormChange}
-              error={!!formErrors.name}
-              helperText={formErrors.name}
-              fullWidth
-              size="small"
-            />
+          <div className="grid grid-cols-1 gap-5 mt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <TextField name="name" label="Full Name" value={formData.name} onChange={handleFormChange} error={!!formErrors.name} helperText={formErrors.name} fullWidth size="medium" InputProps={{ sx: { borderRadius: '12px' } }} />
+              <TextField name="mobile" label="Mobile" value={formData.mobile} onChange={handleFormChange} error={!!formErrors.mobile} helperText={formErrors.mobile} fullWidth size="medium" InputProps={{ sx: { borderRadius: '12px' } }} />
+            </div>
 
-            <TextField
-              name="mobile"
-              label="Mobile Number *"
-              value={formData.mobile}
-              onChange={handleFormChange}
-              error={!!formErrors.mobile}
-              helperText={formErrors.mobile}
-              fullWidth
-              size="small"
-              placeholder="10-digit mobile number"
-            />
-
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-col gap-2">
               <UseCurrentLocationGoogleMaps
                 onResolved={(loc) => {
                   setLocationPayload(loc);
                   setFormData((prev) => ({
                     ...prev,
-                    address_line1:
-                      loc.street || loc.formattedAddress || prev.address_line1,
+                    address_line1: loc.street || loc.formattedAddress || prev.address_line1,
                     city: loc.city || prev.city,
                     pincode: loc.pincode || prev.pincode,
                     state: normalizeStateValue(loc.state) || prev.state,
                   }));
                 }}
-                onError={(message) =>
-                  setSnackbar({ open: true, message, severity: "error" })
-                }
+                onError={(message) => setSnackbar({ open: true, message, severity: "error" })}
               />
-              {locationPayload?.formattedAddress && (
-                <span className="text-xs text-gray-500">Location selected</span>
-              )}
             </div>
 
-            <TextField
-              name="address_line1"
-              label="Address (House No, Building, Street) *"
-              value={formData.address_line1}
-              onChange={handleFormChange}
-              error={!!formErrors.address_line1}
-              helperText={formErrors.address_line1}
-              fullWidth
-              size="small"
-              multiline
-              rows={2}
-            />
+            <TextField name="address_line1" label="Full Address" value={formData.address_line1} onChange={handleFormChange} error={!!formErrors.address_line1} helperText={formErrors.address_line1} fullWidth multiline rows={2} InputProps={{ sx: { borderRadius: '12px' } }} />
 
-            <TextField
-              name="landmark"
-              label="Landmark (Optional)"
-              value={formData.landmark}
-              onChange={handleFormChange}
-              fullWidth
-              size="small"
-              placeholder="Near park, mall, etc."
-            />
+            <TextField name="landmark" label="Landmark (Optional)" value={formData.landmark} onChange={handleFormChange} fullWidth size="small" InputProps={{ sx: { borderRadius: '12px' } }} />
 
             <div className="grid grid-cols-2 gap-4">
-              <TextField
-                name="city"
-                label="City *"
-                value={formData.city}
-                onChange={handleFormChange}
-                error={!!formErrors.city}
-                helperText={formErrors.city}
-                fullWidth
-                size="small"
-              />
-
-              <TextField
-                name="pincode"
-                label="Pincode *"
-                value={formData.pincode}
-                onChange={handleFormChange}
-                error={!!formErrors.pincode}
-                helperText={formErrors.pincode}
-                fullWidth
-                size="small"
-                placeholder="6-digit pincode"
-              />
+              <TextField name="city" label="City" value={formData.city} onChange={handleFormChange} error={!!formErrors.city} helperText={formErrors.city} fullWidth size="small" InputProps={{ sx: { borderRadius: '12px' } }} />
+              <TextField name="pincode" label="Pincode" value={formData.pincode} onChange={handleFormChange} error={!!formErrors.pincode} helperText={formErrors.pincode} fullWidth size="small" InputProps={{ sx: { borderRadius: '12px' } }} />
             </div>
 
-            <FormControl fullWidth size="small" error={!!formErrors.state}>
-              <InputLabel>State *</InputLabel>
-              <Select
-                name="state"
-                value={formData.state}
-                onChange={handleFormChange}
-                label="State *"
-              >
-                {INDIAN_STATES.map((state) => (
-                  <MenuItem key={state} value={state}>
-                    {state}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <div className="grid grid-cols-2 gap-4">
+              <FormControl fullWidth size="small" error={!!formErrors.state}>
+                <InputLabel>State</InputLabel>
+                <Select name="state" value={formData.state} onChange={handleFormChange} label="State" sx={{ borderRadius: '12px' }}>
+                  {INDIAN_STATES.map((state) => (<MenuItem key={state} value={state}>{state}</MenuItem>))}
+                </Select>
+              </FormControl>
 
-            <FormControl fullWidth size="small">
-              <InputLabel>Address Type</InputLabel>
-              <Select
-                name="addressType"
-                value={formData.addressType}
-                onChange={handleFormChange}
-                label="Address Type"
-              >
-                <MenuItem value="Home">
-                  <span className="flex items-center gap-2">
-                    <MdHome /> Home
-                  </span>
-                </MenuItem>
-                <MenuItem value="Work">
-                  <span className="flex items-center gap-2">
-                    <MdWork /> Work
-                  </span>
-                </MenuItem>
-                <MenuItem value="Other">
-                  <span className="flex items-center gap-2">
-                    <MdLocationOn /> Other
-                  </span>
-                </MenuItem>
-              </Select>
-            </FormControl>
+              <FormControl fullWidth size="small">
+                <InputLabel>Type</InputLabel>
+                <Select name="addressType" value={formData.addressType} onChange={handleFormChange} label="Type" sx={{ borderRadius: '12px' }}>
+                  <MenuItem value="Home">Home</MenuItem>
+                  <MenuItem value="Work">Work</MenuItem>
+                  <MenuItem value="Other">Other</MenuItem>
+                </Select>
+              </FormControl>
+            </div>
           </div>
         </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: "1px solid #e5e7eb" }}>
-          <Button
-            onClick={() => setIsAddressDialogOpen(false)}
-            sx={{ textTransform: "none" }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSaveAddress}
-            disabled={addressSaving}
-            sx={{
-              backgroundColor: "#059669",
-              color: "white",
-              textTransform: "none",
-              "&:hover": { backgroundColor: "#047857" },
-              "&:disabled": { backgroundColor: "#ccc" },
-            }}
-          >
-            {addressSaving ? (
-              <CircularProgress size={20} color="inherit" />
-            ) : editingAddress ? (
-              "Update"
-            ) : (
-              "Save"
-            )}
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button onClick={() => setIsAddressDialogOpen(false)} sx={{ color: '#6b7280', fontWeight: 'bold' }}>Cancel</Button>
+          <Button onClick={handleSaveAddress} disabled={addressSaving} variant="contained" sx={{ bgcolor: 'var(--primary)', borderRadius: '12px', fontWeight: 'bold', px: 4, py: 1.5, '&:hover': { bgcolor: 'var(--flavor-hover)' } }}>
+            {addressSaving ? "Saving..." : "Save Address"}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useProducts } from "@/context/ProductContext";
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -52,8 +53,7 @@ const THEME_PRESETS = {
     accent: "from-lime-600 to-emerald-600",
     accentStrong: "from-lime-500 to-emerald-500",
     accentText: "text-emerald-700",
-    accentSoft:
-      "bg-emerald-600/10 border-emerald-600/20 text-emerald-700",
+    accentSoft: "bg-emerald-600/10 border-emerald-600/20 text-emerald-700",
     glowA: "bg-lime-500",
     glowB: "bg-emerald-400",
   },
@@ -64,6 +64,22 @@ const THEME_PRESETS = {
     accentSoft: "bg-indigo-600/10 border-indigo-600/20 text-indigo-700",
     glowA: "bg-indigo-500",
     glowB: "bg-purple-400",
+  },
+  sunset: {
+    accent: "from-orange-500 to-rose-500",
+    accentStrong: "from-orange-600 to-rose-600",
+    accentText: "text-rose-600",
+    accentSoft: "bg-rose-600/10 border-rose-600/20 text-rose-600",
+    glowA: "bg-orange-400",
+    glowB: "bg-rose-400",
+  },
+  midnight: {
+    accent: "from-slate-700 to-slate-900",
+    accentStrong: "from-slate-800 to-slate-950",
+    accentText: "text-slate-700",
+    accentSoft: "bg-slate-600/10 border-slate-600/20 text-slate-700",
+    glowA: "bg-slate-500",
+    glowB: "bg-gray-400",
   },
 };
 
@@ -79,6 +95,21 @@ const formatDate = (dateString) => {
   }
 };
 
+const fadeInUp = {
+  hidden: { opacity: 0, y: 30 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.15,
+    },
+  },
+};
+
 export default function BlogPage() {
   const { blogs = [], fetchBlogs } = useProducts();
   const [pageConfig, setPageConfig] = useState(DEFAULT_PAGE);
@@ -87,7 +118,7 @@ export default function BlogPage() {
   const layout = pageConfig?.theme?.layout || DEFAULT_PAGE.theme.layout;
   const theme = useMemo(
     () => THEME_PRESETS[themeStyle] || THEME_PRESETS.mint,
-    [themeStyle],
+    [themeStyle]
   );
 
   const sections = pageConfig?.sections || DEFAULT_PAGE.sections;
@@ -112,7 +143,10 @@ export default function BlogPage() {
             ...DEFAULT_PAGE,
             ...data.data,
             theme: { ...DEFAULT_PAGE.theme, ...(data.data.theme || {}) },
-            sections: { ...DEFAULT_PAGE.sections, ...(data.data.sections || {}) },
+            sections: {
+              ...DEFAULT_PAGE.sections,
+              ...(data.data.sections || {}),
+            },
             hero: { ...DEFAULT_PAGE.hero, ...(data.data.hero || {}) },
             newsletter: {
               ...DEFAULT_PAGE.newsletter,
@@ -144,7 +178,12 @@ export default function BlogPage() {
       <main className="bg-white min-h-screen">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
           {showHero && (
-            <section className="max-w-3xl">
+            <motion.section
+              initial="hidden"
+              animate="visible"
+              variants={fadeInUp}
+              className="max-w-3xl"
+            >
               {pageConfig?.hero?.badge && (
                 <span
                   className={[
@@ -155,7 +194,7 @@ export default function BlogPage() {
                   {pageConfig.hero.badge}
                 </span>
               )}
-              <h1 className="mt-5 text-4xl sm:text-5xl font-extrabold text-gray-900">
+              <h1 className="mt-5 text-4xl sm:text-5xl font-extrabold text-gray-900 tracking-tight">
                 {pageConfig?.hero?.title || DEFAULT_PAGE.hero.title}
               </h1>
               {pageConfig?.hero?.description && (
@@ -163,81 +202,110 @@ export default function BlogPage() {
                   {pageConfig.hero.description}
                 </p>
               )}
-            </section>
+            </motion.section>
           )}
 
           {showGrid && (
-            <section className="mt-10">
+            <section className="mt-16">
               {blogs.length === 0 ? (
                 <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-gray-600">
                   No blogs yet.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <motion.div
+                  initial="hidden"
+                  whileInView="visible"
+                  viewport={{ once: true, margin: "-50px" }}
+                  variants={staggerContainer}
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8"
+                >
                   {blogs.map((blog) => (
-                    <Link key={blog._id} href={`/blogs/${blog.slug || blog._id}`}>
-                      <article className="group overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-md transition">
-                        <div className="relative h-44 overflow-hidden bg-gray-50">
+                    <Link
+                      key={blog._id}
+                      href={`/blogs/${blog.slug || blog._id}`}
+                    >
+                      <motion.article
+                        variants={fadeInUp}
+                        whileHover={{ y: -5 }}
+                        className="group h-full flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-lg transition-all duration-300"
+                      >
+                        <div className="relative h-48 overflow-hidden bg-gray-50">
                           <img
                             src={blog.image}
                             alt={blog.title}
-                            className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                           />
                         </div>
-                        <div className="p-5">
-                          <div className="text-xs text-gray-400">
+                        <div className="p-6 flex-1 flex flex-col">
+                          <div className="text-xs text-gray-400 font-medium mb-2">
                             {formatDate(blog.createdAt)}
                           </div>
-                          <h2 className="mt-2 font-bold text-gray-900 line-clamp-2 group-hover:text-gray-700 transition-colors">
+                          <h2 className="text-xl font-bold text-gray-900 line-clamp-2 group-hover:text-gray-700 transition-colors">
                             {blog.title}
                           </h2>
-                          <p className="mt-2 text-sm text-gray-600 line-clamp-3">
-                            {blog.excerpt || blog.description || blog.content?.substring(0, 120)}
+                          <p className="mt-3 text-sm text-gray-600 line-clamp-3 mb-4 flex-1">
+                            {blog.excerpt ||
+                              blog.description ||
+                              blog.content?.substring(0, 120)}
                           </p>
-                          <div className={`mt-4 text-sm font-semibold ${theme.accentText}`}>
-                            Read more →
+                          <div
+                            className={`text-sm font-semibold flex items-center gap-1 ${theme.accentText}`}
+                          >
+                            Read more{" "}
+                            <span className="group-hover:translate-x-1 transition-transform">
+                              →
+                            </span>
                           </div>
                         </div>
-                      </article>
+                      </motion.article>
                     </Link>
                   ))}
-                </div>
+                </motion.div>
               )}
             </section>
           )}
 
           {showNewsletter && (
-            <section className="mt-14 rounded-3xl border border-gray-100 bg-gray-50 p-8 sm:p-10">
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900">
-                {pageConfig?.newsletter?.title || DEFAULT_PAGE.newsletter.title}
-              </h2>
-              {pageConfig?.newsletter?.description && (
-                <p className="mt-3 text-gray-600 leading-relaxed max-w-2xl">
-                  {pageConfig.newsletter.description}
-                </p>
-              )}
-              <div className="mt-6 flex flex-col sm:flex-row gap-3 max-w-xl">
-                <input
-                  type="email"
-                  placeholder={
-                    pageConfig?.newsletter?.inputPlaceholder ||
-                    DEFAULT_PAGE.newsletter.inputPlaceholder
-                  }
-                  className="flex-1 px-4 py-3 rounded-2xl border border-gray-200 outline-none focus:ring-4 focus:ring-black/5"
-                />
-                <button
-                  className={`px-6 py-3 rounded-2xl font-bold text-white bg-gradient-to-r ${theme.accent} shadow-sm hover:shadow transition`}
-                >
-                  {pageConfig?.newsletter?.buttonText ||
-                    DEFAULT_PAGE.newsletter.buttonText}
-                </button>
+            <motion.section
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              variants={fadeInUp}
+              className="mt-20 rounded-3xl border border-gray-100 bg-gray-50 p-8 sm:p-12 relative overflow-hidden"
+            >
+              <div className="relative z-10">
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900">
+                  {pageConfig?.newsletter?.title ||
+                    DEFAULT_PAGE.newsletter.title}
+                </h2>
+                {pageConfig?.newsletter?.description && (
+                  <p className="mt-3 text-gray-600 leading-relaxed max-w-2xl">
+                    {pageConfig.newsletter.description}
+                  </p>
+                )}
+                <div className="mt-8 flex flex-col sm:flex-row gap-3 max-w-xl">
+                  <input
+                    type="email"
+                    placeholder={
+                      pageConfig?.newsletter?.inputPlaceholder ||
+                      DEFAULT_PAGE.newsletter.inputPlaceholder
+                    }
+                    className="flex-1 px-5 py-3.5 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-black/5 transition-shadow"
+                  />
+                  <button
+                    className={`px-8 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r ${theme.accent} shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300`}
+                  >
+                    {pageConfig?.newsletter?.buttonText ||
+                      DEFAULT_PAGE.newsletter.buttonText}
+                  </button>
+                </div>
+                {pageConfig?.newsletter?.note && (
+                  <p className="mt-4 text-xs text-gray-500">
+                    {pageConfig.newsletter.note}
+                  </p>
+                )}
               </div>
-              {pageConfig?.newsletter?.note && (
-                <p className="mt-4 text-xs text-gray-500">
-                  {pageConfig.newsletter.note}
-                </p>
-              )}
-            </section>
+            </motion.section>
           )}
         </div>
       </main>
@@ -245,59 +313,93 @@ export default function BlogPage() {
   }
 
   return (
-    <main className="bg-gray-50">
+    <main className="bg-gray-50 min-h-screen">
       {/* Hero Section */}
       {showHero && (
-        <section className="relative bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] text-white py-20 overflow-hidden">
-          <div className="absolute inset-0 opacity-10">
-            <div
-              className={`absolute top-10 left-10 w-72 h-72 ${theme.glowA} rounded-full blur-3xl`}
+        <section className="relative bg-[#0f1016] text-white py-24 sm:py-32 overflow-hidden">
+          {/* Animated Background */}
+          <div className="absolute inset-0">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] opacity-90" />
+            <motion.div
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.3, 0.5, 0.3],
+              }}
+              transition={{
+                duration: 8,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+              className={`absolute top-0 left-1/4 w-[600px] h-[600px] ${theme.glowA} rounded-full blur-[120px] mix-blend-screen opacity-30`}
             />
-            <div
-              className={`absolute bottom-10 right-10 w-96 h-96 ${theme.glowB} rounded-full blur-3xl`}
+            <motion.div
+              animate={{
+                scale: [1, 1.3, 1],
+                opacity: [0.3, 0.6, 0.3],
+              }}
+              transition={{
+                duration: 10,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 1,
+              }}
+              className={`absolute bottom-0 right-1/4 w-[500px] h-[500px] ${theme.glowB} rounded-full blur-[100px] mix-blend-screen opacity-30`}
             />
           </div>
-          <div className="container mx-auto px-4 text-center relative z-10">
+
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={fadeInUp}
+            className="container mx-auto px-4 text-center relative z-10"
+          >
             {pageConfig?.hero?.badge && (
-              <span
-                className={`inline-block px-4 py-2 bg-white/5 border border-white/10 rounded-full text-sm font-semibold mb-6 backdrop-blur-sm`}
+              <motion.span
+                whileHover={{ scale: 1.05 }}
+                className="inline-block px-5 py-2 bg-white/10 border border-white/10 rounded-full text-sm font-semibold mb-8 backdrop-blur-md shadow-lg"
               >
                 {pageConfig.hero.badge}
-              </span>
+              </motion.span>
             )}
-            <h1 className="text-5xl md:text-6xl font-bold mb-5 bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent">
+            <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold mb-6 bg-gradient-to-b from-white to-white/70 bg-clip-text text-transparent tracking-tight">
               {pageConfig?.hero?.title || DEFAULT_PAGE.hero.title}
             </h1>
-            <p className="text-xl text-gray-300 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-xl sm:text-2xl text-gray-300 max-w-2xl mx-auto leading-relaxed">
               {pageConfig?.hero?.description || DEFAULT_PAGE.hero.description}
             </p>
-          </div>
+          </motion.div>
         </section>
       )}
 
       {/* Featured Blog */}
       {showFeatured && featuredBlog && (
-        <section className="py-14 bg-white">
+        <section className="py-16 sm:py-20 relative z-20 -mt-10 sm:-mt-16">
           <div className="container mx-auto px-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 items-stretch bg-white rounded-2xl overflow-hidden shadow-2xl border border-gray-100">
-              <div className="relative h-80 lg:h-[450px] overflow-hidden">
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.7 }}
+              className="grid grid-cols-1 lg:grid-cols-2 gap-0 items-stretch bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/5"
+            >
+              <div className="relative h-96 lg:h-auto overflow-hidden group">
                 <img
                   src={featuredBlog.image}
                   alt={featuredBlog.title}
-                  className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                 <div
-                  className={`absolute top-4 left-4 bg-gradient-to-r ${theme.accentStrong} text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg`}
+                  className={`absolute top-6 left-6 bg-gradient-to-r ${theme.accentStrong} text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg`}
                 >
                   Featured
                 </div>
               </div>
 
-              <div className="p-8 lg:p-12 flex flex-col justify-center bg-gradient-to-br from-white to-gray-50">
-                <div className="flex items-center gap-4 mb-5">
+              <div className="p-8 lg:p-14 flex flex-col justify-center bg-white">
+                <div className="flex items-center gap-4 mb-6">
                   <span
-                    className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase border ${theme.accentSoft}`}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border ${theme.accentSoft}`}
                   >
                     {featuredBlog.category || "General"}
                   </span>
@@ -306,11 +408,16 @@ export default function BlogPage() {
                   </span>
                 </div>
 
-                <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-5 leading-tight hover:text-gray-800 transition-colors">
-                  {featuredBlog.title}
+                <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-6 leading-tight">
+                  <Link
+                    href={`/blogs/${featuredBlog.slug || featuredBlog._id}`}
+                    className="hover:text-gray-600 transition-colors"
+                  >
+                    {featuredBlog.title}
+                  </Link>
                 </h2>
 
-                <p className="text-gray-600 text-lg mb-8 leading-relaxed">
+                <p className="text-gray-600 text-lg mb-8 leading-relaxed line-clamp-3">
                   {featuredBlog.excerpt ||
                     featuredBlog.description ||
                     featuredBlog.content?.substring(0, 220)}
@@ -318,101 +425,107 @@ export default function BlogPage() {
 
                 <Link
                   href={`/blogs/${featuredBlog.slug || featuredBlog._id}`}
-                  className={`inline-flex items-center gap-2 font-bold ${theme.accentText}`}
+                  className={`inline-flex items-center gap-2 font-bold text-lg ${theme.accentText} group`}
                 >
-                  Read Full Article <span className="text-xl">→</span>
+                  Read Full Article{" "}
+                  <span className="group-hover:translate-x-1.5 transition-transform">
+                    →
+                  </span>
                 </Link>
               </div>
-            </div>
+            </motion.div>
           </div>
         </section>
       )}
 
       {/* Blog Grid */}
       {showGrid && (
-        <section className="py-14">
+        <section className="py-16 sm:py-24">
           <div className="container mx-auto px-4">
             {otherBlogs.length === 0 ? (
-              <div className="text-center py-10 text-gray-500">
-                No more blogs yet.
+              <div className="text-center py-20 bg-white rounded-3xl shadow-sm border border-gray-100">
+                <p className="text-gray-500 text-lg">
+                  No additional stories to explore yet.
+                </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <motion.div
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-50px" }}
+                variants={staggerContainer}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+              >
                 {otherBlogs.map((blog) => (
                   <Link
                     key={blog._id}
                     href={`/blogs/${blog.slug || blog._id}`}
-                    className="group"
+                    className="block h-full"
                   >
-                    <article className="bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-500 overflow-hidden border border-gray-100 hover:-translate-y-2">
-                      <div className="relative h-56 overflow-hidden">
+                    <motion.article
+                      variants={fadeInUp}
+                      whileHover={{ y: -8 }}
+                      className="h-full flex flex-col bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border border-gray-100"
+                    >
+                      <div className="relative h-60 overflow-hidden">
                         <img
                           src={blog.image}
                           alt={blog.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                        <div
-                          className={`absolute top-4 left-4 px-3 py-1 rounded-full text-white text-xs font-bold uppercase shadow-sm bg-gradient-to-r ${theme.accentStrong}`}
-                        >
-                          {blog.category || "General"}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+                        <div className="absolute top-4 left-4">
+                          <span className="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-bold text-gray-900 shadow-sm">
+                            {blog.category || "General"}
+                          </span>
                         </div>
                       </div>
 
-                      <div className="p-6 flex-1 flex flex-col">
+                      <div className="p-7 flex-1 flex flex-col">
                         <div className="flex items-center justify-between mb-4">
-                          <span className="text-xs text-gray-400 font-medium flex items-center gap-1">
+                          <span className="text-xs text-gray-500 font-medium flex items-center gap-1.5">
                             <span
-                              className={`w-1.5 h-1.5 rounded-full ${theme.glowA}`}
+                              className={`w-2 h-2 rounded-full ${theme.glowA}`}
                             />
-                            {new Date(blog.createdAt).toLocaleDateString(
-                              "en-US",
-                              {
-                                month: "short",
-                                day: "numeric",
-                              },
-                            )}
+                            {formatDate(blog.createdAt)}
                           </span>
-                          <span className="text-xs text-gray-400 flex items-center gap-1">
+                          <span className="text-xs text-gray-400">
                             {blog.viewCount || 0} views
                           </span>
                         </div>
 
-                        <h3 className="text-xl font-bold text-gray-900 group-hover:text-gray-800 transition-colors mb-3 line-clamp-2 leading-tight">
+                        <h3 className="text-xl font-bold text-gray-900 group-hover:text-gray-700 transition-colors mb-3 line-clamp-2 leading-snug">
                           {blog.title}
                         </h3>
 
-                        <p className="text-gray-500 text-sm mb-5 line-clamp-3 grow leading-relaxed">
+                        <p className="text-gray-500 text-sm mb-6 line-clamp-3 leading-relaxed flex-1">
                           {blog.excerpt ||
                             blog.description ||
                             blog.content?.substring(0, 120)}
                         </p>
 
-                        <div className="flex items-center justify-between pt-5 border-t border-gray-100">
-                          <div className="flex items-center gap-2">
+                        <div className="pt-5 border-t border-gray-100 flex items-center justify-between mt-auto">
+                          <div className="flex items-center gap-2.5">
                             <div
-                              className={`w-7 h-7 bg-gradient-to-br ${theme.accentStrong} rounded-full flex items-center justify-center text-white text-xs font-bold`}
+                              className={`w-8 h-8 rounded-full bg-gradient-to-br ${theme.accentStrong} flex items-center justify-center text-white text-xs font-bold shadow-sm`}
                             >
                               {(blog.author || "A")[0]}
                             </div>
-                            <span className="text-xs font-medium text-gray-600">
+                            <span className="text-sm font-medium text-gray-700">
                               {blog.author || "Admin"}
                             </span>
                           </div>
                           <span
-                            className={`${theme.accentText} font-semibold group-hover:gap-3 flex items-center gap-1.5 transition-all text-sm`}
+                            className={`${theme.accentText} font-semibold text-sm group-hover:translate-x-1 transition-transform`}
                           >
-                            Read More
-                            <span className="group-hover:translate-x-1 transition-transform">
-                              →
-                            </span>
+                            Read →
                           </span>
                         </div>
                       </div>
-                    </article>
+                    </motion.article>
                   </Link>
                 ))}
-              </div>
+              </motion.div>
             )}
           </div>
         </section>
@@ -420,49 +533,54 @@ export default function BlogPage() {
 
       {/* Newsletter CTA */}
       {showNewsletter && (
-        <section className="relative bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] text-white py-20 overflow-hidden">
-          <div className="absolute inset-0 opacity-10">
-            <div
-              className={`absolute top-0 right-0 w-96 h-96 ${theme.glowA} rounded-full blur-3xl`}
-            />
-            <div
-              className={`absolute bottom-0 left-0 w-72 h-72 ${theme.glowB} rounded-full blur-3xl`}
-            />
+        <section className="relative py-24 overflow-hidden">
+          <div className="absolute inset-0 bg-[#0f1016]">
+            <div className={`absolute top-0 right-0 w-[600px] h-[600px] ${theme.glowA} rounded-full blur-[120px] opacity-20`} />
+            <div className={`absolute bottom-0 left-0 w-[600px] h-[600px] ${theme.glowB} rounded-full blur-[120px] opacity-20`} />
           </div>
-          <div className="container mx-auto px-4 text-center max-w-2xl relative z-10">
-            <div className="inline-block mb-6">
-              <span className="text-4xl">Mail</span>
-            </div>
-            <h2 className="text-3xl lg:text-4xl font-bold mb-5 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="container mx-auto px-4 text-center max-w-3xl relative z-10"
+          >
+            <span className="inline-block mb-6 text-gray-400 font-medium tracking-widest text-sm uppercase">
+              Stay Updated
+            </span>
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 text-white tracking-tight">
               {pageConfig?.newsletter?.title || DEFAULT_PAGE.newsletter.title}
             </h2>
             <p className="text-gray-400 text-lg mb-10 leading-relaxed">
               {pageConfig?.newsletter?.description ||
                 DEFAULT_PAGE.newsletter.description}
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto">
+
+            <form className="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto">
               <input
                 type="email"
                 placeholder={
                   pageConfig?.newsletter?.inputPlaceholder ||
                   DEFAULT_PAGE.newsletter.inputPlaceholder
                 }
-                className="flex-1 px-6 py-4 rounded-xl text-gray-900 focus:outline-none focus:ring-4 focus:ring-white/10 border-2 border-transparent transition-all shadow-lg"
+                className="flex-1 px-6 py-4 rounded-xl text-gray-900 bg-white focus:outline-none focus:ring-4 focus:ring-white/10 transition-all shadow-xl"
               />
               <button
-                className={`bg-gradient-to-r ${theme.accentStrong} text-white font-bold px-8 py-4 rounded-xl transition-all whitespace-nowrap shadow-lg hover:shadow-xl hover:-translate-y-0.5`}
+                className={`flex-none bg-gradient-to-r ${theme.accentStrong} text-white font-bold px-8 py-4 rounded-xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 whitespace-nowrap`}
               >
                 {pageConfig?.newsletter?.buttonText ||
                   DEFAULT_PAGE.newsletter.buttonText}{" "}
                 →
               </button>
-            </div>
+            </form>
+
             {pageConfig?.newsletter?.note && (
               <p className="text-xs text-gray-500 mt-6">
                 {pageConfig.newsletter.note}
               </p>
             )}
-          </div>
+          </motion.div>
         </section>
       )}
     </main>

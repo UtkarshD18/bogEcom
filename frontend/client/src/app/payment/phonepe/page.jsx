@@ -44,7 +44,7 @@ const PhonePeReturn = () => {
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
             href="/my-orders"
-            className="inline-flex items-center justify-center px-6 py-3 bg-[#059669] text-white font-semibold rounded-lg hover:bg-[#047857]"
+            className="inline-flex items-center justify-center px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:brightness-110"
           >
             View My Orders
           </Link>

@@ -11,386 +11,370 @@ import { FaFacebook, FaInstagram, FaLinkedin } from "react-icons/fa";
 import { FaXTwitter } from "react-icons/fa6";
 import { IoChatboxOutline, IoLocationSharp } from "react-icons/io5";
 import { LiaGiftSolid, LiaShippingFastSolid } from "react-icons/lia";
+import { motion } from "framer-motion";
+
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
+    process.env.NEXT_PUBLIC_APP_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:8000"
 ).replace(/\/+$/, "");
 
 const Footer = () => {
-  // --- STATE FOR NEWSLETTER ---
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState(null);
-  const [message, setMessage] = useState("");
-  const [policyLinks, setPolicyLinks] = useState({
-    terms: { name: "Terms & Conditions", link: "/policy/terms-and-conditions" },
-  });
+    const [email, setEmail] = useState("");
+    const [status, setStatus] = useState(null);
+    const [message, setMessage] = useState("");
+    const [policyLinks, setPolicyLinks] = useState({
+        terms: { name: "Terms & Conditions", link: "/policy/terms-and-conditions" },
+    });
 
-  const handleSubscribe = async (e) => {
-    e.preventDefault();
-    if (!email) return;
-    setStatus("loading");
-    setMessage("");
-
-    try {
-      const response = await postData("/api/newsletter/subscribe", {
-        email,
-        source: "footer",
-      });
-
-      if (response.success) {
-        setStatus("success");
-        setMessage(response.message || "Thank you for subscribing!");
-        setEmail("");
-        toast.success(response.message || "Thank you for subscribing!");
-      } else {
-        setStatus("error");
-        setMessage(
-          response.message || "Failed to subscribe. Please try again.",
-        );
-        toast.error(
-          response.message || "Failed to subscribe. Please try again.",
-        );
-      }
-    } catch (error) {
-      console.error("Newsletter subscription error:", error);
-      setStatus("error");
-      setMessage("Failed to subscribe. Please try again.");
-      toast.error("Failed to subscribe. Please try again.");
-    }
-  };
-
-  useEffect(() => {
-    const fetchPolicyLinks = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/policies/public`);
-        const data = await response.json();
-        if (!data.success || !Array.isArray(data.data)) return;
-
-        const policyBySlug = data.data.reduce((acc, policy) => {
-          acc[policy.slug] = policy;
-          return acc;
-        }, {});
-
-        setPolicyLinks({
-          terms: policyBySlug["terms-and-conditions"]
-            ? {
-                name: policyBySlug["terms-and-conditions"].title,
-                link: `/policy/${policyBySlug["terms-and-conditions"].slug}`,
-              }
-            : {
-                name: "Terms & Conditions",
-                link: "/policy/terms-and-conditions",
-              },
-        });
-      } catch (error) {
-        // Silent fallback to defaults
-      }
+    const handleSubscribe = async (e) => {
+        e.preventDefault();
+        if (!email) return;
+        setStatus("loading");
+        setMessage("");
+        try {
+            const response = await postData("/api/newsletter/subscribe", { email, source: "footer" });
+            if (response.success) {
+                setStatus("success");
+                setMessage(response.message || "Thank you for subscribing!");
+                setEmail("");
+                toast.success(response.message || "Thank you for subscribing!");
+            } else {
+                setStatus("error");
+                setMessage(response.message || "Failed to subscribe. Please try again.");
+                toast.error(response.message || "Failed to subscribe. Please try again.");
+            }
+        } catch (error) {
+            console.error("Newsletter subscription error:", error);
+            setStatus("error");
+            setMessage("Failed to subscribe. Please try again.");
+            toast.error("Failed to subscribe. Please try again.");
+        }
     };
 
-    fetchPolicyLinks();
-  }, []);
+    useEffect(() => {
+        const fetchPolicyLinks = async () => {
+            try {
+                const response = await fetch(`${API_URL}/api/policies/public`);
+                const data = await response.json();
+                if (!data.success || !Array.isArray(data.data)) return;
+                const policyBySlug = data.data.reduce((acc, policy) => {
+                    acc[policy.slug] = policy;
+                    return acc;
+                }, {});
+                setPolicyLinks({
+                    terms: policyBySlug["terms-and-conditions"]
+                        ? { name: policyBySlug["terms-and-conditions"].title, link: `/policy/${policyBySlug["terms-and-conditions"].slug}` }
+                        : { name: "Terms & Conditions", link: "/policy/terms-and-conditions" },
+                });
+            } catch (error) { /* Silent fallback */ }
+        };
+        fetchPolicyLinks();
+    }, []);
 
-  return (
-    <footer className="relative bg-[#Fdfbf7] text-gray-700 overflow-hidden">
-      <div className="container mx-auto px-4 sm:px-6">
-        {/* ========================================================== */}
-        {/* MEMBERSHIP BANNER (Top Section) - Hidden                   */}
-        {/* ========================================================== */}
-        {/* Membership banner removed as per request */}
+    const features = [
+        { icon: <LiaShippingFastSolid />, title: "Free Shipping", desc: "Orders Over ₹500", gradient: "linear-gradient(135deg, var(--primary), var(--flavor-hover))" },
+        { icon: <BsWallet2 />, title: "100% Genuine", desc: "Quality Assured", gradient: "linear-gradient(135deg, #7c3aed, #a78bfa)" },
+        { icon: <BsWallet2 />, title: "Secure Pay", desc: "Cards Accepted", gradient: "linear-gradient(135deg, #3b82f6, #60a5fa)" },
+        { icon: <LiaGiftSolid />, title: "Special Gifts", desc: "First Order Perks", gradient: "linear-gradient(135deg, #ff6b9d, #ff9ec0)" },
+        { icon: <BiSupport />, title: "24/7 Support", desc: "Always Here", gradient: "linear-gradient(135deg, #ffb020, #fcd34d)" },
+    ];
 
-        {/* ================= TOP FEATURES (Shipping Area) ================= */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 pb-8 sm:pb-12 pt-4">
-          {[
-            {
-              icon: <LiaShippingFastSolid />,
-              title: "Free Shipping",
-              desc: "For all Orders Over ₹500",
-            },
-            {
-              icon: <BsWallet2 />,
-              title: "Quality Assured",
-              desc: "100% Genuine Products",
-            },
-            {
-              icon: <BsWallet2 />,
-              title: "Secured Payment",
-              desc: "Payment Cards Accepted",
-            },
-            {
-              icon: <LiaGiftSolid />,
-              title: "Special Gifts",
-              desc: "Our First Product Order",
-            },
-            {
-              icon: <BiSupport />,
-              title: "Support 24/7",
-              desc: "Contact Us Anytime",
-            },
-          ].map((item, i) => (
-            <div
-              key={i}
-              className="group flex flex-col items-center p-3 sm:p-6 rounded-xl sm:rounded-2xl transition-all duration-500 backdrop-blur-md border shadow-sm hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-2"
-              style={{
-                backgroundColor:
-                  "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 50%, transparent)",
-                borderColor:
-                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
-              }}
-            >
-              <div className="text-[28px] sm:text-[38px] text-gray-400 transition-all duration-300 group-hover:text-[#059669] group-hover:scale-110">
-                {item.icon}
-              </div>
-              <h3 className="text-[12px] sm:text-[15px] font-bold mt-2 sm:mt-4 text-gray-800 text-center">
-                {item.title}
-              </h3>
-              <p className="text-[9px] sm:text-[11px] font-medium text-gray-500 mt-1 text-center">
-                {item.desc}
-              </p>
+    return (
+        <footer className="site-footer relative overflow-hidden" style={{ background: "linear-gradient(180deg, #0a0a0a 0%, #111827 100%)" }}>
+            {/* Decorative mesh gradient overlay */}
+            <div className="pointer-events-none absolute inset-0">
+                <div className="absolute top-0 left-1/4 w-96 h-96 rounded-full blur-[120px] opacity-20" style={{ background: "var(--primary)" }} />
+                <div className="absolute bottom-0 right-1/4 w-80 h-80 rounded-full blur-[120px] opacity-15" style={{ background: "#7c3aed" }} />
+                <div className="absolute top-1/2 right-0 w-64 h-64 rounded-full blur-[100px] opacity-10" style={{ background: "#ff6b9d" }} />
             </div>
-          ))}
-        </div>
 
-        {/* Separator */}
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+            <div className="container mx-auto px-4 sm:px-6 relative z-10">
+                {/* ============ FEATURE CARDS ============ */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 py-10 sm:py-14">
+                    {features.map((item, i) => (
+                        <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ duration: 0.5, delay: i * 0.1 }}
+                            whileHover={{ y: -5, transition: { duration: 0.2 } }}
+                            className="group flex flex-col items-center p-4 sm:p-6 rounded-2xl sm:rounded-3xl cursor-default"
+                            style={{
+                                background: "rgba(255, 255, 255, 0.04)",
+                                border: "1px solid rgba(255, 255, 255, 0.06)",
+                                backdropFilter: "blur(12px)",
+                            }}
+                        >
+                            <div
+                                className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-2xl text-white text-[22px] sm:text-[26px] transition-all duration-500 group-hover:scale-110 group-hover:shadow-lg"
+                                style={{ background: item.gradient }}
+                            >
+                                {item.icon}
+                            </div>
+                            <h3 className="text-[12px] sm:text-[14px] font-bold mt-3 sm:mt-4 text-white text-center">
+                                {item.title}
+                            </h3>
+                            <p className="text-[10px] sm:text-[11px] font-medium text-gray-500 mt-1 text-center">
+                                {item.desc}
+                            </p>
+                        </motion.div>
+                    ))}
+                </div>
 
-        {/* ================= BOTTOM MAIN SECTION ================= */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-10 py-8 sm:py-12">
-          {/* 1. CONTACT */}
-          <div className="flex flex-col gap-4 sm:gap-5 lg:border-r lg:pr-8 border-gray-200/60">
-            <h3 className="text-[16px] sm:text-[18px] font-bold text-gray-800 uppercase tracking-wide">
-              Contact Us
-            </h3>
-            <p className="text-[13px] sm:text-[14px] leading-relaxed text-gray-600">
-              G-222, RIICO, sitapura industrial area, <br />
-              tonk road Jaipur, rajasthan 302019
-            </p>
+                {/* Separator */}
+                <div className="h-px w-full" style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)" }} />
 
-            <a
-              href="mailto:support@healthyonegram.com"
-              className="text-[14px] font-semibold text-gray-600 hover:text-[#059669] transition-colors"
-            >
-              support@healthyonegram.com
-            </a>
+                {/* ============ MAIN FOOTER CONTENT ============ */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-10 py-10 sm:py-14">
+                    {/* 1. CONTACT */}
+                    {/* 1. CONTACT */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.6 }}
+                        className="flex flex-col gap-4 sm:gap-5 lg:border-r lg:pr-8 border-white/5"
+                    >
+                        <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em]">
+                            Contact Us
+                        </h3>
+                        <p className="text-[13px] sm:text-[14px] leading-relaxed text-gray-400">
+                            G-222, RIICO, sitapura industrial area, <br />
+                            tonk road Jaipur, rajasthan 302019
+                        </p>
+                        <a href="mailto:support@healthyonegram.com" className="text-[14px] font-semibold text-gray-400 hover:text-primary transition-colors duration-300">
+                            support@healthyonegram.com
+                        </a>
+                        <a href="tel:+918619641968" className="text-[18px] font-extrabold tracking-tight hover:underline transition-colors" style={{ color: "var(--primary)" }}>
+                            (+91) 8619-641-968
+                        </a>
 
-            <a
-              href="tel:+918619641968"
-              className="text-[18px] text-[#059669] font-bold tracking-tight hover:underline"
-            >
-              (+91) 8619-641-968
-            </a>
+                        {/* Map Card */}
+                        <Link
+                            href="https://maps.app.goo.gl/zbbCcKeTnX3GYPhZ8"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group flex items-center gap-4 mt-1 p-3.5 rounded-2xl transition-all duration-300 hover:-translate-y-1"
+                            style={{
+                                background: "rgba(255, 255, 255, 0.04)",
+                                border: "1px solid rgba(255, 255, 255, 0.06)",
+                            }}
+                        >
+                            <IoLocationSharp className="text-[28px] transition-transform group-hover:scale-110" style={{ color: "var(--primary)" }} />
+                            <span className="text-[13px] font-bold text-gray-300 leading-tight">
+                                View on Map <br />
+                                <span className="font-normal text-gray-500 group-hover:text-primary transition-colors">Open in Google Maps</span>
+                            </span>
+                        </Link>
 
-            {/* --- GOOGLE MAPS --- */}
-            <Link
-              href="https://maps.app.goo.gl/zbbCcKeTnX3GYPhZ8"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex items-center gap-4 mt-2 p-3 rounded-xl border shadow-sm transition-all duration-300 hover:border-[#059669] hover:shadow-md hover:-translate-y-1"
-              style={{
-                backgroundColor:
-                  "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 60%, transparent)",
-                borderColor:
-                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
-              }}
-            >
-              <IoLocationSharp className="text-[32px] text-[#059669] transition-transform group-hover:scale-110" />
-              <span className="text-[13px] font-bold text-gray-700 leading-tight">
-                View on Map <br />
-                <span className="font-normal text-gray-500 group-hover:text-[#059669] transition-colors">
-                  Click to open in Google Maps
-                </span>
-              </span>
-            </Link>
+                        {/* WhatsApp Card */}
+                        <Link
+                            href="https://wa.me/918619641968?text=Hello%20Healthy%20One%20Gram,%20I%20need%20help%20with..."
+                            target="_blank"
+                            className="group flex items-center gap-4 p-3.5 rounded-2xl transition-all duration-300 hover:-translate-y-1"
+                            style={{
+                                background: "rgba(255, 255, 255, 0.04)",
+                                border: "1px solid rgba(255, 255, 255, 0.06)",
+                            }}
+                        >
+                            <IoChatboxOutline className="text-[28px] transition-transform group-hover:scale-110" style={{ color: "var(--primary)" }} />
+                            <span className="text-[13px] font-bold text-gray-300 leading-tight">
+                                Online Chat <br />
+                                <span className="font-normal text-gray-500 group-hover:text-primary transition-colors">Chat on WhatsApp</span>
+                            </span>
+                        </Link>
+                    </motion.div>
 
-            {/* --- ONLINE CHAT (WhatsApp) --- */}
-            <Link
-              href="https://wa.me/918619641968?text=Hello%20Healthy%20One%20Gram,%20I%20need%20help%20with..."
-              target="_blank"
-              className="group flex items-center gap-4 p-3 rounded-xl border shadow-sm transition-all duration-300 hover:border-[#059669] hover:shadow-md hover:-translate-y-1"
-              style={{
-                backgroundColor:
-                  "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 60%, transparent)",
-                borderColor:
-                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
-              }}
-            >
-              <IoChatboxOutline className="text-[32px] text-[#059669] transition-transform group-hover:scale-110" />
-              <span className="text-[13px] font-bold text-gray-700 leading-tight">
-                Online Chat <br />
-                <span className="font-normal text-gray-500 group-hover:text-[#059669] transition-colors">
-                  Click to chat on WhatsApp
-                </span>
-              </span>
-            </Link>
-          </div>
+                    {/* 2. PRODUCTS */}
+                    {/* 2. PRODUCTS */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.6, delay: 0.2 }}
+                    >
+                        <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-5 sm:mb-7">
+                            Products
+                        </h3>
+                        <ul className="space-y-3.5">
+                            {[
+                                { name: "Prices drop", link: "/products?sort=price-low" },
+                                { name: "New products", link: "/products?filter=new" },
+                                { name: "Best sales", link: "/products?filter=bestseller" },
+                                { name: "All Products", link: "/products" },
+                                { name: "Contact us", link: "/contact" },
+                                { name: "Our Blogs", link: "/blogs" },
+                            ].map((item, i) => (
+                                <li key={i}>
+                                    <Link href={item.link} className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-primary transition-all duration-300">
+                                        <span className="w-0 h-0.5 mr-0 transition-all duration-300 group-hover:w-4 group-hover:mr-2.5 rounded-full" style={{ background: "linear-gradient(90deg, var(--primary), var(--flavor-hover))" }}></span>
+                                        {item.name}
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    </motion.div>
 
-          {/* 2. PRODUCTS */}
-          <div>
-            <h3 className="text-[16px] sm:text-[18px] font-bold text-gray-800 uppercase tracking-wide mb-4 sm:mb-6">
-              Products
-            </h3>
-            <ul className="space-y-3">
-              {[
-                { name: "Prices drop", link: "/products?sort=price-low" },
-                { name: "New products", link: "/products?filter=new" },
-                { name: "Best sales", link: "/products?filter=bestseller" },
-                { name: "All Products", link: "/products" },
-                { name: "Contact us", link: "/contact" },
-                { name: "Our Blogs", link: "/blogs" },
-              ].map((item, i) => (
-                <li key={i}>
-                  <Link
-                    href={item.link}
-                    className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-[#059669] transition-all duration-300"
-                  >
-                    <span className="w-0 h-0.5 bg-[#059669] mr-0 transition-all duration-300 group-hover:w-3 group-hover:mr-2 rounded-full"></span>
-                    {item.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+                    {/* 3. COMPANY */}
+                    {/* 3. COMPANY */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.6, delay: 0.3 }}
+                    >
+                        <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-5 sm:mb-7">
+                            Our Company
+                        </h3>
+                        <ul className="space-y-3.5">
+                            {[
+                                { name: "Login", link: "/login" },
+                                { name: "Collaborator Portal", link: "/affiliate/login" },
+                                { name: "Delivery", link: "/delivery" },
+                                { name: "Secure payment", link: "/secure-payment" },
+                                policyLinks.terms,
+                                { name: "Cancellation & Return", link: "/cancellation" },
+                                { name: "About Us", link: "/about-us" },
+                            ].map((item, i) => (
+                                <li key={i}>
+                                    <Link href={item.link} className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-primary transition-all duration-300">
+                                        <span className="w-0 h-0.5 mr-0 transition-all duration-300 group-hover:w-4 group-hover:mr-2.5 rounded-full" style={{ background: "linear-gradient(90deg, var(--primary), var(--flavor-hover))" }}></span>
+                                        {item.name}
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    </motion.div>
 
-          {/* 3. COMPANY */}
-          <div>
-            <h3 className="text-[16px] sm:text-[18px] font-bold text-gray-800 uppercase tracking-wide mb-4 sm:mb-6">
-              Our Company
-            </h3>
-            <ul className="space-y-3">
-              {[
-                { name: "Login", link: "/login" },
-                { name: "Collaborator Portal", link: "/affiliate/login" },
-                { name: "Delivery", link: "/delivery" },
-                { name: "Secure payment", link: "/secure-payment" },
-                policyLinks.terms,
-                { name: "Cancellation & Return", link: "/cancellation" },
-                { name: "About Us", link: "/about-us" },
-              ].map((item, i) => (
-                <li key={i}>
-                  <Link
-                    href={item.link}
-                    className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-[#059669] transition-all duration-300"
-                  >
-                    <span className="w-0 h-0.5 bg-[#059669] mr-0 transition-all duration-300 group-hover:w-3 group-hover:mr-2 rounded-full"></span>
-                    {item.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+                    {/* 4. NEWSLETTER */}
+                    {/* 4. NEWSLETTER */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.6, delay: 0.4 }}
+                    >
+                        <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-3 sm:mb-4">
+                            Stay in the loop
+                        </h3>
+                        <p className="text-[12px] sm:text-[13px] text-gray-500 mb-5 sm:mb-6 leading-relaxed">
+                            Get the latest drops, deals & wellness tips. No spam, ever.
+                        </p>
 
-          {/* 4. NEWSLETTER */}
-          <div>
-            <h3 className="text-[16px] sm:text-[18px] font-bold text-gray-800 uppercase tracking-wide mb-3 sm:mb-4">
-              Subscribe to newsletter
-            </h3>
-            <p className="text-[12px] sm:text-[13px] text-gray-500 mb-4 sm:mb-6 leading-relaxed">
-              Subscribe to our latest newsletter to get news about special
-              discounts.
-            </p>
+                        <form onSubmit={handleSubscribe} className="flex flex-col gap-3 w-full">
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="Enter your email"
+                                required
+                                disabled={status === "loading" || status === "success"}
+                                className="w-full h-[48px] px-5 rounded-full outline-none text-sm text-white placeholder-gray-600 focus:ring-2 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
+                                style={{
+                                    background: "rgba(255, 255, 255, 0.06)",
+                                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                                    focusRingColor: "var(--primary)",
+                                }}
+                            />
+                            <button
+                                type="submit"
+                                disabled={status === "loading" || status === "success"}
+                                className={`h-[48px] w-full rounded-full text-[14px] font-bold tracking-wide transition-all duration-400 active:scale-95 flex items-center justify-center disabled:opacity-80 disabled:cursor-not-allowed ${status === "success" ? "" : "hover:shadow-lg hover:-translate-y-0.5"
+                                    }`}
+                                style={{
+                                    background: status === "success"
+                                        ? "linear-gradient(135deg, var(--primary), var(--flavor-hover))"
+                                        : "linear-gradient(135deg, var(--primary), var(--flavor-hover))",
+                                    color: "#0a0a0a",
+                                    boxShadow: "0 4px 20px rgba(0, 216, 158, 0.25)",
+                                }}
+                            >
+                                {status === "loading" ? (
+                                    <span className="w-5 h-5 border-2 border-[#0a0a0a]/20 border-t-[#0a0a0a] rounded-full animate-spin" />
+                                ) : status === "success" ? (
+                                    "✓ SUBSCRIBED!"
+                                ) : (
+                                    "SUBSCRIBE →"
+                                )}
+                            </button>
+                        </form>
 
-            <form
-              onSubmit={handleSubscribe}
-              className="flex flex-col gap-3 w-full"
-            >
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your e-mail address"
-                required
-                disabled={status === "loading" || status === "success"}
-                className="w-full h-[48px] px-5 rounded-full border backdrop-blur-sm outline-none text-sm text-gray-700 placeholder-gray-400 focus:border-[#059669] focus:ring-2 focus:ring-[#059669]/10 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
-                style={{
-                  backgroundColor:
-                    "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 60%, transparent)",
-                  borderColor:
-                    "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
-                }}
-              />
+                        {status === "success" && (
+                            <motion.p
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="text-primary text-xs mt-3 font-semibold"
+                            >
+                                {message || "Thank you for subscribing!"}
+                            </motion.p>
+                        )}
+                        {status === "error" && (
+                            <motion.p
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="text-[#ff4757] text-xs mt-3 font-semibold"
+                            >
+                                {message || "Failed to subscribe. Please try again."}
+                            </motion.p>
+                        )}
+                    </motion.div>
+                </div>
 
-              <button
-                type="submit"
-                disabled={status === "loading" || status === "success"}
-                className={`h-[48px] w-full rounded-full text-white text-[14px] font-semibold tracking-wide transition-all duration-300 active:scale-95 flex items-center justify-center ${status === "success" ? "bg-green-600 hover:bg-green-700" : "bg-gray-900 hover:bg-[#059669] hover:shadow-lg"} disabled:opacity-80 disabled:cursor-not-allowed`}
-              >
-                {status === "loading" ? (
-                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : status === "success" ? (
-                  "SUBSCRIBED!"
-                ) : (
-                  "SUBSCRIBE"
-                )}
-              </button>
-            </form>
+                {/* Separator */}
+                <div className="h-px w-full" style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)" }} />
 
-            {status === "success" && (
-              <p className="text-green-600 text-xs mt-3 font-medium animate-pulse">
-                {message || "Thank you for subscribing!"}
-              </p>
-            )}
-            {status === "error" && (
-              <p className="text-red-600 text-xs mt-3 font-medium">
-                {message || "Failed to subscribe. Please try again."}
-              </p>
-            )}
-          </div>
-        </div>
+                {/* ============ BOTTOM BAR ============ */}
+                <div className="py-6 sm:py-8 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6">
+                    {/* Social Icons */}
+                    <div className="flex gap-2.5 sm:gap-3">
+                        {[
+                            { Icon: FaFacebook, link: "https://www.facebook.com/buyonegram/", hoverColor: "#1877F2" },
+                            { Icon: AiOutlineYoutube, link: "https://www.youtube.com/@buyonegram", hoverColor: "#FF0000" },
+                            { Icon: FaInstagram, link: "https://www.instagram.com/buyonegram/", hoverColor: "#E4405F" },
+                            { Icon: FaLinkedin, link: "https://www.linkedin.com/company/buy-one-gram-private-limited/", hoverColor: "#0A66C2" },
+                            { Icon: FaXTwitter, link: "https://x.com/buyonegram/", hoverColor: "#ffffff" },
+                        ].map(({ Icon, link, hoverColor }, i) => (
+                            <motion.a
+                                key={i}
+                                href={link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                initial={{ opacity: 0, scale: 0 }}
+                                whileInView={{ opacity: 1, scale: 1 }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 0.3, delay: i * 0.1 }}
+                                whileHover={{ y: -5, scale: 1.1, transition: { duration: 0.2 } }}
+                                className="w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] flex items-center justify-center rounded-full text-gray-500 transition-colors duration-300"
+                                style={{
+                                    background: "rgba(255, 255, 255, 0.05)",
+                                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.color = hoverColor;
+                                    e.currentTarget.style.borderColor = `${hoverColor}40`;
+                                    e.currentTarget.style.boxShadow = `0 8px 24px ${hoverColor}20`;
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.color = "";
+                                    e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.08)";
+                                    e.currentTarget.style.boxShadow = "none";
+                                }}
+                            >
+                                <Icon size={18} />
+                            </motion.a>
+                        ))}
+                    </div>
 
-        {/* Separator */}
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
-
-        {/* ================= BOTTOM STRIP (SOCIAL ICONS) ================= */}
-        <div className="py-6 sm:py-8 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6">
-          {/* Social Icons */}
-          <div className="flex gap-2 sm:gap-3">
-            {[
-              {
-                Icon: FaFacebook,
-                link: "https://www.facebook.com/buyonegram/",
-              },
-              {
-                Icon: AiOutlineYoutube,
-                link: "https://www.youtube.com/@buyonegram",
-              },
-              {
-                Icon: FaInstagram,
-                link: "https://www.instagram.com/buyonegram/",
-              },
-              {
-                Icon: FaLinkedin,
-                link: "https://www.linkedin.com/company/buy-one-gram-private-limited/posts/?feedView=all",
-              },
-              {
-                Icon: FaXTwitter,
-                link: "https://x.com/buyonegram/",
-              },
-            ].map(({ Icon, link }, i) => (
-              <Link
-                key={i}
-                href={link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-[38px] h-[38px] sm:w-[42px] sm:h-[42px] flex items-center justify-center rounded-full border text-gray-500 shadow-sm transition-all duration-300 hover:bg-[#059669] hover:text-white hover:border-[#059669] hover:-translate-y-1 hover:shadow-md"
-                style={{
-                  backgroundColor: "var(--flavor-card-bg, #fffbf5)",
-                  borderColor:
-                    "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
-                }}
-              >
-                <Icon size={18} />
-              </Link>
-            ))}
-          </div>
-
-          <p className="text-center text-[11px] sm:text-[13px] font-medium text-gray-400">
-            © 2026 Healthyonegram. All rights reserved.
-          </p>
-        </div>
-      </div>
-    </footer>
-  );
+                    <p className="text-center text-[11px] sm:text-[13px] font-medium text-gray-600">
+                        © 2026 Healthyonegram. All rights reserved.
+                    </p>
+                </div>
+            </div>
+        </footer>
+    );
 };
 
 export default Footer;

@@ -1,161 +1,126 @@
 "use client";
 
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
-import { Button } from "@mui/material";
 import { useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
 import { AiOutlineCheck } from "react-icons/ai";
+import { motion } from "framer-motion";
 
 export default function MembershipCTA() {
-  const router = useRouter();
-  const themeContext = useContext(MyContext);
-  const flavor = themeContext?.flavor || FLAVORS.creamy;
-  const [mounted, setMounted] = useState(false);
+    const router = useRouter();
+    const themeContext = useContext(MyContext);
+    const flavor = themeContext?.flavor || FLAVORS.creamy;
+    const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
-  if (!mounted) return null;
+    if (!mounted) return null;
 
-  return (
-    <section
-      data-theme-color
-      style={{
-        background: `linear-gradient(135deg, ${flavor.color} 0%, ${flavor.light} 100%)`,
-        padding: "64px 16px",
-        margin: "48px 0",
-        transition: "background 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
-      }}
-    >
-      <div className="container mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          {/* Left - Text Content */}
-          <div className="text-white">
-            <h2 className="text-4xl font-bold mb-4">
-              Join Our Buy One Gram Club
-            </h2>
-            <p className="text-xl mb-6 opacity-90">
-              Get exclusive benefits, early access to new products, and special
-              discounts on all your favorite health products.
-            </p>
+    const benefits = [
+        { emoji: "💰", title: "Save ₹2000+", desc: "Annually with discounts" },
+        { emoji: "📦", title: "Free Shipping", desc: "On all your orders" },
+        { emoji: "🎧", title: "24/7 Support", desc: "Dedicated member hotline" },
+        { emoji: "🚀", title: "Early Access", desc: "To new product launches" },
+    ];
 
-            <div className="space-y-3 mb-8">
-              <div className="flex items-center gap-3">
-                <AiOutlineCheck className="text-2xl" />
-                <span>15% discount on all orders</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <AiOutlineCheck className="text-2xl" />
-                <span>Free shipping on every purchase</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <AiOutlineCheck className="text-2xl" />
-                <span>Exclusive member-only products</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <AiOutlineCheck className="text-2xl" />
-                <span>Priority customer support</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <AiOutlineCheck className="text-2xl" />
-                <span>Monthly wellness tips & guides</span>
-              </div>
+    const checkItems = [
+        "15% discount on all orders",
+        "Free shipping on every purchase",
+        "Exclusive member-only products",
+        "Priority customer support",
+        "Monthly wellness tips & guides",
+    ];
+
+    return (
+        <section className="membership-content relative mt-0 mb-0 pb-16 sm:pb-20 overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+            {/* Decorative blobs */}
+            <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/30 rounded-full blur-[100px] pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-80 h-80 bg-pink-600/30 rounded-full blur-[100px] pointer-events-none" />
+
+            <div className="container mx-auto px-4 relative z-10">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                    {/* Left Content */}
+                    <motion.div
+                        initial={{ opacity: 0, x: -30 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.8 }}
+                        className="text-white pt-4 sm:pt-6"
+                    >
+                        <h2 className="text-4xl sm:text-5xl font-black mb-6 leading-tight">
+                            Join Our Buy One <br />Gram Club
+                        </h2>
+                        <p className="text-lg text-purple-100 font-medium mb-8 max-w-md">
+                            Unlock premium benefits, exclusive savings, and prioritize your health journey with us.
+                        </p>
+
+                        <div className="space-y-4 mb-10">
+                            {checkItems.map((item, i) => (
+                                <motion.div
+                                    key={i}
+                                    initial={{ opacity: 0, x: -20 }}
+                                    whileInView={{ opacity: 1, x: 0 }}
+                                    viewport={{ once: true }}
+                                    transition={{ duration: 0.5, delay: i * 0.1 }}
+                                    className="flex items-center gap-4"
+                                >
+                                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-white shrink-0 shadow-lg shadow-primary/30">
+                                        <AiOutlineCheck size={12} />
+                                    </span>
+                                    <span className="text-sm font-semibold text-white/90">{item}</span>
+                                </motion.div>
+                            ))}
+                        </div>
+
+                        <motion.button
+                            onClick={() => router.push("/membership")}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-indigo-900 rounded-full font-bold shadow-xl hover:bg-primary hover:text-white transition-all active:scale-95"
+                        >
+                            Explore Plans
+                            <svg className="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                            </svg>
+                        </motion.button>
+                    </motion.div>
+
+                    {/* Right Grid */}
+                    <motion.div
+                        initial="hidden"
+                        whileInView="visible"
+                        viewport={{ once: true }}
+                        variants={{
+                            hidden: { opacity: 0 },
+                            visible: {
+                                opacity: 1,
+                                transition: {
+                                    staggerChildren: 0.15
+                                }
+                            }
+                        }}
+                        className="grid grid-cols-2 gap-4"
+                    >
+                        {benefits.map((item, i) => (
+                            <motion.div
+                                key={i}
+                                variants={{
+                                    hidden: { opacity: 0, y: 20 },
+                                    visible: { opacity: 1, y: 0 }
+                                }}
+                                whileHover={{ y: -5, transition: { duration: 0.2 } }}
+                                className="p-6 rounded-3xl bg-white/10 backdrop-blur-lg border border-white/20 hover:bg-white/20 transition-colors shadow-lg"
+                            >
+                                <div className="text-4xl mb-4 grayscale mix-blend-screen">{item.emoji}</div>
+                                <h3 className="text-lg font-bold text-white mb-1">{item.title}</h3>
+                                <p className="text-xs text-purple-200 font-medium">{item.desc}</p>
+                            </motion.div>
+                        ))}
+                    </motion.div>
+                </div>
             </div>
-
-            <Button
-              onClick={() => router.push("/membership")}
-              sx={{
-                backgroundColor: "white",
-                color: flavor.color,
-                fontWeight: "bold",
-                px: 4,
-                py: 1.5,
-                cursor: "pointer",
-                "&:hover": {
-                  backgroundColor: "#f3f3f3",
-                },
-              }}
-            >
-              Explore Membership Plans
-            </Button>
-          </div>
-
-          {/* Right - Benefits Grid */}
-          <div className="grid grid-cols-2 gap-4">
-            <div
-              style={{
-                background: `${flavor.glass}`,
-                backdropFilter: "blur(12px)",
-                padding: "24px",
-                borderRadius: "16px",
-                color: "#333",
-                border: `1px solid ${flavor.color}40`,
-              }}
-              className="hover:scale-105 transition-transform duration-300 shadow-lg"
-            >
-              <div className="text-4xl mb-3">💰</div>
-              <h3 className="text-xl font-bold mb-2 text-gray-900">
-                Save ₹2000+
-              </h3>
-              <p className="text-gray-700 text-sm">
-                Annually with member discounts
-              </p>
-            </div>
-            <div
-              style={{
-                background: `${flavor.glass}`,
-                backdropFilter: "blur(12px)",
-                padding: "24px",
-                borderRadius: "16px",
-                color: "#333",
-                border: `1px solid ${flavor.color}40`,
-              }}
-              className="hover:scale-105 transition-transform duration-300 shadow-lg"
-            >
-              <div className="text-4xl mb-3">📦</div>
-              <h3 className="text-xl font-bold mb-2 text-gray-900">
-                Free Shipping
-              </h3>
-              <p className="text-gray-700 text-sm">On all your orders</p>
-            </div>
-            <div
-              style={{
-                background: `${flavor.glass}`,
-                backdropFilter: "blur(12px)",
-                padding: "24px",
-                borderRadius: "16px",
-                color: "#333",
-                border: `1px solid ${flavor.color}40`,
-              }}
-              className="hover:scale-105 transition-transform duration-300 shadow-lg"
-            >
-              <div className="text-4xl mb-3">🎧</div>
-              <h3 className="text-xl font-bold mb-2 text-gray-900">
-                24/7 Support
-              </h3>
-              <p className="text-gray-700 text-sm">Dedicated member hotline</p>
-            </div>
-            <div
-              style={{
-                background: `${flavor.glass}`,
-                backdropFilter: "blur(12px)",
-                padding: "24px",
-                borderRadius: "16px",
-                color: "#333",
-                border: `1px solid ${flavor.color}40`,
-              }}
-              className="hover:scale-105 transition-transform duration-300 shadow-lg"
-            >
-              <div className="text-4xl mb-3">🚀</div>
-              <h3 className="text-xl font-bold mb-2 text-gray-900">
-                Early Access
-              </h3>
-              <p className="text-gray-700 text-sm">To new product launches</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+        </section>
+    );
 }

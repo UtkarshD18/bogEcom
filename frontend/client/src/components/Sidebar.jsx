@@ -163,14 +163,14 @@ const Sidebar = () => {
                             backgroundColor: "rgba(193, 89, 28, 0.04)",
                           },
                           "&.Mui-checked": {
-                            color: "#059669",
+                            color: "var(--primary)",
                             "& .MuiSvgIcon-root": {
-                              border: "2px solid #059669",
+                              border: "2px solid var(--primary)",
                               backgroundColor: "#fff",
                             },
                           },
                           "&.Mui-focusVisible": {
-                            outline: "2px solid #059669",
+                            outline: "2px solid var(--primary)",
                             outlineOffset: "2px",
                           },
                         }}
@@ -236,8 +236,8 @@ const Sidebar = () => {
           sx={{
             marginTop: 3,
             width: "100%",
-            borderColor: "#059669",
-            color: "#059669",
+            borderColor: "var(--primary)",
+            color: "var(--primary)",
             "&:hover": {
               borderColor: "#047857",
               backgroundColor: "rgba(193, 89, 28, 0.04)",
@@ -258,7 +258,7 @@ const Sidebar = () => {
             router.push("/products");
           }}
           sx={{
-            color: "#059669",
+            color: "var(--primary)",
             "&:hover": {
               backgroundColor: "rgba(193, 89, 28, 0.04)",
             },

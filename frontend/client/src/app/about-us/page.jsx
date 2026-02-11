@@ -55,6 +55,26 @@ const THEME_PRESETS = {
     focusRing: "focus:ring-indigo-200/60",
     chip: "text-indigo-700 bg-indigo-50/70 border-indigo-200/60",
   },
+  sunset: {
+    bg: "from-orange-50/80 via-white to-rose-50/80",
+    glowA: "bg-orange-200/35",
+    glowB: "bg-rose-200/30",
+    accent: "from-orange-600 via-rose-600 to-pink-600",
+    badge: "from-orange-500 to-rose-500",
+    border: "border-rose-200/50",
+    focusRing: "focus:ring-rose-200/60",
+    chip: "text-rose-700 bg-rose-50/70 border-rose-200/60",
+  },
+  midnight: {
+    bg: "from-slate-50/80 via-white to-gray-50/80",
+    glowA: "bg-slate-200/35",
+    glowB: "bg-gray-200/30",
+    accent: "from-slate-700 via-gray-800 to-zinc-800",
+    badge: "from-slate-700 to-gray-800",
+    border: "border-slate-200/50",
+    focusRing: "focus:ring-slate-200/60",
+    chip: "text-slate-700 bg-slate-50/70 border-slate-200/60",
+  },
 };
 
 const DEFAULT_CONTENT = {
