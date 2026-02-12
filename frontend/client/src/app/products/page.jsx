@@ -2,18 +2,32 @@
 
 import ProductItem from "@/components/ProductItem";
 import { fetchDataFromApi } from "@/utils/api";
-import { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
 import { FiFilter, FiSearch } from "react-icons/fi";
 
 export default function ProductsPage() {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState("");
+    const searchParams = useSearchParams();
+    const router = useRouter();
+
+    // Get search term from URL
+    const urlSearchTerm = searchParams.get("search") || "";
+    const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
+
+    // Sync state with URL when URL changes (e.g. from header search)
+    useEffect(() => {
+        setSearchTerm(urlSearchTerm);
+    }, [urlSearchTerm]);
 
     useEffect(() => {
         const loadProducts = async () => {
+            setLoading(true);
             try {
-                const res = await fetchDataFromApi("/api/products");
+                // Construct API URL with search param
+                const query = urlSearchTerm ? `?search=${encodeURIComponent(urlSearchTerm)}` : "";
+                const res = await fetchDataFromApi(`/api/products${query}`);
 
                 // Handle various API response structures (arrays, nested products, nested data)
                 const productsData = Array.isArray(res) ? res : (res?.products || res?.data || res?.items || []);
@@ -25,12 +39,24 @@ export default function ProductsPage() {
             }
         };
         loadProducts();
-    }, []);
+    }, [urlSearchTerm]);
 
-    const filteredProducts = products.filter(p =>
-        p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.brand?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Handle search input change
+    const handleSearchChange = (e) => {
+        const value = e.target.value;
+        setSearchTerm(value);
+
+        // Debounce URL update
+        const timeoutId = setTimeout(() => {
+            if (value) {
+                router.push(`/products?search=${encodeURIComponent(value)}`);
+            } else {
+                router.push("/products");
+            }
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    };
 
     return (
         <div className="min-h-screen pb-20 pt-10">
@@ -52,7 +78,7 @@ export default function ProductsPage() {
                                 type="text"
                                 placeholder="Search products..."
                                 value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onChange={handleSearchChange}
                                 className="pl-14 pr-8 py-5 bg-white/70 backdrop-blur-md border border-gray-100 rounded-3xl outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all w-full font-bold text-base shadow-sm"
                             />
                         </div>
@@ -70,9 +96,9 @@ export default function ProductsPage() {
                             <div key={i} className="aspect-[3/4] bg-gray-100 animate-pulse rounded-3xl" />
                         ))}
                     </div>
-                ) : filteredProducts.length > 0 ? (
+                ) : products.length > 0 ? (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
-                        {filteredProducts.map((product) => (
+                        {products.map((product) => (
                             <ProductItem key={product._id} product={product} />
                         ))}
                     </div>

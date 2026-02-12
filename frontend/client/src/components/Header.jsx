@@ -255,7 +255,7 @@ const Header = () => {
                     );
                   })}
                 </nav>
-                <div className="w-full max-w-sm relative group">
+                <div className="w-full max-w-2xl relative group">
                   <div className="absolute -inset-1 bg-[var(--flavor-glass)] rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                   <div
                     className="relative shadow-sm border rounded-full overflow-hidden transition-all duration-300 focus-within:shadow-md"
@@ -265,7 +265,7 @@ const Header = () => {
                         "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
                     }}
                   >
-                    <div className="h-9 flex items-center">
+                    <div className="h-12 flex items-center">
                       <Search />
                     </div>
                   </div>

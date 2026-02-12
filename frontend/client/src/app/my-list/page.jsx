@@ -62,7 +62,7 @@ const MyWishlistPage = () => {
   return (
     <section className="min-h-screen bg-gradient-to-b from-[#f5fbff] to-[#eefbf3] py-8">
       <div className="container mx-auto px-4">
-        <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
           <div>
             <AccountSidebar />
           </div>

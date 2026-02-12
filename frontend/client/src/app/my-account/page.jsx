@@ -144,12 +144,12 @@ const MyAccount = () => {
 
   return (
     <section className="bg-gray-100 py-8">
-      <div className="container flex gap-5">
-        <div className="w-[20%]">
+      <div className="container flex flex-col lg:flex-row gap-5">
+        <div className="w-full lg:w-[20%] shrink-0">
           <AccountSidebar />
         </div>
 
-        <div className="wrapper w-[75%]">
+        <div className="wrapper w-full lg:w-[75%]">
           {/* Authentication Methods Overview */}
           <AuthenticationMethods />
 
