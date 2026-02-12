@@ -252,67 +252,72 @@ const AccountSidebar = () => {
 
   return (
     <aside
-      className="accountSidebar w-[100%] shadow-md rounded-md"
+      className="accountSidebar w-full shadow-md rounded-md sticky top-[80px]"
       style={{ backgroundColor: "var(--flavor-card-bg, #fffbf5)" }}
     >
       <div className="profileSection py-5 pb-0">
         {/* Profile Image with Upload */}
-        <div className="profileImg w-[100px] h-[100px] rounded-full overflow-hidden m-auto relative group cursor-pointer">
-          {userPhoto ? (
-            <img
-              src={userPhoto}
-              alt="profile"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.target.style.display = "none";
-                e.target.nextElementSibling.style.display = "flex";
-              }}
+        <div className="flex flex-row lg:flex-col items-center gap-4 px-4 lg:px-0">
+          <div className="profileImg w-[60px] h-[60px] lg:w-[100px] lg:h-[100px] rounded-full overflow-hidden relative group cursor-pointer shrink-0">
+            {userPhoto ? (
+              <img
+                src={userPhoto}
+                alt="profile"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.target.style.display = "none";
+                  e.target.nextElementSibling.style.display = "flex";
+                }}
+              />
+            ) : null}
+            <div
+              className={`w-full h-full bg-gradient-to-br from-primary to-[var(--flavor-hover)] flex items-center justify-center text-white text-xl lg:text-2xl font-bold ${userPhoto ? "hidden" : "flex"}`}
+            >
+              {getInitials(userName)}
+            </div>
+
+            {/* Upload Overlay */}
+            <div
+              className="overlay w-full h-full rounded-full bg-[rgba(0,0,0,0.6)] absolute top-0 left-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploadingPhoto ? (
+                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <FiCamera size={24} className="text-white" />
+                  <span className="text-white text-xs mt-1">Change</span>
+                </>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoChange}
+              className="hidden"
             />
-          ) : null}
-          <div
-            className={`w-full h-full bg-gradient-to-br from-primary to-[var(--flavor-hover)] flex items-center justify-center text-white text-2xl font-bold ${userPhoto ? "hidden" : "flex"}`}
-          >
-            {getInitials(userName)}
           </div>
 
-          {/* Upload Overlay */}
-          <div
-            className="overlay w-full h-full rounded-full bg-[rgba(0,0,0,0.6)] absolute top-0 left-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {uploadingPhoto ? (
-              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <FiCamera size={24} className="text-white" />
-                <span className="text-white text-xs mt-1">Change</span>
-              </>
+          <div className="text-left lg:text-center shrink-0">
+            <h4 className="text-[16px] lg:text-[18px] font-[600] text-gray-700">{userName}</h4>
+            <p className="text-[13px] lg:text-[14px] text-gray-600">{userEmail}</p>
+            {userPhone && (
+              <p className="text-[12px] lg:text-[13px] text-gray-500 mt-0.5">{userPhone}</p>
             )}
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handlePhotoChange}
-            className="hidden"
-          />
         </div>
 
-        <div className="text-center mt-3">
-          <h4 className="text-[18px] font-[600] text-gray-700">{userName}</h4>
-          <p className="text-[14px] text-gray-600">{userEmail}</p>
-          {userPhone && (
-            <p className="text-[13px] text-gray-500 mt-0.5">{userPhone}</p>
-          )}
-        </div>
-
-        <div className="bg-[#f1f1f1] mt-4 flex flex-col gap-[2px] py-2 myAcc">
+        {/* Navigation Links */}
+        <div className="bg-[#f1f1f1] mt-4 flex flex-row lg:flex-col gap-2 p-2 lg:py-2 myAcc overflow-x-auto scrollbar-hide scroll-smooth snap-x snap-mandatory">
           {Navinks?.map((item, index) => {
             const isActive = pathname === item.href;
             return (
-              <Link href={item.href} className="flex" key={index}>
+              <Link href={item.href} className="flex shrink-0 min-w-fit snap-start" key={index}>
                 <Button
-                  className={`!text-gray-600 !capitalize !w-full !justify-start !px-5 !py-[8px] gap-2 !text-[15px] !font-[600] ${isActive === true && "active"
+                  className={`!capitalize !w-auto lg:!w-full !justify-center lg:!justify-start !px-4 lg:!px-5 !py-[8px] gap-2 !text-[14px] lg:!text-[15px] !font-[600] rounded-full lg:rounded-md transition-all whitespace-nowrap ${isActive
+                    ? "!bg-white lg:!bg-transparent !text-[var(--primary)] !shadow-sm lg:!shadow-none border border-gray-200 lg:border-none active"
+                    : "!text-gray-600 hover:!bg-white/50"
                     }`}
                 >
                   {item.icon} {item.name}
@@ -324,7 +329,7 @@ const AccountSidebar = () => {
           <Button
             onClick={handleLogout}
             disabled={isLoggingOut}
-            className="!text-red-600 !capitalize !w-full !justify-start !px-5 !py-[8px] gap-2 !text-[15px] !font-[600] hover:!bg-red-50"
+            className="!text-red-600 !capitalize !w-auto lg:!w-full !justify-center lg:!justify-start !px-4 lg:!px-5 !py-[8px] gap-2 !text-[14px] lg:!text-[15px] !font-[600] rounded-full lg:rounded-md shrink-0 whitespace-nowrap snap-start hover:!bg-red-50"
           >
             <IoMdLogOut size={20} />
             {isLoggingOut ? "Logging out..." : "Logout"}

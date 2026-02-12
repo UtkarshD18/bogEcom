@@ -226,12 +226,12 @@ const Settings = () => {
 
   return (
     <section className="bg-gray-100 py-8">
-      <div className="container flex gap-5">
-        <div className="w-[20%]">
+      <div className="container flex flex-col lg:flex-row gap-5">
+        <div className="w-full lg:w-[20%] shrink-0">
           <AccountSidebar />
         </div>
 
-        <div className="wrapper w-[75%]">
+        <div className="wrapper w-full lg:w-[75%]">
           {/* Notifications Section */}
           <div className="bg-white shadow-md rounded-md mb-5">
             <div className="p-4 border-b-[1px] border-[rgba(0,0,0,0.2)]">

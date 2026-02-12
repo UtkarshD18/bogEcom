@@ -397,13 +397,13 @@ const AddressPage = () => {
   }
 
   return (
-    <section className="bg-gray-100 py-8 min-h-screen">
-      <div className="container flex gap-5">
-        <div className="w-[20%] hidden md:block">
+    <section className="bg-gray-100 py-8">
+      <div className="container flex flex-col lg:flex-row gap-5">
+        <div className="w-full lg:w-[20%] shrink-0">
           <AccountSidebar />
         </div>
 
-        <div className="wrapper flex-1 md:w-[75%]">
+        <div className="wrapper w-full lg:w-[75%]">
           <div className="bg-white shadow-md rounded-md mb-5">
             <div className="p-4 flex items-center justify-between border-b border-gray-200">
               <div className="info">
