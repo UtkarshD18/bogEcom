@@ -114,10 +114,32 @@ const defaultDevOrigins = ["http://localhost:3000", "http://localhost:3001"];
 const allowedOrigins = Array.from(
   new Set([...envOrigins, ...(isProduction ? [] : defaultDevOrigins)]),
 );
+const allowVercelPreviewOrigins =
+  String(process.env.ALLOW_VERCEL_PREVIEW_ORIGINS || "true").toLowerCase() ===
+  "true";
+const isVercelOrigin = (origin) =>
+  /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      // Allow non-browser/server-to-server requests with no Origin header.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      const normalized = normalizeOrigin(origin);
+      const isExplicitlyAllowed = allowedOrigins.includes(normalized);
+      const isAllowedVercelPreview =
+        allowVercelPreviewOrigins && isVercelOrigin(normalized);
+
+      if (isExplicitlyAllowed || isAllowedVercelPreview) {
+        return callback(null, true);
+      }
+
+      // Block by omitting CORS allow headers for unknown origins.
+      return callback(null, false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Session-Id"],
