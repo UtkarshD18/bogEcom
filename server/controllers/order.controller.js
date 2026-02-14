@@ -1512,21 +1512,30 @@ export const createOrder = asyncHandler(async (req, res) => {
       0,
     );
 
-    let shippingQuote = {
-      amount: Number(req.validatedData.shipping || 0),
-      source: "client",
-      provider: "INTERNAL",
-    };
-    if (validateIndianPincode(checkoutContact.pincode)) {
-      shippingQuote = await getShippingQuote({
-        destinationPincode: checkoutContact.pincode,
-        subtotal: subtotalBeforeCoupon,
-        paymentType: paymentType || "prepaid",
+    // ---- SHIPPING: backend source-of-truth via getShippingQuote ----
+    const totalWeight = normalizedProducts.reduce(
+      (sum, item) => sum + ((Number(item.quantity) || 1) * 500),
+      0,
+    );
+    let shippingCharge = 0;
+    try {
+      if (validateIndianPincode(checkoutContact.pincode)) {
+        const shippingQuote = await getShippingQuote({
+          destinationPincode: checkoutContact.pincode,
+          subtotal: totalWeight,
+          paymentType: paymentType || "prepaid",
+        });
+        shippingCharge = Number(shippingQuote.charge || 0);
+      }
+    } catch (shippingErr) {
+      logger.warn("createOrder", "Shipping quote failed, defaulting to 0", {
+        error: shippingErr?.message || String(shippingErr),
       });
+      shippingCharge = 0;
     }
 
     const computedFinalAmount = round2(
-      netInclusiveSubtotal + shippingQuote.amount,
+      netInclusiveSubtotal + shippingCharge,
     );
     const payableAmount = Math.max(computedFinalAmount, 1);
 
@@ -1568,7 +1577,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       membershipDiscount,
       membershipPlan: membershipResult.membership?.planId || null,
       tax: taxData.tax,
-      shipping: shippingQuote.amount,
+      shipping: shippingCharge,
       gst: {
         rate: taxData.rate,
         state: taxData.state,
@@ -1953,22 +1962,31 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       round2(workingAmount - Number(redemption.redeemAmount || 0)),
       0,
     );
-    let shippingQuote = {
-      amount: Number(req.validatedData.shipping || 0),
-      source: "client",
-      provider: "INTERNAL",
-    };
-    if (validateIndianPincode(checkoutContact.pincode)) {
-      shippingQuote = await getShippingQuote({
-        destinationPincode: checkoutContact.pincode,
-        subtotal: subtotalBeforeCoupon,
-        paymentType: paymentType || "prepaid",
+    // ---- SHIPPING: backend source-of-truth via getShippingQuote ----
+    const totalWeight = normalizedProducts.reduce(
+      (sum, item) => sum + ((Number(item.quantity) || 1) * 500),
+      0,
+    );
+    let shippingCharge = 0;
+    try {
+      if (validateIndianPincode(checkoutContact.pincode)) {
+        const shippingQuote = await getShippingQuote({
+          destinationPincode: checkoutContact.pincode,
+          subtotal: totalWeight,
+          paymentType: paymentType || "prepaid",
+        });
+        shippingCharge = Number(shippingQuote.charge || 0);
+      }
+    } catch (shippingErr) {
+      logger.warn("saveOrderForLater", "Shipping quote failed, defaulting to 0", {
+        error: shippingErr?.message || String(shippingErr),
       });
+      shippingCharge = 0;
     }
 
     // Calculate final amount
     const finalOrderAmount = round2(
-      netInclusiveSubtotal + shippingQuote.amount,
+      netInclusiveSubtotal + shippingCharge,
     );
     const totalDiscount = round2(
       membershipDiscount + influencerDiscount + couponDiscount,
@@ -2017,7 +2035,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       commissionPaid: false,
       originalPrice,
       tax: taxData.tax,
-      shipping: shippingQuote.amount,
+      shipping: shippingCharge,
       gst: {
         rate: taxData.rate,
         state: taxData.state,
@@ -2183,7 +2201,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
           couponDiscount,
           coinRedeemAmount: Number(redemption.redeemAmount || 0),
           tax: taxData.tax,
-          shipping: shippingQuote.amount,
+          shipping: shippingCharge,
           totalDiscount,
           finalAmount: finalOrderAmount,
         },
