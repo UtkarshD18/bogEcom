@@ -36,6 +36,7 @@ const ProductDetailPage = () => {
   const [relatedProducts, setRelatedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
+  const [selectedVariant, setSelectedVariant] = useState(null);
   const [activeTab, setActiveTab] = useState("description");
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -43,15 +44,31 @@ const ProductDetailPage = () => {
     severity: "success",
   });
 
-  const availableQty = product
+  // Compute active price/stock based on selected variant
+  const activePrice = selectedVariant ? selectedVariant.price : product?.price;
+  const activeOriginalPrice = selectedVariant
+    ? selectedVariant.originalPrice
+    : product?.originalPrice;
+  const activeStock = selectedVariant
     ? Math.max(
-        typeof product.available_quantity === "number"
-          ? product.available_quantity
-          : Number(product.stock_quantity ?? product.stock ?? 0) -
-              Number(product.reserved_quantity ?? 0),
+        Number(selectedVariant.stock_quantity ?? selectedVariant.stock ?? 0) -
+          Number(selectedVariant.reserved_quantity ?? 0),
         0,
       )
-    : 0;
+    : null;
+
+  const availableQty =
+    activeStock !== null
+      ? activeStock
+      : product
+        ? Math.max(
+            typeof product.available_quantity === "number"
+              ? product.available_quantity
+              : Number(product.stock_quantity ?? product.stock ?? 0) -
+                  Number(product.reserved_quantity ?? 0),
+            0,
+          )
+        : 0;
   const maxQty = availableQty > 0 ? availableQty : 1;
 
   // Fetch product details from API
@@ -62,6 +79,15 @@ const ProductDetailPage = () => {
 
       if (response?.error !== true && response?.data) {
         setProduct(response.data);
+
+        // Auto-select default variant (or first) if product has variants
+        if (
+          response.data.hasVariants &&
+          response.data.variants?.length > 0
+        ) {
+          const defaultVariant = response.data.variants.find((v) => v.isDefault) || response.data.variants[0];
+          setSelectedVariant(defaultVariant);
+        }
 
         // Fetch related products by category
         if (response.data.category) {
@@ -120,8 +146,24 @@ const ProductDetailPage = () => {
           });
           return;
         }
-        // Add to cart
-        await addToCart(product, quantity);
+        // Add to cart - pass variant-adjusted product data
+        const cartProduct = selectedVariant
+          ? {
+              ...product,
+              price: selectedVariant.price,
+              originalPrice: selectedVariant.originalPrice || product.originalPrice,
+              selectedVariant: {
+                _id: selectedVariant._id,
+                name: selectedVariant.name,
+                sku: selectedVariant.sku,
+                price: selectedVariant.price,
+                weight: selectedVariant.weight,
+                unit: selectedVariant.unit,
+              },
+              variantId: selectedVariant._id,
+            }
+          : product;
+        await addToCart(cartProduct, quantity);
       }
     } catch (error) {
       setSnackbar({
@@ -156,12 +198,19 @@ const ProductDetailPage = () => {
 
   // Calculate discount
   const calculateDiscount = () => {
-    if (product?.originalPrice && product?.price) {
-      return Math.round(
-        ((product.originalPrice - product.price) / product.originalPrice) * 100,
-      );
+    const p = activePrice || product?.price;
+    const op = activeOriginalPrice || product?.originalPrice;
+    if (op && p && op > p) {
+      return Math.round(((op - p) / op) * 100);
     }
     return product?.discount || 0;
+  };
+
+  // Format weight for display
+  const formatWeight = (w, u) => {
+    if (!w || w <= 0) return null;
+    if (u === "g" && w >= 1000) return `${w / 1000} kg`;
+    return `${w}${u && u !== "piece" ? " " + u : " g"}`;
   };
 
   // Loading State
@@ -270,6 +319,16 @@ const ProductDetailPage = () => {
                 {product.name || product.title}
               </h1>
 
+              {/* Weight Badge (only when no variants) */}
+              {!product.hasVariants && product.weight > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-700 mb-3 w-fit">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l3 9a5.002 5.002 0 006.001 0M18 7l-3 9m0-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+                  </svg>
+                  {product.weight}{product.unit && product.unit !== "piece" ? product.unit : "g"}
+                </span>
+              )}
+
               {/* Rating */}
               <div className="flex items-center gap-3 mb-4">
                 <Rating
@@ -283,21 +342,83 @@ const ProductDetailPage = () => {
                 </span>
               </div>
 
+              {/* Size / Weight Variant Selector */}
+              {product.hasVariants && product.variants?.length > 0 && (
+                <div className="mb-5">
+                  <p className="text-sm text-gray-500 mb-2">
+                    Size: <span className="font-bold text-gray-900">{selectedVariant?.name || "Select"}</span>
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    {product.variants.map((variant, idx) => {
+                      const isSelected = selectedVariant?._id === variant._id;
+                      const vStock = Math.max(
+                        Number(variant.stock_quantity ?? variant.stock ?? 0) -
+                          Number(variant.reserved_quantity ?? 0),
+                        0,
+                      );
+                      const vDiscount = variant.discountPercent ||
+                        (variant.originalPrice && variant.price && variant.originalPrice > variant.price
+                          ? Math.round(((variant.originalPrice - variant.price) / variant.originalPrice) * 100)
+                          : 0);
+                      return (
+                        <button
+                          key={variant._id || idx}
+                          type="button"
+                          onClick={() => { setSelectedVariant(variant); setQuantity(1); }}
+                          className={`relative flex flex-col items-start rounded-xl border-2 px-4 py-3 min-w-[140px] transition-all duration-200 text-left ${
+                            isSelected
+                              ? "border-primary bg-[var(--flavor-glass)] shadow-md"
+                              : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+                          } ${vStock === 0 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                          disabled={vStock === 0}
+                        >
+                          {vDiscount > 0 && (
+                            <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                              {vDiscount}%
+                            </span>
+                          )}
+                          {variant.isDefault && (
+                            <span className="absolute -top-2 left-2 bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                              Popular
+                            </span>
+                          )}
+                          <span className={`text-sm font-bold ${isSelected ? "text-primary" : "text-gray-900"}`}>
+                            {variant.name}
+                          </span>
+                          <span className="text-base font-extrabold text-gray-900 mt-1">
+                            ₹{variant.price}
+                          </span>
+                          {variant.originalPrice && variant.originalPrice > variant.price && (
+                            <span className="text-xs text-gray-400 line-through">
+                              ₹{variant.originalPrice}
+                            </span>
+                          )}
+                          <span className={`text-[11px] font-semibold mt-1 ${vStock > 0 ? "text-green-600" : "text-red-500"}`}>
+                            {vStock > 0 ? "In stock" : "Out of stock"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Price */}
               <div className="flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 flex-wrap">
                 <span className="text-2xl sm:text-3xl font-extrabold text-gray-900">
-                  ₹{product.price || product.salePrice}
+                  ₹{activePrice || product.salePrice}
                 </span>
-                {(product.originalPrice || product.regularPrice) && (
+                {(activeOriginalPrice || product.regularPrice) &&
+                  (activeOriginalPrice || product.regularPrice) > (activePrice || 0) && (
                   <span className="text-lg sm:text-xl text-gray-400 line-through">
-                    ₹{product.originalPrice || product.regularPrice}
+                    ₹{activeOriginalPrice || product.regularPrice}
                   </span>
                 )}
                 {discount > 0 && (
                   <span className="text-sm font-bold text-primary bg-[var(--flavor-glass)] px-2 py-1 rounded">
                     Save ₹
-                    {(product.originalPrice || product.regularPrice) -
-                      (product.price || product.salePrice)}
+                    {(activeOriginalPrice || product.regularPrice || 0) -
+                      (activePrice || product.salePrice || 0)}
                   </span>
                 )}
               </div>

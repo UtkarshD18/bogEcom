@@ -143,6 +143,8 @@ export const CartProvider = ({ children }) => {
           quantity,
           price: product.price,
           originalPrice: product.originalPrice || product.oldPrice,
+          variantId: product.variantId || product.selectedVariant?._id || undefined,
+          variantName: product.selectedVariant?.name || undefined,
         }),
       });
 
