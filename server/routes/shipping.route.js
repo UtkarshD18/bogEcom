@@ -17,7 +17,7 @@ import {
 
 const router = express.Router();
 
-// Public shipping quote endpoint (checkout)
+// Public shipping endpoints
 router.post("/quote", getShippingQuoteController);
 
 // Admin-only shipping operations

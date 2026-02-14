@@ -81,10 +81,8 @@ const Checkout = () => {
 
   // Get settings from context
   const {
-    shippingSettings,
     highTrafficNotice,
     taxSettings,
-    calculateShipping,
     maintenanceMode,
   } = useSettings();
 
@@ -131,6 +129,7 @@ const Checkout = () => {
     message: "",
     severity: "success",
   });
+  const [shipping, setShipping] = useState(0);
 
   // Coupon State
   const [couponCode, setCouponCode] = useState("");
@@ -335,8 +334,7 @@ const Checkout = () => {
     effectiveRedeemCoins * Number(coinSettings.redeemRate || 0),
   );
 
-  // Step 7: Shipping — GST-free, coupon-free; thresholds use pre-discount GST-inclusive total
-  const shipping = calculateShipping(cartGrossSubtotal);
+  // Step 7: Shipping — fetched from backend API /api/shipping/quote
 
   // Step 8: Final payable = discounted base + GST + shipping − coinRedeem
   const finalTotals = calculateCheckoutTotals({
@@ -489,6 +487,46 @@ const Checkout = () => {
       Math.min(Math.max(Number(prev || 0), 0), coinBalance, maxCoinsByRule),
     );
   }, [coinBalance, maxCoinRedeemValue, coinSettings.redeemRate]);
+
+  const fetchShippingCharge = async (pin) => {
+    try {
+      if (!pin || pin.length !== 6) return;
+
+      const res = await fetch(`${API_URL}/api/shipping/quote`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pincode: pin,
+          subtotal: cartGrossSubtotal,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (json?.data?.charge != null) {
+        setShipping(Number(json.data.charge));
+      }
+    } catch (err) {
+      console.log("Shipping fetch error", err);
+    }
+  };
+
+  useEffect(() => {
+    let pin = "";
+
+    if (isGuestCheckout) {
+      pin = guestDetails?.pincode;
+    } else {
+      const addr = addresses.find((a) => a._id === selectedAddress);
+      pin = addr?.pincode;
+    }
+
+    if (pin) {
+      fetchShippingCharge(pin);
+    }
+  }, [selectedAddress, guestDetails?.pincode, cartItems, cartGrossSubtotal]);
 
   // Address form handlers
   const resetAddressForm = () => {

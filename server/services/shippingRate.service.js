@@ -7,6 +7,16 @@ const shippingCache = new Map();
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
+const ZONE_C_PREFIXES = ["19", "18", "79", "78", "77", "68", "67", "74", "93"];
+const ZONE_A_PREFIXES = ["302"];
+
+const detectZoneByPincode = (pincode) => {
+  const pin = String(pincode);
+  if (ZONE_A_PREFIXES.some((p) => pin.startsWith(p))) return "A";
+  if (ZONE_C_PREFIXES.some((p) => pin.startsWith(p))) return "C";
+  return "B";
+};
+
 export const validateIndianPincode = (pincode) => /^\d{6}$/.test(String(pincode || ""));
 
 const getFallbackShippingAmount = async (subtotal) => {
@@ -43,81 +53,76 @@ const setCached = (cacheKey, value) => {
 
 export const getShippingQuote = async ({
   destinationPincode,
-  subtotal,
+  subtotal = 0,
   paymentType = "prepaid",
 }) => {
-  if (!validateIndianPincode(destinationPincode)) {
-    const error = new Error("Invalid pincode. Pincode must be 6 digits.");
-    error.code = "INVALID_PINCODE";
-    throw error;
-  }
+  // ---- RATE CHART (base500 + incremental add500 per extra 500g) ----
+  const RATE_CHART = {
+    A: { base500: 24, add500: 14 },
+    B: { base500: 42, add500: 26 },
+    C: { base500: 50, add500: 30 },
+  };
 
-  const safeSubtotal = Math.max(round2(subtotal), 0);
-  const origin = process.env.SHIPPER_PINCODE || process.env.XPRESSBEES_ORIGIN_PINCODE;
-  const normalizedPaymentType = String(paymentType || "prepaid").toLowerCase();
-  const cacheKey = `${origin || "na"}:${destinationPincode}:${normalizedPaymentType}:${safeSubtotal}`;
+  // ---- DYNAMIC WEIGHT SLAB ----
+  // Snaps weight to nearest 500g ceiling: 0-500→500, 501-1000→1000, etc.
+  const getWeightSlab = (totalWeight) => {
+    const w = Math.max(Number(totalWeight || 0), 1);
+    return Math.ceil(w / 500) * 500;
+  };
 
-  const cached = getCached(cacheKey);
-  if (cached) return cached;
+  // ---- ZONE DETECTION BY PINCODE PREFIX ----
+  const detectZoneByPincode = (pin) => {
+    const pincode = String(pin || "");
 
-  const fallbackAmount = await getFallbackShippingAmount(safeSubtotal);
+    // Zone A → Jaipur (302)
+    if (pincode.startsWith("302")) {
+      return "A";
+    }
 
-  if (!origin || !validateIndianPincode(origin)) {
-    const fallback = {
-      amount: fallbackAmount,
-      source: "fallback",
-      provider: "INTERNAL",
-      reason: "Origin pincode not configured for ExpressBees",
-    };
-    setCached(cacheKey, fallback);
-    return fallback;
-  }
+    // Zone C → NE / J&K / KL / AN
+    const zoneCPrefix = [
+      "19", // Jammu & Kashmir
+      "18",
+      "79",
+      "78",
+      "77", // North East
+      "68",
+      "67", // Kerala
+      "74",
+      "93", // Andaman
+    ];
 
-  try {
-    const payload = {
-      origin,
-      destination: destinationPincode,
-      payment_type: normalizedPaymentType,
-      order_amount: safeSubtotal,
-    };
+    if (zoneCPrefix.some((p) => pincode.startsWith(p))) {
+      return "C";
+    }
 
-    const serviceability = await checkServiceability(payload);
-    const data = serviceability?.data || serviceability || {};
-    const responseAmount =
-      Number(
-        data?.shipping_charge ??
-          data?.shippingCost ??
-          data?.freight_charge ??
-          data?.charge,
-      ) || NaN;
+    // Default
+    return "B";
+  };
 
-    const amount = Number.isFinite(responseAmount)
-      ? Math.max(round2(responseAmount), 0)
-      : fallbackAmount;
+  // ---- WEIGHT SLAB FROM SUBTOTAL ----
+  // Estimate weight: subtotal ≤ 500 → 500g base, then +500g per ₹500 bracket
+  const estimatedWeight = subtotal <= 500 ? 500 : Math.ceil(subtotal / 500) * 500;
+  const weight = getWeightSlab(estimatedWeight);
 
-    const quote = {
-      amount,
-      source: Number.isFinite(responseAmount) ? "xpressbees" : "fallback",
-      provider: "XPRESSBEES",
-      serviceability: data,
-      reason: Number.isFinite(responseAmount)
-        ? ""
-        : "ExpressBees returned no shipping amount, fallback applied",
-    };
+  // ---- ZONE FROM PINCODE ----
+  const zone = detectZoneByPincode(destinationPincode);
 
-    setCached(cacheKey, quote);
-    return quote;
-  } catch (error) {
-    const fallback = {
-      amount: fallbackAmount,
-      source: "fallback",
-      provider: "INTERNAL",
-      reason: `ExpressBees unavailable: ${error.message}`,
-    };
-    setCached(cacheKey, fallback);
-    return fallback;
-  }
+  // ---- FINAL PRICE (dynamic slab pricing) ----
+  const rate = RATE_CHART[zone];
+  const charge =
+    weight <= 500
+      ? rate.base500
+      : round2(rate.base500 + ((weight - 500) / 500) * rate.add500);
+
+  return {
+    success: true,
+    zone,
+    charge,
+    weight,
+  };
 };
+
 
 export default {
   getShippingQuote,
