@@ -2,11 +2,19 @@
 
 import ProductItem from "@/components/ProductItem";
 import { fetchDataFromApi } from "@/utils/api";
-import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { FiFilter, FiSearch } from "react-icons/fi";
 
-export default function ProductsPage() {
+const ProductsGridSkeleton = () => (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <div key={i} className="aspect-[3/4] bg-gray-100 animate-pulse rounded-3xl" />
+        ))}
+    </div>
+);
+
+function ProductsPageContent() {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const searchParams = useSearchParams();
@@ -91,11 +99,7 @@ export default function ProductsPage() {
 
                 {/* Products Grid */}
                 {loading ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-                            <div key={i} className="aspect-[3/4] bg-gray-100 animate-pulse rounded-3xl" />
-                        ))}
-                    </div>
+                    <ProductsGridSkeleton />
                 ) : products.length > 0 ? (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
                         {products.map((product) => (
@@ -115,5 +119,13 @@ export default function ProductsPage() {
             <div className="fixed top-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-100/30 blur-[120px] rounded-full -z-10" />
             <div className="fixed bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-violet-100/30 blur-[120px] rounded-full -z-10" />
         </div>
+    );
+}
+
+export default function ProductsPage() {
+    return (
+        <Suspense fallback={<ProductsGridSkeleton />}>
+            <ProductsPageContent />
+        </Suspense>
     );
 }
