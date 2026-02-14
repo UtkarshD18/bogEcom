@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import CategoryModel from "../models/category.model.js";
 import ProductModel from "../models/product.model.js";
 
@@ -194,11 +195,19 @@ export const getProducts = async (req, res) => {
 
     if (lowStock === "true") {
       const thresholdExpr = {
-        $ifNull: ["$low_stock_threshold", { $ifNull: ["$lowStockThreshold", 5] }],
+        $ifNull: [
+          "$low_stock_threshold",
+          { $ifNull: ["$lowStockThreshold", 5] },
+        ],
       };
       const trackExpr = {
         $ne: [
-          { $ifNull: ["$track_inventory", { $ifNull: ["$trackInventory", true] }] },
+          {
+            $ifNull: [
+              "$track_inventory",
+              { $ifNull: ["$trackInventory", true] },
+            ],
+          },
           false,
         ],
       };
@@ -248,7 +257,8 @@ export const getProducts = async (req, res) => {
     }
 
     if (exprFilters.length > 0) {
-      filter.$expr = exprFilters.length === 1 ? exprFilters[0] : { $and: exprFilters };
+      filter.$expr =
+        exprFilters.length === 1 ? exprFilters[0] : { $and: exprFilters };
     }
 
     // Build sort object
@@ -459,14 +469,41 @@ export const createProduct = async (req, res) => {
       metaTitle,
       metaDescription,
       metaKeywords,
+      discount,
+      rating,
     } = req.body;
 
     // Validate required fields
-    if (!name || !price || !category) {
+    if (!name || price === undefined || price === null || !category) {
       return res.status(400).json({
         error: true,
         success: false,
         message: "Name, price, and category are required",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(category)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid category",
+      });
+    }
+
+    if (subCategory && !mongoose.Types.ObjectId.isValid(subCategory)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid subcategory",
+      });
+    }
+
+    const normalizedPrice = Number(price);
+    if (!Number.isFinite(normalizedPrice) || normalizedPrice <= 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Please enter a valid price",
       });
     }
 
@@ -493,13 +530,38 @@ export const createProduct = async (req, res) => {
           ? req.body.trackInventory
           : true;
 
+    // Validate variants if present
+    let processedVariants = variants || [];
+    if (hasVariants && Array.isArray(processedVariants) && processedVariants.length > 0) {
+      // Check for duplicate weights
+      const weightKeys = processedVariants.map((v) => `${v.weight || 0}-${v.unit || "g"}`);
+      const uniqueWeights = new Set(weightKeys);
+      if (uniqueWeights.size !== weightKeys.length) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Duplicate variant weights are not allowed",
+        });
+      }
+      // Ensure exactly one default
+      const defaults = processedVariants.filter((v) => v.isDefault);
+      if (defaults.length === 0) {
+        processedVariants[0].isDefault = true;
+      } else if (defaults.length > 1) {
+        processedVariants.forEach((v, i) => { v.isDefault = i === processedVariants.indexOf(defaults[0]); });
+      }
+    }
+
     const product = new ProductModel({
-      name,
+      name: String(name || "").trim(),
       description,
       shortDescription,
       brand,
-      price,
-      originalPrice,
+      price: normalizedPrice,
+      originalPrice:
+        originalPrice === undefined || originalPrice === null
+          ? undefined
+          : Number(originalPrice),
       images: images || [],
       thumbnail,
       category,
@@ -511,7 +573,7 @@ export const createProduct = async (req, res) => {
       low_stock_threshold: normalizedLowStock,
       track_inventory: normalizedTrackInventory,
       hasVariants: hasVariants || false,
-      variants: variants || [],
+      variants: processedVariants,
       variantType,
       weight,
       unit,
@@ -525,6 +587,8 @@ export const createProduct = async (req, res) => {
       metaTitle,
       metaDescription,
       metaKeywords,
+      discount: discount ? Number(discount) : 0,
+      rating: rating === undefined || rating === null ? undefined : rating,
     });
 
     await product.save();
@@ -588,10 +652,7 @@ export const updateProduct = async (req, res) => {
     ) {
       updateData.lowStockThreshold = updateData.low_stock_threshold;
     }
-    if (
-      "track_inventory" in updateData &&
-      !("trackInventory" in updateData)
-    ) {
+    if ("track_inventory" in updateData && !("trackInventory" in updateData)) {
       updateData.trackInventory = updateData.track_inventory;
     }
 
@@ -602,6 +663,29 @@ export const updateProduct = async (req, res) => {
         success: false,
         message: "Product not found",
       });
+    }
+
+    // Validate variants if being updated
+    if (updateData.hasVariants && Array.isArray(updateData.variants) && updateData.variants.length > 0) {
+      // Check for duplicate weights
+      const weightKeys = updateData.variants.map((v) => `${v.weight || 0}-${v.unit || "g"}`);
+      const uniqueWeights = new Set(weightKeys);
+      if (uniqueWeights.size !== weightKeys.length) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Duplicate variant weights are not allowed",
+        });
+      }
+      // Ensure exactly one default
+      const defaults = updateData.variants.filter((v) => v.isDefault);
+      if (defaults.length === 0) {
+        updateData.variants[0].isDefault = true;
+      } else if (defaults.length > 1) {
+        updateData.variants.forEach((v, i) => {
+          v.isDefault = i === updateData.variants.indexOf(defaults[0]);
+        });
+      }
     }
 
     // If category is being changed, update product counts
@@ -708,10 +792,7 @@ export const bulkUpdateProducts = async (req, res) => {
     ) {
       updateData.lowStockThreshold = updateData.low_stock_threshold;
     }
-    if (
-      "track_inventory" in updateData &&
-      !("trackInventory" in updateData)
-    ) {
+    if ("track_inventory" in updateData && !("trackInventory" in updateData)) {
       updateData.trackInventory = updateData.track_inventory;
     }
 

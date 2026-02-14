@@ -59,7 +59,7 @@ const reviewSchema = new mongoose.Schema(
 // Variant sub-schema for product variations
 const variantSchema = new mongoose.Schema({
   name: {
-    type: String, // e.g., "250g", "500g", "Red", "Blue"
+    type: String, // e.g., "250g", "500g", "1 Kg"
     required: true,
   },
   sku: {
@@ -72,6 +72,24 @@ const variantSchema = new mongoose.Schema({
   },
   originalPrice: {
     type: Number,
+  },
+  discountPercent: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100,
+  },
+  weight: {
+    type: Number, // in grams (e.g. 500, 1000)
+    default: 0,
+  },
+  unit: {
+    type: String,
+    default: "g", // g, kg, ml, L, pcs
+  },
+  isDefault: {
+    type: Boolean,
+    default: false,
   },
   stock: {
     type: Number,
@@ -404,9 +422,7 @@ productSchema.virtual("inStock").get(function () {
       return variantStock - variantReserved > 0;
     });
   }
-  const stock = Number(
-    this.stock_quantity ?? this.stock ?? 0,
-  );
+  const stock = Number(this.stock_quantity ?? this.stock ?? 0);
   const reserved = Number(this.reserved_quantity ?? 0);
   return stock - reserved > 0;
 });
@@ -417,7 +433,9 @@ productSchema.virtual("available_quantity").get(function () {
   }
   if (this.hasVariants && this.variants.length > 0) {
     return this.variants.reduce((sum, variant) => {
-      const variantStock = Number(variant?.stock_quantity ?? variant?.stock ?? 0);
+      const variantStock = Number(
+        variant?.stock_quantity ?? variant?.stock ?? 0,
+      );
       const variantReserved = Number(variant?.reserved_quantity ?? 0);
       return sum + Math.max(variantStock - variantReserved, 0);
     }, 0);
@@ -442,8 +460,9 @@ productSchema.virtual("image").get(function () {
   return this.thumbnail || this.images[0] || "/product_placeholder.png";
 });
 
-// Pre-save middleware
-productSchema.pre("save", async function () {
+// Pre-validate middleware – runs BEFORE Mongoose checks `required` etc.
+// Slug and SKU must be generated here so that validation passes.
+productSchema.pre("validate", function () {
   // Generate slug from name
   if (this.isModified("name") && !this.slug) {
     this.slug = this.name
@@ -457,7 +476,10 @@ productSchema.pre("save", async function () {
     const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
     this.sku = `BOG-${randomPart}`;
   }
+});
 
+// Pre-save middleware
+productSchema.pre("save", async function () {
   // Calculate discount if original price exists
   if (this.originalPrice && this.originalPrice > this.price) {
     this.discount = Math.round(
@@ -475,7 +497,8 @@ productSchema.pre("save", async function () {
     this.stock_quantity = typeof this.stock === "number" ? this.stock : 0;
   }
   if (this.stock == null) {
-    this.stock = typeof this.stock_quantity === "number" ? this.stock_quantity : 0;
+    this.stock =
+      typeof this.stock_quantity === "number" ? this.stock_quantity : 0;
   }
   if (this.reserved_quantity == null) {
     this.reserved_quantity = 0;
@@ -500,16 +523,33 @@ productSchema.pre("save", async function () {
   }
 
   if (Array.isArray(this.variants) && this.variants.length > 0) {
+    let hasDefault = false;
     for (const variant of this.variants) {
       if (variant.stock_quantity == null) {
-        variant.stock_quantity = typeof variant.stock === "number" ? variant.stock : 0;
+        variant.stock_quantity =
+          typeof variant.stock === "number" ? variant.stock : 0;
       }
       if (variant.stock == null) {
-        variant.stock = typeof variant.stock_quantity === "number" ? variant.stock_quantity : 0;
+        variant.stock =
+          typeof variant.stock_quantity === "number"
+            ? variant.stock_quantity
+            : 0;
       }
       if (variant.reserved_quantity == null) {
         variant.reserved_quantity = 0;
       }
+      // Auto-calculate discountPercent
+      if (variant.originalPrice && variant.originalPrice > variant.price) {
+        variant.discountPercent = Math.round(
+          ((variant.originalPrice - variant.price) / variant.originalPrice) *
+            100,
+        );
+      }
+      if (variant.isDefault) hasDefault = true;
+    }
+    // Ensure at least one default variant
+    if (!hasDefault && this.variants.length > 0) {
+      this.variants[0].isDefault = true;
     }
   }
 });

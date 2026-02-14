@@ -35,6 +35,21 @@ const ProductItem = (props) => {
         discount: discount || 30
     };
 
+    // Derive display values from default variant when hasVariants
+    const defaultVariant = productData.hasVariants && productData.variants?.length > 0
+        ? productData.variants.find((v) => v.isDefault) || productData.variants[0]
+        : null;
+
+    const displayPrice = defaultVariant ? defaultVariant.price : productData.price;
+    const displayOriginalPrice = defaultVariant ? (defaultVariant.originalPrice || 0) : productData.originalPrice;
+    const displayDiscount = defaultVariant
+        ? (defaultVariant.discountPercent || (defaultVariant.originalPrice && defaultVariant.originalPrice > defaultVariant.price
+            ? Math.round(((defaultVariant.originalPrice - defaultVariant.price) / defaultVariant.originalPrice) * 100)
+            : 0))
+        : productData.discount;
+    const displayWeight = defaultVariant ? defaultVariant.weight : productData.weight;
+    const displayUnit = defaultVariant ? (defaultVariant.unit || "g") : (productData.unit && productData.unit !== "piece" ? productData.unit : "g");
+
     const handleWishlistClick = async (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -74,9 +89,9 @@ const ProductItem = (props) => {
             {/* Image Container */}
             <div className="relative mb-3 h-40 w-full overflow-hidden rounded-2xl bg-gray-50 flex items-center justify-center">
                 {/* Discount Badge */}
-                {productData.discount > 0 && (
+                {displayDiscount > 0 && (
                     <span className="absolute left-2 top-2 z-10 rounded-full bg-gradient-to-r from-red-500 to-pink-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                        {productData.discount}% OFF
+                        {displayDiscount}% OFF
                     </span>
                 )}
 
@@ -102,6 +117,18 @@ const ProductItem = (props) => {
                     {productData.name}
                 </h3>
 
+                {/* Weight */}
+                {displayWeight > 0 && (
+                    <span className="inline-block mt-1 text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                        {Number(displayWeight) >= 1000 && displayUnit === "g"
+                            ? `${Number(displayWeight) / 1000} kg`
+                            : `${displayWeight}${displayUnit}`}
+                        {productData.hasVariants && productData.variants?.length > 1 && (
+                            <span className="text-gray-400 ml-1">+{productData.variants.length - 1} more</span>
+                        )}
+                    </span>
+                )}
+
                 {/* Rating */}
                 <div className="mt-1 flex items-center gap-1">
                     <div className="flex text-xs">{renderStars()}</div>
@@ -111,10 +138,10 @@ const ProductItem = (props) => {
                 {/* Price & Cart */}
                 <div className="mt-3 flex items-end justify-between">
                     <div>
-                        {productData.originalPrice > productData.price && (
-                            <span className="block text-[10px] font-medium text-gray-400 line-through">₹{productData.originalPrice}</span>
+                        {displayOriginalPrice > displayPrice && (
+                            <span className="block text-[10px] font-medium text-gray-400 line-through">₹{displayOriginalPrice}</span>
                         )}
-                        <span className="block text-lg font-bold text-primary">₹{productData.price}</span>
+                        <span className="block text-lg font-bold text-primary">₹{displayPrice}</span>
                     </div>
 
                     <button
