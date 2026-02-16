@@ -1,6 +1,6 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
-import { API_BASE_URL, deleteData, getData, putData } from "@/utils/api";
+import { deleteData, getData, putData } from "@/utils/api";
 import {
   Button,
   Dialog,

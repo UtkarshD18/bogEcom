@@ -2,22 +2,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rawApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-
-if (!rawApiUrl) {
-  throw new Error("NEXT_PUBLIC_API_URL is not defined");
-}
-
-const normalizedApiUrl = rawApiUrl.replace(/\/+$/, "").replace(/\/api$/i, "");
-const parsedApiUrl = new URL(normalizedApiUrl);
-const apiImagePattern = [
-  {
-    protocol: parsedApiUrl.protocol.replace(":", ""),
-    hostname: parsedApiUrl.hostname,
-    ...(parsedApiUrl.port ? { port: parsedApiUrl.port } : {}),
-    pathname: "/uploads/**",
-  },
-];
 
 const nextConfig = {
   turbopack: {

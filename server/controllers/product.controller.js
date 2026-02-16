@@ -780,9 +780,6 @@ export const updateProduct = async (req, res) => {
     if ("rating" in updateData && !("adminStarRating" in updateData)) {
       updateData.adminStarRating = updateData.rating;
     }
-    if ("isExclusive" in updateData) {
-      updateData.isExclusive = toBoolean(updateData.isExclusive);
-    }
 
     const product = await ProductModel.findById(id);
     if (!product) {

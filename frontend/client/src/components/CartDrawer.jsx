@@ -279,26 +279,14 @@ const CartDrawer = () => {
                                                 <div className="flex items-center justify-between mt-2">
                                                     <div className="flex items-center gap-3 bg-gray-50 rounded-full px-2 py-1">
                                                         <button
-                                                            onClick={() =>
-                                                                updateQuantity(
-                                                                    productId || data.id,
-                                                                    Number(data.quantity) - 1,
-                                                                    item?.variant || null,
-                                                                )
-                                                            }
+                                                            onClick={() => updateQuantity(productId || data.id, Number(data.quantity) - 1)}
                                                             className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-red-500 active:scale-90 transition-all"
                                                         >
                                                             <MdRemove size={14} />
                                                         </button>
                                                         <span className="text-sm font-bold w-4 text-center">{data.quantity}</span>
                                                         <button
-                                                            onClick={() =>
-                                                                updateQuantity(
-                                                                    productId || data.id,
-                                                                    Number(data.quantity) + 1,
-                                                                    item?.variant || null,
-                                                                )
-                                                            }
+                                                            onClick={() => updateQuantity(productId || data.id, Number(data.quantity) + 1)}
                                                             disabled={Number(data.quantity) >= (item.product?.stock || item.productData?.stock || item.stock || Infinity)}
                                                             className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                                                         >
@@ -420,13 +408,8 @@ const CartDrawer = () => {
                                     </div>
                                     <div className="flex justify-between text-sm">
                                         <span className="text-gray-500">Shipping</span>
-                                        <span className="font-bold text-primary flex items-center gap-2">
-                                            {displayShippingCharge > 0 && (
-                                                <span className="line-through text-gray-500">
-                                                    &#8377;{displayShippingCharge.toFixed(2)}
-                                                </span>
-                                            )}
-                                            <span>FREE</span>
+                                        <span className={isFreeShipping ? "font-bold text-primary" : "font-bold text-gray-900"}>
+                                            {isFreeShipping ? "FREE" : `₹${shippingCost}`}
                                         </span>
                                     </div>
                                     {cartSavings > 0 && (

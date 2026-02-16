@@ -34,7 +34,13 @@ import {
   MdWarning,
 } from "react-icons/md";
 import { io } from "socket.io-client";
+import { toast } from "react-hot-toast";
 
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
@@ -129,10 +135,14 @@ const OrderDetailsPage = () => {
       }
 
       try {
-        const response = await fetch(`${API_URL}/orders/${orderId}`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
+        const response = await fetch(
+          `${API_URL}/orders/${orderId}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: "include",
           },
           credentials: "include",
         });
@@ -407,6 +417,19 @@ const OrderDetailsPage = () => {
     );
   };
 
+  const handleDownloadPurchaseOrder = () => {
+    const purchaseOrderId =
+      typeof order?.purchaseOrder === "object"
+        ? order?.purchaseOrder?._id || order?.purchaseOrder?.toString?.() || null
+        : order?.purchaseOrder || null;
+    if (!purchaseOrderId) return;
+    downloadFile(
+      `${API_URL}/purchase-orders/${purchaseOrderId}/pdf`,
+      `purchase-order-${String(purchaseOrderId).slice(-8).toUpperCase()}.pdf`,
+      "po",
+    );
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -523,10 +546,7 @@ const OrderDetailsPage = () => {
       normalizeStatus(order?.order_status) === "accepted");
   const isReviewEligibleOrder = (() => {
     const normalizedOrderStatus = normalizeStatus(order?.order_status);
-    if (
-      normalizedOrderStatus === "delivered" ||
-      normalizedOrderStatus === "completed"
-    ) {
+    if (normalizedOrderStatus === "delivered" || normalizedOrderStatus === "completed") {
       return true;
     }
 
@@ -540,6 +560,10 @@ const OrderDetailsPage = () => {
         })
       : false;
   })();
+  const purchaseOrderId =
+    typeof order?.purchaseOrder === "object"
+      ? order?.purchaseOrder?._id || order?.purchaseOrder?.toString?.() || null
+      : order?.purchaseOrder || null;
 
   const getItemProductId = (item) => {
     const productId = item?.productId?._id || item?.productId;
@@ -645,9 +669,7 @@ const OrderDetailsPage = () => {
           response.status === 404 &&
           /reviews/i.test(String(data?.message || ""))
         ) {
-          toast.error(
-            "Reviews API not available. Please restart backend server.",
-          );
+          toast.error("Reviews API not available. Please restart backend server.");
           return;
         }
         toast.error(data?.message || "Failed to submit review");
@@ -890,8 +912,7 @@ const OrderDetailsPage = () => {
                         return (
                           <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                             <p className="text-xs font-semibold text-emerald-700">
-                              Your Review •{" "}
-                              {Number(existingReview.rating || 0).toFixed(1)}★
+                              Your Review • {Number(existingReview.rating || 0).toFixed(1)}★
                             </p>
                             <p className="text-xs text-emerald-800 mt-1 break-words">
                               {existingReview.comment}
@@ -1221,9 +1242,7 @@ const OrderDetailsPage = () => {
           </p>
 
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">
-              Your Rating
-            </p>
+            <p className="text-sm font-medium text-gray-700 mb-2">Your Rating</p>
             <Rating
               value={reviewForm.rating}
               onChange={(_, value) =>
@@ -1238,10 +1257,7 @@ const OrderDetailsPage = () => {
             minRows={4}
             value={reviewForm.comment}
             onChange={(event) =>
-              setReviewForm((prev) => ({
-                ...prev,
-                comment: event.target.value,
-              }))
+              setReviewForm((prev) => ({ ...prev, comment: event.target.value }))
             }
             fullWidth
             required
@@ -1249,10 +1265,7 @@ const OrderDetailsPage = () => {
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button
-            onClick={() => closeReviewDialog()}
-            disabled={reviewSubmitting}
-          >
+          <Button onClick={() => closeReviewDialog()} disabled={reviewSubmitting}>
             Cancel
           </Button>
           <Button
