@@ -33,6 +33,8 @@ const ProductDetailPage = () => {
   const { toggleWishlist, isInWishlist } = useWishlist();
 
   const [product, setProduct] = useState(null);
+  const [customerReviews, setCustomerReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
@@ -70,6 +72,29 @@ const ProductDetailPage = () => {
           )
         : 0;
   const maxQty = availableQty > 0 ? availableQty : 1;
+  const productRating = Number(product?.adminStarRating ?? product?.rating ?? 0);
+  const customerReviewCount = customerReviews.length;
+
+  const fetchProductReviews = async (productId) => {
+    if (!productId) {
+      setCustomerReviews([]);
+      return;
+    }
+    try {
+      setReviewsLoading(true);
+      const response = await fetchDataFromApi(`/api/reviews/${productId}`);
+      if (response?.success && Array.isArray(response?.data)) {
+        setCustomerReviews(response.data);
+      } else {
+        setCustomerReviews([]);
+      }
+    } catch (error) {
+      console.error("Error fetching product reviews:", error);
+      setCustomerReviews([]);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
 
   // Fetch product details from API
   const fetchProduct = async () => {
@@ -79,6 +104,8 @@ const ProductDetailPage = () => {
 
       if (response?.error !== true && response?.data) {
         setProduct(response.data);
+        const resolvedProductId = response.data?._id || response.data?.id;
+        fetchProductReviews(resolvedProductId);
 
         // Auto-select default variant (or first) if product has variants
         if (
@@ -103,9 +130,13 @@ const ProductDetailPage = () => {
       } else if (response) {
         // Handle different API response formats
         setProduct(response);
+        fetchProductReviews(response?._id || response?.id);
+      } else {
+        setCustomerReviews([]);
       }
     } catch (error) {
       console.error("Error fetching product:", error);
+      setCustomerReviews([]);
     } finally {
       setLoading(false);
     }
@@ -332,13 +363,13 @@ const ProductDetailPage = () => {
               {/* Rating */}
               <div className="flex items-center gap-3 mb-4">
                 <Rating
-                  value={product.rating || 4.5}
+                  value={productRating}
                   precision={0.5}
                   readOnly
                   size="small"
                 />
                 <span className="text-sm text-gray-500">
-                  ({product.numReviews || product.reviews?.length || 0} reviews)
+                  ({customerReviewCount} reviews)
                 </span>
               </div>
 
@@ -633,7 +664,7 @@ const ProductDetailPage = () => {
                   }`}
               >
                 {tab === "reviews"
-                  ? `Reviews (${product.numReviews || product.reviews?.length || 0})`
+                  ? `Reviews (${customerReviewCount})`
                   : tab}
               </button>
             ))}
@@ -659,17 +690,24 @@ const ProductDetailPage = () => {
 
             {activeTab === "reviews" && (
               <div>
-                {product.reviews && product.reviews.length > 0 ? (
+                {reviewsLoading ? (
+                  <p className="text-gray-500">Loading reviews...</p>
+                ) : customerReviews.length > 0 ? (
                   <div className="space-y-4">
-                    {product.reviews.map((review, index) => (
+                    {customerReviews.map((review) => (
                       <div
-                        key={index}
+                        key={review._id}
                         className="border-b border-gray-100 pb-4"
                       >
                         <div className="flex items-center gap-3 mb-2">
                           <Rating value={review.rating} size="small" readOnly />
                           <span className="font-medium">
-                            {review.user?.name || "Customer"}
+                            {review.userName || "Customer"}
+                            {review.city ? (
+                              <span className="text-gray-400 text-xs ml-2">
+                                {review.city}
+                              </span>
+                            ) : null}
                           </span>
                           <span className="text-xs text-gray-400">
                             {new Date(review.createdAt).toLocaleDateString()}

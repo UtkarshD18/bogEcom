@@ -188,20 +188,86 @@ const Header = () => {
         >
           {/* Removed Decorative Top Line Gradient */}
           <div className="w-full px-3 sm:px-4 md:px-6 py-0.5">
-            <div className="flex items-center justify-between gap-4 md:gap-8">
-              {/* Mobile Menu Button */}
-              <button
-                className="md:hidden p-2 text-gray-700 hover:text-[var(--flavor-color)] transition-colors"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                aria-label="Toggle menu"
-              >
-                {mobileMenuOpen ? (
-                  <IoCloseOutline size={26} />
-                ) : (
-                  <IoMenuOutline size={26} />
-                )}
-              </button>
+            {/* === MOBILE TOP BAR (3-column grid for centered logo) === */}
+            <div className="grid grid-cols-3 items-center md:hidden">
+              {/* Left: Hamburger */}
+              <div className="flex justify-start">
+                <button
+                  className="p-2 text-gray-700 hover:text-[var(--flavor-color)] transition-colors"
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  aria-label="Toggle menu"
+                >
+                  {mobileMenuOpen ? (
+                    <IoCloseOutline size={26} />
+                  ) : (
+                    <IoMenuOutline size={26} />
+                  )}
+                </button>
+              </div>
 
+              {/* Center: Logo */}
+              <div className="flex justify-center">
+                <Link
+                  href="/"
+                  className="block group"
+                  onClick={(e) => {
+                    if (window.location.pathname === "/") {
+                      e.preventDefault();
+                      window.location.reload();
+                    }
+                  }}
+                >
+                  <div className="relative transition-transform duration-300 group-hover:scale-105 flex items-center">
+                    <Image
+                      src="/logo.png"
+                      width={120}
+                      height={36}
+                      alt="Buy One Gram"
+                      priority
+                      className="object-contain mix-blend-multiply w-[70px] sm:w-[90px]"
+                      style={{ background: "transparent" }}
+                    />
+                  </div>
+                </Link>
+              </div>
+
+              {/* Right: Action icons (mobile) */}
+              <div className="flex justify-end items-center gap-2">
+                <Link
+                  href="/my-list"
+                  className="relative p-1.5"
+                  aria-label="Wishlist"
+                >
+                  {wishlistCount > 0 && (
+                    <div
+                      className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full"
+                      style={{ boxShadow: "0 0 0 2px var(--flavor-card-bg, #fffbf5)" }}
+                    >
+                      {wishlistCount > 99 ? "99+" : wishlistCount}
+                    </div>
+                  )}
+                  <FaRegHeart size={18} className="text-gray-600" />
+                </Link>
+                <Link
+                  href="/cart"
+                  className="relative p-1.5"
+                  aria-label="Cart"
+                >
+                  {cartCount > 0 && (
+                    <div
+                      className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full"
+                      style={{ boxShadow: "0 0 0 2px var(--flavor-card-bg, #fffbf5)" }}
+                    >
+                      {cartCount > 99 ? "99+" : cartCount}
+                    </div>
+                  )}
+                  <IoCartOutline size={22} className="text-gray-700" />
+                </Link>
+              </div>
+            </div>
+
+            {/* === DESKTOP TOP BAR (unchanged flex layout) === */}
+            <div className="hidden md:flex items-center justify-between gap-8">
               {/* LOGO */}
               <div className="shrink-0 md:pr-6 flex items-center h-full">
                 <Link
@@ -221,7 +287,7 @@ const Header = () => {
                       height={36}
                       alt="Buy One Gram"
                       priority
-                      className="object-contain mix-blend-multiply w-[70px] sm:w-[90px] md:w-[120px]"
+                      className="object-contain mix-blend-multiply w-[120px]"
                       style={{ background: "transparent" }}
                     />
                   </div>
@@ -518,10 +584,10 @@ const Header = () => {
 
         {/* Mobile Search (Below header on small screens) */}
         <div
-          className={`md:hidden px-3 sm:px-4 pb-1.5 ${scrolled ? "pt-1.5" : "pt-0"}`}
+          className={`md:hidden px-3 sm:px-4 pb-1.5 ${scrolled ? "pt-3" : "pt-1.5"}`}
         >
           <div
-            className="rounded-full border overflow-hidden h-9 flex items-center"
+            className="rounded-full border overflow-hidden h-10 flex items-center"
             style={{
               backgroundColor: "#fff",
               borderColor: "#e5e5e5",

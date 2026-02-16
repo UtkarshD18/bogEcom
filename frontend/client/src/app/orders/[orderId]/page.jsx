@@ -6,6 +6,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Rating,
+  TextField,
 } from "@mui/material";
 import cookies from "js-cookie";
 import Link from "next/link";
@@ -25,12 +27,16 @@ import {
 } from "react-icons/md";
 import { AnimatePresence, motion } from "framer-motion";
 import { io } from "socket.io-client";
+import { toast } from "react-hot-toast";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
+const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_APP_API_URL ||
   "http://localhost:8000"
 ).replace(/\/+$/, "");
+const API_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL
+  : `${API_BASE_URL}/api`;
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: MdAccessTime },
@@ -80,6 +86,17 @@ const OrderDetailsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [reviewDialog, setReviewDialog] = useState({
+    open: false,
+    productId: "",
+    productTitle: "",
+  });
+  const [reviewForm, setReviewForm] = useState({
+    rating: 5,
+    comment: "",
+  });
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [orderReviews, setOrderReviews] = useState({});
   const [downloading, setDownloading] = useState({
     invoice: false,
     po: false,
@@ -102,7 +119,7 @@ const OrderDetailsPage = () => {
 
       try {
         const response = await fetch(
-          `${API_URL}/api/orders/${orderId}`,
+          `${API_URL}/orders/${orderId}`,
           {
             method: "GET",
             headers: {
@@ -172,6 +189,47 @@ const OrderDetailsPage = () => {
     return () => {
       socket.disconnect();
     };
+  }, [orderId]);
+
+  useEffect(() => {
+    const fetchMyOrderReviews = async () => {
+      if (!orderId) return;
+      const token = cookies.get("accessToken");
+      if (!token) return;
+
+      try {
+        const response = await fetch(
+          `${API_URL}/reviews/my?orderId=${orderId}`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: "include",
+          },
+        );
+
+        const data = await response.json();
+        if (!response.ok || !data?.success) {
+          setOrderReviews({});
+          return;
+        }
+
+        const reviewMap = {};
+        (data?.data || []).forEach((review) => {
+          if (review?.productId) {
+            reviewMap[String(review.productId)] = review;
+          }
+        });
+        setOrderReviews(reviewMap);
+      } catch (reviewFetchError) {
+        console.error("fetchMyOrderReviews error:", reviewFetchError);
+        setOrderReviews({});
+      }
+    };
+
+    fetchMyOrderReviews();
   }, [orderId]);
 
   // Format date
@@ -333,7 +391,7 @@ const OrderDetailsPage = () => {
 
   const handleDownloadInvoice = () => {
     downloadFile(
-      `${API_URL}/api/orders/${order._id}/invoice`,
+      `${API_URL}/orders/${order._id}/invoice`,
       `invoice-${order._id}.pdf`,
       "invoice",
     );
@@ -346,7 +404,7 @@ const OrderDetailsPage = () => {
         : order?.purchaseOrder || null;
     if (!purchaseOrderId) return;
     downloadFile(
-      `${API_URL}/api/purchase-orders/${purchaseOrderId}/pdf`,
+      `${API_URL}/purchase-orders/${purchaseOrderId}/pdf`,
       `purchase-order-${String(purchaseOrderId).slice(-8).toUpperCase()}.pdf`,
       "po",
     );
@@ -472,10 +530,155 @@ const OrderDetailsPage = () => {
     order?.order_status !== "cancelled" &&
     (order?.payment_status === "paid" ||
       normalizeStatus(order?.order_status) === "accepted");
+  const isReviewEligibleOrder = (() => {
+    const normalizedOrderStatus = normalizeStatus(order?.order_status);
+    if (normalizedOrderStatus === "delivered" || normalizedOrderStatus === "completed") {
+      return true;
+    }
+
+    return Array.isArray(order?.statusTimeline)
+      ? order.statusTimeline.some((entry) => {
+          const normalizedTimelineStatus = normalizeStatus(entry?.status);
+          return (
+            normalizedTimelineStatus === "delivered" ||
+            normalizedTimelineStatus === "completed"
+          );
+        })
+      : false;
+  })();
   const purchaseOrderId =
     typeof order?.purchaseOrder === "object"
       ? order?.purchaseOrder?._id || order?.purchaseOrder?.toString?.() || null
       : order?.purchaseOrder || null;
+
+  const getItemProductId = (item) => {
+    const productId = item?.productId?._id || item?.productId;
+    return productId ? String(productId) : "";
+  };
+
+  const getReviewByProductId = (productId) =>
+    orderReviews[String(productId)] || null;
+
+  const openReviewDialog = (product) => {
+    const productId = getItemProductId(product);
+    if (!productId || !isReviewEligibleOrder) return;
+
+    if (getReviewByProductId(productId)) {
+      toast.error("You already reviewed this product");
+      return;
+    }
+
+    setReviewDialog({
+      open: true,
+      productId: String(productId),
+      productTitle: product?.productTitle || "Product",
+    });
+    setReviewForm({ rating: 5, comment: "" });
+  };
+
+  const closeReviewDialog = (force = false) => {
+    if (reviewSubmitting && !force) return;
+    setReviewDialog({ open: false, productId: "", productTitle: "" });
+  };
+
+  const postReviewRequest = async (token, payload) => {
+    const urls = Array.from(
+      new Set([
+        `${API_URL}/reviews`,
+        `${API_BASE_URL}/api/reviews`,
+        `${API_BASE_URL}/reviews`,
+      ]),
+    );
+
+    let lastAttempt = {
+      response: null,
+      data: null,
+    };
+
+    for (const url of urls) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = { message: "Unexpected review API response" };
+      }
+
+      lastAttempt = { response, data };
+
+      if (response.ok || response.status !== 404) {
+        return lastAttempt;
+      }
+    }
+
+    return lastAttempt;
+  };
+
+  const submitReview = async () => {
+    const comment = reviewForm.comment.trim();
+    if (!comment) {
+      toast.error("Please enter review comment");
+      return;
+    }
+
+    const rating = Number(reviewForm.rating);
+    if (!rating || rating < 1 || rating > 5) {
+      toast.error("Please choose rating between 1 and 5");
+      return;
+    }
+
+    const token = cookies.get("accessToken");
+    if (!token) {
+      toast.error("Please login again");
+      return;
+    }
+
+    setReviewSubmitting(true);
+    try {
+      const { response, data } = await postReviewRequest(token, {
+        productId: reviewDialog.productId,
+        orderId,
+        rating,
+        comment,
+      });
+      if (!response.ok || !data?.success) {
+        if (
+          response.status === 404 &&
+          /reviews/i.test(String(data?.message || ""))
+        ) {
+          toast.error("Reviews API not available. Please restart backend server.");
+          return;
+        }
+        toast.error(data?.message || "Failed to submit review");
+        return;
+      }
+
+      const review = data?.data || null;
+      if (review) {
+        setOrderReviews((prev) => ({
+          ...prev,
+          [String(review.productId || reviewDialog.productId)]: review,
+        }));
+      }
+
+      toast.success("Review submitted successfully");
+      closeReviewDialog(true);
+    } catch (reviewError) {
+      console.error("submitReview error:", reviewError);
+      toast.error("Failed to submit review");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   return (
     <>
@@ -684,6 +887,49 @@ const OrderDetailsPage = () => {
                     <p className="text-gray-500 text-sm">
                       Qty: {item.quantity} × ₹{item.price?.toFixed(2)}
                     </p>
+                    {(() => {
+                      const productId = getItemProductId(item);
+                      const existingReview = productId
+                        ? getReviewByProductId(productId)
+                        : null;
+
+                      if (existingReview) {
+                        return (
+                          <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                            <p className="text-xs font-semibold text-emerald-700">
+                              Your Review • {Number(existingReview.rating || 0).toFixed(1)}★
+                            </p>
+                            <p className="text-xs text-emerald-800 mt-1 break-words">
+                              {existingReview.comment}
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      if (!isReviewEligibleOrder || !productId) return null;
+
+                      return (
+                        <Button
+                          onClick={() => openReviewDialog(item)}
+                          size="small"
+                          variant="outlined"
+                          sx={{
+                            mt: 1.5,
+                            borderColor: "#ea580c",
+                            color: "#ea580c",
+                            textTransform: "none",
+                            fontWeight: 600,
+                            borderRadius: "999px",
+                            "&:hover": {
+                              borderColor: "#c2410c",
+                              backgroundColor: "#fff7ed",
+                            },
+                          }}
+                        >
+                          Write Review
+                        </Button>
+                      );
+                    })()}
                   </div>
                   <span className="font-semibold text-gray-800">
                     ₹
@@ -970,6 +1216,64 @@ const OrderDetailsPage = () => {
             }}
           >
             Got It
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={reviewDialog.open}
+        onClose={() => closeReviewDialog()}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Write Review</DialogTitle>
+        <DialogContent sx={{ display: "grid", gap: 2.5, pt: "6px !important" }}>
+          <p className="text-sm text-gray-600">
+            Product:{" "}
+            <span className="font-semibold text-gray-900">
+              {reviewDialog.productTitle}
+            </span>
+          </p>
+
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">Your Rating</p>
+            <Rating
+              value={reviewForm.rating}
+              onChange={(_, value) =>
+                setReviewForm((prev) => ({ ...prev, rating: value || 1 }))
+              }
+            />
+          </div>
+
+          <TextField
+            label="Review Comment"
+            multiline
+            minRows={4}
+            value={reviewForm.comment}
+            onChange={(event) =>
+              setReviewForm((prev) => ({ ...prev, comment: event.target.value }))
+            }
+            fullWidth
+            required
+            placeholder="Share your product experience"
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => closeReviewDialog()} disabled={reviewSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={submitReview}
+            variant="contained"
+            disabled={reviewSubmitting}
+            sx={{
+              backgroundColor: "#ea580c",
+              textTransform: "none",
+              fontWeight: 600,
+              "&:hover": { backgroundColor: "#c2410c" },
+            }}
+          >
+            {reviewSubmitting ? "Submitting..." : "Submit Review"}
           </Button>
         </DialogActions>
       </Dialog>

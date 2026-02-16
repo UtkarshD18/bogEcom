@@ -1,6 +1,6 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
-import { getData, putData } from "@/utils/api";
+import { deleteData, getData, putData } from "@/utils/api";
 import {
   Button,
   Dialog,
@@ -38,6 +38,8 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const [shippingResponse, setShippingResponse] = useState(null);
   const [downloadingPo, setDownloadingPo] = useState(false);
   const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+  const [orderReviews, setOrderReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
 
   const purchaseOrderId = (() => {
     const raw = order?.purchaseOrder;
@@ -354,6 +356,79 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     setUpdating(false);
   };
 
+  const fetchOrderReviews = async () => {
+    if (!token || !order?._id) return;
+    setReviewsLoading(true);
+    try {
+      const response = await getData(
+        `/api/admin/reviews?orderId=${order._id}&limit=100`,
+        token,
+      );
+      if (response?.success) {
+        setOrderReviews(Array.isArray(response.data) ? response.data : []);
+      } else {
+        setOrderReviews([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch order reviews:", error);
+      setOrderReviews([]);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
+  const handleDeleteReview = async (reviewId) => {
+    if (!reviewId) return;
+    const confirmed =
+      typeof window === "undefined"
+        ? true
+        : window.confirm("Delete this customer review?");
+    if (!confirmed) return;
+
+    try {
+      const response = await deleteData(`/api/admin/reviews/${reviewId}`, token);
+      if (response?.success) {
+        setOrderReviews((prev) => prev.filter((review) => review._id !== reviewId));
+        toast.success("Review deleted");
+      } else {
+        toast.error(response?.message || "Failed to delete review");
+      }
+    } catch (error) {
+      console.error("Failed to delete review:", error);
+      toast.error("Failed to delete review");
+    }
+  };
+
+  const getNormalizedId = (value) => {
+    if (!value) return "";
+    if (typeof value === "object") {
+      return String(value?._id || value?.id || "");
+    }
+    return String(value);
+  };
+
+  const getReviewForProduct = (productId) => {
+    const normalizedProductId = getNormalizedId(productId);
+    if (!normalizedProductId) return null;
+
+    return (
+      orderReviews.find((review) => {
+        const reviewProductId = getNormalizedId(
+          review?.productId || review?.product?._id,
+        );
+        return reviewProductId === normalizedProductId;
+      }) || null
+    );
+  };
+
+  useEffect(() => {
+    if (expandIndex) {
+      fetchOrderReviews();
+    } else {
+      setOrderReviews([]);
+    }
+  }, [expandIndex, token, order?._id]);
+
   return (
     <>
       <tr className="border-b-[1px] border-[rgba(0,0,0,0.1)] hover:bg-gray-50">
@@ -462,7 +537,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
               {(order?.products || []).map((product, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-3 bg-white p-3 rounded-lg shadow-sm"
+                  className="flex items-start gap-3 bg-white p-3 rounded-lg shadow-sm"
                 >
                   <div className="img rounded-md overflow-hidden w-[80px] h-[80px] bg-gray-100">
                     <img
@@ -484,6 +559,48 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
                         product?.quantity * product?.price ||
                         0}
                     </span>
+                    {(() => {
+                      const review = getReviewForProduct(product?.productId);
+                      if (!review) {
+                        return (
+                          <span className="text-gray-400 text-[12px] mt-1">
+                            No customer review yet
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <div className="mt-2 p-2 rounded-md border border-gray-200 bg-gray-50 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[12px] font-semibold text-gray-800">
+                              {review.userName || "Customer"}{" "}
+                              {review.city ? `• ${review.city}` : ""}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReview(review._id)}
+                              className="text-[11px] font-semibold text-red-600 hover:text-red-700"
+                            >
+                              Delete Review
+                            </button>
+                          </div>
+                          <div className="text-[12px] text-amber-600 font-semibold">
+                            {"★".repeat(Math.max(1, Number(review.rating || 0)))}
+                            <span className="text-gray-400 ml-1">
+                              ({Number(review.rating || 0).toFixed(1)})
+                            </span>
+                          </div>
+                          <p className="text-[12px] text-gray-700">
+                            {review.comment}
+                          </p>
+                          <p className="text-[11px] text-gray-400">
+                            {review.createdAt
+                              ? new Date(review.createdAt).toLocaleDateString()
+                              : ""}
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ))}
@@ -491,6 +608,11 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
                 <p className="text-gray-500">No product details available</p>
               )}
             </div>
+            {reviewsLoading && (
+              <p className="text-sm text-gray-500 mt-3">
+                Loading customer reviews...
+              </p>
+            )}
 
             {/* Invoice Section */}
             <div className="mt-6 bg-white rounded-lg shadow-sm p-4">

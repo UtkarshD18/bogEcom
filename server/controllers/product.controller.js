@@ -589,6 +589,8 @@ export const createProduct = async (req, res) => {
       metaKeywords,
       discount: discount ? Number(discount) : 0,
       rating: rating === undefined || rating === null ? undefined : rating,
+      adminStarRating:
+        rating === undefined || rating === null ? undefined : Number(rating),
     });
 
     await product.save();
@@ -606,6 +608,15 @@ export const createProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating product:", error);
+
+    if (error.name === "ValidationError") {
+      const firstValidationError = Object.values(error.errors || {})[0];
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: firstValidationError?.message || "Invalid product data",
+      });
+    }
 
     // Handle duplicate key error
     if (error.code === 11000) {
@@ -654,6 +665,12 @@ export const updateProduct = async (req, res) => {
     }
     if ("track_inventory" in updateData && !("trackInventory" in updateData)) {
       updateData.trackInventory = updateData.track_inventory;
+    }
+    if ("adminStarRating" in updateData && !("rating" in updateData)) {
+      updateData.rating = updateData.adminStarRating;
+    }
+    if ("rating" in updateData && !("adminStarRating" in updateData)) {
+      updateData.adminStarRating = updateData.rating;
     }
 
     const product = await ProductModel.findById(id);
@@ -794,6 +811,12 @@ export const bulkUpdateProducts = async (req, res) => {
     }
     if ("track_inventory" in updateData && !("trackInventory" in updateData)) {
       updateData.trackInventory = updateData.track_inventory;
+    }
+    if ("adminStarRating" in updateData && !("rating" in updateData)) {
+      updateData.rating = updateData.adminStarRating;
+    }
+    if ("rating" in updateData && !("adminStarRating" in updateData)) {
+      updateData.adminStarRating = updateData.rating;
     }
 
     const result = await ProductModel.updateMany(

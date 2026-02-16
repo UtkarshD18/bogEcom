@@ -638,7 +638,7 @@ const EditProduct = () => {
                 </span>
               </div>
               <p className="text-xs text-gray-500">
-                Shows "High Traffic" badge on this product
+                Shows &quot;High Traffic&quot; badge on this product
               </p>
             </div>
           </div>
@@ -684,7 +684,8 @@ const EditProduct = () => {
                 {variants.length === 0 && (
                   <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg">
                     <p className="text-gray-400 text-sm">
-                      No variants added yet. Click "+ Add Size" to add one.
+                      No variants added yet. Click &quot;+ Add Size&quot; to
+                      add one.
                     </p>
                   </div>
                 )}
