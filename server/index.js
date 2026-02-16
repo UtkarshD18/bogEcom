@@ -141,12 +141,9 @@ if (accessTokenSecret === refreshTokenSecret) {
 }
 
 // Route imports
-import { initializeFirebaseAdmin } from "./config/firebaseAdmin.js";
-import { initializeSettings } from "./controllers/settings.controller.js";
 import { initSocket } from "./realtime/socket.js";
 import aboutPageRouter from "./routes/aboutPage.route.js";
 import addressRouter from "./routes/address.route.js";
-import adminMembershipRouter from "./routes/adminMembership.route.js";
 import adminOrdersRouter from "./routes/adminOrders.route.js";
 import adminReviewRouter from "./routes/adminReview.route.js";
 import bannerRouter from "./routes/banner.route.js";
@@ -169,7 +166,6 @@ import orderRouter from "./routes/order.route.js";
 import policyRouter from "./routes/policy.route.js";
 import productRouter from "./routes/product.route.js";
 import purchaseOrderRouter from "./routes/purchaseOrder.route.js";
-import reviewRouter from "./routes/review.route.js";
 import refundRouter from "./routes/refund.route.js";
 import reviewRouter from "./routes/review.route.js";
 import settingsRouter from "./routes/settings.route.js";
@@ -181,10 +177,7 @@ import userRouter from "./routes/user.route.js";
 import userLocationLogRouter from "./routes/userLocationLog.route.js";
 import vendorRouter from "./routes/vendor.routes.js";
 import webhookRouter from "./routes/webhook.route.js";
-import adminOrdersRouter from "./routes/adminOrders.route.js";
-import inventoryAuditRouter from "./routes/inventoryAudit.route.js";
-import adminReviewRouter from "./routes/adminReview.route.js";
-import { initSocket } from "./realtime/socket.js";
+import wishlistRouter from "./routes/wishlist.route.js";
 import { startExpressbeesPolling } from "./services/expressbeesPolling.service.js";
 import { startInventoryReservationExpiryJob } from "./services/inventoryReservationExpiry.service.js";
 import { startMembershipExpiryJob } from "./services/membershipExpiry.service.js";
@@ -214,6 +207,27 @@ app.use((req, res, next) => {
 
   next();
 });
+
+// ✅ CORS configuration
+const normalizeOrigin = (origin) =>
+  String(origin || "")
+    .trim()
+    .replace(/\/+$/, "");
+
+const envOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(",").map(normalizeOrigin).filter(Boolean)
+  : [];
+// Fallback to SITE_BASE_URL when FRONTEND_URL is not provided
+if (envOrigins.length === 0 && process.env.SITE_BASE_URL) {
+  envOrigins.push(normalizeOrigin(process.env.SITE_BASE_URL));
+}
+
+const isProduction = process.env.NODE_ENV === "production";
+const defaultDevOrigins = ["http://localhost:3000", "http://localhost:3001"];
+// In production, only allow explicitly configured origins
+const allowedOrigins = Array.from(
+  new Set([...envOrigins, ...(isProduction ? [] : defaultDevOrigins)]),
+);
 
 app.use(
   cors({
