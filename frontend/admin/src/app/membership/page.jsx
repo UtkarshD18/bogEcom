@@ -11,9 +11,9 @@ import {
 } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { FaEdit, FaPlus, FaStar, FaTrash } from "react-icons/fa";
+import { FaEdit, FaHome, FaPlus, FaStar, FaTrash } from "react-icons/fa";
 
 const PAGE_THEMES = [
   { key: "mint", label: "Mint Glass" },
@@ -23,6 +23,39 @@ const PAGE_THEMES = [
   { key: "sunset", label: "Sunset Glass" },
   { key: "midnight", label: "Midnight Glass" },
 ];
+
+const DEFAULT_HOME_CONTENT = {
+  title: "Join Our Buy One Gram Club",
+  subtitle:
+    "Unlock premium benefits, exclusive savings, and prioritize your health journey with us.",
+  benefits: [
+    {
+      emoji: "💰",
+      title: "Save ₹2000+",
+      description: "Annually with discounts",
+    },
+    { emoji: "📦", title: "Free Shipping", description: "On all your orders" },
+    {
+      emoji: "🎧",
+      title: "24/7 Support",
+      description: "Dedicated member hotline",
+    },
+    {
+      emoji: "🚀",
+      title: "Early Access",
+      description: "To new product launches",
+    },
+  ],
+  checkItems: [
+    { text: "15% discount on all orders" },
+    { text: "Free shipping on every purchase" },
+    { text: "Exclusive member-only products" },
+    { text: "Priority customer support" },
+    { text: "Monthly wellness tips & guides" },
+  ],
+  ctaButtonText: "Explore Plans",
+  ctaButtonLink: "/membership",
+};
 
 const DEFAULT_PAGE_CONTENT = {
   theme: { style: "mint" },
@@ -72,6 +105,11 @@ export default function MembershipPage() {
   const [pageLoading, setPageLoading] = useState(false);
   const [pageSaving, setPageSaving] = useState(false);
   const [pageContent, setPageContent] = useState(DEFAULT_PAGE_CONTENT);
+
+  // Home Membership Content state
+  const [homeContentLoading, setHomeContentLoading] = useState(false);
+  const [homeContentSaving, setHomeContentSaving] = useState(false);
+  const [homeContent, setHomeContent] = useState(DEFAULT_HOME_CONTENT);
   const [showForm, setShowForm] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [formData, setFormData] = useState({
@@ -118,6 +156,24 @@ export default function MembershipPage() {
     setPageLoading(false);
   }, [token]);
 
+  const fetchHomeContent = useCallback(async () => {
+    setHomeContentLoading(true);
+    const res = await getData("/api/membership/home-content/admin", token);
+    if (res.success && res.data) {
+      setHomeContent({
+        ...DEFAULT_HOME_CONTENT,
+        ...res.data,
+        benefits: res.data.benefits?.length
+          ? res.data.benefits
+          : DEFAULT_HOME_CONTENT.benefits,
+        checkItems: res.data.checkItems?.length
+          ? res.data.checkItems
+          : DEFAULT_HOME_CONTENT.checkItems,
+      });
+    }
+    setHomeContentLoading(false);
+  }, [token]);
+
   const fetchStats = useCallback(async () => {
     const res = await getData("/api/membership/admin/stats", token);
     if (res.success) {
@@ -130,11 +186,16 @@ export default function MembershipPage() {
     if (!token) return;
 
     const init = async () => {
-      await Promise.all([fetchPlans(), fetchStats(), fetchPageContent()]);
+      await Promise.all([
+        fetchPlans(),
+        fetchStats(),
+        fetchPageContent(),
+        fetchHomeContent(),
+      ]);
       setLoading(false);
     };
     init();
-  }, [token, fetchPlans, fetchStats, fetchPageContent]);
+  }, [token, fetchPlans, fetchStats, fetchPageContent, fetchHomeContent]);
 
   const addBenefit = () => {
     setPageContent((prev) => ({
@@ -180,6 +241,94 @@ export default function MembershipPage() {
       toast.error(res.message || "Failed to save membership page");
     }
     setPageSaving(false);
+  };
+
+  // ---- Home Content CRUD ----
+  const addHomeBenefit = () => {
+    setHomeContent((prev) => ({
+      ...prev,
+      benefits: [
+        ...(prev.benefits || []),
+        { emoji: "✨", title: "", description: "" },
+      ],
+    }));
+  };
+
+  const removeHomeBenefit = (index) => {
+    setHomeContent((prev) => ({
+      ...prev,
+      benefits: prev.benefits.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateHomeBenefit = (index, field, value) => {
+    setHomeContent((prev) => {
+      const items = [...(prev.benefits || [])];
+      items[index] = { ...items[index], [field]: value };
+      return { ...prev, benefits: items };
+    });
+  };
+
+  const addHomeCheckItem = () => {
+    setHomeContent((prev) => ({
+      ...prev,
+      checkItems: [...(prev.checkItems || []), { text: "" }],
+    }));
+  };
+
+  const removeHomeCheckItem = (index) => {
+    setHomeContent((prev) => ({
+      ...prev,
+      checkItems: prev.checkItems.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateHomeCheckItem = (index, value) => {
+    setHomeContent((prev) => {
+      const items = [...(prev.checkItems || [])];
+      items[index] = { ...items[index], text: value };
+      return { ...prev, checkItems: items };
+    });
+  };
+
+  const saveHomeContent = async () => {
+    setHomeContentSaving(true);
+    const res = await putData(
+      "/api/membership/home-content/admin",
+      homeContent,
+      token,
+    );
+    if (res.success) {
+      toast.success("Home membership content updated");
+      fetchHomeContent();
+    } else {
+      toast.error(res.message || "Failed to save home membership content");
+    }
+    setHomeContentSaving(false);
+  };
+
+  const resetHomeContent = async () => {
+    if (!confirm("Reset home membership content to defaults?")) return;
+    const res = await postData(
+      "/api/membership/home-content/admin/reset",
+      {},
+      token,
+    );
+    if (res.success && res.data) {
+      setHomeContent({
+        ...DEFAULT_HOME_CONTENT,
+        ...res.data,
+        benefits: res.data.benefits?.length
+          ? res.data.benefits
+          : DEFAULT_HOME_CONTENT.benefits,
+        checkItems: res.data.checkItems?.length
+          ? res.data.checkItems
+          : DEFAULT_HOME_CONTENT.checkItems,
+      });
+      toast.success("Home membership content reset");
+    } else {
+      toast.error(res.message || "Failed to reset home membership content");
+    }
   };
 
   const resetPageContent = async () => {
@@ -331,6 +480,13 @@ export default function MembershipPage() {
           >
             Page Content
           </Button>
+          <Button
+            variant={activeTab === "homeContent" ? "contained" : "outlined"}
+            onClick={() => setActiveTab("homeContent")}
+            startIcon={<FaHome />}
+          >
+            Home Membership Content
+          </Button>
           {activeTab === "plans" && (
             <Button
               variant="contained"
@@ -359,6 +515,24 @@ export default function MembershipPage() {
                 }}
               >
                 {pageSaving ? "Saving..." : "Save Page"}
+              </Button>
+            </>
+          )}
+          {activeTab === "homeContent" && (
+            <>
+              <Button variant="outlined" onClick={resetHomeContent}>
+                Reset
+              </Button>
+              <Button
+                variant="contained"
+                onClick={saveHomeContent}
+                disabled={homeContentSaving}
+                sx={{
+                  backgroundColor: "#c1591c",
+                  "&:hover": { backgroundColor: "#a04a17" },
+                }}
+              >
+                {homeContentSaving ? "Saving..." : "Save Home Content"}
               </Button>
             </>
           )}
@@ -499,7 +673,11 @@ export default function MembershipPage() {
                   <h2 className="text-lg font-semibold text-gray-800">
                     Benefits Section
                   </h2>
-                  <Button size="small" onClick={addBenefit} startIcon={<FaPlus />}>
+                  <Button
+                    size="small"
+                    onClick={addBenefit}
+                    startIcon={<FaPlus />}
+                  >
                     Add Benefit
                   </Button>
                 </div>
@@ -696,6 +874,199 @@ export default function MembershipPage() {
         </div>
       )}
 
+      {/* ==================== HOME MEMBERSHIP CONTENT TAB ==================== */}
+      {activeTab === "homeContent" && (
+        <div className="space-y-6">
+          {homeContentLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <CircularProgress />
+            </div>
+          ) : (
+            <>
+              {/* Title & Subtitle */}
+              <div className="bg-white rounded-xl shadow p-5">
+                <h2 className="text-lg font-semibold text-gray-800 mb-4">
+                  Title & Subtitle
+                </h2>
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField
+                    label="Title"
+                    value={homeContent.title}
+                    onChange={(e) =>
+                      setHomeContent((prev) => ({
+                        ...prev,
+                        title: e.target.value,
+                      }))
+                    }
+                    size="small"
+                    fullWidth
+                    placeholder="e.g. Join Our Buy One Gram Club"
+                  />
+                  <TextField
+                    label="Subtitle / Description"
+                    value={homeContent.subtitle}
+                    onChange={(e) =>
+                      setHomeContent((prev) => ({
+                        ...prev,
+                        subtitle: e.target.value,
+                      }))
+                    }
+                    size="small"
+                    fullWidth
+                    multiline
+                    rows={3}
+                  />
+                </div>
+              </div>
+
+              {/* Benefit Cards (right-side grid on Home) */}
+              <div className="bg-white rounded-xl shadow p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    Benefit Cards
+                  </h2>
+                  <Button
+                    size="small"
+                    onClick={addHomeBenefit}
+                    startIcon={<FaPlus />}
+                  >
+                    Add Card
+                  </Button>
+                </div>
+                <p className="text-gray-400 text-xs mb-3">
+                  These are the 4 cards shown on the right side of the home
+                  membership section.
+                </p>
+                <div className="space-y-3">
+                  {(homeContent.benefits || []).map((item, index) => (
+                    <div
+                      key={index}
+                      className="bg-gray-50 rounded-lg p-3 flex gap-2 items-start"
+                    >
+                      <TextField
+                        label="Emoji"
+                        value={item.emoji}
+                        onChange={(e) =>
+                          updateHomeBenefit(index, "emoji", e.target.value)
+                        }
+                        size="small"
+                        sx={{ width: 80 }}
+                      />
+                      <TextField
+                        label="Title"
+                        value={item.title}
+                        onChange={(e) =>
+                          updateHomeBenefit(index, "title", e.target.value)
+                        }
+                        size="small"
+                        sx={{ width: 180 }}
+                      />
+                      <TextField
+                        label="Description"
+                        value={item.description}
+                        onChange={(e) =>
+                          updateHomeBenefit(
+                            index,
+                            "description",
+                            e.target.value,
+                          )
+                        }
+                        size="small"
+                        fullWidth
+                      />
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={() => removeHomeBenefit(index)}
+                      >
+                        <FaTrash />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Check Items (bullet points on left) */}
+              <div className="bg-white rounded-xl shadow p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    Check-list Items
+                  </h2>
+                  <Button
+                    size="small"
+                    onClick={addHomeCheckItem}
+                    startIcon={<FaPlus />}
+                  >
+                    Add Item
+                  </Button>
+                </div>
+                <p className="text-gray-400 text-xs mb-3">
+                  These appear as green-check bullet points on the left side.
+                </p>
+                <div className="space-y-3">
+                  {(homeContent.checkItems || []).map((item, index) => (
+                    <div
+                      key={index}
+                      className="bg-gray-50 rounded-lg p-3 flex gap-2 items-center"
+                    >
+                      <TextField
+                        label={`Item ${index + 1}`}
+                        value={item.text}
+                        onChange={(e) =>
+                          updateHomeCheckItem(index, e.target.value)
+                        }
+                        size="small"
+                        fullWidth
+                      />
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={() => removeHomeCheckItem(index)}
+                      >
+                        <FaTrash />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* CTA Button */}
+              <div className="bg-white rounded-xl shadow p-5">
+                <h2 className="text-lg font-semibold text-gray-800 mb-4">
+                  CTA Button
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <TextField
+                    label="Button Text"
+                    value={homeContent.ctaButtonText}
+                    onChange={(e) =>
+                      setHomeContent((prev) => ({
+                        ...prev,
+                        ctaButtonText: e.target.value,
+                      }))
+                    }
+                    size="small"
+                    fullWidth
+                  />
+                  <TextField
+                    label="Button Link"
+                    value={homeContent.ctaButtonLink}
+                    onChange={(e) =>
+                      setHomeContent((prev) => ({
+                        ...prev,
+                        ctaButtonLink: e.target.value,
+                      }))
+                    }
+                    size="small"
+                    fullWidth
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Form Modal */}
       {activeTab === "plans" && showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -738,7 +1109,10 @@ export default function MembershipPage() {
                   type="number"
                   value={formData.discountPercentage}
                   onChange={(e) =>
-                    setFormData({ ...formData, discountPercentage: e.target.value })
+                    setFormData({
+                      ...formData,
+                      discountPercentage: e.target.value,
+                    })
                   }
                   required
                 />
@@ -818,8 +1192,9 @@ export default function MembershipPage() {
             plans.map((plan) => (
               <div
                 key={plan._id}
-                className={`bg-white rounded-lg shadow p-4 border-2 ${plan.isActive ? "border-green-500" : "border-transparent"
-                  }`}
+                className={`bg-white rounded-lg shadow p-4 border-2 ${
+                  plan.isActive ? "border-green-500" : "border-transparent"
+                }`}
               >
                 <div className="flex justify-between items-start">
                   <div>
@@ -848,7 +1223,8 @@ export default function MembershipPage() {
                       </span>
                     </p>
                     <p className="text-sm text-emerald-600 mt-1">
-                      Discount: {plan.discountPercentage ?? plan.discountPercent ?? 0}%
+                      Discount:{" "}
+                      {plan.discountPercentage ?? plan.discountPercent ?? 0}%
                     </p>
                     {plan.benefits?.length > 0 && (
                       <ul className="mt-2 text-sm text-gray-600">

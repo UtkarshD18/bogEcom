@@ -3,16 +3,19 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import helmet from "helmet";
-import morgan from "morgan";
 import http from "http";
+import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
 import connectDb from "./config/connectDb.js";
 dotenv.config();
 
 // Route imports
+import { initSocket } from "./realtime/socket.js";
 import aboutPageRouter from "./routes/aboutPage.route.js";
 import addressRouter from "./routes/address.route.js";
+import adminOrdersRouter from "./routes/adminOrders.route.js";
+import adminReviewRouter from "./routes/adminReview.route.js";
 import bannerRouter from "./routes/banner.route.js";
 import blogRouter from "./routes/blog.route.js";
 import cancellationPolicyRouter from "./routes/cancellationPolicy.routes.js";
@@ -20,8 +23,10 @@ import cartRouter from "./routes/cart.route.js";
 import categoryRouter from "./routes/category.route.js";
 import coinRouter from "./routes/coin.route.js";
 import couponRouter from "./routes/coupon.route.js";
+import homeMembershipContentRouter from "./routes/homeMembershipContent.route.js";
 import homeSlideRouter from "./routes/homeSlide.route.js";
 import influencerRouter from "./routes/influencer.route.js";
+import inventoryAuditRouter from "./routes/inventoryAudit.route.js";
 import invoiceRouter from "./routes/invoice.route.js";
 import membershipRouter from "./routes/membership.route.js";
 import membershipPageRouter from "./routes/membershipPage.route.js";
@@ -40,12 +45,8 @@ import uploadRouter from "./routes/upload.route.js";
 import userRouter from "./routes/user.route.js";
 import userLocationLogRouter from "./routes/userLocationLog.route.js";
 import vendorRouter from "./routes/vendor.routes.js";
-import wishlistRouter from "./routes/wishlist.route.js";
 import webhookRouter from "./routes/webhook.route.js";
-import adminOrdersRouter from "./routes/adminOrders.route.js";
-import inventoryAuditRouter from "./routes/inventoryAudit.route.js";
-import adminReviewRouter from "./routes/adminReview.route.js";
-import { initSocket } from "./realtime/socket.js";
+import wishlistRouter from "./routes/wishlist.route.js";
 import { startExpressbeesPolling } from "./services/expressbeesPolling.service.js";
 import { startInventoryReservationExpiryJob } from "./services/inventoryReservationExpiry.service.js";
 
@@ -101,9 +102,7 @@ const normalizeOrigin = (origin) =>
     .replace(/\/+$/, "");
 
 const envOrigins = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(",")
-      .map(normalizeOrigin)
-      .filter(Boolean)
+  ? process.env.FRONTEND_URL.split(",").map(normalizeOrigin).filter(Boolean)
   : [];
 // Fallback to SITE_BASE_URL when FRONTEND_URL is not provided
 if (envOrigins.length === 0 && process.env.SITE_BASE_URL) {
@@ -192,8 +191,13 @@ app.use("/api/admin/orders", adminLimiter, adminOrdersRouter);
 app.use("/api/cart", generalLimiter, cartRouter);
 app.use("/api/wishlist", generalLimiter, wishlistRouter);
 app.use("/api/upload", uploadLimiter, uploadRouter);
-app.use("/api/membership", generalLimiter, membershipRouter);
 app.use("/api/membership/page", generalLimiter, membershipPageRouter);
+app.use(
+  "/api/membership/home-content",
+  generalLimiter,
+  homeMembershipContentRouter,
+);
+app.use("/api/membership", generalLimiter, membershipRouter);
 app.use("/api/statistics", adminLimiter, statisticsRouter);
 app.use("/api/coupons", generalLimiter, couponRouter);
 app.use("/api/coins", generalLimiter, coinRouter);
