@@ -1,6 +1,0 @@
-Optional icon:
-
-- Put your icon file here as `innov8.ico`
-- Path expected by spec: `innov8_assistant/assets/innov8.ico`
-
-If no icon is provided, build still works and uses default executable icon.
