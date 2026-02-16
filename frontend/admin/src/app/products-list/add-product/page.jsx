@@ -239,7 +239,11 @@ const AddProduct = () => {
       }
     } catch (error) {
       console.error("Error creating product:", error);
-      toast.error("Failed to create product");
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Failed to create product",
+      );
     }
 
     setIsSubmitting(false);
@@ -507,7 +511,7 @@ const AddProduct = () => {
                 </span>
               </div>
               <p className="text-xs text-gray-500">
-                Shows "High Traffic" badge on this product
+                Shows &quot;High Traffic&quot; badge on this product
               </p>
             </div>
           </div>
@@ -553,7 +557,8 @@ const AddProduct = () => {
                 {variants.length === 0 && (
                   <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg">
                     <p className="text-gray-400 text-sm">
-                      No variants added yet. Click "+ Add Size" to add one.
+                      No variants added yet. Click &quot;+ Add Size&quot; to
+                      add one.
                     </p>
                   </div>
                 )}

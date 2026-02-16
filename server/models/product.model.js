@@ -325,6 +325,14 @@ const productSchema = new mongoose.Schema(
       min: 0,
       max: 5,
     },
+    adminStarRating: {
+      type: Number,
+      default: function () {
+        return typeof this.rating === "number" ? this.rating : 0;
+      },
+      min: 0,
+      max: 5,
+    },
     numReviews: {
       type: Number,
       default: 0,
@@ -520,6 +528,26 @@ productSchema.pre("save", async function () {
   if (this.trackInventory == null) {
     this.trackInventory =
       typeof this.track_inventory === "boolean" ? this.track_inventory : true;
+  }
+
+  // Keep legacy `rating` and explicit `adminStarRating` in sync.
+  if (
+    this.isModified("adminStarRating") &&
+    typeof this.adminStarRating === "number"
+  ) {
+    this.rating = this.adminStarRating;
+  } else if (this.isModified("rating") && typeof this.rating === "number") {
+    this.adminStarRating = this.rating;
+  } else if (
+    typeof this.adminStarRating !== "number" &&
+    typeof this.rating === "number"
+  ) {
+    this.adminStarRating = this.rating;
+  } else if (
+    typeof this.rating !== "number" &&
+    typeof this.adminStarRating === "number"
+  ) {
+    this.rating = this.adminStarRating;
   }
 
   if (Array.isArray(this.variants) && this.variants.length > 0) {

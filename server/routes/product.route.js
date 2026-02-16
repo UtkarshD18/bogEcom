@@ -1,10 +1,8 @@
 import express from "express";
 import {
-  addReview,
   bulkUpdateProducts,
   createProduct,
   deleteProduct,
-  deleteReview,
   getFeaturedProducts,
   getProductById,
   getProducts,
@@ -39,14 +37,6 @@ router.get("/:id", getProductById);
 
 // Get related products
 router.get("/:id/related", getRelatedProducts);
-
-// ==================== PROTECTED ROUTES (Auth required) ====================
-
-// Add review
-router.post("/:id/reviews", auth, addReview);
-
-// Delete review
-router.delete("/:id/reviews/:reviewId", auth, deleteReview);
 
 // ==================== ADMIN ROUTES ====================
 

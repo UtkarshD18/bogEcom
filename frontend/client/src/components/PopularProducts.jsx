@@ -4,6 +4,7 @@ import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useContext } from "react";
+import { FiArrowRight } from "react-icons/fi";
 import ProductSlider from "./ProductSlider";
 
 const PopularProducts = () => {
@@ -57,12 +58,13 @@ const PopularProducts = () => {
                     >
                         <Link
                             href="/products"
-                            className="self-start md:self-auto px-8 py-3 rounded-full font-bold text-sm bg-primary text-white shadow-lg shadow-primary/30 hover:-translate-y-1 hover:shadow-xl transition-all active:scale-95 flex items-center gap-2"
+                            className="self-start md:self-auto inline-flex items-center gap-2 px-7 py-3.5 rounded-full font-bold text-sm text-white shadow-lg shadow-primary/30 hover:-translate-y-1 hover:shadow-xl transition-all duration-300 active:scale-95"
+                            style={{
+                                background: "linear-gradient(135deg, var(--color-primary) 0%, var(--flavor-hover) 100%)",
+                            }}
                         >
                             View All
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                            </svg>
+                            <FiArrowRight className="w-4 h-4" />
                         </Link>
                     </motion.div>
                 </div>
