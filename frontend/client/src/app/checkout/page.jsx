@@ -12,8 +12,8 @@ import {
   initAffiliateTracking,
   setAffiliateFromCoupon,
 } from "@/utils/affiliateTracking";
+import { calculateOrderTotals } from "@/utils/calculateOrderTotals.mjs";
 import {
-  calculateCheckoutTotals,
   calculatePercentageDiscount,
   getGstRatePercentFromSettings,
   round2,
@@ -41,12 +41,7 @@ import { useCallback, useContext, useEffect, useState } from "react";
 import { FiCheck, FiEdit2, FiPlus, FiTag, FiX } from "react-icons/fi";
 import { HiOutlineFire } from "react-icons/hi";
 import { IoCartOutline } from "react-icons/io5";
-import {
-  MdHome,
-  MdInfo,
-  MdLocationOn,
-  MdWork
-} from "react-icons/md";
+import { MdHome, MdInfo, MdLocationOn, MdWork } from "react-icons/md";
 
 const API_URL = (
   process.env.NEXT_PUBLIC_APP_API_URL ||
@@ -82,11 +77,7 @@ const Checkout = () => {
   } = useReferral();
 
   // Get settings from context
-  const {
-    highTrafficNotice,
-    taxSettings,
-    maintenanceMode,
-  } = useSettings();
+  const { highTrafficNotice, taxSettings, maintenanceMode } = useSettings();
 
   // Helper to normalize cart item data (handles both API and localStorage structures)
   const getItemData = (item) => {
@@ -238,7 +229,9 @@ const Checkout = () => {
   const checkoutStateForPreview = isGuestCheckout
     ? guestDetails.state
     : addresses.find((a) => a._id === selectedAddress)?.state || "";
-  const hasCheckoutStateInput = Boolean(String(checkoutStateForPreview || "").trim());
+  const hasCheckoutStateInput = Boolean(
+    String(checkoutStateForPreview || "").trim(),
+  );
   const normalizedCheckoutState = normalizeStateValue(checkoutStateForPreview);
   const isRajasthanDelivery = normalizedCheckoutState === "Rajasthan";
   const { displayShippingCharge } = useShippingDisplayCharge({
@@ -261,22 +254,23 @@ const Checkout = () => {
   });
 
   // Step 1: Subtotals (before discounts)
-  const preDiscountTotals = calculateCheckoutTotals({
+  const preDiscountTotals = calculateOrderTotals({
     items: checkoutItems,
-    gstRatePercent,
+    shippingRules: { shippingCostOverride: 0 },
+    taxRules: { gstRatePercent, pricesIncludeTax: true },
   });
 
   // GST-exclusive base subtotal (used for all trade discounts)
-  const cartBaseSubtotal = preDiscountTotals.baseSubtotal;
+  const cartBaseSubtotal = preDiscountTotals.subtotal;
 
   // Step 2: Membership discount on GST-exclusive base (trade discount)
   const membershipDiscountPercentage =
     membershipStatus?.isMember && !membershipStatus?.isExpired
       ? Number(
-        membershipStatus?.membershipPlan?.discountPercentage ??
-        membershipStatus?.membershipPlan?.discountPercent ??
-        0,
-      )
+          membershipStatus?.membershipPlan?.discountPercentage ??
+            membershipStatus?.membershipPlan?.discountPercent ??
+            0,
+        )
       : 0;
   const membershipDiscount = calculatePercentageDiscount(
     cartBaseSubtotal,
@@ -290,34 +284,43 @@ const Checkout = () => {
   // Note: Backend will recalculate for security — this is for display only.
   const referralDiscount = referralCode
     ? round2(
-      Math.min(
-        Math.max(Number(calculateReferralDiscount(baseAfterMembership) || 0), 0),
-        baseAfterMembership,
-      ),
-    )
+        Math.min(
+          Math.max(
+            Number(calculateReferralDiscount(baseAfterMembership) || 0),
+            0,
+          ),
+          baseAfterMembership,
+        ),
+      )
     : 0;
   const baseBeforeCoupon = round2(
     Math.max(baseAfterMembership - referralDiscount, 0),
   );
 
-  // Step 4: Coupon applies ONLY on GST-exclusive base (after membership/referral)
-  const couponDiscount = round2(
-    Math.min(
-      Math.max(Number(appliedCoupon?.discountAmount || 0), 0),
-      baseBeforeCoupon,
-    ),
+  // Step 4 + 5: coupon + GST are resolved by shared calculateOrderTotals().
+  const tradeDiscountBeforeCoupon = round2(
+    membershipDiscount + referralDiscount,
   );
-
-  // Step 5: GST recalculated on discounted base (coupon is a trade discount)
-  const tradeDiscountBeforeCoupon = round2(membershipDiscount + referralDiscount);
-  const productTotalsAfterCoupon = calculateCheckoutTotals({
+  const checkoutTotalsInput = {
     items: checkoutItems,
-    gstRatePercent,
+    couponCode: appliedCoupon?.code || "",
+    couponRules: {
+      discountAmountOverride: Number(appliedCoupon?.discountAmount || 0),
+    },
+    shippingRules: {
+      shippingCostOverride: 0,
+    },
+    taxRules: {
+      gstRatePercent,
+      pricesIncludeTax: true,
+    },
     baseDiscountBeforeCoupon: tradeDiscountBeforeCoupon,
-    couponDiscount,
-  });
-  const subtotal = productTotalsAfterCoupon.discountedSubtotal; // GST-exclusive after coupon
-  const tax = productTotalsAfterCoupon.gstAmount; // GST on discounted base
+  };
+  const totalsBeforeCoin = calculateOrderTotals(checkoutTotalsInput);
+  const couponDiscount = totalsBeforeCoin.couponDiscount;
+  const subtotal = totalsBeforeCoin.discountedSubtotal; // GST-exclusive after coupon
+  const tax = totalsBeforeCoin.tax; // GST on discounted base
+  const payableShipping = totalsBeforeCoin.shipping;
 
   const productCostAfterCoupon = round2(subtotal + tax); // GST-inclusive after coupon (no shipping)
 
@@ -339,7 +342,8 @@ const Checkout = () => {
 
   // Step 6: Coin redemption (payment method, NOT a trade discount)
   const maxCoinRedeemValue = Math.floor(
-    (productCostAfterCoupon * Number(coinSettings.maxRedeemPercentage || 0)) / 100,
+    (productCostAfterCoupon * Number(coinSettings.maxRedeemPercentage || 0)) /
+      100,
   );
   const safeRequestedCoins = Math.max(Number(requestedCoins || 0), 0);
   const effectiveRedeemCoins = Math.min(
@@ -351,17 +355,9 @@ const Checkout = () => {
     effectiveRedeemCoins * Number(coinSettings.redeemRate || 0),
   );
 
-  // Step 7: Payable shipping remains free. A separate strike-through amount
-  // is computed via display-only shipping rules.
-  const payableShipping = 0;
-
   // Step 8: Final payable = discounted base + GST + shipping - coinRedeem
-  const finalTotals = calculateCheckoutTotals({
-    items: checkoutItems,
-    gstRatePercent,
-    baseDiscountBeforeCoupon: tradeDiscountBeforeCoupon,
-    couponDiscount,
-    shippingCost: payableShipping,
+  const finalTotals = calculateOrderTotals({
+    ...checkoutTotalsInput,
     coinRedeemAmount,
   });
   const total = finalTotals.totalPayable;
@@ -442,10 +438,10 @@ const Checkout = () => {
           fetch(`${API_URL}/api/coins/settings/public`),
           authToken
             ? fetch(`${API_URL}/api/membership/status`, {
-              headers: {
-                Authorization: `Bearer ${authToken}`,
-              },
-            })
+                headers: {
+                  Authorization: `Bearer ${authToken}`,
+                },
+              })
             : Promise.resolve(null),
         ]);
 
@@ -981,24 +977,24 @@ const Checkout = () => {
         purchaseOrderId,
         shippingAddress: selectedAddrObj
           ? {
-            name: selectedAddrObj.name,
-            address: selectedAddrObj.address_line1,
-            landmark: selectedAddrObj.landmark,
-            city: selectedAddrObj.city,
-            state: selectedAddrObj.state,
-            pincode: selectedAddrObj.pincode,
-            mobile: selectedAddrObj.mobile,
-            addressType: selectedAddrObj.addressType,
-          }
+              name: selectedAddrObj.name,
+              address: selectedAddrObj.address_line1,
+              landmark: selectedAddrObj.landmark,
+              city: selectedAddrObj.city,
+              state: selectedAddrObj.state,
+              pincode: selectedAddrObj.pincode,
+              mobile: selectedAddrObj.mobile,
+              addressType: selectedAddrObj.addressType,
+            }
           : isGuestCheckout
             ? {
-              name: guestDetails.fullName,
-              address: guestDetails.address,
-              city: "",
-              state: guestDetails.state,
-              pincode: guestDetails.pincode,
-              mobile: guestDetails.phone,
-            }
+                name: guestDetails.fullName,
+                address: guestDetails.address,
+                city: "",
+                state: guestDetails.state,
+                pincode: guestDetails.pincode,
+                mobile: guestDetails.phone,
+              }
             : null,
       };
 
@@ -1084,24 +1080,24 @@ const Checkout = () => {
         location: isGuestCheckout ? guestLocationPayload : null,
         shippingAddress: selectedAddrObj
           ? {
-            name: selectedAddrObj.name,
-            address: selectedAddrObj.address_line1,
-            landmark: selectedAddrObj.landmark,
-            city: selectedAddrObj.city,
-            state: selectedAddrObj.state,
-            pincode: selectedAddrObj.pincode,
-            mobile: selectedAddrObj.mobile,
-            addressType: selectedAddrObj.addressType,
-          }
+              name: selectedAddrObj.name,
+              address: selectedAddrObj.address_line1,
+              landmark: selectedAddrObj.landmark,
+              city: selectedAddrObj.city,
+              state: selectedAddrObj.state,
+              pincode: selectedAddrObj.pincode,
+              mobile: selectedAddrObj.mobile,
+              addressType: selectedAddrObj.addressType,
+            }
           : isGuestCheckout
             ? {
-              name: guestDetails.fullName,
-              address: guestDetails.address,
-              city: "",
-              state: guestDetails.state,
-              pincode: guestDetails.pincode,
-              mobile: guestDetails.phone,
-            }
+                name: guestDetails.fullName,
+                address: guestDetails.address,
+                city: "",
+                state: guestDetails.state,
+                pincode: guestDetails.pincode,
+                mobile: guestDetails.phone,
+              }
             : null,
         guestDetails: buildGuestDetailsPayload(),
         // Coupon details
@@ -1180,8 +1176,12 @@ const Checkout = () => {
           <div className="w-24 h-24 bg-linear-to-tr from-primary to-[var(--flavor-hover)] rounded-full flex items-center justify-center mb-6 mx-auto shadow-lg shadow-primary/30 animate-bounce">
             <IoCartOutline size={48} className="text-white" />
           </div>
-          <h1 className="text-3xl font-black text-gray-900 mb-2">Your cart is empty</h1>
-          <p className="text-gray-500 mb-8 max-w-xs mx-auto font-medium">Looks like you haven't added any peanut butter goodness yet!</p>
+          <h1 className="text-3xl font-black text-gray-900 mb-2">
+            Your cart is empty
+          </h1>
+          <p className="text-gray-500 mb-8 max-w-xs mx-auto font-medium">
+            Looks like you have not added any peanut butter goodness yet!
+          </p>
           <Link
             href="/products"
             className="inline-block px-8 py-4 bg-primary text-white font-black rounded-2xl shadow-lg shadow-primary/20 hover:brightness-110 hover:scale-105 transition-all active:scale-95"
@@ -1210,7 +1210,9 @@ const Checkout = () => {
             <h1 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tight mb-2">
               Checkout
             </h1>
-            <p className="text-gray-500 font-bold">Complete your purchase securely</p>
+            <p className="text-gray-500 font-bold">
+              Complete your purchase securely
+            </p>
           </div>
 
           {/* High Traffic Notice */}
@@ -1220,12 +1222,14 @@ const Checkout = () => {
                 <MdInfo size={24} />
               </div>
               <div>
-                <h3 className="font-black text-amber-900 text-lg mb-1">High Demand Alert</h3>
+                <h3 className="font-black text-amber-900 text-lg mb-1">
+                  High Demand Alert
+                </h3>
                 <p className="text-amber-800 font-medium">
                   {highTrafficNotice.message || (
                     <>
-                      <strong>High traffic</strong> — availability may vary. Your
-                      order will be processed once confirmed.
+                      <strong>High traffic</strong> — availability may vary.
+                      Your order will be processed once confirmed.
                     </>
                   )}
                 </p>
@@ -1236,12 +1240,13 @@ const Checkout = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Left Column - Address & Items */}
             <div className="lg:col-span-8 space-y-8">
-
               {/* Delivery Address */}
               <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-8 border border-white/50 shadow-xl shadow-gray-200/50">
                 <div className="flex items-center justify-between mb-8">
                   <h2 className="text-2xl font-black text-gray-900 flex items-center gap-3">
-                    <span className="w-10 h-10 rounded-2xl bg-[var(--flavor-glass)] flex items-center justify-center text-primary">1</span>
+                    <span className="w-10 h-10 rounded-2xl bg-[var(--flavor-glass)] flex items-center justify-center text-primary">
+                      1
+                    </span>
                     {isGuestCheckout ? "Guest Details" : "Delivery Address"}
                   </h2>
                   {!isGuestCheckout && (
@@ -1265,7 +1270,12 @@ const Checkout = () => {
                       helperText={guestErrors.fullName}
                       variant="outlined"
                       fullWidth
-                      InputProps={{ sx: { borderRadius: '16px', bgcolor: 'rgba(255,255,255,0.5)' } }}
+                      InputProps={{
+                        sx: {
+                          borderRadius: "16px",
+                          bgcolor: "rgba(255,255,255,0.5)",
+                        },
+                      }}
                     />
                     <TextField
                       label="Phone *"
@@ -1276,7 +1286,12 @@ const Checkout = () => {
                       helperText={guestErrors.phone}
                       variant="outlined"
                       fullWidth
-                      InputProps={{ sx: { borderRadius: '16px', bgcolor: 'rgba(255,255,255,0.5)' } }}
+                      InputProps={{
+                        sx: {
+                          borderRadius: "16px",
+                          bgcolor: "rgba(255,255,255,0.5)",
+                        },
+                      }}
                     />
                     <TextField
                       label="Email *"
@@ -1287,7 +1302,12 @@ const Checkout = () => {
                       helperText={guestErrors.email}
                       variant="outlined"
                       fullWidth
-                      InputProps={{ sx: { borderRadius: '16px', bgcolor: 'rgba(255,255,255,0.5)' } }}
+                      InputProps={{
+                        sx: {
+                          borderRadius: "16px",
+                          bgcolor: "rgba(255,255,255,0.5)",
+                        },
+                      }}
                     />
                     <div className="md:col-span-2 space-y-4 p-5 bg-gray-50/50 rounded-3xl border border-gray-100">
                       <div className="flex items-center gap-3">
@@ -1296,15 +1316,27 @@ const Checkout = () => {
                             setGuestLocationPayload(loc);
                             setGuestDetails((prev) => ({
                               ...prev,
-                              address: loc.street || loc.formattedAddress || prev.address,
+                              address:
+                                loc.street ||
+                                loc.formattedAddress ||
+                                prev.address,
                               pincode: loc.pincode || prev.pincode,
-                              state: normalizeStateValue(loc.state) || prev.state,
+                              state:
+                                normalizeStateValue(loc.state) || prev.state,
                             }));
                           }}
-                          onError={(message) => setSnackbar({ open: true, message, severity: "error" })}
+                          onError={(message) =>
+                            setSnackbar({
+                              open: true,
+                              message,
+                              severity: "error",
+                            })
+                          }
                         />
                         {guestLocationPayload?.formattedAddress && (
-                          <span className="text-xs font-bold text-primary bg-[var(--flavor-glass)] px-3 py-1 rounded-full">Location detected</span>
+                          <span className="text-xs font-bold text-primary bg-[var(--flavor-glass)] px-3 py-1 rounded-full">
+                            Location detected
+                          </span>
                         )}
                       </div>
 
@@ -1319,7 +1351,9 @@ const Checkout = () => {
                         fullWidth
                         multiline
                         rows={2}
-                        InputProps={{ sx: { borderRadius: '16px', bgcolor: 'white' } }}
+                        InputProps={{
+                          sx: { borderRadius: "16px", bgcolor: "white" },
+                        }}
                       />
                       <div className="grid grid-cols-2 gap-4">
                         <TextField
@@ -1331,7 +1365,9 @@ const Checkout = () => {
                           helperText={guestErrors.pincode}
                           variant="outlined"
                           fullWidth
-                          InputProps={{ sx: { borderRadius: '16px', bgcolor: 'white' } }}
+                          InputProps={{
+                            sx: { borderRadius: "16px", bgcolor: "white" },
+                          }}
                         />
                         <FormControl fullWidth error={!!guestErrors.state}>
                           <InputLabel>State *</InputLabel>
@@ -1340,10 +1376,12 @@ const Checkout = () => {
                             value={guestDetails.state}
                             label="State *"
                             onChange={handleGuestChange}
-                            sx={{ borderRadius: '16px', bgcolor: 'white' }}
+                            sx={{ borderRadius: "16px", bgcolor: "white" }}
                           >
                             {INDIAN_STATES.map((state) => (
-                              <MenuItem key={state} value={state}>{state}</MenuItem>
+                              <MenuItem key={state} value={state}>
+                                {state}
+                              </MenuItem>
                             ))}
                           </Select>
                         </FormControl>
@@ -1361,7 +1399,9 @@ const Checkout = () => {
                         <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
                           <MdLocationOn size={32} />
                         </div>
-                        <p className="text-gray-500 font-medium mb-6">No saved addresses found</p>
+                        <p className="text-gray-500 font-medium mb-6">
+                          No saved addresses found
+                        </p>
                         <Button
                           onClick={handleAddNewAddress}
                           variant="contained"
@@ -1372,7 +1412,9 @@ const Checkout = () => {
                             borderRadius: "12px",
                             padding: "10px 24px",
                             fontWeight: "bold",
-                            "&:hover": { backgroundColor: "var(--flavor-hover)" },
+                            "&:hover": {
+                              backgroundColor: "var(--flavor-hover)",
+                            },
                           }}
                         >
                           <FiPlus className="mr-2" /> Add New Address
@@ -1384,14 +1426,20 @@ const Checkout = () => {
                           <div
                             key={addr._id}
                             onClick={() => setSelectedAddress(addr._id)}
-                            className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all duration-300 ${selectedAddress === addr._id
-                              ? "border-primary bg-[var(--flavor-glass)] shadow-lg shadow-primary/10"
-                              : "border-gray-100 bg-white hover:border-primary/40"
-                              }`}
+                            className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all duration-300 ${
+                              selectedAddress === addr._id
+                                ? "border-primary bg-[var(--flavor-glass)] shadow-lg shadow-primary/10"
+                                : "border-gray-100 bg-white hover:border-primary/40"
+                            }`}
                           >
                             <div className="flex justify-between items-start mb-3">
-                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${selectedAddress === addr._id ? "bg-[var(--flavor-glass)] text-primary" : "bg-gray-100 text-gray-500"
-                                }`}>
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                                  selectedAddress === addr._id
+                                    ? "bg-[var(--flavor-glass)] text-primary"
+                                    : "bg-gray-100 text-gray-500"
+                                }`}
+                              >
                                 {getAddressIcon(addr.addressType)}
                                 {addr.addressType || "Home"}
                               </span>
@@ -1407,13 +1455,17 @@ const Checkout = () => {
                               </button>
                             </div>
 
-                            <h3 className="font-bold text-gray-900 mb-1">{addr.name}</h3>
+                            <h3 className="font-bold text-gray-900 mb-1">
+                              {addr.name}
+                            </h3>
                             <p className="text-sm text-gray-500 leading-relaxed mb-3">
-                              {addr.address_line1} {addr.landmark && `, ${addr.landmark}`} <br />
+                              {addr.address_line1}{" "}
+                              {addr.landmark && `, ${addr.landmark}`} <br />
                               {addr.city}, {addr.state} - {addr.pincode}
                             </p>
                             <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-primary" /> +91 {addr.mobile}
+                              <span className="w-2 h-2 rounded-full bg-primary" />{" "}
+                              +91 {addr.mobile}
                             </p>
 
                             {selectedAddress === addr._id && (
@@ -1434,29 +1486,48 @@ const Checkout = () => {
               {/* Order Items */}
               <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-8 border border-white/50 shadow-xl shadow-gray-200/50">
                 <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-3">
-                  <span className="w-10 h-10 rounded-2xl bg-[var(--flavor-glass)] flex items-center justify-center text-primary">2</span>
-                  Order Items <span className="text-gray-400 text-lg font-medium">({cartItems.length})</span>
+                  <span className="w-10 h-10 rounded-2xl bg-[var(--flavor-glass)] flex items-center justify-center text-primary">
+                    2
+                  </span>
+                  Order Items{" "}
+                  <span className="text-gray-400 text-lg font-medium">
+                    ({cartItems.length})
+                  </span>
                 </h2>
 
                 <div className="space-y-4">
                   {cartItems.map((item, index) => {
                     const data = getItemData(item);
                     return (
-                      <div key={data.id || index} className="flex gap-4 p-4 rounded-3xl bg-white border border-gray-50 items-center">
+                      <div
+                        key={data.id || index}
+                        className="flex gap-4 p-4 rounded-3xl bg-white border border-gray-50 items-center"
+                      >
                         <div className="w-20 h-20 rounded-2xl bg-gray-50 flex items-center justify-center p-2 shrink-0">
-                          <img src={data.image} alt={data.name} className="w-full h-full object-contain" />
+                          <img
+                            src={data.image}
+                            alt={data.name}
+                            className="w-full h-full object-contain"
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-gray-900 truncate">{data.name}</h3>
+                          <h3 className="font-bold text-gray-900 truncate">
+                            {data.name}
+                          </h3>
                           {data.demandStatus === "HIGH" && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full mt-1">
                               <HiOutlineFire /> High Demand
                             </span>
                           )}
-                          <p className="text-sm text-gray-500 mt-1 font-medium">Qty: {data.quantity} × <span className="text-gray-900">₹{data.price}</span></p>
+                          <p className="text-sm text-gray-500 mt-1 font-medium">
+                            Qty: {data.quantity} ×{" "}
+                            <span className="text-gray-900">₹{data.price}</span>
+                          </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-black text-lg text-gray-900">₹{(data.price * data.quantity).toFixed(0)}</p>
+                          <p className="font-black text-lg text-gray-900">
+                            ₹{(data.price * data.quantity).toFixed(0)}
+                          </p>
                         </div>
                       </div>
                     );
@@ -1466,7 +1537,12 @@ const Checkout = () => {
 
               {/* Order Notes */}
               <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-8 border border-white/50 shadow-xl shadow-gray-200/50">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">Order Notes <span className="text-gray-400 font-normal text-sm ml-2">(Optional)</span></h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-4">
+                  Order Notes{" "}
+                  <span className="text-gray-400 font-normal text-sm ml-2">
+                    (Optional)
+                  </span>
+                </h2>
                 <textarea
                   value={orderNote}
                   onChange={(e) => setOrderNote(e.target.value)}
@@ -1479,31 +1555,38 @@ const Checkout = () => {
             {/* Right Column - Summary & Payment */}
             <div className="lg:col-span-4 space-y-6">
               <div className="sticky top-24 space-y-6">
-
                 {/* Order Summary Card */}
                 <div className="bg-gray-900 text-white rounded-[2.5rem] p-8 shadow-2xl overflow-hidden relative">
                   {/* Glow Effects */}
                   <div className="absolute top-[-20%] right-[-20%] w-40 h-40 bg-primary/20 blur-[80px] rounded-full pointer-events-none" />
                   <div className="absolute bottom-[-10%] left-[-10%] w-32 h-32 bg-[var(--flavor-glass)] blur-[60px] rounded-full pointer-events-none" />
 
-                  <h2 className="text-2xl font-black mb-6 border-b border-gray-700 pb-4">Summary</h2>
+                  <h2 className="text-2xl font-black mb-6 border-b border-gray-700 pb-4">
+                    Summary
+                  </h2>
 
                   <div className="space-y-4 mb-8">
                     <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
                       <span>Subtotal</span>
-                      <span className="text-white">₹{cartBaseSubtotal.toFixed(2)}</span>
+                      <span className="text-white">
+                        ₹{cartBaseSubtotal.toFixed(2)}
+                      </span>
                     </div>
 
                     {couponDiscount > 0 && (
                       <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
-                        <span className="flex items-center gap-1"><FiTag /> Coupon</span>
+                        <span className="flex items-center gap-1">
+                          <FiTag /> Coupon
+                        </span>
                         <span>-₹{couponDiscount.toFixed(2)}</span>
                       </div>
                     )}
 
                     {coinRedeemAmount > 0 && (
                       <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
-                        <span className="flex items-center gap-1">🪙 Coins</span>
+                        <span className="flex items-center gap-1">
+                          🪙 Coins
+                        </span>
                         <span>-₹{coinRedeemAmount.toFixed(2)}</span>
                       </div>
                     )}
@@ -1530,21 +1613,31 @@ const Checkout = () => {
 
                     <div className="pt-6 border-t border-gray-700 flex justify-between items-end">
                       <div>
-                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1">Total Payable</p>
-                        <p className="text-3xl font-black text-white tracking-tight">₹{total.toFixed(0)}</p>
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1">
+                          Total Payable
+                        </p>
+                        <p className="text-3xl font-black text-white tracking-tight">
+                          ₹{total.toFixed(0)}
+                        </p>
                       </div>
                     </div>
                   </div>
 
                   <button
                     onClick={handlePayNow}
-                    disabled={maintenanceMode || isPayButtonDisabled || cartItems.length === 0}
+                    disabled={
+                      maintenanceMode ||
+                      isPayButtonDisabled ||
+                      cartItems.length === 0
+                    }
                     className="w-full py-4 bg-primary text-gray-900 font-black rounded-2xl shadow-lg shadow-primary/20 hover:brightness-110 transform hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {isPayButtonDisabled ? (
                       <span className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
                     ) : (
-                      <>PAY NOW <FiCheck className="stroke-[3px]" /></>
+                      <>
+                        PAY NOW <FiCheck className="stroke-[3px]" />
+                      </>
                     )}
                   </button>
 
@@ -1557,21 +1650,35 @@ const Checkout = () => {
                 <div className="bg-white/60 backdrop-blur-xl rounded-[2rem] p-6 border border-white/50 shadow-xl shadow-gray-200/50 space-y-6">
                   {/* Coupon Input */}
                   <div>
-                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2"><FiTag className="text-primary" /> Apply Coupon</h3>
+                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      <FiTag className="text-primary" /> Apply Coupon
+                    </h3>
                     {appliedCoupon ? (
                       <div className="bg-[var(--flavor-glass)] border border-primary/20 p-4 rounded-xl flex items-center justify-between">
                         <div>
-                          <p className="font-bold text-primary flex items-center gap-2"><FiCheck /> {appliedCoupon.code}</p>
-                          <p className="text-xs text-primary font-bold">You saved ₹{appliedCoupon.discountAmount}</p>
+                          <p className="font-bold text-primary flex items-center gap-2">
+                            <FiCheck /> {appliedCoupon.code}
+                          </p>
+                          <p className="text-xs text-primary font-bold">
+                            You saved ₹{appliedCoupon.discountAmount}
+                          </p>
                         </div>
-                        <button onClick={handleRemoveCoupon} className="p-2 bg-white rounded-full text-red-500 hover:bg-red-50 hover:scale-110 transition-all"><FiX /></button>
+                        <button
+                          onClick={handleRemoveCoupon}
+                          className="p-2 bg-white rounded-full text-red-500 hover:bg-red-50 hover:scale-110 transition-all"
+                        >
+                          <FiX />
+                        </button>
                       </div>
                     ) : (
                       <div className="flex gap-2">
                         <input
                           type="text"
                           value={couponCode}
-                          onChange={(e) => { setCouponCode(e.target.value.toUpperCase()); setCouponError(""); }}
+                          onChange={(e) => {
+                            setCouponCode(e.target.value.toUpperCase());
+                            setCouponError("");
+                          }}
                           placeholder="ENTER CODE"
                           className="flex-1 text-sm font-bold uppercase p-3 bg-white rounded-xl border border-gray-200 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                         />
@@ -1584,12 +1691,21 @@ const Checkout = () => {
                         </button>
                       </div>
                     )}
-                    {couponError && <p className="text-red-500 text-xs font-bold mt-2 ml-1">{couponError}</p>}
+                    {couponError && (
+                      <p className="text-red-500 text-xs font-bold mt-2 ml-1">
+                        {couponError}
+                      </p>
+                    )}
                   </div>
 
                   {/* GST Input */}
                   <div>
-                    <h3 className="font-bold text-gray-800 mb-3 text-sm">GST Number <span className="text-gray-400 font-normal">(Optional)</span></h3>
+                    <h3 className="font-bold text-gray-800 mb-3 text-sm">
+                      GST Number{" "}
+                      <span className="text-gray-400 font-normal">
+                        (Optional)
+                      </span>
+                    </h3>
                     <input
                       type="text"
                       value={gstNumber}
@@ -1598,31 +1714,58 @@ const Checkout = () => {
                       placeholder="15-digit GSTIN"
                       className="w-full text-sm font-medium uppercase p-3 bg-white rounded-xl border border-gray-200 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                     />
-                    {gstSavedValue && <p className="text-primary text-[10px] font-bold mt-1 ml-1 flex items-center gap-1"><FiCheck /> Saved to profile</p>}
+                    {gstSavedValue && (
+                      <p className="text-primary text-[10px] font-bold mt-1 ml-1 flex items-center gap-1">
+                        <FiCheck /> Saved to profile
+                      </p>
+                    )}
                   </div>
 
                   {/* Coins */}
                   {!isGuestCheckout && coinBalance > 0 && (
                     <div>
                       <div className="flex justify-between items-center mb-3">
-                        <h3 className="font-bold text-gray-800 text-sm">Redeem Coins</h3>
-                        <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full">{coinBalance} Available</span>
+                        <h3 className="font-bold text-gray-800 text-sm">
+                          Redeem Coins
+                        </h3>
+                        <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full">
+                          {coinBalance} Available
+                        </span>
                       </div>
                       <div className="flex gap-2">
                         <input
                           type="number"
                           value={requestedCoins}
-                          onChange={(e) => setRequestedCoins(Math.max(0, Math.floor(Number(e.target.value || 0))))}
+                          onChange={(e) =>
+                            setRequestedCoins(
+                              Math.max(
+                                0,
+                                Math.floor(Number(e.target.value || 0)),
+                              ),
+                            )
+                          }
                           className="w-20 text-center font-bold p-2 bg-white rounded-xl border border-gray-200"
                         />
                         <button
-                          onClick={() => setRequestedCoins(Math.min(coinBalance, Math.floor(maxCoinRedeemValue / Number(coinSettings.redeemRate || 1))))}
+                          onClick={() =>
+                            setRequestedCoins(
+                              Math.min(
+                                coinBalance,
+                                Math.floor(
+                                  maxCoinRedeemValue /
+                                    Number(coinSettings.redeemRate || 1),
+                                ),
+                              ),
+                            )
+                          }
                           className="flex-1 bg-amber-100 text-amber-700 font-bold rounded-xl text-xs hover:bg-amber-200 transition-colors"
                         >
                           MAX SAVE
                         </button>
                       </div>
-                      <p className="text-[10px] text-gray-400 mt-2 font-medium">1 Coin = ₹{coinSettings.redeemRate}</p>
+                      <p className="text-[10px] text-gray-400 mt-2 font-medium">
+                        1 Coin = ₹{coinSettings.redeemRate}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1651,7 +1794,12 @@ const Checkout = () => {
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{ width: "100%", borderRadius: "16px", fontWeight: 'bold', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}
+          sx={{
+            width: "100%",
+            borderRadius: "16px",
+            fontWeight: "bold",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+          }}
         >
           {snackbar.message}
         </Alert>
@@ -1664,17 +1812,43 @@ const Checkout = () => {
         maxWidth="sm"
         fullWidth
         PaperProps={{
-          sx: { borderRadius: '24px', padding: '10px' }
+          sx: { borderRadius: "24px", padding: "10px" },
         }}
       >
-        <DialogTitle sx={{ borderBottom: "1px solid #f3f4f6", fontWeight: '900', fontSize: '1.25rem' }}>
+        <DialogTitle
+          sx={{
+            borderBottom: "1px solid #f3f4f6",
+            fontWeight: "900",
+            fontSize: "1.25rem",
+          }}
+        >
           {editingAddress ? "Edit Address" : "Add New Address"}
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <div className="grid grid-cols-1 gap-5 mt-4">
             <div className="grid grid-cols-2 gap-4">
-              <TextField name="name" label="Full Name" value={formData.name} onChange={handleFormChange} error={!!formErrors.name} helperText={formErrors.name} fullWidth size="medium" InputProps={{ sx: { borderRadius: '12px' } }} />
-              <TextField name="mobile" label="Mobile" value={formData.mobile} onChange={handleFormChange} error={!!formErrors.mobile} helperText={formErrors.mobile} fullWidth size="medium" InputProps={{ sx: { borderRadius: '12px' } }} />
+              <TextField
+                name="name"
+                label="Full Name"
+                value={formData.name}
+                onChange={handleFormChange}
+                error={!!formErrors.name}
+                helperText={formErrors.name}
+                fullWidth
+                size="medium"
+                InputProps={{ sx: { borderRadius: "12px" } }}
+              />
+              <TextField
+                name="mobile"
+                label="Mobile"
+                value={formData.mobile}
+                onChange={handleFormChange}
+                error={!!formErrors.mobile}
+                helperText={formErrors.mobile}
+                fullWidth
+                size="medium"
+                InputProps={{ sx: { borderRadius: "12px" } }}
+              />
             </div>
 
             <div className="flex flex-col gap-2">
@@ -1683,36 +1857,94 @@ const Checkout = () => {
                   setLocationPayload(loc);
                   setFormData((prev) => ({
                     ...prev,
-                    address_line1: loc.street || loc.formattedAddress || prev.address_line1,
+                    address_line1:
+                      loc.street || loc.formattedAddress || prev.address_line1,
                     city: loc.city || prev.city,
                     pincode: loc.pincode || prev.pincode,
                     state: normalizeStateValue(loc.state) || prev.state,
                   }));
                 }}
-                onError={(message) => setSnackbar({ open: true, message, severity: "error" })}
+                onError={(message) =>
+                  setSnackbar({ open: true, message, severity: "error" })
+                }
               />
             </div>
 
-            <TextField name="address_line1" label="Full Address" value={formData.address_line1} onChange={handleFormChange} error={!!formErrors.address_line1} helperText={formErrors.address_line1} fullWidth multiline rows={2} InputProps={{ sx: { borderRadius: '12px' } }} />
+            <TextField
+              name="address_line1"
+              label="Full Address"
+              value={formData.address_line1}
+              onChange={handleFormChange}
+              error={!!formErrors.address_line1}
+              helperText={formErrors.address_line1}
+              fullWidth
+              multiline
+              rows={2}
+              InputProps={{ sx: { borderRadius: "12px" } }}
+            />
 
-            <TextField name="landmark" label="Landmark (Optional)" value={formData.landmark} onChange={handleFormChange} fullWidth size="small" InputProps={{ sx: { borderRadius: '12px' } }} />
+            <TextField
+              name="landmark"
+              label="Landmark (Optional)"
+              value={formData.landmark}
+              onChange={handleFormChange}
+              fullWidth
+              size="small"
+              InputProps={{ sx: { borderRadius: "12px" } }}
+            />
 
             <div className="grid grid-cols-2 gap-4">
-              <TextField name="city" label="City" value={formData.city} onChange={handleFormChange} error={!!formErrors.city} helperText={formErrors.city} fullWidth size="small" InputProps={{ sx: { borderRadius: '12px' } }} />
-              <TextField name="pincode" label="Pincode" value={formData.pincode} onChange={handleFormChange} error={!!formErrors.pincode} helperText={formErrors.pincode} fullWidth size="small" InputProps={{ sx: { borderRadius: '12px' } }} />
+              <TextField
+                name="city"
+                label="City"
+                value={formData.city}
+                onChange={handleFormChange}
+                error={!!formErrors.city}
+                helperText={formErrors.city}
+                fullWidth
+                size="small"
+                InputProps={{ sx: { borderRadius: "12px" } }}
+              />
+              <TextField
+                name="pincode"
+                label="Pincode"
+                value={formData.pincode}
+                onChange={handleFormChange}
+                error={!!formErrors.pincode}
+                helperText={formErrors.pincode}
+                fullWidth
+                size="small"
+                InputProps={{ sx: { borderRadius: "12px" } }}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <FormControl fullWidth size="small" error={!!formErrors.state}>
                 <InputLabel>State</InputLabel>
-                <Select name="state" value={formData.state} onChange={handleFormChange} label="State" sx={{ borderRadius: '12px' }}>
-                  {INDIAN_STATES.map((state) => (<MenuItem key={state} value={state}>{state}</MenuItem>))}
+                <Select
+                  name="state"
+                  value={formData.state}
+                  onChange={handleFormChange}
+                  label="State"
+                  sx={{ borderRadius: "12px" }}
+                >
+                  {INDIAN_STATES.map((state) => (
+                    <MenuItem key={state} value={state}>
+                      {state}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
 
               <FormControl fullWidth size="small">
                 <InputLabel>Type</InputLabel>
-                <Select name="addressType" value={formData.addressType} onChange={handleFormChange} label="Type" sx={{ borderRadius: '12px' }}>
+                <Select
+                  name="addressType"
+                  value={formData.addressType}
+                  onChange={handleFormChange}
+                  label="Type"
+                  sx={{ borderRadius: "12px" }}
+                >
                   <MenuItem value="Home">Home</MenuItem>
                   <MenuItem value="Work">Work</MenuItem>
                   <MenuItem value="Other">Other</MenuItem>
@@ -1722,8 +1954,25 @@ const Checkout = () => {
           </div>
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1 }}>
-          <Button onClick={() => setIsAddressDialogOpen(false)} sx={{ color: '#6b7280', fontWeight: 'bold' }}>Cancel</Button>
-          <Button onClick={handleSaveAddress} disabled={addressSaving} variant="contained" sx={{ bgcolor: 'var(--primary)', borderRadius: '12px', fontWeight: 'bold', px: 4, py: 1.5, '&:hover': { bgcolor: 'var(--flavor-hover)' } }}>
+          <Button
+            onClick={() => setIsAddressDialogOpen(false)}
+            sx={{ color: "#6b7280", fontWeight: "bold" }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveAddress}
+            disabled={addressSaving}
+            variant="contained"
+            sx={{
+              bgcolor: "var(--primary)",
+              borderRadius: "12px",
+              fontWeight: "bold",
+              px: 4,
+              py: 1.5,
+              "&:hover": { bgcolor: "var(--flavor-hover)" },
+            }}
+          >
             {addressSaving ? "Saving..." : "Save Address"}
           </Button>
         </DialogActions>

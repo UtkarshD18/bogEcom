@@ -239,7 +239,26 @@ const validateCouponForOrder = async ({
     normalizedCode === offerCouponCode
   ) {
     if (userId) {
-      const hasPriorOrders = await OrderModel.exists({ user: userId });
+      const hasPriorOrders = await OrderModel.exists({
+        user: userId,
+        $or: [
+          { payment_status: "paid" },
+          {
+            order_status: {
+              $in: [
+                "accepted",
+                "confirmed",
+                "in_warehouse",
+                "shipped",
+                "out_for_delivery",
+                "delivered",
+                "rto",
+                "rto_completed",
+              ],
+            },
+          },
+        ],
+      });
       if (hasPriorOrders) {
         return {
           errorMessage: "This coupon is valid only on your first order",
@@ -1912,14 +1931,6 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
 
     const subtotalBeforeCoupon = workingAmount;
 
-    // GST is system-controlled and must be calculated on the original subtotal
-    // (before coupon/coins). Coupon must NOT reduce GST.
-    const taxData = splitGstInclusiveAmount(
-      subtotalBeforeCoupon,
-      5,
-      checkoutContact.state,
-    );
-
     // Validate and apply coupon discount
     if (couponCode) {
       const couponResult = await validateCouponForOrder({
@@ -1940,13 +1951,24 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       normalizedCouponCode = couponResult.normalizedCode;
       couponDiscount = Math.min(couponResult.discount || 0, workingAmount);
       if (couponDiscount > 0) {
-        workingAmount = workingAmount - couponDiscount;
+        workingAmount = Math.max(round2(workingAmount - couponDiscount), 0);
         logger.info("saveOrderForLater", "Coupon discount applied", {
           code: normalizedCouponCode,
           discount: couponDiscount,
         });
       }
     }
+
+    const subtotalAfterDiscount = workingAmount;
+
+    // Match checkout pricing logic:
+    // GST is recalculated on post-discount subtotal (trade discounts reduce
+    // taxable value). Coin redemption is handled later as a payment method.
+    const taxData = splitGstInclusiveAmount(
+      subtotalAfterDiscount,
+      5,
+      checkoutContact.state,
+    );
 
     let coinBalance = 0;
     if (userId) {
@@ -1960,14 +1982,14 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     const redemption =
       requestedCoins > 0 && userId
         ? await calculateRedemption({
-            subtotal: workingAmount,
+            subtotal: subtotalAfterDiscount,
             requestedCoins,
             coinBalance,
           })
         : { coinsUsed: 0, redeemAmount: 0 };
 
     const netInclusiveSubtotal = Math.max(
-      round2(workingAmount - Number(redemption.redeemAmount || 0)),
+      round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
       0,
     );
     // ---- SHIPPING: backend source-of-truth via getShippingQuote ----
