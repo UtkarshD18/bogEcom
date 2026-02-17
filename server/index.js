@@ -20,6 +20,7 @@ import {
   generalLimiter,
   uploadLimiter,
 } from "./middlewares/rateLimiter.js";
+import { UPLOAD_ROOT } from "./middlewares/upload.js";
 
 dotenv.config();
 
@@ -194,8 +195,8 @@ if (process.env.NODE_ENV === "production") {
   app.use(morgan("dev"));
 }
 
-// Serve static files (uploads)
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Serve uploaded files from the same root multer writes to.
+app.use("/uploads", express.static(UPLOAD_ROOT));
 
 app.get("/", (req, res) => {
   res.json({
