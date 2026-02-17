@@ -87,7 +87,7 @@ const Footer = () => {
     {
       icon: <LiaShippingFastSolid />,
       title: "Free Shipping",
-      desc: "Orders Over ₹500",
+      desc: "On Every Order",
       gradient: "linear-gradient(135deg, var(--primary), var(--flavor-hover))",
     },
     {

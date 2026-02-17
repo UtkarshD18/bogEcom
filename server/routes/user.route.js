@@ -1,6 +1,7 @@
 import { Router } from "express";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import { handleUploadError, uploadSingle } from "../middlewares/upload.js";
 
 import {
   authWithGoogle,
@@ -20,6 +21,8 @@ import {
   updateUserRole,
   updateUserSettings,
   updateUserStatus,
+  removeUserPhoto,
+  uploadUserPhoto,
   updateUserGstNumber,
   verifyEmailController,
   verifyForgotPasswordOTPController,
@@ -48,6 +51,15 @@ userRouter.post("/set-backup-password", auth, setBackupPassword); // Protected r
 userRouter.get("/settings", auth, getUserSettings);
 userRouter.put("/settings", auth, updateUserSettings);
 userRouter.put("/profile", auth, updateUserProfile);
+userRouter.post(
+  "/upload-photo",
+  auth,
+  uploadSingle("image"),
+  handleUploadError,
+  uploadUserPhoto,
+);
+userRouter.post("/remove-photo", auth, removeUserPhoto);
+userRouter.delete("/remove-photo", auth, removeUserPhoto);
 userRouter.put("/gst", auth, updateUserGstNumber);
 
 // Get current user details (for session verification)

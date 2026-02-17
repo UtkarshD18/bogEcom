@@ -123,7 +123,26 @@ export const validateCoupon = async (req, res) => {
       normalizedCode === offerCouponCode
     ) {
       if (userId) {
-        const hasPriorOrders = await OrderModel.exists({ user: userId });
+        const hasPriorOrders = await OrderModel.exists({
+          user: userId,
+          $or: [
+            { payment_status: "paid" },
+            {
+              order_status: {
+                $in: [
+                  "accepted",
+                  "confirmed",
+                  "in_warehouse",
+                  "shipped",
+                  "out_for_delivery",
+                  "delivered",
+                  "rto",
+                  "rto_completed",
+                ],
+              },
+            },
+          ],
+        });
         if (hasPriorOrders) {
           return res.status(400).json({
             error: true,

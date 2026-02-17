@@ -11,28 +11,71 @@ import { API_BASE_URL } from "@/utils/api";
 
 const API_URL = API_BASE_URL;
 
+const normalizeImageInput = (imageValue) => {
+  if (!imageValue) return "";
+
+  if (typeof imageValue === "string") {
+    return imageValue.trim();
+  }
+
+  // Accept common API object formats: { url }, { secure_url }, { src }
+  if (typeof imageValue === "object") {
+    if (typeof imageValue.url === "string") return imageValue.url.trim();
+    if (typeof imageValue.secure_url === "string") {
+      return imageValue.secure_url.trim();
+    }
+    if (typeof imageValue.src === "string") return imageValue.src.trim();
+  }
+
+  return "";
+};
+
 /**
  * Get the proper image URL for display
- * @param {string} imageUrl - The image URL from database
+ * @param {string|object} imageUrl - The image URL from database
  * @param {string} fallback - Fallback image path
  * @returns {string} - Resolved image URL
  */
 export const getImageUrl = (imageUrl, fallback = "/placeholder.png") => {
-  if (!imageUrl) return fallback;
+  const normalizedValue = normalizeImageInput(imageUrl);
+  if (!normalizedValue) return fallback;
+
+  const normalizedPath = normalizedValue.replace(/\\/g, "/");
+
+  // Data URI
+  if (normalizedPath.startsWith("data:")) {
+    return normalizedPath;
+  }
+
+  // Protocol-relative URL
+  if (normalizedPath.startsWith("//")) {
+    return `https:${normalizedPath}`;
+  }
 
   // Already a full URL (Cloudinary or external)
-  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
-    return imageUrl;
+  if (
+    normalizedPath.startsWith("http://") ||
+    normalizedPath.startsWith("https://")
+  ) {
+    return normalizedPath;
   }
 
   // Local server uploads
-  if (imageUrl.startsWith("/uploads/")) {
-    return `${API_URL}${imageUrl}`;
+  if (normalizedPath.startsWith("/uploads/")) {
+    return `${API_URL}${normalizedPath}`;
+  }
+  if (normalizedPath.startsWith("uploads/")) {
+    return `${API_URL}/${normalizedPath}`;
   }
 
   // Local public folder image (like /product_1.png)
-  if (imageUrl.startsWith("/")) {
-    return imageUrl;
+  if (normalizedPath.startsWith("/")) {
+    return normalizedPath;
+  }
+
+  // Fallback for values like "product_1.png"
+  if (!normalizedPath.includes("/")) {
+    return `/${normalizedPath}`;
   }
 
   return fallback;

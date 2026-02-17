@@ -8,14 +8,21 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { BsBagCheck } from "react-icons/bs";
 import { FaRegHeart, FaRegUser } from "react-icons/fa6";
-import { FiCamera, FiMapPin, FiSettings } from "react-icons/fi";
+import { FiCamera, FiMapPin, FiSettings, FiTrash2 } from "react-icons/fi";
 import { IoMdLogOut } from "react-icons/io";
 
 const AccountSidebar = () => {
   const router = useRouter();
   const pathname = usePathname();
   const fileInputRef = useRef(null);
-  const API_URL = API_BASE_URL;
+  const API_URL = (
+    API_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:8000"
+  )
+    .replace(/\/+$/, "")
+    .replace(/\/api$/i, "");
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userName, setUserName] = useState("User");
@@ -24,13 +31,110 @@ const AccountSidebar = () => {
   const [userPhone, setUserPhone] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
+  const normalizeIdentity = (value) => String(value || "").trim().toLowerCase();
+  const getPhotoStorageKey = (emailValue) => {
+    const normalizedEmail = normalizeIdentity(emailValue);
+    return normalizedEmail ? `userPhoto:${normalizedEmail}` : "";
+  };
+  const getPhotoRemovedKey = (emailValue) => {
+    const normalizedEmail = normalizeIdentity(emailValue);
+    return normalizedEmail ? `userPhotoRemoved:${normalizedEmail}` : "";
+  };
+  const getStoredPhotoForUser = (emailValue) => {
+    const key = getPhotoStorageKey(emailValue);
+    if (!key) return "";
+    return localStorage.getItem(key) || "";
+  };
+  const isPhotoRemovalOverride = (emailValue) => {
+    const key = getPhotoRemovedKey(emailValue);
+    if (!key) return false;
+    return localStorage.getItem(key) === "1";
+  };
+  const setPhotoRemovalOverride = (emailValue, removed) => {
+    const key = getPhotoRemovedKey(emailValue);
+    if (!key) return;
+    if (removed) {
+      localStorage.setItem(key, "1");
+    } else {
+      localStorage.removeItem(key);
+    }
+  };
+  const clearStoredPhotoForUser = (emailValue) => {
+    const key = getPhotoStorageKey(emailValue);
+    const removedKey = getPhotoRemovedKey(emailValue);
+    if (key) localStorage.removeItem(key);
+    if (removedKey) localStorage.removeItem(removedKey);
+    // Cleanup old global key to prevent cross-account leakage.
+    localStorage.removeItem("userPhoto");
+  };
+
+  const resolveImageUrl = (value) => {
+    const photo = String(value || "").trim();
+    if (!photo) return "";
+    if (photo.startsWith("data:")) return photo;
+    if (photo.startsWith("http://") || photo.startsWith("https://")) {
+      return photo;
+    }
+    if (photo.startsWith("/uploads/")) return `${API_URL}${photo}`;
+    if (photo.startsWith("uploads/")) return `${API_URL}/${photo}`;
+    if (photo.startsWith("/")) return photo;
+    return photo;
+  };
+
+  const setPhotoEverywhere = (
+    photoValue,
+    {
+      persistCookie = true,
+      emailOverride = "",
+      emitEvent = true,
+      markRemoved = false,
+    } = {},
+  ) => {
+    const effectiveEmail =
+      emailOverride || userEmail || cookies.get("userEmail") || "";
+    const resolved = resolveImageUrl(photoValue);
+    setUserPhoto(resolved);
+    if (photoValue) {
+      if (persistCookie) {
+        cookies.set("userPhoto", photoValue, { expires: 7 });
+      } else {
+        cookies.remove("userPhoto");
+      }
+      const storageKey = getPhotoStorageKey(effectiveEmail);
+      if (storageKey) localStorage.setItem(storageKey, photoValue);
+      localStorage.removeItem("userPhoto");
+      setPhotoRemovalOverride(effectiveEmail, false);
+    } else {
+      cookies.remove("userPhoto");
+      clearStoredPhotoForUser(effectiveEmail);
+      if (markRemoved) {
+        setPhotoRemovalOverride(effectiveEmail, true);
+      }
+    }
+    if (emitEvent) {
+      window.dispatchEvent(new Event("loginSuccess"));
+    }
+  };
+
+  const applyLocalPhotoFallback = (file, successMessage) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const photoUrl = event.target?.result;
+      setPhotoEverywhere(photoUrl, { persistCookie: false });
+      toast.success(successMessage);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const syncFromCookies = () => {
     const name = cookies.get("userName") || "User";
     const email = cookies.get("userEmail") || "";
-    const photo = cookies.get("userPhoto") || "";
+    const photo = isPhotoRemovalOverride(email)
+      ? ""
+      : cookies.get("userPhoto") || getStoredPhotoForUser(email) || "";
     setUserName(name);
     setUserEmail(email);
-    setUserPhoto(photo);
+    setUserPhoto(resolveImageUrl(photo));
   };
 
   const formatPhone = (value) => {
@@ -54,10 +158,25 @@ const AccountSidebar = () => {
       if (data.success && data.data) {
         const name = data.data?.name || "User";
         const email = data.data?.email || "";
+        const avatar = data.data?.avatar || "";
         setUserName(name);
         setUserEmail(email);
         cookies.set("userName", name, { expires: 7 });
         cookies.set("userEmail", email, { expires: 7 });
+        const removalOverride = isPhotoRemovalOverride(email);
+        if (avatar && !removalOverride) {
+          setPhotoEverywhere(avatar, {
+            persistCookie: true,
+            emailOverride: email,
+            emitEvent: false,
+          });
+        } else {
+          cookies.remove("userPhoto");
+          if (!avatar) {
+            setPhotoRemovalOverride(email, false);
+          }
+          setUserPhoto(resolveImageUrl(getStoredPhotoForUser(email)));
+        }
       }
     } catch (error) {
       // Silent fallback to cookies
@@ -155,58 +274,106 @@ const AccountSidebar = () => {
       formData.append("image", file);
 
       const token = cookies.get("accessToken");
+      if (!token) {
+        applyLocalPhotoFallback(file, "Profile photo updated locally!");
+        return;
+      }
 
       const response = await fetch(`${API_URL}/api/user/upload-photo`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        credentials: "include",
         body: formData,
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(`Photo upload failed with status ${response.status}`);
+      }
 
-      if (data.success && data.data?.photo) {
-        setUserPhoto(data.data.photo);
-        cookies.set("userPhoto", data.data.photo, { expires: 7 });
+      const data = await response.json();
+      const uploadedPhoto = data?.data?.photo || data?.data?.avatar || "";
+
+      if (data.success && uploadedPhoto) {
+        setPhotoEverywhere(uploadedPhoto, { persistCookie: true });
         toast.success("Profile photo updated!");
-        // Trigger header refresh
-        window.dispatchEvent(new Event("loginSuccess"));
       } else {
-        // For now, use local preview since API might not exist
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const photoUrl = e.target?.result;
-          setUserPhoto(photoUrl);
-          // Store in localStorage as fallback
-          localStorage.setItem("userPhoto", photoUrl);
-          toast.success("Profile photo updated locally!");
-        };
-        reader.readAsDataURL(file);
+        applyLocalPhotoFallback(file, "Profile photo updated locally!");
       }
     } catch (error) {
-      console.error("Error uploading photo:", error);
-      // Fallback: Use local preview
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const photoUrl = e.target?.result;
-        setUserPhoto(photoUrl);
-        localStorage.setItem("userPhoto", photoUrl);
-        toast.success("Profile photo updated!");
-      };
-      reader.readAsDataURL(file);
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Profile photo upload failed, using local fallback");
+      }
+      applyLocalPhotoFallback(file, "Profile photo updated locally!");
     } finally {
       setUploadingPhoto(false);
     }
   };
 
-  // Load photo from localStorage on mount
-  useEffect(() => {
-    const savedPhoto = localStorage.getItem("userPhoto");
-    if (savedPhoto && !userPhoto) {
-      setUserPhoto(savedPhoto);
+  const handleRemovePhoto = async () => {
+    if (!userPhoto) return;
+
+    setUploadingPhoto(true);
+    try {
+      const token = cookies.get("accessToken");
+      if (!token) {
+        setPhotoEverywhere("", { persistCookie: false, markRemoved: true });
+        toast.success("Profile photo removed!");
+        return;
+      }
+
+      const attempts = [
+        {
+          url: `${API_URL}/api/user/remove-photo`,
+          method: "DELETE",
+        },
+        {
+          url: `${API_URL}/api/user/remove-photo`,
+          method: "POST",
+        },
+        {
+          url: `${API_URL}/api/user/profile`,
+          method: "PUT",
+          body: { avatar: "" },
+        },
+      ];
+
+      let backendUpdated = false;
+      for (const attempt of attempts) {
+        const response = await fetch(attempt.url, {
+          method: attempt.method,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ...(attempt.body ? { "Content-Type": "application/json" } : {}),
+          },
+          credentials: "include",
+          ...(attempt.body ? { body: JSON.stringify(attempt.body) } : {}),
+        });
+
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.success !== false) {
+          backendUpdated = true;
+          break;
+        }
+      }
+
+      setPhotoEverywhere("", { persistCookie: false, markRemoved: true });
+      if (backendUpdated) {
+        toast.success("Profile photo removed!");
+      } else {
+        toast.success("Profile photo removed locally");
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Profile photo remove failed");
+      }
+      setPhotoEverywhere("", { persistCookie: false, markRemoved: true });
+      toast.success("Profile photo removed locally");
+    } finally {
+      setUploadingPhoto(false);
     }
-  }, []);
+  };
 
   // Handle logout
   const handleLogout = async () => {
@@ -222,7 +389,7 @@ const AccountSidebar = () => {
       cookies.remove("userEmail");
       cookies.remove("userName");
       cookies.remove("userPhoto");
-      localStorage.removeItem("userPhoto");
+      clearStoredPhotoForUser(userEmail || cookies.get("userEmail"));
 
       toast.success("Logged out successfully");
       setIsLoggingOut(false);
@@ -271,15 +438,30 @@ const AccountSidebar = () => {
 
             {/* Upload Overlay */}
             <div
-              className="overlay w-full h-full rounded-full bg-[rgba(0,0,0,0.6)] absolute top-0 left-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
+              className="overlay w-full h-full rounded-full bg-[rgba(0,0,0,0.6)] absolute top-0 left-0 flex flex-col items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all"
             >
               {uploadingPhoto ? (
                 <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <FiCamera size={24} className="text-white" />
-                  <span className="text-white text-xs mt-1">Change</span>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-1 text-white text-xs bg-white/15 hover:bg-white/25 px-2 py-1 rounded-md"
+                  >
+                    <FiCamera size={14} className="text-white" />
+                    Change
+                  </button>
+                  {userPhoto && (
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      className="flex items-center gap-1 text-white text-xs bg-red-500/70 hover:bg-red-500/90 px-2 py-1 rounded-md"
+                    >
+                      <FiTrash2 size={14} className="text-white" />
+                      Remove
+                    </button>
+                  )}
                 </>
               )}
             </div>

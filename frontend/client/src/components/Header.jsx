@@ -19,6 +19,49 @@ import {
 } from "react-icons/md";
 import Search from "./Search";
 
+const resolveUserPhotoUrl = (photo, apiUrl) => {
+  const value = String(photo || "").trim();
+  if (!value) return "";
+
+  if (value.startsWith("data:")) return value;
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return value;
+  }
+  if (value.startsWith("/uploads/")) return `${apiUrl}${value}`;
+  if (value.startsWith("uploads/")) return `${apiUrl}/${value}`;
+  if (value.startsWith("/")) return value;
+  return value;
+};
+
+const normalizeIdentity = (value) => String(value || "").trim().toLowerCase();
+const getPhotoStorageKey = (emailValue) => {
+  const normalizedEmail = normalizeIdentity(emailValue);
+  return normalizedEmail ? `userPhoto:${normalizedEmail}` : "";
+};
+const getPhotoRemovedKey = (emailValue) => {
+  const normalizedEmail = normalizeIdentity(emailValue);
+  return normalizedEmail ? `userPhotoRemoved:${normalizedEmail}` : "";
+};
+const getStoredPhotoForUser = (emailValue) => {
+  if (typeof window === "undefined") return "";
+  const key = getPhotoStorageKey(emailValue);
+  return key ? localStorage.getItem(key) || "" : "";
+};
+const isPhotoRemovalOverride = (emailValue) => {
+  if (typeof window === "undefined") return false;
+  const key = getPhotoRemovedKey(emailValue);
+  return key ? localStorage.getItem(key) === "1" : false;
+};
+const clearStoredPhotoForUser = (emailValue) => {
+  if (typeof window === "undefined") return;
+  const key = getPhotoStorageKey(emailValue);
+  const removedKey = getPhotoRemovedKey(emailValue);
+  if (key) localStorage.removeItem(key);
+  if (removedKey) localStorage.removeItem(removedKey);
+  // Cleanup old global key to prevent cross-account leakage.
+  localStorage.removeItem("userPhoto");
+};
+
 const Header = () => {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
@@ -32,6 +75,13 @@ const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hideHeader, setHideHeader] = useState(false);
   const router = useRouter();
+  const API_URL = (
+    process.env.NEXT_PUBLIC_APP_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:8000"
+  )
+    .trim()
+    .replace(/\/+$/, "");
   const context = useContext(MyContext);
   const { cartCount, setIsDrawerOpen } = useCart();
   const { wishlistCount } = useWishlist();
@@ -58,6 +108,12 @@ const Header = () => {
     const userEmailCookie = cookies.get("userEmail");
     const userNameCookie = cookies.get("userName");
     const userPhotoCookie = cookies.get("userPhoto");
+    const removalOverride = isPhotoRemovalOverride(userEmailCookie);
+    const userPhotoLocal = getStoredPhotoForUser(userEmailCookie);
+    const resolvedUserPhoto = resolveUserPhotoUrl(
+      removalOverride ? "" : userPhotoCookie || userPhotoLocal,
+      API_URL,
+    );
 
     let tokenValid = false;
     if (accessToken) {
@@ -71,7 +127,7 @@ const Header = () => {
       setIsLoggedIn(true);
       setUserEmail(userEmailCookie || "user@example.com");
       setUserName(userNameCookie || userEmailCookie?.split("@")[0] || "User");
-      setUserPhoto(userPhotoCookie || "");
+      setUserPhoto(resolvedUserPhoto);
     } else {
       setIsLoggedIn(false);
       setUserEmail("");
@@ -135,6 +191,7 @@ const Header = () => {
       cookies.remove("userEmail");
       cookies.remove("userName");
       cookies.remove("userPhoto");
+      clearStoredPhotoForUser(userEmail || cookies.get("userEmail"));
       context?.setUser?.({});
       setIsLoggedIn(false);
       setAnchorEl(null);
@@ -147,6 +204,7 @@ const Header = () => {
       cookies.remove("userEmail");
       cookies.remove("userName");
       cookies.remove("userPhoto");
+      clearStoredPhotoForUser(userEmail || cookies.get("userEmail"));
       setIsLoggedIn(false);
       setAnchorEl(null);
       context?.alertBox("success", "Logged out successfully");

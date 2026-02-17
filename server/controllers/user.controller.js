@@ -1015,6 +1015,11 @@ export async function updateUserProfile(req, res) {
     const userId = req.user?._id || req.user;
     const rawName = String(req.body?.name || "").trim();
     const rawEmail = String(req.body?.email || "").trim().toLowerCase();
+    const hasAvatarField = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "avatar",
+    );
+    const rawAvatar = hasAvatarField ? String(req.body?.avatar ?? "").trim() : null;
 
     const updateData = {};
 
@@ -1046,6 +1051,11 @@ export async function updateUserProfile(req, res) {
       }
 
       updateData.email = rawEmail;
+    }
+
+    if (hasAvatarField) {
+      // Allow clearing avatar by sending empty string.
+      updateData.avatar = rawAvatar;
     }
 
     if (!Object.keys(updateData).length) {
@@ -1081,6 +1091,95 @@ export async function updateUserProfile(req, res) {
       success: false,
       error: true,
       message: error.message || error,
+    });
+  }
+}
+
+// Upload user profile photo
+export async function uploadUserPhoto(req, res) {
+  try {
+    const userId = req.user?._id || req.user;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "No image file uploaded",
+      });
+    }
+
+    const normalizedPath = String(req.file.path || "").replace(/\\/g, "/");
+    const uploadsIndex = normalizedPath.indexOf("uploads/");
+    const publicPhotoPath =
+      uploadsIndex >= 0
+        ? `/${normalizedPath.slice(uploadsIndex)}`
+        : `/uploads/${req.file.filename}`;
+
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { $set: { avatar: publicPhotoPath } },
+      { new: true },
+    ).select("name email avatar");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: true,
+        message: "User not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      error: false,
+      message: "Profile photo updated successfully",
+      data: {
+        photo: user.avatar,
+        user,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: true,
+      message: error.message || "Failed to upload profile photo",
+    });
+  }
+}
+
+// Remove user profile photo
+export async function removeUserPhoto(req, res) {
+  try {
+    const userId = req.user?._id || req.user;
+
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { $set: { avatar: "" } },
+      { new: true },
+    ).select("name email avatar");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: true,
+        message: "User not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      error: false,
+      message: "Profile photo removed successfully",
+      data: {
+        photo: "",
+        user,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: true,
+      message: error.message || "Failed to remove profile photo",
     });
   }
 }

@@ -3,7 +3,6 @@
 import { API_BASE_URL } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import AuthenticationMethods from "@/components/AuthenticationMethods";
-import SetBackupPassword from "@/components/SetBackupPassword";
 import { Button } from "@mui/material";
 import TextField from "@mui/material/TextField";
 import cookies from "js-cookie";
@@ -21,19 +20,6 @@ const MyAccount = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [userProvider, setUserProvider] = useState("local");
-
-  // Check user provider type from cookies or user data
-  useEffect(() => {
-    // This would ideally come from your user context or API call
-    // For now, we'll check if user has Google photo (indicates Google login)
-    const userPhoto = cookies.get("userPhoto");
-    const userName = cookies.get("userName");
-
-    if (userPhoto && userName) {
-      setUserProvider("google"); // Assume Google user if they have photo
-    }
-  }, []);
 
   const formatPhone = (value) => {
     const digits = String(value || "").replace(/\D/g, "");
@@ -85,11 +71,7 @@ const MyAccount = () => {
 
     fetchProfile();
     fetchPrimaryPhone();
-  }, []);
-
-  const handleBackupPasswordSuccess = () => {
-    setUserProvider("mixed"); // Update to mixed after setting backup password
-  };
+  }, [API_URL]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -150,12 +132,6 @@ const MyAccount = () => {
         <div className="wrapper w-full lg:w-[75%]">
           {/* Authentication Methods Overview */}
           <AuthenticationMethods />
-
-          {/* Backup Password Component for Google Users */}
-          <SetBackupPassword
-            userProvider={userProvider}
-            onSuccess={handleBackupPasswordSuccess}
-          />
 
           <div className="bg-white shadow-md rounded-md mb-5">
             <div className="p-4 flex items-center justify-between border-b-[1px] border-[rgba(0,0,0,0.2)">

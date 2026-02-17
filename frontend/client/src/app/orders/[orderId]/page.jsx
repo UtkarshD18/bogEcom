@@ -1,6 +1,11 @@
 "use client";
 import { API_BASE_URL } from "@/utils/api";
 
+import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
+import {
+  buildSavedOrderCalculationInput,
+  calculateOrderTotals,
+} from "@/utils/calculateOrderTotals.mjs";
 import {
   Button,
   Dialog,
@@ -10,10 +15,12 @@ import {
   Rating,
   TextField,
 } from "@mui/material";
+import { AnimatePresence, motion } from "framer-motion";
 import cookies from "js-cookie";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "react-hot-toast";
 import { FiCreditCard, FiPackage } from "react-icons/fi";
 import {
   MdAccessTime,
@@ -26,9 +33,7 @@ import {
   MdReceipt,
   MdWarning,
 } from "react-icons/md";
-import { AnimatePresence, motion } from "framer-motion";
 import { io } from "socket.io-client";
-import { toast } from "react-hot-toast";
 
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
@@ -95,7 +100,17 @@ const OrderDetailsPage = () => {
   const [orderReviews, setOrderReviews] = useState({});
   const [downloading, setDownloading] = useState({
     invoice: false,
-    po: false,
+  });
+  const deliveryState =
+    order?.delivery_address?.state ||
+    order?.billingDetails?.state ||
+    order?.guestDetails?.state ||
+    "";
+  const hasDeliveryState = Boolean(String(deliveryState).trim());
+  const isRajasthanDelivery =
+    String(deliveryState).trim().toLowerCase() === "rajasthan";
+  const { displayShippingCharge } = useShippingDisplayCharge({
+    isRajasthan: isRajasthanDelivery,
   });
 
   // Fetch order details
@@ -114,16 +129,13 @@ const OrderDetailsPage = () => {
       }
 
       try {
-        const response = await fetch(
-          `${API_URL}/orders/${orderId}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            credentials: "include",
+        const response = await fetch(`${API_URL}/orders/${orderId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
           },
-        );
+          credentials: "include",
+        });
 
         const data = await response.json();
 
@@ -175,9 +187,11 @@ const OrderDetailsPage = () => {
           statusTimeline: payload.statusTimeline || prev.statusTimeline,
           awb_number: payload.shipment?.awb || prev.awb_number,
           shipment_status: payload.shipment?.status || prev.shipment_status,
-          shipping_provider: payload.shipment?.provider || prev.shipping_provider,
+          shipping_provider:
+            payload.shipment?.provider || prev.shipping_provider,
           shipping_label: payload.shipment?.label || prev.shipping_label,
-          shipping_manifest: payload.shipment?.manifest || prev.shipping_manifest,
+          shipping_manifest:
+            payload.shipment?.manifest || prev.shipping_manifest,
         };
       });
     });
@@ -393,19 +407,6 @@ const OrderDetailsPage = () => {
     );
   };
 
-  const handleDownloadPurchaseOrder = () => {
-    const purchaseOrderId =
-      typeof order?.purchaseOrder === "object"
-        ? order?.purchaseOrder?._id || order?.purchaseOrder?.toString?.() || null
-        : order?.purchaseOrder || null;
-    if (!purchaseOrderId) return;
-    downloadFile(
-      `${API_URL}/purchase-orders/${purchaseOrderId}/pdf`,
-      `purchase-order-${String(purchaseOrderId).slice(-8).toUpperCase()}.pdf`,
-      "po",
-    );
-  };
-
   // Loading state
   if (loading) {
     return (
@@ -513,22 +514,19 @@ const OrderDetailsPage = () => {
         (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
       )
     : [];
-  const displaySubtotal =
-    Number(order?.subtotal || 0) > 0
-      ? Number(order.subtotal || 0)
-      : Math.max(
-        Number(order?.totalAmt || 0) -
-        Number(order?.tax || 0) -
-        Number(order?.shipping || 0),
-        0,
-      );
+  const orderTotals = calculateOrderTotals(
+    buildSavedOrderCalculationInput(order, { payableShipping: 0 }),
+  );
   const canDownloadInvoice =
     order?.order_status !== "cancelled" &&
     (order?.payment_status === "paid" ||
       normalizeStatus(order?.order_status) === "accepted");
   const isReviewEligibleOrder = (() => {
     const normalizedOrderStatus = normalizeStatus(order?.order_status);
-    if (normalizedOrderStatus === "delivered" || normalizedOrderStatus === "completed") {
+    if (
+      normalizedOrderStatus === "delivered" ||
+      normalizedOrderStatus === "completed"
+    ) {
       return true;
     }
 
@@ -542,10 +540,6 @@ const OrderDetailsPage = () => {
         })
       : false;
   })();
-  const purchaseOrderId =
-    typeof order?.purchaseOrder === "object"
-      ? order?.purchaseOrder?._id || order?.purchaseOrder?.toString?.() || null
-      : order?.purchaseOrder || null;
 
   const getItemProductId = (item) => {
     const productId = item?.productId?._id || item?.productId;
@@ -651,7 +645,9 @@ const OrderDetailsPage = () => {
           response.status === 404 &&
           /reviews/i.test(String(data?.message || ""))
         ) {
-          toast.error("Reviews API not available. Please restart backend server.");
+          toast.error(
+            "Reviews API not available. Please restart backend server.",
+          );
           return;
         }
         toast.error(data?.message || "Failed to submit review");
@@ -731,8 +727,8 @@ const OrderDetailsPage = () => {
                   </span>
                 </div>
               </div>
+            </div>
           </div>
-        </div>
 
           {/* Order Tracker */}
           <div className="bg-white rounded-xl shadow-sm p-5 md:p-6 mb-6">
@@ -808,8 +804,9 @@ const OrderDetailsPage = () => {
                         className="flex items-center justify-between text-sm text-gray-600 py-1"
                       >
                         <span className="font-medium text-gray-700">
-                          {STATUS_STEPS.find((s) => s.key === normalizeStatus(entry.status))
-                            ?.label || entry.status}
+                          {STATUS_STEPS.find(
+                            (s) => s.key === normalizeStatus(entry.status),
+                          )?.label || entry.status}
                         </span>
                         <span className="text-xs text-gray-400">
                           {formatDate(entry.timestamp)}
@@ -893,7 +890,8 @@ const OrderDetailsPage = () => {
                         return (
                           <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                             <p className="text-xs font-semibold text-emerald-700">
-                              Your Review • {Number(existingReview.rating || 0).toFixed(1)}★
+                              Your Review •{" "}
+                              {Number(existingReview.rating || 0).toFixed(1)}★
                             </p>
                             <p className="text-xs text-emerald-800 mt-1 break-words">
                               {existingReview.comment}
@@ -946,60 +944,51 @@ const OrderDetailsPage = () => {
             <div className="space-y-3 text-base">
               <div className="flex justify-between text-gray-600">
                 <span>Subtotal</span>
-                <span>₹{displaySubtotal.toFixed(2)}</span>
+                <span>₹{orderTotals.subtotal.toFixed(2)}</span>
               </div>
-              {Number(order.membershipDiscount || 0) > 0 && (
-                <div className="flex justify-between text-primary">
-                  <span>Membership Discount</span>
-                  <span>-₹{Number(order.membershipDiscount || 0).toFixed(2)}</span>
-                </div>
-              )}
-              {order.discount > 0 && (
+              {orderTotals.totalDiscount > 0 && (
                 <div className="flex justify-between text-primary">
                   <span>
                     Discount {order.couponCode && `(${order.couponCode})`}
                   </span>
-                  <span>-₹{order.discount?.toFixed(2)}</span>
+                  <span>-₹{orderTotals.totalDiscount.toFixed(2)}</span>
                 </div>
               )}
-              {Number(order?.coinRedemption?.amount || 0) > 0 && (
+              {orderTotals.coinRedemptionAmount > 0 && (
                 <div className="flex justify-between text-primary">
                   <span>
-                    Coin Redemption ({Number(order?.coinRedemption?.coinsUsed || 0)} coins)
+                    Coin Redemption (
+                    {Number(order?.coinRedemption?.coinsUsed || 0)} coins)
                   </span>
-                  <span>-₹{Number(order?.coinRedemption?.amount || 0).toFixed(2)}</span>
+                  <span>-₹{orderTotals.coinRedemptionAmount.toFixed(2)}</span>
                 </div>
               )}
-              {order.discountAmount > 0 &&
-                order.discountAmount !== order.discount && (
-                  <div className="flex justify-between text-primary">
-                    <span>Coupon Discount</span>
-                    <span>-₹{order.discountAmount?.toFixed(2)}</span>
-                  </div>
-                )}
               <div className="flex justify-between text-gray-600">
                 <span>Tax</span>
-                <span>₹{(order.tax || 0).toFixed(2)}</span>
+                <span>₹{orderTotals.tax.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span className="flex items-center gap-2">
                   <MdLocalShipping />
                   Shipping
                 </span>
-                <span
-                  className={
-                    order.shipping === 0 ? "text-primary font-medium" : ""
-                  }
-                >
-                  {order.shipping === 0
-                    ? "FREE"
-                    : `₹${(order.shipping || 0).toFixed(2)}`}
-                </span>
+                {hasDeliveryState ? (
+                  <span className="text-primary font-medium flex items-center gap-2">
+                    {displayShippingCharge > 0 && (
+                      <span className="line-through text-gray-500 font-normal">
+                        ₹{displayShippingCharge.toFixed(2)}
+                      </span>
+                    )}
+                    <span>FREE</span>
+                  </span>
+                ) : (
+                  <span className="text-gray-500">--</span>
+                )}
               </div>
               <div className="border-t border-gray-200 pt-3 flex justify-between font-bold text-gray-800">
                 <span className="text-lg">Total</span>
                 <span className="text-xl text-orange-600">
-                  ₹{(order.finalAmount || order.totalAmt || 0).toFixed(2)}
+                  ₹{orderTotals.total.toFixed(2)}
                 </span>
               </div>
             </div>
@@ -1014,7 +1003,8 @@ const OrderDetailsPage = () => {
               </h2>
               <div className="text-gray-600">
                 <p className="font-medium text-gray-800">
-                  {order.delivery_address.name || order.billingDetails?.fullName}
+                  {order.delivery_address.name ||
+                    order.billingDetails?.fullName}
                 </p>
                 <p>
                   {order.delivery_address.address_line1 ||
@@ -1023,16 +1013,17 @@ const OrderDetailsPage = () => {
                 </p>
                 {(order.delivery_address.address_line2 ||
                   order.delivery_address.addressLine2) && (
-                    <p>
-                      {order.delivery_address.address_line2 ||
-                        order.delivery_address.addressLine2}
-                    </p>
-                  )}
+                  <p>
+                    {order.delivery_address.address_line2 ||
+                      order.delivery_address.addressLine2}
+                  </p>
+                )}
                 <p>
                   {order.delivery_address.city
                     ? `${order.delivery_address.city}, `
                     : ""}
-                  {order.delivery_address.state || order.billingDetails?.state} -{" "}
+                  {order.delivery_address.state || order.billingDetails?.state}{" "}
+                  -{" "}
                   {order.delivery_address.pincode ||
                     order.delivery_address.pinCode ||
                     order.billingDetails?.pincode}
@@ -1054,17 +1045,36 @@ const OrderDetailsPage = () => {
               </h2>
               <div className="text-gray-600">
                 <p className="font-medium text-gray-800">
-                  {order.billingDetails.fullName || order.guestDetails?.fullName || "Guest"}
+                  {order.billingDetails.fullName ||
+                    order.guestDetails?.fullName ||
+                    "Guest"}
                 </p>
-                <p>{order.billingDetails.address || order.guestDetails?.address || "-"}</p>
                 <p>
-                  {order.billingDetails.state || order.guestDetails?.state || "-"} -{" "}
-                  {order.billingDetails.pincode || order.guestDetails?.pincode || "-"}
+                  {order.billingDetails.address ||
+                    order.guestDetails?.address ||
+                    "-"}
+                </p>
+                <p>
+                  {order.billingDetails.state ||
+                    order.guestDetails?.state ||
+                    "-"}{" "}
+                  -{" "}
+                  {order.billingDetails.pincode ||
+                    order.guestDetails?.pincode ||
+                    "-"}
                 </p>
                 <p className="mt-2">
-                  Phone: {order.billingDetails.phone || order.guestDetails?.phone || "-"}
+                  Phone:{" "}
+                  {order.billingDetails.phone ||
+                    order.guestDetails?.phone ||
+                    "-"}
                 </p>
-                <p>Email: {order.billingDetails.email || order.guestDetails?.email || "-"}</p>
+                <p>
+                  Email:{" "}
+                  {order.billingDetails.email ||
+                    order.guestDetails?.email ||
+                    "-"}
+                </p>
               </div>
             </div>
           )}
@@ -1108,27 +1118,6 @@ const OrderDetailsPage = () => {
                 }}
               >
                 {downloading.invoice ? "Downloading..." : "Download Invoice"}
-              </Button>
-            )}
-            {purchaseOrderId && (
-              <Button
-                onClick={handleDownloadPurchaseOrder}
-                disabled={downloading.po}
-                variant="outlined"
-                sx={{
-                  borderColor: "#0f766e",
-                  color: "#0f766e",
-                  padding: "12px 24px",
-                  borderRadius: "12px",
-                  fontWeight: 600,
-                  textTransform: "none",
-                  "&:hover": {
-                    borderColor: "#115e59",
-                    backgroundColor: "#f0fdfa",
-                  },
-                }}
-              >
-                {downloading.po ? "Downloading..." : "Download Purchase Order"}
               </Button>
             )}
             <Link href="/my-orders">
@@ -1232,7 +1221,9 @@ const OrderDetailsPage = () => {
           </p>
 
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">Your Rating</p>
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              Your Rating
+            </p>
             <Rating
               value={reviewForm.rating}
               onChange={(_, value) =>
@@ -1247,7 +1238,10 @@ const OrderDetailsPage = () => {
             minRows={4}
             value={reviewForm.comment}
             onChange={(event) =>
-              setReviewForm((prev) => ({ ...prev, comment: event.target.value }))
+              setReviewForm((prev) => ({
+                ...prev,
+                comment: event.target.value,
+              }))
             }
             fullWidth
             required
@@ -1255,7 +1249,10 @@ const OrderDetailsPage = () => {
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => closeReviewDialog()} disabled={reviewSubmitting}>
+          <Button
+            onClick={() => closeReviewDialog()}
+            disabled={reviewSubmitting}
+          >
             Cancel
           </Button>
           <Button

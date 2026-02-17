@@ -4,25 +4,74 @@ import { useEffect, useState } from "react";
 import { FcGoogle } from "react-icons/fc";
 import { MdEmail, MdSecurity, MdVerifiedUser } from "react-icons/md";
 
+const normalizeIdentity = (value) => String(value || "").trim().toLowerCase();
+const getPhotoStorageKey = (emailValue) => {
+  const normalizedEmail = normalizeIdentity(emailValue);
+  return normalizedEmail ? `userPhoto:${normalizedEmail}` : "";
+};
+const getPhotoRemovedKey = (emailValue) => {
+  const normalizedEmail = normalizeIdentity(emailValue);
+  return normalizedEmail ? `userPhotoRemoved:${normalizedEmail}` : "";
+};
+
+const getClientSnapshot = () => {
+  const userEmail = cookies.get("userEmail") || "";
+  if (typeof window === "undefined") {
+    return {
+      userEmail,
+      userPhoto: "",
+    };
+  }
+
+  const removedKey = getPhotoRemovedKey(userEmail);
+  const isRemoved = removedKey ? localStorage.getItem(removedKey) === "1" : false;
+  const localPhotoKey = getPhotoStorageKey(userEmail);
+  const storedPhoto = localPhotoKey ? localStorage.getItem(localPhotoKey) || "" : "";
+  const userPhoto = isRemoved ? "" : cookies.get("userPhoto") || storedPhoto || "";
+
+  return {
+    userEmail,
+    userPhoto,
+  };
+};
+
 const AuthenticationMethods = () => {
-  const [authMethods, setAuthMethods] = useState({
-    hasEmail: false,
-    hasGoogle: false,
-    hasBackupPassword: false,
+  const [authSnapshot, setAuthSnapshot] = useState({
+    userEmail: "",
+    userPhoto: "",
   });
-  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
-    const userEmailFromCookie = cookies.get("userEmail") || "";
-    const userPhoto = cookies.get("userPhoto");
+    const syncAuthSnapshot = () => {
+      const nextSnapshot = getClientSnapshot();
+      setAuthSnapshot((prevSnapshot) => {
+        if (
+          prevSnapshot.userEmail === nextSnapshot.userEmail &&
+          prevSnapshot.userPhoto === nextSnapshot.userPhoto
+        ) {
+          return prevSnapshot;
+        }
+        return nextSnapshot;
+      });
+    };
 
-    setUserEmail(userEmailFromCookie);
-    setAuthMethods({
-      hasEmail: !!userEmailFromCookie,
-      hasGoogle: !!userPhoto, // Presence of photo indicates Google auth
-      hasBackupPassword: false, // This would come from backend in real app
-    });
+    syncAuthSnapshot();
+    window.addEventListener("loginSuccess", syncAuthSnapshot);
+    window.addEventListener("focus", syncAuthSnapshot);
+    window.addEventListener("storage", syncAuthSnapshot);
+
+    return () => {
+      window.removeEventListener("loginSuccess", syncAuthSnapshot);
+      window.removeEventListener("focus", syncAuthSnapshot);
+      window.removeEventListener("storage", syncAuthSnapshot);
+    };
   }, []);
+
+  const { userEmail, userPhoto } = authSnapshot;
+  const authMethods = {
+    hasEmail: !!userEmail,
+    hasGoogle: !!userPhoto, // Presence of photo indicates Google auth
+  };
 
   return (
     <div
@@ -94,24 +143,6 @@ const AuthenticationMethods = () => {
           </div>
         </div>
       </div>
-
-      {/* Security Recommendations */}
-      {authMethods.hasGoogle && !authMethods.hasBackupPassword && (
-        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <div className="flex items-start gap-2">
-            <MdSecurity className="text-yellow-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-yellow-800">
-                Security Recommendation
-              </p>
-              <p className="text-sm text-yellow-700">
-                Set a backup password to secure your account if Google login
-                becomes unavailable.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
