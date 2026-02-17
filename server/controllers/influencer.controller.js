@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import InfluencerModel from "../models/influencer.model.js";
 import OrderModel from "../models/order.model.js";
+import { getInfluencerRefreshTokenSecret } from "../config/authSecrets.js";
 import generateInfluencerToken from "../utils/generateInfluencerToken.js";
 import generateInfluencerRefreshToken from "../utils/generateInfluencerRefreshToken.js";
 
@@ -336,11 +337,7 @@ export const refreshInfluencerToken = async (req, res) => {
       });
     }
 
-    const secret =
-      process.env.INFLUENCER_REFRESH_TOKEN_SECRET ||
-      process.env.INFLUENCER_JWT_SECRET ||
-      process.env.JSON_WEB_TOKEN_SECRET_KEY ||
-      "";
+    const secret = getInfluencerRefreshTokenSecret();
 
     if (!secret) {
       return res.status(500).json({

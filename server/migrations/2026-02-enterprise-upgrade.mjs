@@ -9,16 +9,16 @@ import { calculateTax } from "../services/tax.service.js";
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI;
-if (!MONGODB_URI) {
-  throw new Error("MONGODB_URI is required");
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  throw new Error("MONGO_URI is required");
 }
 
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
 const run = async () => {
-  await mongoose.connect(MONGODB_URI);
+  await mongoose.connect(MONGO_URI);
   console.log("Connected to MongoDB");
 
   // 1) User defaults and coin balance

@@ -1,16 +1,17 @@
 import jwt from "jsonwebtoken";
+import {
+  INFLUENCER_ACCESS_TOKEN_SECRET_KEYS,
+  getInfluencerAccessTokenSecret,
+} from "../config/authSecrets.js";
 
 const DEFAULT_EXPIRY = "7d";
 
 const generateInfluencerToken = (influencerId) => {
-  const secret =
-    process.env.INFLUENCER_JWT_SECRET ||
-    process.env.JSON_WEB_TOKEN_SECRET_KEY ||
-    "";
+  const secret = getInfluencerAccessTokenSecret();
 
   if (!secret) {
     throw new Error(
-      "INFLUENCER_JWT_SECRET or JSON_WEB_TOKEN_SECRET_KEY is not defined",
+      `Influencer access token secret is not configured. Expected one of: ${INFLUENCER_ACCESS_TOKEN_SECRET_KEYS.join(", ")}`,
     );
   }
 

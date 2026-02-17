@@ -1,6 +1,6 @@
 "use client";
 
-import { postData } from "@/utils/api";
+import { API_BASE_URL, postData } from "@/utils/api";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -13,11 +13,7 @@ import { FaXTwitter } from "react-icons/fa6";
 import { IoChatboxOutline, IoLocationSharp } from "react-icons/io5";
 import { LiaGiftSolid, LiaShippingFastSolid } from "react-icons/lia";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 const Footer = () => {
   const [email, setEmail] = useState("");

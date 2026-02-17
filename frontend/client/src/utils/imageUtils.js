@@ -7,9 +7,9 @@
  * - Placeholder fallbacks
  */
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
-  .trim()
-  .replace(/\/+$/, "");
+import { API_BASE_URL } from "@/utils/api";
+
+const API_URL = API_BASE_URL;
 
 /**
  * Get the proper image URL for display

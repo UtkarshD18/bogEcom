@@ -1,4 +1,6 @@
 "use client";
+
+import { API_BASE_URL } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import AuthenticationMethods from "@/components/AuthenticationMethods";
 import { Button } from "@mui/material";
@@ -10,11 +12,7 @@ import { PhoneInput } from "react-international-phone";
 import "react-international-phone/style.css";
 
 const MyAccount = () => {
-  const API_URL = (
-    process.env.NEXT_PUBLIC_APP_API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:8000"
-  ).replace(/\/+$/, "");
+  const API_URL = API_BASE_URL;
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");

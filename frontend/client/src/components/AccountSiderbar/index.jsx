@@ -1,5 +1,5 @@
 "use client";
-import { postData } from "@/utils/api";
+import { API_BASE_URL, postData } from "@/utils/api";
 import { Button } from "@mui/material";
 import cookies from "js-cookie";
 import Link from "next/link";
@@ -16,6 +16,7 @@ const AccountSidebar = () => {
   const pathname = usePathname();
   const fileInputRef = useRef(null);
   const API_URL = (
+    API_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_API_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
     "http://localhost:8000"

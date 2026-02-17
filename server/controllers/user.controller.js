@@ -3,6 +3,10 @@ import jwt from "jsonwebtoken";
 import UserModel from "../models/user.model.js";
 
 import sendEmailFun from "../config/sendEmail.js";
+import {
+  getAccessTokenSecret,
+  getRefreshTokenSecret,
+} from "../config/authSecrets.js";
 import generateAccessToken from "../utils/generateAccessToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
 import VerificationEmail from "../utils/verifyEmailTemplate.js";
@@ -122,9 +126,19 @@ export async function registerUserController(req, res) {
       html: VerificationEmail(name, verifyCode),
     });
 
+    const verificationSecret = getAccessTokenSecret();
+    if (!verificationSecret) {
+      return res.status(500).json({
+        success: false,
+        error: true,
+        message:
+          "Server configuration error: access token secret is not configured",
+      });
+    }
+
     const token = jwt.sign(
       { email: user?.email, id: user?._id },
-      process.env.JSON_WEB_TOKEN_SECRET_KEY,
+      verificationSecret,
     );
 
     if (!emailSent) {
@@ -285,12 +299,13 @@ export async function refreshTokenController(req, res) {
       });
     }
 
-    const secretKey = process.env.SECRET_KEY_REFRESH_TOKEN;
+    const secretKey = getRefreshTokenSecret();
     if (!secretKey) {
       return res.status(500).json({
         success: false,
         error: true,
-        message: "Server configuration error",
+        message:
+          "Server configuration error: refresh token secret is not configured",
       });
     }
 
