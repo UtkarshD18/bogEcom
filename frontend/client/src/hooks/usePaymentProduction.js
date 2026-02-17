@@ -227,8 +227,6 @@ export const usePayment = () => {
 
     checkPaymentGateway,
     initiatePhonePePayment,
-    // Backward-compatible alias for older Razorpay naming (do not remove)
-    initiateRazorpayPayment: initiatePhonePePayment,
     handleSaveOrderForLater,
     retryPayment,
     clearPaymentState,
