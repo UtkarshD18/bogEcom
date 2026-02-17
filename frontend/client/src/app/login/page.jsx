@@ -254,14 +254,25 @@ const LoginForm = () => {
       .then((res) => {
         console.log("Login response:", res);
         if (res?.error !== true) {
-          const persisted = persistSession(res?.data, formFields.email);
-          if (!persisted) {
-            context?.alertBox(
-              "error",
-              "Login response is missing token. Please try again.",
-            );
-            setIsLoading(false);
-            return;
+          // Set cookies - data is returned directly, not nested under user
+          console.log("Setting cookies with:", {
+            accessToken: res?.data?.accessToken ? "present" : "missing",
+            userName: res?.data?.userName,
+            userEmail: res?.data?.userEmail,
+          });
+          cookies.set("accessToken", res?.data?.accessToken, { expires: 7 });
+          cookies.set("refreshToken", res?.data?.refreshToken, { expires: 7 });
+          cookies.set("userName", res?.data?.userName || "User", {
+            expires: 7,
+          });
+          cookies.set("userEmail", res?.data?.userEmail || formFields.email, {
+            expires: 7,
+          });
+          const serverPhoto = res?.data?.userPhoto || res?.data?.avatar || "";
+          if (serverPhoto) {
+            cookies.set("userPhoto", serverPhoto, { expires: 7 });
+          } else {
+            cookies.remove("userPhoto");
           }
 
           // Update context immediately
