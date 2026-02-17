@@ -4,7 +4,7 @@ import ProductItem from "@/components/ProductItem";
 import { fetchDataFromApi } from "@/utils/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { FiFilter, FiSearch } from "react-icons/fi";
+import { FiSearch } from "react-icons/fi";
 
 const ProductsGridSkeleton = () => (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -90,10 +90,6 @@ function ProductsPageContent() {
                                 className="pl-14 pr-8 py-5 bg-white/70 backdrop-blur-md border border-gray-100 rounded-3xl outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all w-full font-bold text-base shadow-sm"
                             />
                         </div>
-                        <button className="flex items-center gap-2 px-6 py-3 bg-white/50 backdrop-blur-md border border-gray-100 rounded-2xl hover:bg-[var(--flavor-glass)] transition-all active:scale-95 group">
-                            <FiFilter className="text-gray-500 group-hover:text-primary" />
-                            <span className="font-bold text-sm text-gray-700">Filters</span>
-                        </button>
                     </div>
                 </div>
 
@@ -110,7 +106,7 @@ function ProductsPageContent() {
                     <div className="text-center py-20 bg-white/30 backdrop-blur-xl rounded-[40px] border border-dashed border-gray-200">
                         <div className="text-6xl mb-4">🥜</div>
                         <h3 className="text-xl font-bold text-gray-900 mb-2">No products found</h3>
-                        <p className="text-gray-500">Try adjusting your search or filters</p>
+                        <p className="text-gray-500">Try adjusting your search</p>
                     </div>
                 )}
             </div>

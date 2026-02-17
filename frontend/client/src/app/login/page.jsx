@@ -108,6 +108,12 @@ const LoginForm = () => {
           cookies.set("userEmail", res?.data?.userEmail || formFields.email, {
             expires: 7,
           });
+          const serverPhoto = res?.data?.userPhoto || res?.data?.avatar || "";
+          if (serverPhoto) {
+            cookies.set("userPhoto", serverPhoto, { expires: 7 });
+          } else {
+            cookies.remove("userPhoto");
+          }
 
           // Update context immediately
           context?.setIsLogin(true);

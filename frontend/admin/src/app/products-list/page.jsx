@@ -279,6 +279,11 @@ const ProductsListContent = () => {
                 </TableHead>
                 <TableBody>
                   {products.map((product, index) => {
+                    const displayImage =
+                      product.thumbnail ||
+                      product.images?.[0] ||
+                      product.image ||
+                      "";
                     const available =
                       typeof product.available_quantity === "number"
                         ? product.available_quantity
@@ -305,9 +310,14 @@ const ProductsListContent = () => {
                         <div className="flex items-center gap-3">
                           <div className="img p-1 bg-white rounded-md w-[50px] h-[70px] overflow-hidden">
                             <img
-                              src={getImageUrl(product.images?.[0])}
+                              src={getImageUrl(displayImage)}
                               alt="product image"
                               className="w-full h-full object-cover"
+                              onError={(e) => {
+                                if (e.currentTarget.dataset.fallbackApplied) return;
+                                e.currentTarget.dataset.fallbackApplied = "true";
+                                e.currentTarget.src = "/placeholder.png";
+                              }}
                             />
                           </div>
 

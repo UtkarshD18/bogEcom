@@ -1,6 +1,7 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
 import { getData } from "@/utils/api";
+import { getImageUrl } from "@/utils/imageUtils";
 import { Button } from "@mui/material";
 import Rating from "@mui/material/Rating";
 import Link from "next/link";
@@ -72,6 +73,12 @@ const ViewProduct = () => {
     product.low_stock_threshold ?? product.lowStockThreshold ?? 5,
   );
   const isLowStock = available <= lowThreshold;
+  const galleryImages = [
+    ...(Array.isArray(product.images) ? product.images : []),
+  ];
+  if (product.thumbnail && !galleryImages.includes(product.thumbnail)) {
+    galleryImages.unshift(product.thumbnail);
+  }
 
   return (
     <section className="w-full py-3 px-5">
@@ -101,18 +108,19 @@ const ViewProduct = () => {
           <div>
             <div className="w-full h-[400px] bg-gray-100 rounded-lg overflow-hidden mb-4">
               <img
-                src={
-                  product.images?.[selectedImage] ||
-                  product.thumbnail ||
-                  "/placeholder.png"
-                }
+                src={getImageUrl(galleryImages[selectedImage])}
                 alt={product.name}
                 className="w-full h-full object-contain"
+                onError={(e) => {
+                  if (e.currentTarget.dataset.fallbackApplied) return;
+                  e.currentTarget.dataset.fallbackApplied = "true";
+                  e.currentTarget.src = "/placeholder.png";
+                }}
               />
             </div>
-            {product.images?.length > 1 && (
+            {galleryImages.length > 1 && (
               <div className="flex gap-2 overflow-x-auto">
-                {product.images.map((img, index) => (
+                {galleryImages.map((img, index) => (
                   <button
                     key={index}
                     onClick={() => setSelectedImage(index)}
@@ -123,9 +131,14 @@ const ViewProduct = () => {
                     }`}
                   >
                     <img
-                      src={img}
+                      src={getImageUrl(img)}
                       alt={`${product.name} ${index + 1}`}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        if (e.currentTarget.dataset.fallbackApplied) return;
+                        e.currentTarget.dataset.fallbackApplied = "true";
+                        e.currentTarget.src = "/placeholder.png";
+                      }}
                     />
                   </button>
                 ))}
