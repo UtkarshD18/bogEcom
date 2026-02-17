@@ -19,7 +19,11 @@ import {
   loginXpressbees,
   trackShipment,
 } from "../services/xpressbees.service.js";
-import { getShippingQuote, validateIndianPincode } from "../services/shippingRate.service.js";
+import {
+  getShippingDisplayMetrics,
+  getShippingQuote,
+  validateIndianPincode,
+} from "../services/shippingRate.service.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 
 const normalizeShipmentStatus = (status) => {
@@ -97,6 +101,15 @@ export const getShippingQuoteController = asyncHandler(async (req, res) => {
     });
 
     return sendSuccess(res, quote, "Shipping quote fetched");
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+export const getShippingDisplayMetricsController = asyncHandler(async (req, res) => {
+  try {
+    const metrics = await getShippingDisplayMetrics();
+    return sendSuccess(res, metrics, "Shipping display metrics fetched");
   } catch (error) {
     return sendError(res, error);
   }

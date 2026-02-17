@@ -6,6 +6,7 @@ import { useCart } from "@/context/CartContext";
 import { useReferral } from "@/context/ReferralContext";
 import { useSettings } from "@/context/SettingsContext";
 import { MyContext } from "@/context/ThemeProvider";
+import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
 import {
   getStoredAffiliateData,
   initAffiliateTracking,
@@ -17,6 +18,7 @@ import {
   getGstRatePercentFromSettings,
   round2,
 } from "@/utils/gst";
+import { getDisplayTaxBreakup } from "@/utils/shippingDisplay";
 import {
   Alert,
   Button,
@@ -129,7 +131,6 @@ const Checkout = () => {
     message: "",
     severity: "success",
   });
-  const [shipping, setShipping] = useState(0);
 
   // Coupon State
   const [couponCode, setCouponCode] = useState("");
@@ -237,8 +238,12 @@ const Checkout = () => {
   const checkoutStateForPreview = isGuestCheckout
     ? guestDetails.state
     : addresses.find((a) => a._id === selectedAddress)?.state || "";
+  const hasCheckoutStateInput = Boolean(String(checkoutStateForPreview || "").trim());
   const normalizedCheckoutState = normalizeStateValue(checkoutStateForPreview);
   const isRajasthanDelivery = normalizedCheckoutState === "Rajasthan";
+  const { displayShippingCharge } = useShippingDisplayCharge({
+    isRajasthan: isRajasthanDelivery,
+  });
 
   // ── Price Calculation (GST-exclusive model) ──────────────────────────
   // Product prices are GST-inclusive. We extract base (excl. GST) first,
@@ -261,8 +266,6 @@ const Checkout = () => {
     gstRatePercent,
   });
 
-  // GST-inclusive cart total (for shipping thresholds etc.)
-  const cartGrossSubtotal = preDiscountTotals.originalInclusiveTotal;
   // GST-exclusive base subtotal (used for all trade discounts)
   const cartBaseSubtotal = preDiscountTotals.baseSubtotal;
 
@@ -318,7 +321,21 @@ const Checkout = () => {
 
   const productCostAfterCoupon = round2(subtotal + tax); // GST-inclusive after coupon (no shipping)
 
-  // For Rajasthan, we show GST as a combined SGST+CGST line in the UI.
+  // DISPLAY-ONLY GST breakup for summary labels (payable tax stays `tax`).
+  const displayTaxBreakup = getDisplayTaxBreakup({
+    taxAmount: tax,
+    isRajasthan: isRajasthanDelivery,
+  });
+  const summaryTaxLabel = !hasCheckoutStateInput
+    ? "GST"
+    : isRajasthanDelivery
+      ? "GST (S.GST+C.GST)"
+      : "IGST";
+  const summaryTaxAmount = !hasCheckoutStateInput
+    ? tax
+    : isRajasthanDelivery
+      ? round2(displayTaxBreakup.cgst + displayTaxBreakup.sgst)
+      : displayTaxBreakup.igst;
 
   // Step 6: Coin redemption (payment method, NOT a trade discount)
   const maxCoinRedeemValue = Math.floor(
@@ -334,15 +351,17 @@ const Checkout = () => {
     effectiveRedeemCoins * Number(coinSettings.redeemRate || 0),
   );
 
-  // Step 7: Shipping — fetched from backend API /api/shipping/quote
+  // Step 7: Payable shipping remains free. A separate strike-through amount
+  // is computed via display-only shipping rules.
+  const payableShipping = 0;
 
-  // Step 8: Final payable = discounted base + GST + shipping − coinRedeem
+  // Step 8: Final payable = discounted base + GST + shipping - coinRedeem
   const finalTotals = calculateCheckoutTotals({
     items: checkoutItems,
     gstRatePercent,
     baseDiscountBeforeCoupon: tradeDiscountBeforeCoupon,
     couponDiscount,
-    shippingCost: shipping,
+    shippingCost: payableShipping,
     coinRedeemAmount,
   });
   const total = finalTotals.totalPayable;
@@ -487,46 +506,6 @@ const Checkout = () => {
       Math.min(Math.max(Number(prev || 0), 0), coinBalance, maxCoinsByRule),
     );
   }, [coinBalance, maxCoinRedeemValue, coinSettings.redeemRate]);
-
-  const fetchShippingCharge = async (pin) => {
-    try {
-      if (!pin || pin.length !== 6) return;
-
-      const res = await fetch(`${API_URL}/api/shipping/quote`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          pincode: pin,
-          subtotal: cartGrossSubtotal,
-        }),
-      });
-
-      const json = await res.json();
-
-      if (json?.data?.charge != null) {
-        setShipping(Number(json.data.charge));
-      }
-    } catch (err) {
-      console.log("Shipping fetch error", err);
-    }
-  };
-
-  useEffect(() => {
-    let pin = "";
-
-    if (isGuestCheckout) {
-      pin = guestDetails?.pincode;
-    } else {
-      const addr = addresses.find((a) => a._id === selectedAddress);
-      pin = addr?.pincode;
-    }
-
-    if (pin) {
-      fetchShippingCharge(pin);
-    }
-  }, [selectedAddress, guestDetails?.pincode, cartItems, cartGrossSubtotal]);
 
   // Address form handlers
   const resetAddressForm = () => {
@@ -964,7 +943,7 @@ const Checkout = () => {
       const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
 
       const currentAffiliate = getStoredAffiliateData();
-      const originalAmount = round2(subtotal + tax + shipping);
+      const originalAmount = round2(subtotal + tax + payableShipping);
 
       let purchaseOrderId = null;
       try {
@@ -985,7 +964,7 @@ const Checkout = () => {
         location: isGuestCheckout ? guestLocationPayload : null,
         notes: orderNote,
         tax,
-        shipping,
+        shipping: payableShipping,
         // Coupon details (backend will revalidate)
         couponCode: appliedCoupon?.code || null,
         discountAmount: couponDiscount,
@@ -1529,23 +1508,24 @@ const Checkout = () => {
                       </div>
                     )}
 
-                    {isRajasthanDelivery ? (
-                      <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
-                        <span>GST (S.GST+C.GST)</span>
-                        <span>₹{tax.toFixed(2)}</span>
-                      </div>
-                    ) : (
-                      <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
-                        <span>IGST</span>
-                        <span>₹{tax.toFixed(2)}</span>
-                      </div>
-                    )}
-
+                    <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
+                      <span>{summaryTaxLabel}</span>
+                      <span>&#8377;{summaryTaxAmount.toFixed(2)}</span>
+                    </div>
                     <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
                       <span>Shipping</span>
-                      <span className={shipping === 0 ? "text-primary" : "text-white"}>
-                        {shipping === 0 ? "FREE" : `₹${shipping.toFixed(2)}`}
-                      </span>
+                      {hasCheckoutStateInput ? (
+                        <span className="text-primary flex items-center gap-2">
+                          {displayShippingCharge > 0 && (
+                            <span className="line-through text-gray-500">
+                              &#8377;{displayShippingCharge.toFixed(2)}
+                            </span>
+                          )}
+                          <span>FREE</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-500">--</span>
+                      )}
                     </div>
 
                     <div className="pt-6 border-t border-gray-700 flex justify-between items-end">
@@ -1569,7 +1549,7 @@ const Checkout = () => {
                   </button>
 
                   <p className="text-center text-[10px] text-gray-500 mt-4 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
-                    <span>🔒 Secure by Razorpay</span>
+                    <span>🔒 Secure Checkout</span>
                   </p>
                 </div>
 

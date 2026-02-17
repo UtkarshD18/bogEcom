@@ -66,7 +66,15 @@ import {
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
-const PAYMENT_PROVIDER = process.env.PAYMENT_PROVIDER || "PHONEPE";
+const DEFAULT_PAYMENT_PROVIDER = "PHONEPE";
+const configuredPaymentProvider = String(
+  process.env.PAYMENT_PROVIDER || DEFAULT_PAYMENT_PROVIDER,
+).toUpperCase();
+// Unsupported providers are coerced to PhonePe to keep runtime deterministic.
+const PAYMENT_PROVIDER =
+  configuredPaymentProvider === "PHONEPE"
+    ? configuredPaymentProvider
+    : DEFAULT_PAYMENT_PROVIDER;
 const PHONEPE_MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || "";
 const PHONEPE_SALT_KEY = process.env.PHONEPE_SALT_KEY || "";
 const PHONEPE_SALT_INDEX = process.env.PHONEPE_SALT_INDEX || "";

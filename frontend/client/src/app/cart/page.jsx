@@ -2,7 +2,7 @@
 
 import { useCart } from "@/context/CartContext";
 import { useProducts } from "@/context/ProductContext";
-import { useSettings } from "@/context/SettingsContext";
+import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
 import { round2 } from "@/utils/gst";
 import { getImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
@@ -16,12 +16,10 @@ export default function CartPage() {
         cartSubTotalAmount,
     } = useCart();
     const { products } = useProducts();
-    const { calculateShipping } = useSettings();
+    const { displayShippingCharge } = useShippingDisplayCharge();
     const subtotal = round2(cartSubTotalAmount || 0);
-    const shippingCost =
-        cartItems.length > 0 ? round2(calculateShipping(subtotal)) : 0;
+    const shippingCost = 0; // DISPLAY-ONLY shipping is shown struck-through below.
     const total = round2(subtotal + shippingCost);
-    const isFreeShipping = shippingCost === 0;
 
     const resolveProductId = (item) => {
         if (!item) return null;
@@ -175,8 +173,13 @@ export default function CartPage() {
                                 </div>
                                 <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-[11px]">
                                     <span>Shipping</span>
-                                    <span className={isFreeShipping ? "text-primary" : "text-white"}>
-                                        {isFreeShipping ? "FREE" : `₹${shippingCost}`}
+                                    <span className="text-primary flex items-center gap-2">
+                                        {displayShippingCharge > 0 && (
+                                            <span className="line-through text-gray-500">
+                                                &#8377;{displayShippingCharge.toFixed(2)}
+                                            </span>
+                                        )}
+                                        <span>FREE</span>
                                     </span>
                                 </div>
                                 <div className="pt-6 border-t border-white/10 flex justify-between items-end">
@@ -198,7 +201,7 @@ export default function CartPage() {
                             </Link>
 
                             <p className="text-center text-[10px] text-gray-500 mt-6 font-bold uppercase tracking-widest">
-                                🔒 Secure Checkout Powered by Razorpay
+                                🔒 Secure Checkout
                             </p>
                         </div>
                     </div>
