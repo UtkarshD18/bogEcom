@@ -2,6 +2,7 @@ import express from "express";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
 import {
+  getShippingDisplayMetricsController,
   getShippingQuoteController,
   xpressbeesBookShipment,
   xpressbeesCancelShipment,
@@ -19,6 +20,7 @@ const router = express.Router();
 
 // Public shipping endpoints
 router.post("/quote", getShippingQuoteController);
+router.get("/display-metrics", getShippingDisplayMetricsController);
 
 // Admin-only shipping operations
 router.use(auth, admin);

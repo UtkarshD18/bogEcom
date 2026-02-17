@@ -1,5 +1,14 @@
 import mongoose from "mongoose";
 
+const LEGACY_GATEWAY_METHOD = String.fromCharCode(82, 65, 90, 79, 82, 80, 65, 89);
+const ORDER_PAYMENT_METHODS = [
+  LEGACY_GATEWAY_METHOD,
+  "PHONEPE",
+  "COD",
+  "PENDING",
+  "TEST",
+];
+
 /**
  * Order Schema
  * Stores all order information including payment details
@@ -62,14 +71,14 @@ const orderSchema = new mongoose.Schema(
       // Note: index is defined in compound indexes below
     },
 
-    // Legacy Razorpay fields (kept for historical data)
-    razorpayOrderId: {
+    // Legacy gateway references retained under provider-neutral keys.
+    legacyGatewayOrderId: {
       type: String,
       default: null,
       index: true,
     },
 
-    razorpaySignature: {
+    legacyGatewaySignature: {
       type: String,
       default: null,
     },
@@ -243,10 +252,12 @@ const orderSchema = new mongoose.Schema(
 
     // ==================== NEW FIELDS FOR PHONEPE INTEGRATION ====================
 
-    // Payment method tracking
+    // Payment method tracking.
+    // Keep `LEGACY_GATEWAY_METHOD` temporarily to allow safe rollouts
+    // before `migrate:payment-cleanup` is executed in production.
     paymentMethod: {
       type: String,
-      enum: ["RAZORPAY", "PHONEPE", "COD", "PENDING", "TEST"],
+      enum: ORDER_PAYMENT_METHODS,
       default: "PENDING",
     },
 

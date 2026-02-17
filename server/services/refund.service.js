@@ -1,7 +1,7 @@
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
-const PREPAID_METHODS = new Set(["PHONEPE", "RAZORPAY", "TEST"]);
+const NON_PREPAID_METHODS = new Set(["COD", "PENDING"]);
 
 const computeProductCost = (order) => {
   const subtotalFromItems = round2(
@@ -37,9 +37,10 @@ export const evaluateRefundEligibility = (order) => {
     };
   }
 
+  const normalizedMethod = String(order.paymentMethod || "").toUpperCase();
   const isPrepaid =
     order.payment_status === "paid" &&
-    PREPAID_METHODS.has(String(order.paymentMethod || "").toUpperCase());
+    !NON_PREPAID_METHODS.has(normalizedMethod);
 
   if (!isPrepaid) {
     return {

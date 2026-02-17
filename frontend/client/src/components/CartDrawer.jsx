@@ -2,7 +2,7 @@
 
 import { useCart } from "@/context/CartContext";
 import { useProducts } from "@/context/ProductContext";
-import { useSettings } from "@/context/SettingsContext";
+import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
 import { round2 } from "@/utils/gst";
 import { getImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
@@ -27,15 +27,13 @@ const CartDrawer = () => {
         setOrderNote,
     } = useCart();
     const { products } = useProducts();
-    const { calculateShipping } = useSettings();
+    const { displayShippingCharge } = useShippingDisplayCharge();
     const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
     const [activeOfferId, setActiveOfferId] = useState(null);
     const router = useRouter();
     const subtotal = round2(cartSubTotalAmount || 0);
-    const shippingCost =
-        cartItems.length > 0 ? round2(calculateShipping(subtotal)) : 0;
+    const shippingCost = 0; // DISPLAY-ONLY shipping is shown struck-through below.
     const total = round2(subtotal + shippingCost);
-    const isFreeShipping = shippingCost === 0;
 
     const handleCloseCart = () => {
         setIsDrawerOpen(false);
@@ -405,8 +403,13 @@ const CartDrawer = () => {
                                     </div>
                                     <div className="flex justify-between text-sm">
                                         <span className="text-gray-500">Shipping</span>
-                                        <span className={isFreeShipping ? "font-bold text-primary" : "font-bold text-gray-900"}>
-                                            {isFreeShipping ? "FREE" : `₹${shippingCost}`}
+                                        <span className="font-bold text-primary flex items-center gap-2">
+                                            {displayShippingCharge > 0 && (
+                                                <span className="line-through text-gray-500">
+                                                    &#8377;{displayShippingCharge.toFixed(2)}
+                                                </span>
+                                            )}
+                                            <span>FREE</span>
                                         </span>
                                     </div>
                                     {cartSavings > 0 && (
