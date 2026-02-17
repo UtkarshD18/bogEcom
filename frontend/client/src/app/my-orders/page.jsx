@@ -1,5 +1,12 @@
 "use client";
+import AccountSidebar from "@/components/AccountSiderbar";
 import { MyContext } from "@/context/ThemeProvider";
+import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
+import {
+  buildSavedOrderCalculationInput,
+  calculateOrderTotals,
+} from "@/utils/calculateOrderTotals.mjs";
+import { getDisplayShippingCharge } from "@/utils/shippingDisplay";
 import {
   Button,
   Dialog,
@@ -9,11 +16,10 @@ import {
   Rating,
   TextField,
 } from "@mui/material";
-import { AlertCircle, ArrowLeft, Loader } from "lucide-react";
+import { AlertCircle, Loader } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
-import AccountSidebar from "@/components/AccountSiderbar";
 import { toast } from "react-hot-toast";
 
 const API_BASE_URL = (
@@ -56,6 +62,7 @@ const Orders = () => {
     comment: "",
   });
   const [submittingReview, setSubmittingReview] = useState(false);
+  const { metrics: shippingMetrics } = useShippingDisplayCharge();
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -327,7 +334,9 @@ const Orders = () => {
           response.status === 404 &&
           /reviews/i.test(String(data?.message || ""))
         ) {
-          toast.error("Reviews API not available. Please restart backend server.");
+          toast.error(
+            "Reviews API not available. Please restart backend server.",
+          );
           return;
         }
         toast.error(data?.message || "Failed to submit review");
@@ -380,45 +389,50 @@ const Orders = () => {
               </p>
             </div>
 
-
             {/* Loading State */}
-            {
-              loading ? (
-                <div className="text-center py-12">
-                  <div className="flex justify-center mb-4">
-                    <Loader className="w-8 h-8 text-orange-600 animate-spin" />
-                  </div>
-                  <p className="text-gray-500">Loading your orders...</p>
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="flex justify-center mb-4">
+                  <Loader className="w-8 h-8 text-orange-600 animate-spin" />
                 </div>
-              ) : error && orders.length === 0 ? (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-                  <div className="flex justify-center mb-4">
-                    <AlertCircle className="w-12 h-12 text-red-500" />
-                  </div>
-                  <p className="text-red-800 font-medium mb-2">{error}</p>
-                  <p className="text-red-600 text-sm mb-4">
-                    {error.includes("Please log in") && "Redirecting to login..."}
-                  </p>
-                  <Link
-                    href="/login"
-                    className="inline-block bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700"
-                  >
-                    Login
-                  </Link>
+                <p className="text-gray-500">Loading your orders...</p>
+              </div>
+            ) : error && orders.length === 0 ? (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                <div className="flex justify-center mb-4">
+                  <AlertCircle className="w-12 h-12 text-red-500" />
                 </div>
-              ) : orders.length === 0 ? (
-                <div className="bg-white rounded-lg shadow p-12 text-center">
-                  <p className="text-gray-500 mb-4">No orders found</p>
-                  <Link
-                    href="/products"
-                    className="inline-block bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700"
-                  >
-                    Start Shopping
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {orders.map((order) => (
+                <p className="text-red-800 font-medium mb-2">{error}</p>
+                <p className="text-red-600 text-sm mb-4">
+                  {error.includes("Please log in") && "Redirecting to login..."}
+                </p>
+                <Link
+                  href="/login"
+                  className="inline-block bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700"
+                >
+                  Login
+                </Link>
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="bg-white rounded-lg shadow p-12 text-center">
+                <p className="text-gray-500 mb-4">No orders found</p>
+                <Link
+                  href="/products"
+                  className="inline-block bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700"
+                >
+                  Start Shopping
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {orders.map((order) => {
+                  const orderTotals = calculateOrderTotals(
+                    buildSavedOrderCalculationInput(order, {
+                      payableShipping: 0,
+                    }),
+                  );
+
+                  return (
                     <div
                       key={order._id}
                       className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow"
@@ -446,7 +460,9 @@ const Orders = () => {
                             </p>
                           </div>
                           <div>
-                            <p className="text-sm text-gray-600">Order Status</p>
+                            <p className="text-sm text-gray-600">
+                              Order Status
+                            </p>
                             <span
                               className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.order_status)}`}
                             >
@@ -454,7 +470,9 @@ const Orders = () => {
                             </span>
                           </div>
                           <div>
-                            <p className="text-sm text-gray-600">Payment Status</p>
+                            <p className="text-sm text-gray-600">
+                              Payment Status
+                            </p>
                             <span
                               className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${getPaymentStatusColor(order.payment_status)}`}
                             >
@@ -465,9 +483,12 @@ const Orders = () => {
                             <p className="text-sm text-gray-600">Total</p>
                             <p className="text-lg font-semibold text-orange-600">
                               ₹
-                              {Number(order.totalAmt || 0).toLocaleString("en-IN", {
-                                minimumFractionDigits: 2,
-                              })}
+                              {Number(orderTotals.total || 0).toLocaleString(
+                                "en-IN",
+                                {
+                                  minimumFractionDigits: 2,
+                                },
+                              )}
                             </p>
                           </div>
                         </div>
@@ -490,7 +511,9 @@ const Orders = () => {
                                 </p>
                                 <p className="text-gray-600 text-xs">
                                   Qty: {item.quantity} × ₹
-                                  {Number(item.price || 0).toLocaleString("en-IN")}
+                                  {Number(item.price || 0).toLocaleString(
+                                    "en-IN",
+                                  )}
                                 </p>
                               </div>
                               <div className="flex flex-col items-end gap-1">
@@ -510,7 +533,9 @@ const Orders = () => {
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={() => openReviewDialog(order, item)}
+                                      onClick={() =>
+                                        openReviewDialog(order, item)
+                                      }
                                       className="text-[11px] font-semibold text-white bg-orange-600 hover:bg-orange-700 rounded-full px-3 py-1 transition-colors"
                                     >
                                       Write Review
@@ -560,45 +585,102 @@ const Orders = () => {
                             <span className="text-gray-600">Subtotal:</span>
                             <span className="text-gray-900">
                               ₹
-                              {Number(order.totalAmt || 0).toLocaleString("en-IN", {
-                                minimumFractionDigits: 2,
-                              })}
+                              {Number(orderTotals.subtotal || 0).toLocaleString(
+                                "en-IN",
+                                {
+                                  minimumFractionDigits: 2,
+                                },
+                              )}
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-gray-600">Discount:</span>
+                            <span className="text-gray-600">
+                              Discount
+                              {order.couponCode ? ` (${order.couponCode})` : ""}
+                              :
+                            </span>
                             <span className="text-primary">
                               -₹
-                              {Number(order.discount || 0).toLocaleString("en-IN", {
+                              {Number(
+                                orderTotals.totalDiscount || 0,
+                              ).toLocaleString("en-IN", {
                                 minimumFractionDigits: 2,
                               })}
                             </span>
                           </div>
+                          {Number(orderTotals.coinRedemptionAmount || 0) >
+                            0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">
+                                Coin Redemption:
+                              </span>
+                              <span className="text-primary">
+                                -₹
+                                {Number(
+                                  orderTotals.coinRedemptionAmount || 0,
+                                ).toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex justify-between">
                             <span className="text-gray-600">Tax:</span>
                             <span className="text-gray-900">
                               ₹
-                              {Number(order.tax || 0).toLocaleString("en-IN", {
-                                minimumFractionDigits: 2,
-                              })}
+                              {Number(orderTotals.tax || 0).toLocaleString(
+                                "en-IN",
+                                {
+                                  minimumFractionDigits: 2,
+                                },
+                              )}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Shipping:</span>
-                            <span className="text-gray-900">
-                              ₹
-                              {Number(order.shipping || 0).toLocaleString("en-IN", {
-                                minimumFractionDigits: 2,
-                              })}
-                            </span>
+                            {(() => {
+                              const deliveryState = String(
+                                order?.delivery_address?.state ||
+                                  order?.billingDetails?.state ||
+                                  order?.guestDetails?.state ||
+                                  "",
+                              ).trim();
+                              const hasOrderStateInput = Boolean(deliveryState);
+                              const orderDisplayShippingCharge =
+                                getDisplayShippingCharge({
+                                  isRajasthan:
+                                    deliveryState.toLowerCase() === "rajasthan",
+                                  metrics: shippingMetrics,
+                                });
+
+                              if (!hasOrderStateInput) {
+                                return (
+                                  <span className="text-gray-500">--</span>
+                                );
+                              }
+
+                              return (
+                                <span className="text-primary font-medium flex items-center gap-2">
+                                  {orderDisplayShippingCharge > 0 && (
+                                    <span className="line-through text-gray-500 font-normal">
+                                      ₹{orderDisplayShippingCharge.toFixed(2)}
+                                    </span>
+                                  )}
+                                  <span>FREE</span>
+                                </span>
+                              );
+                            })()}
                           </div>
                           <div className="flex justify-between pt-2 border-t border-gray-200 font-semibold">
                             <span>Total:</span>
                             <span className="text-orange-600">
                               ₹
-                              {Number(order.totalAmt || 0).toLocaleString("en-IN", {
-                                minimumFractionDigits: 2,
-                              })}
+                              {Number(orderTotals.total || 0).toLocaleString(
+                                "en-IN",
+                                {
+                                  minimumFractionDigits: 2,
+                                },
+                              )}
                             </span>
                           </div>
                         </div>
@@ -608,28 +690,28 @@ const Orders = () => {
                       {(order.phonepeMerchantTransactionId ||
                         order.phonepeTransactionId ||
                         order.paymentId) && (
-                          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                            <p className="text-sm font-semibold text-gray-900 mb-2">
-                              Payment Details
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                          <p className="text-sm font-semibold text-gray-900 mb-2">
+                            Payment Details
+                          </p>
+                          <div className="text-xs text-gray-600 space-y-1">
+                            <p>
+                              PhonePe Transaction ID:{" "}
+                              <span className="font-mono">
+                                {order.phonepeTransactionId ||
+                                  order.paymentId ||
+                                  "N/A"}
+                              </span>
                             </p>
-                            <div className="text-xs text-gray-600 space-y-1">
-                              <p>
-                                PhonePe Transaction ID:{" "}
-                                <span className="font-mono">
-                                  {order.phonepeTransactionId ||
-                                    order.paymentId ||
-                                    "N/A"}
-                                </span>
-                              </p>
-                              <p>
-                                PhonePe Merchant Txn ID:{" "}
-                                <span className="font-mono">
-                                  {order.phonepeMerchantTransactionId || "N/A"}
-                                </span>
-                              </p>
-                            </div>
+                            <p>
+                              PhonePe Merchant Txn ID:{" "}
+                              <span className="font-mono">
+                                {order.phonepeMerchantTransactionId || "N/A"}
+                              </span>
+                            </p>
                           </div>
-                        )}
+                        </div>
+                      )}
 
                       {/* View Order Details Link */}
                       <div className="px-6 py-4 bg-white border-t border-gray-200 flex justify-end">
@@ -654,13 +736,13 @@ const Orders = () => {
                         </Link>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )
-            }
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div >
-      </section >
+        </div>
+      </section>
 
       <Dialog
         open={reviewDialog.open}
@@ -679,7 +761,9 @@ const Orders = () => {
             </span>
           </p>
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">Your Rating</p>
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              Your Rating
+            </p>
             <Rating
               value={reviewForm.rating}
               onChange={(_, value) =>
@@ -693,7 +777,10 @@ const Orders = () => {
             minRows={4}
             value={reviewForm.comment}
             onChange={(event) =>
-              setReviewForm((prev) => ({ ...prev, comment: event.target.value }))
+              setReviewForm((prev) => ({
+                ...prev,
+                comment: event.target.value,
+              }))
             }
             fullWidth
             required
