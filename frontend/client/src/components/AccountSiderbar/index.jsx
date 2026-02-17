@@ -1,5 +1,5 @@
 "use client";
-import { postData } from "@/utils/api";
+import { API_BASE_URL, postData } from "@/utils/api";
 import { Button } from "@mui/material";
 import cookies from "js-cookie";
 import Link from "next/link";
@@ -15,12 +15,7 @@ const AccountSidebar = () => {
   const router = useRouter();
   const pathname = usePathname();
   const fileInputRef = useRef(null);
-  const API_URL =
-    (
-      process.env.NEXT_PUBLIC_APP_API_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
-      "http://localhost:8000"
-    ).replace(/\/+$/, "");
+  const API_URL = API_BASE_URL;
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userName, setUserName] = useState("User");
@@ -160,8 +155,6 @@ const AccountSidebar = () => {
       formData.append("image", file);
 
       const token = cookies.get("accessToken");
-      const API_URL =
-        process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000";
 
       const response = await fetch(`${API_URL}/api/user/upload-photo`, {
         method: "POST",

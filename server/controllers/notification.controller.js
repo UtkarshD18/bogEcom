@@ -17,10 +17,7 @@ const INVALID_FCM_TOKEN_CODES = new Set([
 ]);
 
 const getFrontendBaseUrl = () => {
-  const raw =
-    process.env.SITE_BASE_URL ||
-    process.env.FRONTEND_URL ||
-    "http://localhost:3000";
+  const raw = process.env.CLIENT_URL || process.env.ADMIN_URL || "";
   const first = String(raw).split(",")[0].trim();
   return first.replace(/\/+$/, "");
 };

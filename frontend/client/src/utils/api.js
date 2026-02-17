@@ -1,12 +1,21 @@
+import axios from "axios";
 import Cookies from "js-cookie";
 
-const appUrl = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-)
-  .trim()
-  .replace(/\/+$/, "");
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
+
+if (!API_BASE_URL) {
+  throw new Error("NEXT_PUBLIC_API_URL is not defined");
+}
+
+export const axiosClient = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+const normalizePath = (url) => (url?.startsWith("/") ? url : `/${url}`);
 
 const clearAuthCookies = () => {
   Cookies.remove("accessToken");
@@ -16,233 +25,121 @@ const clearAuthCookies = () => {
   Cookies.remove("userPhoto");
 };
 
+let refreshPromise = null;
+
 const refreshAccessToken = async () => {
-  try {
-    const refreshToken = Cookies.get("refreshToken");
-    if (!refreshToken) {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = Cookies.get("refreshToken");
+      if (!refreshToken) {
+        clearAuthCookies();
+        return null;
+      }
+
+      const response = await axios.post(
+        `${API_BASE_URL}/api/user/refresh-token`,
+        { refreshToken },
+        {
+          withCredentials: true,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+
+      const token = response?.data?.data?.accessToken || null;
+      if (token) {
+        Cookies.set("accessToken", token, { expires: 7 });
+      } else {
+        clearAuthCookies();
+      }
+      return token;
+    } catch (error) {
       clearAuthCookies();
       return null;
+    } finally {
+      refreshPromise = null;
     }
+  })();
 
-    const response = await fetch(`${appUrl}/api/user/refresh-token`, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!response.ok) {
-      clearAuthCookies();
-      return null;
-    }
-
-    const data = await response.json();
-    const token = data?.data?.accessToken || null;
-    if (token) {
-      Cookies.set("accessToken", token, { expires: 7 });
-    }
-    return token;
-  } catch (error) {
-    console.error("refreshAccessToken error:", error);
-    clearAuthCookies();
-    return null;
-  }
+  return refreshPromise;
 };
 
-export const postData = async (URL, FormData) => {
-  try {
-    let response = await fetch(
-      `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Cookies.get("accessToken")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(FormData),
-      },
-    );
+axiosClient.interceptors.request.use((config) => {
+  const accessToken = Cookies.get("accessToken");
+  if (accessToken) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+  return config;
+});
 
-    if (response.status === 401) {
+const handleApiError = (error, fallbackMessage) => {
+  const message =
+    error?.response?.data?.message || error?.message || fallbackMessage;
+  return { error: true, success: false, message };
+};
+
+const requestWithRetry = async (config, fallbackMessage) => {
+  try {
+    const response = await axiosClient.request(config);
+    return response.data;
+  } catch (error) {
+    const originalRequest = config;
+    if (error?.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
       const newToken = await refreshAccessToken();
       if (newToken) {
-        response = await fetch(
-          `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${newToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(FormData),
-          },
-        );
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        try {
+          const retryResponse = await axiosClient.request(originalRequest);
+          return retryResponse.data;
+        } catch (retryError) {
+          return handleApiError(retryError, fallbackMessage);
+        }
       }
     }
-
-    const contentType = response.headers.get("content-type");
-    let data;
-
-    if (contentType && contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      data = text
-        ? { message: text, error: !response.ok }
-        : { error: !response.ok };
-    }
-
-    return data;
-  } catch (error) {
-    console.error("postData error:", error);
-    return { error: true, message: error.message };
+    return handleApiError(error, fallbackMessage);
   }
 };
 
-export const fetchDataFromApi = async (URL) => {
-  try {
-    let response = await fetch(
-      `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${Cookies.get("accessToken")}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
+export const postData = async (url, formData) =>
+  requestWithRetry(
+    {
+      method: "post",
+      url: normalizePath(url),
+      data: formData,
+    },
+    "Failed to submit request",
+  );
 
-    if (response.status === 401) {
-      const newToken = await refreshAccessToken();
-      if (newToken) {
-        response = await fetch(
-          `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${newToken}`,
-              "Content-Type": "application/json",
-            },
-          },
-        );
-      }
-    }
+export const fetchDataFromApi = async (url) =>
+  requestWithRetry(
+    {
+      method: "get",
+      url: normalizePath(url),
+    },
+    "Failed to fetch data",
+  );
 
-    const contentType = response.headers.get("content-type");
-    let data;
+export const putData = async (url, formData) =>
+  requestWithRetry(
+    {
+      method: "put",
+      url: normalizePath(url),
+      data: formData,
+    },
+    "Failed to update data",
+  );
 
-    if (contentType && contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      data = text
-        ? { message: text, error: !response.ok }
-        : { error: !response.ok };
-    }
-
-    return data;
-  } catch (error) {
-    console.error("fetchDataFromApi error:", error);
-    return { error: true, message: error.message };
-  }
-};
-
-export const putData = async (URL, FormData) => {
-  try {
-    let response = await fetch(
-      `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${Cookies.get("accessToken")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(FormData),
-      },
-    );
-
-    if (response.status === 401) {
-      const newToken = await refreshAccessToken();
-      if (newToken) {
-        response = await fetch(
-          `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
-          {
-            method: "PUT",
-            headers: {
-              Authorization: `Bearer ${newToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(FormData),
-          },
-        );
-      }
-    }
-
-    const contentType = response.headers.get("content-type");
-    let data;
-
-    if (contentType && contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      data = text
-        ? { message: text, error: !response.ok }
-        : { error: !response.ok };
-    }
-
-    return data;
-  } catch (error) {
-    console.error("putData error:", error);
-    return { error: true, message: error.message };
-  }
-};
-
-export const deleteData = async (URL) => {
-  try {
-    let response = await fetch(
-      `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${Cookies.get("accessToken")}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    if (response.status === 401) {
-      const newToken = await refreshAccessToken();
-      if (newToken) {
-        response = await fetch(
-          `${appUrl}${URL.startsWith("/") ? URL : "/" + URL}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${newToken}`,
-              "Content-Type": "application/json",
-            },
-          },
-        );
-      }
-    }
-
-    const contentType = response.headers.get("content-type");
-    let data;
-
-    if (contentType && contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      data = text
-        ? { message: text, error: !response.ok }
-        : { error: !response.ok };
-    }
-
-    return data;
-  } catch (error) {
-    console.error("deleteData error:", error);
-    return { error: true, message: error.message };
-  }
-};
+export const deleteData = async (url) =>
+  requestWithRetry(
+    {
+      method: "delete",
+      url: normalizePath(url),
+    },
+    "Failed to delete data",
+  );

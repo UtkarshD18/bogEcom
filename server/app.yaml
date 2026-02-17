@@ -1,0 +1,13 @@
+﻿runtime: nodejs22
+service: default
+
+env_variables:
+  NODE_ENV: "production"
+  MONGO_URI: "mongodb+srv://utkarshdwivedi182_db_user:bogEcom123@cluster0.zaczcab.mongodb.net/BuyOneGram?appName=Cluster0"
+  ACCESS_TOKEN_SECRET: "ssssmsmmsms"
+  REFRESH_TOKEN_SECRET: "rrrrrrrmmmmm"
+  CLIENT_URL: "https://client-dot-healthy-one-gram.el.r.appspot.com"
+  ADMIN_URL: "https://admin-dot-healthy-one-gram.el.r.appspot.com"
+  CLOUDINARY_CLOUD_NAME: "de6wlubea"
+  CLOUDINARY_API_KEY: "649939938389628"
+  CLOUDINARY_API_SECRET: "i_yBp1ZacwvkuYr44SbY-KesfFE"

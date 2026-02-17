@@ -1,4 +1,8 @@
 import jwt from "jsonwebtoken";
+import {
+  INFLUENCER_ACCESS_TOKEN_SECRET_KEYS,
+  getInfluencerAccessTokenSecret,
+} from "../config/authSecrets.js";
 
 const influencerAuth = async (req, res, next) => {
   try {
@@ -22,16 +26,13 @@ const influencerAuth = async (req, res, next) => {
       });
     }
 
-    const secret =
-      process.env.INFLUENCER_JWT_SECRET ||
-      process.env.JSON_WEB_TOKEN_SECRET_KEY ||
-      "";
+    const secret = getInfluencerAccessTokenSecret();
 
     if (!secret) {
       return res.status(500).json({
         error: true,
         success: false,
-        message: "Server configuration error",
+        message: `Server configuration error: expected one of ${INFLUENCER_ACCESS_TOKEN_SECRET_KEYS.join(", ")}`,
       });
     }
 

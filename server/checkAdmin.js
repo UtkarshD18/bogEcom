@@ -6,7 +6,7 @@ dotenv.config();
 
 const checkAdmin = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await mongoose.connect(process.env.MONGO_URI);
     console.log("Connected to MongoDB");
 
     const admin = await UserModel.findOne({ email: "admin@buyonegram.com" });

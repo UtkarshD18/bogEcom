@@ -4,11 +4,7 @@ import ProductModel from "../models/product.model.js";
 
 dotenv.config();
 
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  process.env.MONGODB_URI ||
-  process.env.DATABASE_URL ||
-  "";
+const MONGO_URI = process.env.MONGO_URI || "";
 
 if (!MONGO_URI) {
   console.error("Missing MONGO_URI for inventory backfill");

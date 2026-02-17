@@ -143,10 +143,19 @@ export const createMembershipOrder = async (req, res) => {
     }
 
     const userId = req.user;
-    const primaryOrigin = (process.env.FRONTEND_URL || "http://localhost:3000")
+    const primaryOrigin = String(process.env.CLIENT_URL || "")
       .split(",")[0]
-      .trim();
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+      .trim()
+      .replace(/\/+$/, "");
+    const backendUrl = String(
+      process.env.BACKEND_URL ||
+        process.env.API_BASE_URL ||
+        (process.env.GAE_DEFAULT_HOSTNAME
+          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
+          : ""),
+    )
+      .trim()
+      .replace(/\/+$/, "");
 
     const merchantTransactionId = `MEM_${userId}_${Date.now()}`;
     const redirectUrl =

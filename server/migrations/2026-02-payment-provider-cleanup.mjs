@@ -4,11 +4,7 @@ import OrderModel from "../models/order.model.js";
 
 dotenv.config();
 
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  process.env.MONGODB_URI ||
-  process.env.DATABASE_URL ||
-  "";
+const MONGO_URI = process.env.MONGO_URI || "";
 
 if (!MONGO_URI) {
   console.error("Missing MongoDB connection string for payment cleanup migration");

@@ -1,13 +1,11 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 const PhonePeReturn = () => {
   const [message, setMessage] = useState(

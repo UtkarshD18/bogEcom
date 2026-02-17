@@ -1,13 +1,12 @@
 "use client";
 
 import { firebaseApp } from "@/firebase";
+import { API_BASE_URL } from "@/utils/api";
 import { deleteToken, getMessaging, getToken, onMessage } from "firebase/messaging";
 import { useCallback, useEffect, useRef, useState } from "react";
 import cookies from "js-cookie";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000"
-).replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 /**
  * useNotifications Hook

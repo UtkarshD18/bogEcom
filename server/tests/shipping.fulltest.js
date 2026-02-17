@@ -5,7 +5,9 @@
 const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
-const API = "http://localhost:8000/api/shipping/quote";
+const API_BASE_URL = (process.env.API_BASE_URL ||
+  "https://healthy-one-gram.el.r.appspot.com").replace(/\/+$/, "");
+const API = `${API_BASE_URL}/api/shipping/quote`;
 
 const PINCODES = [
   "302001", // A

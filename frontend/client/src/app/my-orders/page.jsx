@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE_URL } from "@/utils/api";
 import { MyContext } from "@/context/ThemeProvider";
 import {
   Button,
@@ -16,11 +17,6 @@ import { useContext, useEffect, useState } from "react";
 import AccountSidebar from "@/components/AccountSiderbar";
 import { toast } from "react-hot-toast";
 
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;

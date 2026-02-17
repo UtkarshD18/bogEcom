@@ -1726,12 +1726,19 @@ export const createOrder = asyncHandler(async (req, res) => {
     });
 
     if (PAYMENT_PROVIDER === "PHONEPE") {
-      const primaryOrigin = (
-        process.env.FRONTEND_URL || "http://localhost:3000"
-      )
+      const primaryOrigin = String(process.env.CLIENT_URL || "")
         .split(",")[0]
-        .trim();
-      const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+        .trim()
+        .replace(/\/+$/, "");
+      const backendUrl = String(
+        process.env.BACKEND_URL ||
+          process.env.API_BASE_URL ||
+          (process.env.GAE_DEFAULT_HOSTNAME
+            ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
+            : ""),
+      )
+        .trim()
+        .replace(/\/+$/, "");
 
       const merchantTransactionId = `BOG_${order._id}`;
       const merchantUserId = userId ? String(userId) : "guest";

@@ -1,5 +1,7 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
+
 import PaymentUnavailableModal from "@/components/PaymentUnavailableModal";
 import UseCurrentLocationGoogleMaps from "@/components/UseCurrentLocationGoogleMaps";
 import { useCart } from "@/context/CartContext";
@@ -48,13 +50,7 @@ import {
   MdWork
 } from "react-icons/md";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-)
-  .trim()
-  .replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 /**
  * Checkout Page

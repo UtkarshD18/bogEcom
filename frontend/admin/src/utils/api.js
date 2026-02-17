@@ -1,406 +1,195 @@
-const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
-  .trim()
-  .replace(/\/+$/, "");
-const isProduction = process.env.NODE_ENV === "production";
-// Dev-only logging to avoid leaking auth details in production
-const debugLog = (...args) => {
-  if (!isProduction) {
-    console.log(...args);
-  }
+import axios from "axios";
+
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
+
+if (!API_BASE_URL) {
+  throw new Error("NEXT_PUBLIC_API_URL is not defined");
+}
+
+export const axiosClient = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+const normalizePath = (url) => (url?.startsWith("/") ? url : `/${url}`);
+
+let refreshPromise = null;
+
+const getStoredAdminToken = () => {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("adminToken");
+};
+
+const setStoredAdminToken = (token) => {
+  if (typeof window === "undefined" || !token) return;
+  localStorage.setItem("adminToken", token);
+  window.dispatchEvent(new CustomEvent("adminTokenRefreshed", { detail: token }));
 };
 
 const refreshAdminToken = async () => {
-  try {
-    const response = await fetch(`${apiUrl}/api/user/refresh-token`, {
-      method: "POST",
-      credentials: "include",
-    });
+  if (refreshPromise) {
+    return refreshPromise;
+  }
 
-    if (!response.ok) {
+  refreshPromise = (async () => {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/user/refresh-token`,
+        {},
+        { withCredentials: true },
+      );
+      const token = response?.data?.data?.accessToken || null;
+      setStoredAdminToken(token);
+      return token;
+    } catch (error) {
       return null;
+    } finally {
+      refreshPromise = null;
     }
+  })();
 
-    const data = await response.json();
-    const token = data?.data?.accessToken || null;
-    if (token) {
-      localStorage.setItem("adminToken", token);
-      // Notify the app so AdminContext (and other listeners) can update immediately.
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("adminTokenRefreshed", { detail: token }),
-        );
-      }
-    }
-    return token;
-  } catch (error) {
-    console.error("refreshAdminToken error:", error);
-    return null;
-  }
+  return refreshPromise;
 };
 
-export const postData = async (URL, formData, token = null) => {
+const buildHeaders = (token, extraHeaders = {}) => {
+  const resolvedToken = token || getStoredAdminToken();
+  return {
+    ...extraHeaders,
+    ...(resolvedToken ? { Authorization: `Bearer ${resolvedToken}` } : {}),
+  };
+};
+
+const toErrorPayload = (error, fallbackMessage) => {
+  const message =
+    error?.response?.data?.message || error?.message || fallbackMessage;
+  return { error: true, success: false, message };
+};
+
+const requestWithRetry = async ({
+  method,
+  url,
+  data,
+  token = null,
+  headers = {},
+  fallbackMessage = "Request failed",
+}) => {
+  const requestConfig = {
+    method,
+    url: normalizePath(url),
+    data,
+    headers: buildHeaders(token, headers),
+  };
+
   try {
-    const headers = {
-      "Content-Type": "application/json",
-    };
-
-    if (token) {
-      debugLog("postData token debug:", {
-        tokenType: typeof token,
-        tokenLength: token
-          ? typeof token === "string"
-            ? token.length
-            : "not-a-string"
-          : 0,
-        isString: typeof token === "string",
-        isObject: typeof token === "object",
-      });
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    let response = await fetch(`${apiUrl}${URL}`, {
-      method: "POST",
-      headers,
-      credentials: "include",
-      body: JSON.stringify(formData),
-    });
-
-    if (response.status === 401) {
+    const response = await axiosClient.request(requestConfig);
+    return response.data;
+  } catch (error) {
+    if (error?.response?.status === 401 && !requestConfig._retry) {
+      requestConfig._retry = true;
       const newToken = await refreshAdminToken();
       if (newToken) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-        response = await fetch(`${apiUrl}${URL}`, {
-          method: "POST",
-          headers,
-          credentials: "include",
-          body: JSON.stringify(formData),
-        });
+        requestConfig.headers = buildHeaders(newToken, headers);
+        try {
+          const retryResponse = await axiosClient.request(requestConfig);
+          return retryResponse.data;
+        } catch (retryError) {
+          return toErrorPayload(retryError, fallbackMessage);
+        }
       }
     }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("postData error:", error);
-    return { error: true, message: error.message };
+    return toErrorPayload(error, fallbackMessage);
   }
 };
 
-// Upload single file
+export const postData = async (url, formData, token = null) =>
+  requestWithRetry({
+    method: "post",
+    url,
+    data: formData,
+    token,
+    fallbackMessage: "Failed to submit request",
+  });
+
+export const getData = async (url, token = null) =>
+  requestWithRetry({
+    method: "get",
+    url,
+    token,
+    fallbackMessage: "Failed to fetch data",
+  });
+
+export const putData = async (url, formData, token = null) =>
+  requestWithRetry({
+    method: "put",
+    url,
+    data: formData,
+    token,
+    fallbackMessage: "Failed to update data",
+  });
+
+export const deleteData = async (url, token = null) =>
+  requestWithRetry({
+    method: "delete",
+    url,
+    token,
+    fallbackMessage: "Failed to delete data",
+  });
+
+export const patchData = async (url, formData, token = null) =>
+  requestWithRetry({
+    method: "patch",
+    url,
+    data: formData,
+    token,
+    fallbackMessage: "Failed to update data",
+  });
+
 export const uploadFile = async (file, token) => {
-  try {
-    // Ensure token is a string
-    if (!token || typeof token !== "string") {
-      console.error("No valid token provided to uploadFile", {
-        hasToken: !!token,
-        tokenType: typeof token,
-      });
-      return {
-        error: true,
-        message: "Authentication token is missing or invalid",
-      };
-    }
-
-    const formData = new FormData();
-    formData.append("image", file);
-
-    debugLog("uploadFile debug:", {
-      hasToken: !!token,
-      tokenLength: token.length,
-      fileName: file.name,
-    });
-
-    const response = await fetch(`${apiUrl}/api/upload/single`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      credentials: "include",
-      body: formData,
-    });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("uploadFile error:", error);
-    return { error: true, message: error.message };
-  }
+  const formData = new FormData();
+  formData.append("image", file);
+  return requestWithRetry({
+    method: "post",
+    url: "/api/upload/single",
+    data: formData,
+    token,
+    headers: { "Content-Type": "multipart/form-data" },
+    fallbackMessage: "Failed to upload file",
+  });
 };
 
-// Upload video file
 export const uploadVideoFile = async (file, token) => {
-  try {
-    if (!token || typeof token !== "string") {
-      return {
-        error: true,
-        message: "Authentication token is missing or invalid",
-      };
-    }
-
-    const formData = new FormData();
-    formData.append("video", file);
-
-    debugLog("uploadVideoFile debug:", {
-      hasToken: !!token,
-      fileName: file.name,
-      fileSize: file.size,
-    });
-
-    const response = await fetch(`${apiUrl}/api/upload/video`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      credentials: "include",
-      body: formData,
-    });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("uploadVideoFile error:", error);
-    return { error: true, message: error.message };
-  }
+  const formData = new FormData();
+  formData.append("video", file);
+  return requestWithRetry({
+    method: "post",
+    url: "/api/upload/video",
+    data: formData,
+    token,
+    headers: { "Content-Type": "multipart/form-data" },
+    fallbackMessage: "Failed to upload video",
+  });
 };
 
-// Upload multiple files
 export const uploadFiles = async (files, token) => {
-  try {
-    const formData = new FormData();
-    files.forEach((file) => {
-      formData.append("images", file);
-    });
-
-    const response = await fetch(`${apiUrl}/api/upload/multiple`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      credentials: "include",
-      body: formData,
-    });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("uploadFiles error:", error);
-    return { error: true, message: error.message };
-  }
+  const formData = new FormData();
+  files.forEach((file) => formData.append("images", file));
+  return requestWithRetry({
+    method: "post",
+    url: "/api/upload/multiple",
+    data: formData,
+    token,
+    headers: { "Content-Type": "multipart/form-data" },
+    fallbackMessage: "Failed to upload files",
+  });
 };
 
-export const getData = async (URL, token = null) => {
-  try {
-    const headers = {
-      "Content-Type": "application/json",
-    };
-
-    if (token) {
-      debugLog("getData token debug:", {
-        tokenType: typeof token,
-        tokenLength: token
-          ? typeof token === "string"
-            ? token.length
-            : "not-a-string"
-          : 0,
-        isString: typeof token === "string",
-        isObject: typeof token === "object",
-      });
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    let response = await fetch(`${apiUrl}${URL}`, {
-      method: "GET",
-      headers,
-      credentials: "include",
-    });
-
-    if (response.status === 401) {
-      const newToken = await refreshAdminToken();
-      if (newToken) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-        response = await fetch(`${apiUrl}${URL}`, {
-          method: "GET",
-          headers,
-          credentials: "include",
-        });
-      }
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("getData error:", error);
-    return { error: true, message: error.message };
-  }
-};
-
-export const putData = async (URL, formData, token = null) => {
-  try {
-    const headers = {
-      "Content-Type": "application/json",
-    };
-
-    if (token) {
-      debugLog("putData token debug:", {
-        tokenType: typeof token,
-        tokenLength: token
-          ? typeof token === "string"
-            ? token.length
-            : "not-a-string"
-          : 0,
-        isString: typeof token === "string",
-        isObject: typeof token === "object",
-      });
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    let response = await fetch(`${apiUrl}${URL}`, {
-      method: "PUT",
-      headers,
-      credentials: "include",
-      body: JSON.stringify(formData),
-    });
-
-    if (response.status === 401) {
-      const newToken = await refreshAdminToken();
-      if (newToken) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-        response = await fetch(`${apiUrl}${URL}`, {
-          method: "PUT",
-          headers,
-          credentials: "include",
-          body: JSON.stringify(formData),
-        });
-      }
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("putData error:", error);
-    return { error: true, message: error.message };
-  }
-};
-
-export const deleteData = async (URL, token = null) => {
-  try {
-    const headers = {
-      "Content-Type": "application/json",
-    };
-
-    if (token) {
-      debugLog("deleteData token debug:", {
-        tokenType: typeof token,
-        tokenLength: token
-          ? typeof token === "string"
-            ? token.length
-            : "not-a-string"
-          : 0,
-        isString: typeof token === "string",
-        isObject: typeof token === "object",
-      });
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    let response = await fetch(`${apiUrl}${URL}`, {
-      method: "DELETE",
-      headers,
-      credentials: "include",
-    });
-
-    if (response.status === 401) {
-      const newToken = await refreshAdminToken();
-      if (newToken) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-        response = await fetch(`${apiUrl}${URL}`, {
-          method: "DELETE",
-          headers,
-          credentials: "include",
-        });
-      }
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("deleteData error:", error);
-    return { error: true, message: error.message };
-  }
-};
-
-export const patchData = async (URL, formData, token = null) => {
-  try {
-    const headers = {
-      "Content-Type": "application/json",
-    };
-
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    let response = await fetch(`${apiUrl}${URL}`, {
-      method: "PATCH",
-      headers,
-      credentials: "include",
-      body: JSON.stringify(formData),
-    });
-
-    if (response.status === 401) {
-      const newToken = await refreshAdminToken();
-      if (newToken) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-        response = await fetch(`${apiUrl}${URL}`, {
-          method: "PATCH",
-          headers,
-          credentials: "include",
-          body: JSON.stringify(formData),
-        });
-      }
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("patchData error:", error);
-    return { error: true, message: error.message };
-  }
-};
-
-export const getDashboardStats = async (token) => {
-  try {
-    const headers = {
-      "Content-Type": "application/json",
-    };
-    if (token && typeof token === "string") {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-    let response = await fetch(`${apiUrl}/api/statistics/dashboard`, {
-      method: "GET",
-      headers,
-      credentials: "include",
-    });
-    if (response.status === 401) {
-      const newToken = await refreshAdminToken();
-      if (newToken) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-        response = await fetch(`${apiUrl}/api/statistics/dashboard`, {
-          method: "GET",
-          headers,
-          credentials: "include",
-        });
-      }
-    }
-    if (!response.ok) {
-      // Not status 200, return error
-      return {
-        error: true,
-        message: `Request failed with status ${response.status}`,
-      };
-    }
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("getDashboardStats error:", error);
-    return { error: true, message: error.message };
-  }
-};
+export const getDashboardStats = async (token) =>
+  requestWithRetry({
+    method: "get",
+    url: "/api/statistics/dashboard",
+    token,
+    fallbackMessage: "Failed to fetch dashboard stats",
+  });

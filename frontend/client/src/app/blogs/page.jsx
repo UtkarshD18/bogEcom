@@ -1,19 +1,11 @@
 "use client";
 
 import { useProducts } from "@/context/ProductContext";
-import { postData } from "@/utils/api";
+import { API_BASE_URL, postData } from "@/utils/api";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-)
-  .trim()
-  .replace(/\/+$/, "");
 
 const DEFAULT_PAGE = {
   theme: { style: "mint", layout: "magazine" },

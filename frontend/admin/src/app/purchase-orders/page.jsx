@@ -1,7 +1,14 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData, patchData, postData, putData } from "@/utils/api";
+import {
+  API_BASE_URL,
+  deleteData,
+  getData,
+  patchData,
+  postData,
+  putData,
+} from "@/utils/api";
 import {
   Button,
   CircularProgress,
@@ -24,11 +31,7 @@ import {
 } from "react-icons/fa";
 import { IoClose } from "react-icons/io5";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 const EMPTY_ITEM = {
   productId: "",

@@ -1,10 +1,12 @@
 "use client";
+
+import { API_BASE_URL } from "@/utils/api";
 import { useAdmin } from "@/context/AdminContext";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { MdSave } from "react-icons/md";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = API_BASE_URL;
 
 const EditBlog = () => {
   const { token, isAuthenticated, loading } = useAdmin();

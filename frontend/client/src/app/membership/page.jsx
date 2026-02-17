@@ -1,5 +1,7 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
+
 import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -7,11 +9,7 @@ import { FaCheck, FaCrown } from "react-icons/fa";
 import { HiSparkles } from "react-icons/hi2";
 import { IoSparkles } from "react-icons/io5";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 const THEME_PRESETS = {
   mint: {

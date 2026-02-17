@@ -1,5 +1,7 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
+
 import { useAdmin } from "@/context/AdminContext";
 import {
   Button,
@@ -14,7 +16,7 @@ import { toast } from "react-hot-toast";
 import { MdLocalShipping, MdOutlineTrackChanges } from "react-icons/md";
 import { FaBoxOpen, FaFilePdf, FaRegTimesCircle } from "react-icons/fa";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = API_BASE_URL;
 
 const ShippingAdminPage = () => {
   const { token, isAuthenticated, loading } = useAdmin();
