@@ -2426,26 +2426,141 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       logContext: "saveOrderForLater",
     });
 
-    if (pricing.errorMessage) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: pricing.errorMessage,
-      });
+    const membershipResult = userId
+      ? await applyMembershipDiscount(subtotal, userId)
+      : { membership: null, discount: 0, netSubtotal: subtotal };
+
+    // Backend discount calculation
+    const originalPrice = subtotal;
+    let workingAmount = membershipResult.netSubtotal;
+    let influencerDiscount = 0;
+    let influencerData = null;
+    let influencerCommission = 0;
+    let couponDiscount = 0;
+    const membershipDiscount = round2(membershipResult.discount || 0);
+    let normalizedCouponCode = couponCode
+      ? couponCode.toUpperCase().trim()
+      : null;
+
+    // Apply influencer discount first
+    if (influencerCode) {
+      try {
+        const referralResult = await calculateReferralDiscount(
+          influencerCode,
+          workingAmount,
+        );
+        if (referralResult.influencer) {
+          influencerDiscount = referralResult.discount;
+          influencerData = referralResult.influencer;
+          workingAmount = Math.max(
+            round2(workingAmount - influencerDiscount),
+            0,
+          );
+          logger.info("saveOrderForLater", "Influencer discount applied", {
+            code: influencerCode,
+            discount: influencerDiscount,
+          });
+        }
+      } catch (error) {
+        logger.warn("saveOrderForLater", "Invalid influencer code", {
+          code: influencerCode,
+          error: error.message,
+        });
+      }
     }
 
-    const originalPrice = pricing.originalAmount;
-    const normalizedCouponCode = pricing.normalizedCouponCode;
-    const couponDiscount = pricing.couponDiscount;
-    const membershipDiscount = pricing.membershipDiscount;
-    const influencerDiscount = pricing.influencerDiscount;
-    const influencerData = pricing.influencerData;
-    const influencerCommission = pricing.influencerCommission;
-    const redemption = pricing.redemption;
-    const taxData = pricing.taxData;
-    const shippingCharge = pricing.shippingCharge;
-    const finalOrderAmount = pricing.finalAmount;
-    const totalDiscount = pricing.totalDiscount;
+    const subtotalBeforeCoupon = workingAmount;
+
+    // Validate and apply coupon discount
+    if (couponCode) {
+      const couponResult = await validateCouponForOrder({
+        code: couponCode,
+        orderAmount: workingAmount,
+        userId,
+        influencerCode: influencerDiscount > 0 ? influencerCode : null,
+      });
+
+      if (couponResult.errorMessage) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: couponResult.errorMessage,
+        });
+      }
+
+      normalizedCouponCode = couponResult.normalizedCode;
+      couponDiscount = Math.min(couponResult.discount || 0, workingAmount);
+      if (couponDiscount > 0) {
+        workingAmount = Math.max(round2(workingAmount - couponDiscount), 0);
+        logger.info("saveOrderForLater", "Coupon discount applied", {
+          code: normalizedCouponCode,
+          discount: couponDiscount,
+        });
+      }
+    }
+
+    const subtotalAfterDiscount = workingAmount;
+
+    // Match checkout pricing logic:
+    // GST is recalculated on post-discount subtotal (trade discounts reduce
+    // taxable value). Coin redemption is handled later as a payment method.
+    const taxData = splitGstInclusiveAmount(
+      subtotalAfterDiscount,
+      5,
+      checkoutContact.state,
+    );
+
+    let coinBalance = 0;
+    if (userId) {
+      const user = await UserModel.findById(userId)
+        .select("coinBalance")
+        .lean();
+      coinBalance = Number(user?.coinBalance || 0);
+    }
+
+    const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
+    const redemption =
+      requestedCoins > 0 && userId
+        ? await calculateRedemption({
+            subtotal: subtotalAfterDiscount,
+            requestedCoins,
+            coinBalance,
+          })
+        : { coinsUsed: 0, redeemAmount: 0 };
+
+    const netInclusiveSubtotal = Math.max(
+      round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
+      0,
+    );
+    // ---- SHIPPING: backend source-of-truth via getShippingQuote ----
+    const totalWeight = normalizedProducts.reduce(
+      (sum, item) => sum + ((Number(item.quantity) || 1) * 500),
+      0,
+    );
+    let shippingCharge = 0;
+    try {
+      if (validateIndianPincode(checkoutContact.pincode)) {
+        const shippingQuote = await getShippingQuote({
+          destinationPincode: checkoutContact.pincode,
+          subtotal: totalWeight,
+          paymentType: paymentType || "prepaid",
+        });
+        shippingCharge = Number(shippingQuote.charge || 0);
+      }
+    } catch (shippingErr) {
+      logger.warn("saveOrderForLater", "Shipping quote failed, defaulting to 0", {
+        error: shippingErr?.message || String(shippingErr),
+      });
+      shippingCharge = 0;
+    }
+
+    // Calculate final amount
+    const finalOrderAmount = round2(
+      netInclusiveSubtotal + shippingCharge,
+    );
+    const totalDiscount = round2(
+      membershipDiscount + influencerDiscount + couponDiscount,
+    );
 
     const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
       purchaseOrderId,

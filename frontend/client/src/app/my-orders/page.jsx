@@ -1,7 +1,12 @@
 "use client";
-import { API_BASE_URL } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import { MyContext } from "@/context/ThemeProvider";
+import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
+import {
+  buildSavedOrderCalculationInput,
+  calculateOrderTotals,
+} from "@/utils/calculateOrderTotals.mjs";
+import { getDisplayShippingCharge } from "@/utils/shippingDisplay";
 import {
   Button,
   Dialog,
@@ -11,11 +16,10 @@ import {
   Rating,
   TextField,
 } from "@mui/material";
-import { AlertCircle, ArrowLeft, Loader } from "lucide-react";
+import { AlertCircle, Loader } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
-import AccountSidebar from "@/components/AccountSiderbar";
 import { toast } from "react-hot-toast";
 
 const API_BASE_URL = (
@@ -58,6 +62,7 @@ const Orders = () => {
     comment: "",
   });
   const [submittingReview, setSubmittingReview] = useState(false);
+  const { metrics: shippingMetrics } = useShippingDisplayCharge();
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -329,7 +334,9 @@ const Orders = () => {
           response.status === 404 &&
           /reviews/i.test(String(data?.message || ""))
         ) {
-          toast.error("Reviews API not available. Please restart backend server.");
+          toast.error(
+            "Reviews API not available. Please restart backend server.",
+          );
           return;
         }
         toast.error(data?.message || "Failed to submit review");
@@ -526,7 +533,9 @@ const Orders = () => {
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={() => openReviewDialog(order, item)}
+                                      onClick={() =>
+                                        openReviewDialog(order, item)
+                                      }
                                       className="text-[11px] font-semibold text-white bg-orange-600 hover:bg-orange-700 rounded-full px-3 py-1 transition-colors"
                                     >
                                       Write Review
@@ -732,8 +741,8 @@ const Orders = () => {
               </div>
             )}
           </div>
-        </div >
-      </section >
+        </div>
+      </section>
 
       <Dialog
         open={reviewDialog.open}
@@ -752,7 +761,9 @@ const Orders = () => {
             </span>
           </p>
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">Your Rating</p>
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              Your Rating
+            </p>
             <Rating
               value={reviewForm.rating}
               onChange={(_, value) =>
@@ -766,7 +777,10 @@ const Orders = () => {
             minRows={4}
             value={reviewForm.comment}
             onChange={(event) =>
-              setReviewForm((prev) => ({ ...prev, comment: event.target.value }))
+              setReviewForm((prev) => ({
+                ...prev,
+                comment: event.target.value,
+              }))
             }
             fullWidth
             required

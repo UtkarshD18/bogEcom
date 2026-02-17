@@ -231,7 +231,9 @@ const Checkout = () => {
   const checkoutStateForPreview = isGuestCheckout
     ? guestDetails.state
     : addresses.find((a) => a._id === selectedAddress)?.state || "";
-  const hasCheckoutStateInput = Boolean(String(checkoutStateForPreview || "").trim());
+  const hasCheckoutStateInput = Boolean(
+    String(checkoutStateForPreview || "").trim(),
+  );
   const normalizedCheckoutState = normalizeStateValue(checkoutStateForPreview);
   const isRajasthanDelivery = normalizedCheckoutState === "Rajasthan";
   const { displayShippingCharge } = useShippingDisplayCharge({
@@ -320,7 +322,7 @@ const Checkout = () => {
   const couponDiscount = totalsBeforeCoin.couponDiscount;
   const subtotal = totalsBeforeCoin.discountedSubtotal; // GST-exclusive after coupon
   const tax = totalsBeforeCoin.tax; // GST on discounted base
-  const payableShipping = 0;
+  const payableShipping = totalsBeforeCoin.shipping;
 
   const productCostAfterCoupon = round2(subtotal + tax); // GST-inclusive after coupon (no shipping)
 
@@ -340,17 +342,24 @@ const Checkout = () => {
       ? round2(displayTaxBreakup.cgst + displayTaxBreakup.sgst)
       : displayTaxBreakup.igst;
 
-  // Coins are earned from orders, but redemption is restricted to membership checkout.
-  const effectiveRedeemCoins = 0;
-  const coinRedeemAmount = 0;
+  // Step 6: Coin redemption (payment method, NOT a trade discount)
+  const maxCoinRedeemValue = Math.floor(
+    (productCostAfterCoupon * Number(coinSettings.maxRedeemPercentage || 0)) /
+      100,
+  );
+  const safeRequestedCoins = Math.max(Number(requestedCoins || 0), 0);
+  const effectiveRedeemCoins = Math.min(
+    safeRequestedCoins,
+    Number(coinBalance || 0),
+    Math.floor(maxCoinRedeemValue / Number(coinSettings.redeemRate || 1)),
+  );
+  const coinRedeemAmount = round2(
+    effectiveRedeemCoins * Number(coinSettings.redeemRate || 0),
+  );
 
   // Step 8: Final payable = discounted base + GST + shipping - coinRedeem
   const finalTotals = calculateOrderTotals({
     ...checkoutTotalsInput,
-    shippingCost: payableShipping,
-    shippingRules: {
-      shippingCostOverride: payableShipping,
-    },
     coinRedeemAmount,
   });
   const total = finalTotals.totalPayable;
@@ -1730,15 +1739,45 @@ const Checkout = () => {
                     <div>
                       <div className="flex justify-between items-center mb-3">
                         <h3 className="font-bold text-gray-800 text-sm">
-                          Coins
+                          Redeem Coins
                         </h3>
                         <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full">
                           {coinBalance} Available
                         </span>
                       </div>
-                      <p className="text-xs text-gray-500 font-medium">
-                        Coins are earned on orders and can be redeemed on membership
-                        subscription checkout.
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          value={requestedCoins}
+                          onChange={(e) =>
+                            setRequestedCoins(
+                              Math.max(
+                                0,
+                                Math.floor(Number(e.target.value || 0)),
+                              ),
+                            )
+                          }
+                          className="w-20 text-center font-bold p-2 bg-white rounded-xl border border-gray-200"
+                        />
+                        <button
+                          onClick={() =>
+                            setRequestedCoins(
+                              Math.min(
+                                coinBalance,
+                                Math.floor(
+                                  maxCoinRedeemValue /
+                                    Number(coinSettings.redeemRate || 1),
+                                ),
+                              ),
+                            )
+                          }
+                          className="flex-1 bg-amber-100 text-amber-700 font-bold rounded-xl text-xs hover:bg-amber-200 transition-colors"
+                        >
+                          MAX SAVE
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-2 font-medium">
+                        1 Coin = ₹{coinSettings.redeemRate}
                       </p>
                     </div>
                   )}
