@@ -1,5 +1,6 @@
 import fs from "fs";
 import multer from "multer";
+import os from "os";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
@@ -10,17 +11,20 @@ import { v4 as uuidv4 } from "uuid";
  * Supports multiple file uploads.
  */
 
-// Ensure upload directories exist
-const uploadDirs = [
-  "uploads",
-  "uploads/products",
-  "uploads/categories",
-  "uploads/banners",
-  "uploads/slides",
-  "uploads/users",
-];
+export const UPLOAD_ROOT =
+  process.env.UPLOAD_DIR && String(process.env.UPLOAD_DIR).trim()
+    ? String(process.env.UPLOAD_DIR).trim()
+    : process.env.NODE_ENV === "production"
+      ? path.join(os.tmpdir(), "uploads")
+      : path.join(process.cwd(), "uploads");
 
-uploadDirs.forEach((dir) => {
+const getUploadDir = (subDir = "") => path.join(UPLOAD_ROOT, subDir);
+
+// Ensure upload directories exist
+const uploadDirs = ["", "products", "categories", "banners", "slides", "users"];
+
+uploadDirs.forEach((subDir) => {
+  const dir = getUploadDir(subDir);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -30,34 +34,34 @@ uploadDirs.forEach((dir) => {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     // Determine folder based on route or fieldname
-    let folder = "uploads";
+    let folder = "";
 
     if (
       req.baseUrl.includes("products") ||
       file.fieldname === "productImages"
     ) {
-      folder = "uploads/products";
+      folder = "products";
     } else if (
       req.baseUrl.includes("categories") ||
       file.fieldname === "categoryImage"
     ) {
-      folder = "uploads/categories";
+      folder = "categories";
     } else if (
       req.baseUrl.includes("banners") ||
       file.fieldname === "bannerImage"
     ) {
-      folder = "uploads/banners";
+      folder = "banners";
     } else if (
       req.baseUrl.includes("slides") ||
       req.baseUrl.includes("home-slides") ||
       file.fieldname === "slideImage"
     ) {
-      folder = "uploads/slides";
+      folder = "slides";
     } else if (req.baseUrl.includes("users") || file.fieldname === "avatar") {
-      folder = "uploads/users";
+      folder = "users";
     }
 
-    cb(null, folder);
+    cb(null, getUploadDir(folder));
   },
   filename: (req, file, cb) => {
     const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
