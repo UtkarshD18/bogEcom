@@ -14,6 +14,71 @@ import { Suspense, useContext, useEffect, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 
+const getStoredToken = () => {
+  if (typeof window === "undefined") return cookies.get("accessToken") || null;
+  return (
+    cookies.get("accessToken") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("token") ||
+    null
+  );
+};
+
+const clearStoredSession = () => {
+  cookies.remove("accessToken");
+  cookies.remove("refreshToken");
+  cookies.remove("userName");
+  cookies.remove("userEmail");
+  cookies.remove("userPhoto");
+
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("userName");
+    localStorage.removeItem("userEmail");
+    localStorage.removeItem("userPhoto");
+  }
+};
+
+const persistSession = (payload, fallbackEmail = "") => {
+  const accessToken = payload?.accessToken || "";
+  const refreshToken = payload?.refreshToken || "";
+  const userName = payload?.userName || "User";
+  const userEmail = payload?.userEmail || fallbackEmail;
+  const userPhoto = payload?.userPhoto || payload?.avatar || "";
+
+  if (!accessToken || String(accessToken).split(".").length !== 3) {
+    return false;
+  }
+
+  cookies.set("accessToken", accessToken, { expires: 7 });
+  cookies.set("refreshToken", refreshToken, { expires: 7 });
+  cookies.set("userName", userName, { expires: 7 });
+  cookies.set("userEmail", userEmail, { expires: 7 });
+
+  if (userPhoto) {
+    cookies.set("userPhoto", userPhoto, { expires: 7 });
+  } else {
+    cookies.remove("userPhoto");
+  }
+
+  if (typeof window !== "undefined") {
+    localStorage.setItem("accessToken", accessToken);
+    localStorage.setItem("token", accessToken);
+    localStorage.setItem("refreshToken", refreshToken);
+    localStorage.setItem("userName", userName);
+    localStorage.setItem("userEmail", userEmail);
+    if (userPhoto) {
+      localStorage.setItem("userPhoto", userPhoto);
+    } else {
+      localStorage.removeItem("userPhoto");
+    }
+  }
+
+  return true;
+};
+
 // Inner component that uses useSearchParams - must be wrapped in Suspense
 const LoginForm = () => {
   const [auth, setAuth] = useState(null);
@@ -42,11 +107,16 @@ const LoginForm = () => {
   }, []);
 
   useEffect(() => {
-    const token = cookies.get("accessToken");
+    const token = getStoredToken();
     if (token) {
       // Check if the JWT is actually still valid (not expired)
       try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
+        const tokenPart = token.split(".")[1];
+        const normalizedPart = tokenPart
+          .replace(/-/g, "+")
+          .replace(/_/g, "/")
+          .padEnd(Math.ceil(tokenPart.length / 4) * 4, "=");
+        const payload = JSON.parse(atob(normalizedPart));
         if (payload.exp * 1000 > Date.now()) {
           context?.alertBox("info", "You are already logged in.");
           router.push("/");
@@ -55,11 +125,7 @@ const LoginForm = () => {
         }
       } catch {}
       // Token is expired or invalid — clear stale cookies so user can login fresh
-      cookies.remove("accessToken");
-      cookies.remove("refreshToken");
-      cookies.remove("userName");
-      cookies.remove("userEmail");
-      cookies.remove("userPhoto");
+      clearStoredSession();
     }
     cookies.remove("actionType");
   }, []);
@@ -94,25 +160,14 @@ const LoginForm = () => {
       .then((res) => {
         console.log("Login response:", res);
         if (res?.error !== true) {
-          // Set cookies - data is returned directly, not nested under user
-          console.log("Setting cookies with:", {
-            accessToken: res?.data?.accessToken ? "present" : "missing",
-            userName: res?.data?.userName,
-            userEmail: res?.data?.userEmail,
-          });
-          cookies.set("accessToken", res?.data?.accessToken, { expires: 7 });
-          cookies.set("refreshToken", res?.data?.refreshToken, { expires: 7 });
-          cookies.set("userName", res?.data?.userName || "User", {
-            expires: 7,
-          });
-          cookies.set("userEmail", res?.data?.userEmail || formFields.email, {
-            expires: 7,
-          });
-          const serverPhoto = res?.data?.userPhoto || res?.data?.avatar || "";
-          if (serverPhoto) {
-            cookies.set("userPhoto", serverPhoto, { expires: 7 });
-          } else {
-            cookies.remove("userPhoto");
+          const persisted = persistSession(res?.data, formFields.email);
+          if (!persisted) {
+            context?.alertBox(
+              "error",
+              "Login response is missing token. Please try again.",
+            );
+            setIsLoading(false);
+            return;
           }
 
           // Update context immediately
@@ -185,22 +240,19 @@ const LoginForm = () => {
           );
 
           if (backendResponse?.error !== true) {
-            // Backend success - use backend tokens
-            cookies.set(
-              "accessToken",
-              backendResponse?.data?.accessToken || token,
-              { expires: 7 },
+            const persisted = persistSession(
+              {
+                ...backendResponse?.data,
+                accessToken: backendResponse?.data?.accessToken || token,
+                userName: user.displayName || "Google User",
+                userEmail: user.email,
+                userPhoto: user.photoURL || "",
+              },
+              user.email,
             );
-            cookies.set(
-              "refreshToken",
-              backendResponse?.data?.refreshToken || "",
-              { expires: 7 },
-            );
-            cookies.set("userName", user.displayName || "Google User", {
-              expires: 7,
-            });
-            cookies.set("userEmail", user.email, { expires: 7 });
-            cookies.set("userPhoto", user.photoURL || "", { expires: 7 });
+            if (!persisted) {
+              throw new Error("Google auth token missing");
+            }
 
             // Update context
             context?.setIsLogin?.(true);

@@ -30,6 +30,25 @@ const normalizeImageInput = (imageValue) => {
   return "";
 };
 
+const normalizeImageInput = (imageValue) => {
+  if (!imageValue) return "";
+
+  if (typeof imageValue === "string") {
+    return imageValue.trim();
+  }
+
+  // Accept common API object formats: { url }, { secure_url }, { src }
+  if (typeof imageValue === "object") {
+    if (typeof imageValue.url === "string") return imageValue.url.trim();
+    if (typeof imageValue.secure_url === "string") {
+      return imageValue.secure_url.trim();
+    }
+    if (typeof imageValue.src === "string") return imageValue.src.trim();
+  }
+
+  return "";
+};
+
 /**
  * Get the proper image URL for display
  * @param {string|object} imageUrl - The image URL from database

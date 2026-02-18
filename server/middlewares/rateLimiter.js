@@ -77,3 +77,16 @@ export const uploadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Support ticket limiter - tighter limit to reduce spam on customer-care forms
+export const supportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    error: true,
+    success: false,
+    message: "Too many support requests. Please try again after a few minutes.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

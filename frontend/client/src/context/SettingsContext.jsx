@@ -6,7 +6,26 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const SettingsContext = createContext();
 
-const API_URL = API_BASE_URL;
+const API_URL = String(API_BASE_URL || "")
+  .trim()
+  .replace(/\/+$/, "")
+  .replace(/\/api$/i, "");
+const USE_DEV_PROXY = process.env.NODE_ENV !== "production";
+
+const buildApiUrl = (path) => {
+  const normalizedPath = String(path || "").startsWith("/")
+    ? String(path)
+    : `/${String(path || "")}`;
+  const apiPath = normalizedPath.startsWith("/api/")
+    ? normalizedPath
+    : `/api${normalizedPath}`;
+
+  if (USE_DEV_PROXY) {
+    return apiPath;
+  }
+
+  return `${API_URL}${apiPath}`;
+};
 
 /**
  * Default settings values (fallbacks when API fails)
@@ -96,7 +115,7 @@ export const SettingsProvider = ({ children }) => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${API_URL}/api/settings/public`, {
+      const response = await fetch(buildApiUrl("/settings/public"), {
         method: "GET",
         headers: {
           "Content-Type": "application/json",

@@ -30,6 +30,11 @@ const AccountSidebar = () => {
   const [userPhoto, setUserPhoto] = useState("");
   const [userPhone, setUserPhone] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const getAuthToken = () =>
+    cookies.get("accessToken") ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("accessToken") || localStorage.getItem("token")
+      : null);
 
   const normalizeIdentity = (value) => String(value || "").trim().toLowerCase();
   const getPhotoStorageKey = (emailValue) => {
@@ -127,11 +132,20 @@ const AccountSidebar = () => {
   };
 
   const syncFromCookies = () => {
-    const name = cookies.get("userName") || "User";
-    const email = cookies.get("userEmail") || "";
+    const name =
+      cookies.get("userName") ||
+      (typeof window !== "undefined" ? localStorage.getItem("userName") : "") ||
+      "User";
+    const email =
+      cookies.get("userEmail") ||
+      (typeof window !== "undefined" ? localStorage.getItem("userEmail") : "") ||
+      "";
     const photo = isPhotoRemovalOverride(email)
       ? ""
-      : cookies.get("userPhoto") || getStoredPhotoForUser(email) || "";
+      : cookies.get("userPhoto") ||
+        (typeof window !== "undefined" ? localStorage.getItem("userPhoto") : "") ||
+        getStoredPhotoForUser(email) ||
+        "";
     setUserName(name);
     setUserEmail(email);
     setUserPhoto(resolveImageUrl(photo));
@@ -147,7 +161,7 @@ const AccountSidebar = () => {
   };
 
   const fetchProfile = async () => {
-    const token = cookies.get("accessToken");
+    const token = getAuthToken();
     if (!token) return;
     try {
       const response = await fetch(`${API_URL}/api/user/user-details`, {
@@ -184,7 +198,7 @@ const AccountSidebar = () => {
   };
 
   const fetchPrimaryPhone = async () => {
-    const token = cookies.get("accessToken");
+    const token = getAuthToken();
     if (!token) return;
     try {
       const response = await fetch(`${API_URL}/api/address`, {
@@ -273,8 +287,8 @@ const AccountSidebar = () => {
       const formData = new FormData();
       formData.append("image", file);
 
-      const token = cookies.get("accessToken");
-      if (!token) {
+      const fallbackToken = getAuthToken();
+      if (!fallbackToken) {
         applyLocalPhotoFallback(file, "Profile photo updated locally!");
         return;
       }
@@ -282,7 +296,7 @@ const AccountSidebar = () => {
       const response = await fetch(`${API_URL}/api/user/upload-photo`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${fallbackToken}`,
         },
         credentials: "include",
         body: formData,
@@ -316,8 +330,8 @@ const AccountSidebar = () => {
 
     setUploadingPhoto(true);
     try {
-      const token = cookies.get("accessToken");
-      if (!token) {
+      const fallbackToken = getAuthToken();
+      if (!fallbackToken) {
         setPhotoEverywhere("", { persistCookie: false, markRemoved: true });
         toast.success("Profile photo removed!");
         return;
@@ -344,7 +358,7 @@ const AccountSidebar = () => {
         const response = await fetch(attempt.url, {
           method: attempt.method,
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${fallbackToken}`,
             ...(attempt.body ? { "Content-Type": "application/json" } : {}),
           },
           credentials: "include",
@@ -389,6 +403,14 @@ const AccountSidebar = () => {
       cookies.remove("userEmail");
       cookies.remove("userName");
       cookies.remove("userPhoto");
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("userEmail");
+        localStorage.removeItem("userName");
+        localStorage.removeItem("userPhoto");
+      }
       clearStoredPhotoForUser(userEmail || cookies.get("userEmail"));
 
       toast.success("Logged out successfully");
