@@ -86,3 +86,4 @@ github-deployer-key.json
 .temp
 .aider*
 server/invoices/
+test-artifacts/

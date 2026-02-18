@@ -70,10 +70,34 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
 
   const buildShipmentPayload = () => {
     const addr = order?.delivery_address || {};
+    const paymentType = order?.payment_status === "paid" ? "prepaid" : "cod";
+    const orderAmount = Number(order?.finalAmount || order?.totalAmt || 0);
+    const orderItems = (order?.products || []).map((product, index) => ({
+      name: product?.productTitle || `Item ${index + 1}`,
+      qty: Math.max(Number(product?.quantity || 1), 1),
+      price: Math.max(Number(product?.price || 0), 0),
+      sku:
+        product?.productId ||
+        product?.variantId ||
+        `SKU-${String(index + 1).padStart(3, "0")}`,
+    }));
+
     return {
       order_number: `#${order?._id?.slice(-6) || "000001"}`,
-      payment_type: order?.payment_status === "paid" ? "prepaid" : "cod",
-      order_amount: order?.finalAmount || order?.totalAmt || 0,
+      payment_type: paymentType,
+      order_amount: orderAmount,
+      collectable_amount: paymentType === "cod" ? orderAmount : 0,
+      order_items:
+        orderItems.length > 0
+          ? orderItems
+          : [
+              {
+                name: "Order Item",
+                qty: 1,
+                price: orderAmount,
+                sku: `ORD-${order?._id?.slice(-6) || "000001"}`,
+              },
+            ],
       package_weight: 500,
       package_length: 10,
       package_breadth: 10,
@@ -150,10 +174,28 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const updateShippingField = (field, value) => {
     setShippingForm((prev) => {
       const base = prev || buildShipmentPayload();
-      return {
+      const next = {
         ...base,
         [field]: value,
       };
+
+      const normalizedPaymentType = String(
+        field === "payment_type" ? value : next.payment_type,
+      ).toLowerCase();
+
+      if (field === "payment_type" || field === "order_amount") {
+        const amountValue = Number(
+          field === "order_amount" ? value : next.order_amount,
+        );
+        next.collectable_amount =
+          normalizedPaymentType === "cod"
+            ? Number.isFinite(amountValue)
+              ? amountValue
+              : 0
+            : 0;
+      }
+
+      return next;
     });
   };
 
@@ -787,6 +829,14 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
               value={shippingForm?.order_amount || ""}
               onChange={(e) =>
                 updateShippingField("order_amount", e.target.value)
+              }
+              fullWidth
+            />
+            <TextField
+              label="Collectable Amount"
+              value={shippingForm?.collectable_amount || ""}
+              onChange={(e) =>
+                updateShippingField("collectable_amount", e.target.value)
               }
               fullWidth
             />

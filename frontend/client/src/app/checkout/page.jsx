@@ -142,7 +142,6 @@ const Checkout = () => {
     expiryDays: 365,
   });
   const [coinBalance, setCoinBalance] = useState(0);
-  const [requestedCoins, setRequestedCoins] = useState(0);
 
   // Address State - Real addresses from database
   const [addresses, setAddresses] = useState([]);
@@ -341,20 +340,9 @@ const Checkout = () => {
       ? round2(displayTaxBreakup.cgst + displayTaxBreakup.sgst)
       : displayTaxBreakup.igst;
 
-  // Step 6: Coin redemption (payment method, NOT a trade discount)
-  const maxCoinRedeemValue = Math.floor(
-    (productCostAfterCoupon * Number(coinSettings.maxRedeemPercentage || 0)) /
-      100,
-  );
-  const safeRequestedCoins = Math.max(Number(requestedCoins || 0), 0);
-  const effectiveRedeemCoins = Math.min(
-    safeRequestedCoins,
-    Number(coinBalance || 0),
-    Math.floor(maxCoinRedeemValue / Number(coinSettings.redeemRate || 1)),
-  );
-  const coinRedeemAmount = round2(
-    effectiveRedeemCoins * Number(coinSettings.redeemRate || 0),
-  );
+  // Coins are earned from orders, but redemption is restricted to membership checkout.
+  const effectiveRedeemCoins = 0;
+  const coinRedeemAmount = 0;
 
   // Step 8: Final payable = discounted base + GST + shipping - coinRedeem
   const finalTotals = calculateOrderTotals({
@@ -487,7 +475,6 @@ const Checkout = () => {
           }
         } else {
           setCoinBalance(0);
-          setRequestedCoins(0);
         }
       } catch (error) {
         // Checkout should continue even if optional dynamic services fail.
@@ -496,15 +483,6 @@ const Checkout = () => {
 
     fetchDynamicCheckoutSettings();
   }, [authToken]);
-
-  useEffect(() => {
-    const maxCoinsByRule = Math.floor(
-      maxCoinRedeemValue / Number(coinSettings.redeemRate || 1),
-    );
-    setRequestedCoins((prev) =>
-      Math.min(Math.max(Number(prev || 0), 0), coinBalance, maxCoinsByRule),
-    );
-  }, [coinBalance, maxCoinRedeemValue, coinSettings.redeemRate]);
 
   // Address form handlers
   const resetAddressForm = () => {
@@ -980,7 +958,7 @@ const Checkout = () => {
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
         coinRedeem: {
-          coins: effectiveRedeemCoins,
+          coins: 0,
         },
         paymentType: "prepaid",
         guestDetails: buildGuestDetailsPayload(),
@@ -1136,7 +1114,7 @@ const Checkout = () => {
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
         coinRedeem: {
-          coins: effectiveRedeemCoins,
+          coins: 0,
         },
         paymentType: "prepaid",
         purchaseOrderId,
@@ -1752,45 +1730,15 @@ const Checkout = () => {
                     <div>
                       <div className="flex justify-between items-center mb-3">
                         <h3 className="font-bold text-gray-800 text-sm">
-                          Redeem Coins
+                          Coins
                         </h3>
                         <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full">
                           {coinBalance} Available
                         </span>
                       </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          value={requestedCoins}
-                          onChange={(e) =>
-                            setRequestedCoins(
-                              Math.max(
-                                0,
-                                Math.floor(Number(e.target.value || 0)),
-                              ),
-                            )
-                          }
-                          className="w-20 text-center font-bold p-2 bg-white rounded-xl border border-gray-200"
-                        />
-                        <button
-                          onClick={() =>
-                            setRequestedCoins(
-                              Math.min(
-                                coinBalance,
-                                Math.floor(
-                                  maxCoinRedeemValue /
-                                    Number(coinSettings.redeemRate || 1),
-                                ),
-                              ),
-                            )
-                          }
-                          className="flex-1 bg-amber-100 text-amber-700 font-bold rounded-xl text-xs hover:bg-amber-200 transition-colors"
-                        >
-                          MAX SAVE
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-gray-400 mt-2 font-medium">
-                        1 Coin = ₹{coinSettings.redeemRate}
+                      <p className="text-xs text-gray-500 font-medium">
+                        Coins are earned on orders and can be redeemed on membership
+                        subscription checkout.
                       </p>
                     </div>
                   )}

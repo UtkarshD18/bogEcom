@@ -57,10 +57,9 @@ const getMembershipCoinPreview = async ({ userId, planPrice, requestedCoins }) =
   const summary = await getUserCoinSummary({ userId });
   const settings = summary?.settings || {};
   const redeemRate = Number(settings.redeemRate || 0);
-  const maxRedeemPercentage = Number(settings.maxRedeemPercentage || 0);
   const usableCoins = floorInt(summary?.usable_coins || 0);
 
-  const maxRedeemRupees = round2((safePlanPrice * maxRedeemPercentage) / 100);
+  const maxRedeemRupees = safePlanPrice;
   const maxCoinsByLimit =
     redeemRate > 0 ? floorInt(maxRedeemRupees / redeemRate) : 0;
   const coinsUsed = Math.min(safeRequestedCoins, usableCoins, maxCoinsByLimit);
@@ -77,7 +76,6 @@ const getMembershipCoinPreview = async ({ userId, planPrice, requestedCoins }) =
     payableAmount,
     settings: {
       redeemRate,
-      maxRedeemPercentage,
     },
   };
 };

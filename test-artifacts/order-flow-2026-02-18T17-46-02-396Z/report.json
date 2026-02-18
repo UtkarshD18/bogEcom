@@ -1,0 +1,102 @@
+{
+  "runId": "2026-02-18T17-46-02-396Z",
+  "startedAt": "2026-02-18T17:46:02.397Z",
+  "baseUrl": "http://127.0.0.1:8011",
+  "testEmail": "piyushsongara825@gmai.com",
+  "artifacts": {
+    "root": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-46-02-396Z",
+    "invoicesDir": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-46-02-396Z\\invoices",
+    "reportPath": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-46-02-396Z\\report.json"
+  },
+  "setup": {
+    "server": {
+      "startedByScript": true,
+      "port": 8011,
+      "stdoutLog": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-46-02-396Z\\server.stdout.log",
+      "stderrLog": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-46-02-396Z\\server.stderr.log"
+    },
+    "paymentGatewaySettingBefore": {
+      "existed": true,
+      "previousValue": false
+    },
+    "paymentStatusEndpoint": {
+      "error": false,
+      "success": true,
+      "message": "Success",
+      "data": {
+        "paymentEnabled": true,
+        "provider": "PHONEPE",
+        "message": "PHONEPE payment gateway is active",
+        "canSaveOrder": true,
+        "onboardingStatus": "complete"
+      },
+      "timestamp": "2026-02-18T17:46:08.504Z"
+    },
+    "user": {
+      "created": false,
+      "userId": "6995fa35c355c8cd5d91def2",
+      "email": "piyushsongara825@gmai.com",
+      "status": "active",
+      "role": "User"
+    },
+    "admin": {
+      "created": false,
+      "userId": "6970b0799da902b64021249f",
+      "email": "piyushsongara69@gmail.com"
+    },
+    "address": {
+      "addressId": "6995fa35c355c8cd5d91defb",
+      "city": "Jaipur",
+      "state": "Rajasthan",
+      "pincode": "302019",
+      "mobile": "9876543210"
+    },
+    "storeInfoUsed": {
+      "name": "BuyOneGram",
+      "phone": "+91 9876541234",
+      "address": "Sitapura Industrial Area, Jaipur, Rajasthan 302019",
+      "gstNumber": ""
+    },
+    "orderItems": [
+      {
+        "productId": "6973b57bce9eb5ada79a3d43",
+        "productTitle": "Peanut Butter Lovers Gift Box",
+        "quantity": 2,
+        "price": 1299,
+        "image": "/product_1.png",
+        "subTotal": 2598
+      },
+      {
+        "productId": "6973b57bce9eb5ada79a3d44",
+        "productTitle": "Fitness Pack - Protein Duo",
+        "quantity": 1,
+        "price": 999,
+        "image": "/product_1.png",
+        "subTotal": 999
+      }
+    ],
+    "orderSubtotal": 3597
+  },
+  "orders": [],
+  "shipping": {},
+  "notes": [
+    {
+      "at": "2026-02-18T17:46:07.474Z",
+      "message": "Started API server for test run",
+      "extra": {
+        "port": 8011
+      }
+    },
+    {
+      "at": "2026-02-18T17:46:08.095Z",
+      "message": "Connected to database",
+      "extra": null
+    }
+  ],
+  "success": false,
+  "completedAt": "2026-02-18T17:46:10.853Z",
+  "error": {
+    "message": "Failed to create with_coupon order: {\"error\":true,\"success\":false,\"message\":\"This coupon is valid only on your first order\"}",
+    "stack": "Error: Failed to create with_coupon order: {\"error\":true,\"success\":false,\"message\":\"This coupon is valid only on your first order\"}\n    at createSavedOrder (file:///d:/bogEcom/server/scripts/e2e-order-invoice-shipping-check.mjs:517:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async run (file:///d:/bogEcom/server/scripts/e2e-order-invoice-shipping-check.mjs:809:29)"
+  }
+}
