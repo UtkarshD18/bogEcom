@@ -14,6 +14,15 @@ dispatch:
   - url: "www.healthyonegram.com/socket.io/*"
     service: default
 
+  - url: "healthyonegram.com/admin"
+    service: admin
+  - url: "healthyonegram.com/admin/*"
+    service: admin
+  - url: "www.healthyonegram.com/admin"
+    service: admin
+  - url: "www.healthyonegram.com/admin/*"
+    service: admin
+
   - url: "healthyonegram.com/*"
     service: client
   - url: "www.healthyonegram.com/*"
