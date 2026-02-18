@@ -10,7 +10,7 @@ import {
   reserveInventory,
 } from "../services/inventory.service.js";
 import UserModel from "../models/user.model.js";
-import { getShippingQuote, validateIndianPincode } from "../services/shippingRate.service.js";
+import { validateIndianPincode } from "../services/shippingRate.service.js";
 import { splitGstInclusiveAmount } from "../services/tax.service.js";
 
 const round2 = (value) =>
@@ -169,6 +169,70 @@ const validateAndNormalizeItems = async (itemsInput = []) => {
   });
 
   return normalizedItems;
+};
+
+const sumGrossInclusiveItems = (items = []) =>
+  round2(
+    (Array.isArray(items) ? items : []).reduce((sum, item) => {
+      const lineSubTotal = Number(item?.subTotal);
+      if (Number.isFinite(lineSubTotal) && lineSubTotal > 0) {
+        return sum + lineSubTotal;
+      }
+      const quantity = Math.max(Number(item?.quantity || 0), 0);
+      const price = Math.max(Number(item?.price || 0), 0);
+      return sum + quantity * price;
+    }, 0),
+  );
+
+/**
+ * PO totals should be based on line-item invoice amount.
+ * Keep shipping as 0 to prevent mismatch between line item amount and PO total.
+ */
+const computePurchaseOrderTotals = ({
+  items = [],
+  gstRate = 5,
+  state = "",
+} = {}) => {
+  const grossInclusiveSubtotal = sumGrossInclusiveItems(items);
+  const taxData = splitGstInclusiveAmount(grossInclusiveSubtotal, gstRate, state);
+  const shipping = 0;
+  const total = round2(grossInclusiveSubtotal + shipping);
+
+  return {
+    subtotal: round2(taxData.taxableAmount),
+    tax: round2(taxData.tax),
+    shipping,
+    total,
+    gst: {
+      rate: Number(taxData.rate || gstRate || 5),
+      state: String(taxData.state || state || ""),
+      taxableAmount: round2(taxData.taxableAmount),
+      cgst: round2(taxData.cgst || 0),
+      sgst: round2(taxData.sgst || 0),
+      igst: round2(taxData.igst || 0),
+    },
+  };
+};
+
+const normalizePurchaseOrderTotals = (purchaseOrder) => {
+  if (!purchaseOrder) return purchaseOrder;
+  const computed = computePurchaseOrderTotals({
+    items: purchaseOrder.items,
+    gstRate: Number(purchaseOrder?.gst?.rate || 5),
+    state: String(purchaseOrder?.gst?.state || purchaseOrder?.guestDetails?.state || ""),
+  });
+
+  return {
+    ...purchaseOrder,
+    subtotal: computed.subtotal,
+    tax: computed.tax,
+    shipping: computed.shipping,
+    total: computed.total,
+    gst: {
+      ...(purchaseOrder.gst || {}),
+      ...computed.gst,
+    },
+  };
 };
 
 const formatPdfDate = (value) => {
@@ -456,13 +520,9 @@ export const createPurchaseOrder = async (req, res) => {
       deliveryAddressId,
       delivery_address,
       guestDetails,
-      paymentType = "prepaid",
     } = req.body || {};
 
     const normalizedItems = await validateAndNormalizeItems(items || products || []);
-    const grossInclusiveSubtotal = round2(
-      normalizedItems.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
-    );
 
     const deliveryInfo = await resolveDeliveryInfo({
       userId,
@@ -470,18 +530,12 @@ export const createPurchaseOrder = async (req, res) => {
       guestDetails,
     });
 
-    const taxData = splitGstInclusiveAmount(
-      grossInclusiveSubtotal,
-      5,
-      deliveryInfo.state,
-    );
-    const shippingQuote = await getShippingQuote({
-      destinationPincode: deliveryInfo.pincode,
-      subtotal: grossInclusiveSubtotal,
-      paymentType,
+    const computedTotals = computePurchaseOrderTotals({
+      items: normalizedItems,
+      gstRate: 5,
+      state: deliveryInfo.state,
     });
 
-    const total = round2(grossInclusiveSubtotal + shippingQuote.amount);
     const poDate = new Date();
     const fyRange = getFiscalYearRange(poDate);
     const existingCount = await PurchaseOrderModel.countDocuments({
@@ -496,18 +550,11 @@ export const createPurchaseOrder = async (req, res) => {
     const purchaseOrder = await PurchaseOrderModel.create({
       userId,
       items: normalizedItems,
-      subtotal: taxData.taxableAmount,
-      tax: taxData.tax,
-      shipping: shippingQuote.amount,
-      total,
-      gst: {
-        rate: taxData.rate,
-        state: taxData.state,
-        taxableAmount: taxData.taxableAmount,
-        cgst: taxData.cgst,
-        sgst: taxData.sgst,
-        igst: taxData.igst,
-      },
+      subtotal: computedTotals.subtotal,
+      tax: computedTotals.tax,
+      shipping: computedTotals.shipping,
+      total: computedTotals.total,
+      gst: computedTotals.gst,
       poNumber,
       status: "draft",
       guestDetails: deliveryInfo.guest,
@@ -520,7 +567,7 @@ export const createPurchaseOrder = async (req, res) => {
       message: "Purchase order created successfully",
       data: {
         purchaseOrder,
-        shippingSource: shippingQuote.source,
+        shippingSource: "none",
       },
     });
   } catch (error) {
@@ -572,10 +619,12 @@ export const getPurchaseOrderById = async (req, res) => {
       }
     }
 
+    const normalizedPo = normalizePurchaseOrderTotals(po);
+
     return res.json({
       error: false,
       success: true,
-      data: po,
+      data: normalizedPo,
     });
   } catch (error) {
     return res.status(500).json({
@@ -652,7 +701,8 @@ export const downloadPurchaseOrderPdf = async (req, res) => {
       await ensurePoNumber(po);
     }
 
-    const buffer = await buildPdfBuffer(po);
+    const normalizedPo = normalizePurchaseOrderTotals(po);
+    const buffer = await buildPdfBuffer(normalizedPo);
     const filename = `PO-${String(po._id).slice(-8).toUpperCase()}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -682,11 +732,15 @@ export const getAllPurchaseOrdersAdmin = async (req, res) => {
       PurchaseOrderModel.countDocuments(),
     ]);
 
+    const normalizedOrders = orders.map((order) =>
+      normalizePurchaseOrderTotals(order),
+    );
+
     return res.status(200).json({
       error: false,
       success: true,
       data: {
-        orders,
+        orders: normalizedOrders,
         pagination: {
           page,
           limit,
@@ -760,11 +814,15 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
 
     await po.save();
 
+    const normalizedPo = normalizePurchaseOrderTotals(
+      po.toObject ? po.toObject() : po,
+    );
+
     return res.status(200).json({
       error: false,
       success: true,
       message: "Receipt details updated",
-      data: po,
+      data: normalizedPo,
     });
   } catch (error) {
     return res.status(500).json({
@@ -824,6 +882,12 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
       }
     }
 
+    const computedPoTotals = computePurchaseOrderTotals({
+      items: po.items || [],
+      gstRate: Number(po.gst?.rate || 5),
+      state: String(po.gst?.state || po.guestDetails?.state || ""),
+    });
+
     const order = new OrderModel({
       user: po.userId || userId || null,
       products: po.items.map((item) => ({
@@ -834,18 +898,18 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
         image: item.image,
         subTotal: item.subTotal,
       })),
-      subtotal: round2(po.subtotal),
-      totalAmt: round2(po.total),
-      finalAmount: round2(po.total),
-      tax: round2(po.tax),
-      shipping: round2(po.shipping),
+      subtotal: round2(computedPoTotals.subtotal),
+      totalAmt: round2(computedPoTotals.total),
+      finalAmount: round2(computedPoTotals.total),
+      tax: round2(computedPoTotals.tax),
+      shipping: round2(computedPoTotals.shipping),
       gst: {
-        rate: Number(po.gst?.rate || 5),
-        state: String(po.gst?.state || po.guestDetails?.state || ""),
-        taxableAmount: round2(po.gst?.taxableAmount ?? po.subtotal),
-        cgst: round2(po.gst?.cgst ?? 0),
-        sgst: round2(po.gst?.sgst ?? 0),
-        igst: round2(po.gst?.igst ?? po.tax),
+        rate: Number(computedPoTotals.gst?.rate || 5),
+        state: String(computedPoTotals.gst?.state || po.guestDetails?.state || ""),
+        taxableAmount: round2(computedPoTotals.gst?.taxableAmount ?? computedPoTotals.subtotal),
+        cgst: round2(computedPoTotals.gst?.cgst ?? 0),
+        sgst: round2(computedPoTotals.gst?.sgst ?? 0),
+        igst: round2(computedPoTotals.gst?.igst ?? computedPoTotals.tax),
       },
       gstNumber: po.guestDetails?.gst || "",
       delivery_address: po.deliveryAddressId || null,
@@ -878,6 +942,14 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
       throw inventoryError;
     }
 
+    po.subtotal = round2(computedPoTotals.subtotal);
+    po.tax = round2(computedPoTotals.tax);
+    po.shipping = round2(computedPoTotals.shipping);
+    po.total = round2(computedPoTotals.total);
+    po.gst = {
+      ...(po.gst || {}),
+      ...computedPoTotals.gst,
+    };
     po.status = "converted";
     po.convertedOrderId = order._id;
     await po.save();
@@ -958,7 +1030,13 @@ export const updatePurchaseOrderStatus = async (req, res) => {
         error: false,
         success: true,
         message: "Purchase order marked as received",
-        data: { purchaseOrder: result.purchaseOrder },
+        data: {
+          purchaseOrder: normalizePurchaseOrderTotals(
+            result.purchaseOrder?.toObject
+              ? result.purchaseOrder.toObject()
+              : result.purchaseOrder,
+          ),
+        },
       });
     }
 
@@ -968,7 +1046,11 @@ export const updatePurchaseOrderStatus = async (req, res) => {
       error: false,
       success: true,
       message: "Purchase order status updated",
-      data: { purchaseOrder: po },
+      data: {
+        purchaseOrder: normalizePurchaseOrderTotals(
+          po.toObject ? po.toObject() : po,
+        ),
+      },
     });
   } catch (error) {
     return res.status(500).json({
