@@ -1,6 +1,6 @@
 "use client";
 
-import { API_BASE_URL } from "@/utils/api";
+import { API_BASE_URL, getStoredAccessToken } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import UseCurrentLocationGoogleMaps from "@/components/UseCurrentLocationGoogleMaps";
 import {
@@ -18,7 +18,6 @@ import {
   Snackbar,
   TextField,
 } from "@mui/material";
-import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { FiCheck, FiEdit2, FiMapPin, FiPlus, FiTrash2 } from "react-icons/fi";
@@ -33,6 +32,13 @@ const parseResponse = async (response) => {
   }
   const text = await response.text();
   return text ? { message: text } : {};
+};
+
+const buildAuthHeaders = (extraHeaders = {}) => {
+  const token = getStoredAccessToken();
+  return token
+    ? { ...extraHeaders, Authorization: `Bearer ${token}` }
+    : extraHeaders;
 };
 
 const INDIAN_STATES = [
@@ -105,17 +111,9 @@ const AddressPage = () => {
   // Fetch addresses
   const fetchAddresses = useCallback(async () => {
     try {
-      const token = cookies.get("accessToken");
-      if (!token) {
-        router.push("/login?redirect=/address");
-        return;
-      }
-
       const response = await fetch(`${API_URL}/api/address`, {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: buildAuthHeaders(),
         credentials: "include",
       });
 
@@ -233,17 +231,13 @@ const AddressPage = () => {
 
     setSaving(true);
     try {
-      const token = cookies.get("accessToken");
       const url = editingAddress
         ? `${API_URL}/api/address/${editingAddress._id}`
         : `${API_URL}/api/address`;
 
       const response = await fetch(url, {
         method: editingAddress ? "PUT" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: buildAuthHeaders({ "Content-Type": "application/json" }),
         credentials: "include",
         body: JSON.stringify({
           ...formData,
@@ -252,6 +246,11 @@ const AddressPage = () => {
       });
 
       const data = await parseResponse(response);
+
+      if (response.status === 401) {
+        router.push("/login?redirect=/address");
+        return;
+      }
 
       if (data.success) {
         setSnackbar({
@@ -287,16 +286,18 @@ const AddressPage = () => {
 
     setDeleting(addressId);
     try {
-      const token = cookies.get("accessToken");
       const response = await fetch(`${API_URL}/api/address/${addressId}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: buildAuthHeaders(),
         credentials: "include",
       });
 
       const data = await parseResponse(response);
+
+      if (response.status === 401) {
+        router.push("/login?redirect=/address");
+        return;
+      }
 
       if (data.success) {
         setSnackbar({
@@ -327,19 +328,21 @@ const AddressPage = () => {
   // Set as default
   const handleSetDefault = async (addressId) => {
     try {
-      const token = cookies.get("accessToken");
       const response = await fetch(
         `${API_URL}/api/address/${addressId}/default`,
         {
           method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: buildAuthHeaders(),
           credentials: "include",
         },
       );
 
       const data = await parseResponse(response);
+
+      if (response.status === 401) {
+        router.push("/login?redirect=/address");
+        return;
+      }
 
       if (data.success) {
         setSnackbar({

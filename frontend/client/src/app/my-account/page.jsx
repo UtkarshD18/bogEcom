@@ -1,6 +1,6 @@
 "use client";
 
-import { API_BASE_URL } from "@/utils/api";
+import { API_BASE_URL, getStoredAccessToken } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import AuthenticationMethods from "@/components/AuthenticationMethods";
 import { Button } from "@mui/material";
@@ -31,7 +31,7 @@ const MyAccount = () => {
   };
 
   useEffect(() => {
-    const token = cookies.get("accessToken");
+    const token = getStoredAccessToken();
     if (!token) return;
 
     const fetchProfile = async () => {
@@ -78,7 +78,7 @@ const MyAccount = () => {
     setSaving(true);
     setMessage("");
     setError("");
-    const token = cookies.get("accessToken");
+    const token = getStoredAccessToken();
     if (!token) {
       setSaving(false);
       setError("Please login again to update your profile.");
