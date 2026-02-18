@@ -45,8 +45,6 @@ import { IoCartOutline } from "react-icons/io5";
 import { MdHome, MdInfo, MdLocationOn, MdWork } from "react-icons/md";
 
 const API_URL = API_BASE_URL;
-const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
-
 const buildAuthHeaders = (extraHeaders = {}) => {
   const token = getStoredAccessToken();
   return token

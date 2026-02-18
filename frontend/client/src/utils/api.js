@@ -16,7 +16,7 @@ export const axiosClient = axios.create({
 });
 
 const normalizePath = (url) => (url?.startsWith("/") ? url : `/${url}`);
-const getStoredAccessToken = () => {
+export const getStoredAccessToken = () => {
   const cookieToken = Cookies.get("accessToken");
   if (cookieToken) return cookieToken;
   if (typeof window === "undefined") return null;
