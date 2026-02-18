@@ -3,7 +3,6 @@
 import { useCart } from "@/context/CartContext";
 import { MyContext } from "@/context/ThemeProvider";
 import { useWishlist } from "@/context/WishlistContext";
-import useMembership from "@/hooks/useMembership";
 import { fetchDataFromApi, postData } from "@/utils/api";
 import cookies from "js-cookie";
 import Image from "next/image";
@@ -84,6 +83,19 @@ const clearStoredPhotoForUser = (emailValue) => {
   if (removedKey) localStorage.removeItem(removedKey);
   // Cleanup old global key to prevent cross-account leakage.
   localStorage.removeItem("userPhoto");
+};
+const DEFAULT_COIN_SUMMARY = {
+  total_coins: 0,
+  usable_coins: 0,
+  rupee_value: 0,
+  expiring_soon: 0,
+  membership_bonus_multiplier: 1,
+  settings: {
+    coinsPerRupee: 0,
+    redeemRate: 0,
+    maxRedeemPercentage: 0,
+    expiryDays: 0,
+  },
 };
 
 const Header = () => {

@@ -1949,17 +1949,72 @@ export const createOrder = asyncHandler(async (req, res) => {
       });
     }
 
-    const normalizedCouponCode = pricing.normalizedCouponCode;
-    const couponDiscount = pricing.couponDiscount;
-    const membershipDiscount = pricing.membershipDiscount;
-    const influencerDiscount = pricing.influencerDiscount;
-    const influencerData = pricing.influencerData;
-    const influencerCommission = pricing.influencerCommission;
-    const redemption = pricing.redemption;
-    const taxData = pricing.taxData;
-    const shippingCharge = pricing.shippingCharge;
-    const computedFinalAmount = pricing.finalAmount;
-    const totalDiscount = pricing.totalDiscount;
+    const normalizedCouponCode = couponResult.normalizedCode;
+    const subtotalBeforeCoupon = workingAmount;
+    const couponDiscount = Math.min(
+      couponResult.discount || 0,
+      subtotalBeforeCoupon,
+    );
+    const membershipDiscount = round2(membershipResult.discount || 0);
+
+    // Apply coupon discount to get post-coupon inclusive amount
+    workingAmount = Math.max(round2(subtotalBeforeCoupon - couponDiscount), 0);
+
+    const totalDiscountBeforeCoins = round2(
+      membershipDiscount + influencerDiscount + couponDiscount,
+    );
+    const subtotalAfterDiscount = workingAmount;
+
+    // GST is calculated on the post-coupon amount. Coupons are trade discounts
+    // that reduce the taxable value per Indian GST rules. Coin redemptions are
+    // a payment method and do NOT reduce the taxable value.
+    const taxData = splitGstInclusiveAmount(
+      subtotalAfterDiscount,
+      5,
+      checkoutContact.state,
+    );
+
+    const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
+    if (requestedCoins > 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "Coin redemption is only available for membership subscriptions.",
+      });
+    }
+    const redemption = { coinsUsed: 0, redeemAmount: 0 };
+
+    const netInclusiveSubtotal = Math.max(
+      round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
+      0,
+    );
+
+    // ---- SHIPPING: backend source-of-truth via getShippingQuote ----
+    const totalWeight = normalizedProducts.reduce(
+      (sum, item) => sum + ((Number(item.quantity) || 1) * 500),
+      0,
+    );
+    let shippingCharge = 0;
+    try {
+      if (validateIndianPincode(checkoutContact.pincode)) {
+        const shippingQuote = await getShippingQuote({
+          destinationPincode: checkoutContact.pincode,
+          subtotal: totalWeight,
+          paymentType: paymentType || "prepaid",
+        });
+        shippingCharge = Number(shippingQuote.charge || 0);
+      }
+    } catch (shippingErr) {
+      logger.warn("createOrder", "Shipping quote failed, defaulting to 0", {
+        error: shippingErr?.message || String(shippingErr),
+      });
+      shippingCharge = 0;
+    }
+
+    const computedFinalAmount = round2(
+      netInclusiveSubtotal + shippingCharge,
+    );
     const payableAmount = Math.max(computedFinalAmount, 1);
 
     const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
@@ -2510,23 +2565,16 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       checkoutContact.state,
     );
 
-    let coinBalance = 0;
-    if (userId) {
-      const user = await UserModel.findById(userId)
-        .select("coinBalance")
-        .lean();
-      coinBalance = Number(user?.coinBalance || 0);
-    }
-
     const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
-    const redemption =
-      requestedCoins > 0 && userId
-        ? await calculateRedemption({
-            subtotal: subtotalAfterDiscount,
-            requestedCoins,
-            coinBalance,
-          })
-        : { coinsUsed: 0, redeemAmount: 0 };
+    if (requestedCoins > 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "Coin redemption is only available for membership subscriptions.",
+      });
+    }
+    const redemption = { coinsUsed: 0, redeemAmount: 0 };
 
     const netInclusiveSubtotal = Math.max(
       round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),

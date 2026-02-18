@@ -287,6 +287,31 @@ export default function MembershipPage() {
     }
   };
 
+  const fetchMembershipStatus = async (token) => {
+    if (!token) {
+      setMembershipStatus(null);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/membership/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+      if (res.status === 401) {
+        setMembershipStatus(null);
+        setIsLoggedIn(false);
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        setMembershipStatus(data.data);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch membership status:", err);
+    }
+  };
+
   useEffect(() => {
     const checkAuth = async () => {
       const token = getStoredAuthToken();
@@ -364,11 +389,6 @@ export default function MembershipPage() {
     };
   }, []);
 
-  useEffect(() => {
-    // Sync server-selected membership theme to the global CSS-variable theme layer.
-    setTheme(resolveGlassThemeKey(pageContent?.theme?.style));
-  }, [pageContent?.theme?.style, setTheme]);
-
   const theme = useMemo(() => {
     const key = resolvePresetThemeKey(pageContent?.theme?.style);
     return THEME_PRESETS[key] || THEME_PRESETS.mint;
@@ -393,21 +413,6 @@ export default function MembershipPage() {
       return;
     }
     router.push(configuredLink);
-  };
-
-  const handlePreviewUnlockCta = () => {
-    if (!isLoggedIn) {
-      handleSubscribe();
-      return;
-    }
-
-    const pricingSection = document.getElementById("membership-pricing");
-    if (pricingSection) {
-      pricingSection.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    handleSubscribe();
   };
 
   if (isLoading) {
@@ -685,6 +690,12 @@ export default function MembershipPage() {
                   {pageContent?.cta?.buttonText || DEFAULT_CONTENT.cta.buttonText}
                 </button>
               </div>
+              <button
+                onClick={handleSecondaryCta}
+                className={`inline-flex items-center justify-center px-8 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r ${theme.accent} shadow-lg shadow-black/15 hover:scale-[1.02] transition-transform`}
+              >
+                {pageContent?.cta?.buttonText || DEFAULT_CONTENT.cta.buttonText}
+              </button>
             </div>
           </section>
         )}

@@ -20,6 +20,8 @@ import { Suspense, useContext, useEffect, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 
+const GOOGLE_REDIRECT_ATTEMPT_KEY = "googleAuthRedirectAttempted";
+
 const getStoredToken = () => {
   if (typeof window === "undefined") return cookies.get("accessToken") || null;
   return (
@@ -215,7 +217,7 @@ const LoginForm = () => {
           return;
         }
       } catch {}
-      // Token is expired or invalid — clear stale cookies so user can login fresh
+      // Token is expired or invalid â€” clear stale cookies so user can login fresh
       clearStoredSession();
     }
     cookies.remove("actionType");
@@ -308,65 +310,17 @@ const LoginForm = () => {
     } catch (error) {
       const errorCode = error?.code;
       const errorMessage = error?.message;
+      console.error("Google Sign-In Error:", errorCode, errorMessage);
 
       if (errorCode === "auth/unauthorized-domain") {
         const canRetryWithRedirect =
           typeof window !== "undefined" &&
           sessionStorage.getItem(GOOGLE_REDIRECT_ATTEMPT_KEY) !== "1";
 
-        try {
-          // Send Google user data to backend
-          const backendResponse = await postData(
-            "/api/user/authWithGoogle",
-            googleUserData,
-          );
-
-          if (backendResponse?.error !== true) {
-            const persisted = persistSession(
-              {
-                ...backendResponse?.data,
-                accessToken: backendResponse?.data?.accessToken || token,
-                userName: user.displayName || "Google User",
-                userEmail: user.email,
-                userPhoto: user.photoURL || "",
-              },
-              user.email,
-            );
-            if (!persisted) {
-              throw new Error("Google auth token missing");
-            }
-
-            // Update context
-            context?.setIsLogin?.(true);
-            context?.setUser?.({
-              name: user.displayName,
-              email: user.email,
-            });
-
-            context?.alertBox(
-              "success",
-              backendResponse?.message || "Google Sign-In successful!",
-            );
-
-            // Dispatch event first, then navigate
-            window.dispatchEvent(new Event("loginSuccess"));
-            setTimeout(() => {
-              router.push("/");
-            }, 100);
-          } else {
-            throw new Error(
-              backendResponse?.message || "Backend registration failed",
-            );
-          }
-        } catch (backendError) {
-          console.error("Backend registration failed:", backendError.message);
-
-          // SECURITY: Do not create fake tokens - require backend authentication
-          context?.alertBox(
-            "error",
-            "Authentication service unavailable. Please try again later.",
-          );
-          setGoogleLoading(false);
+        if (canRetryWithRedirect) {
+          sessionStorage.setItem(GOOGLE_REDIRECT_ATTEMPT_KEY, "1");
+          context?.alertBox("info", "Retrying Google sign-in with redirect...");
+          await signInWithRedirect(auth, provider);
           return;
         }
 
@@ -375,17 +329,17 @@ const LoginForm = () => {
             ? window.location.origin
             : "unknown-origin";
         context?.alertBox("error", `Google sign-in blocked for ${origin}.`);
-      } else if (GOOGLE_POPUP_CANCEL_CODES.has(errorCode)) {
-        // User manually closed/cancelled popup; do not treat as an error.
+      } else if (
+        errorCode === "auth/cancelled-popup-request" ||
+        errorCode === "auth/popup-closed-by-user"
+      ) {
         context?.alertBox("info", "Google Sign-In was cancelled");
       } else if (errorCode === "auth/popup-blocked") {
-        console.warn("Google Sign-In popup blocked:", errorCode, errorMessage);
         context?.alertBox(
           "error",
           "Popup was blocked. Please allow popups for this site.",
         );
       } else {
-        console.error("Google Sign-In Error:", errorCode, errorMessage);
         context?.alertBox("error", `Google sign-in failed: ${errorMessage}`);
       }
     } finally {

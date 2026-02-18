@@ -25,54 +25,6 @@ const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const floorInt = (value) => Math.max(Math.floor(Number(value || 0)), 0);
 
-const decodePhonePeEnvelope = (body = {}) => {
-  if (!body || typeof body !== "object") return {};
-
-  const base64Candidates = [];
-  if (typeof body.response === "string") base64Candidates.push(body.response);
-  if (typeof body.data === "string") base64Candidates.push(body.data);
-
-  for (const candidate of base64Candidates) {
-    try {
-      const decoded = JSON.parse(
-        Buffer.from(candidate, "base64").toString("utf8"),
-      );
-      if (decoded && typeof decoded === "object") {
-        return decoded;
-      }
-    } catch {
-      // Try next candidate.
-    }
-  }
-
-  if (body.data && typeof body.data === "object") {
-    return body.data;
-  }
-
-  return body;
-};
-
-const extractPhonePeFields = (payload = {}) => ({
-  merchantTransactionId:
-    payload?.merchantTransactionId ||
-    payload?.merchant_transaction_id ||
-    payload?.merchantOrderId ||
-    payload?.orderId ||
-    null,
-  transactionId:
-    payload?.transactionId ||
-    payload?.transaction_id ||
-    payload?.providerReferenceId ||
-    payload?.paymentTransactionId ||
-    null,
-  state:
-    payload?.state ||
-    payload?.code ||
-    payload?.status ||
-    payload?.paymentState ||
-    null,
-});
-
 const computeMembershipExpiry = (plan) => {
   const expiry = new Date();
   if (plan.durationUnit === "months") {
