@@ -1,14 +1,13 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
+
 import { useEffect, useState } from "react";
 import { Button, CircularProgress } from "@mui/material";
 import { FiCopy, FiTrendingUp, FiUser } from "react-icons/fi";
 import { useRouter } from "next/navigation";
 
-const API_URL =
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000";
+const API_URL = API_BASE_URL;
 
 const INFLUENCER_TOKEN_KEY = "influencerToken";
 const INFLUENCER_REFRESH_TOKEN_KEY = "influencerRefreshToken";

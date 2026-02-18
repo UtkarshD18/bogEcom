@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
 import { createContext, useContext, useEffect, useState } from "react";
 
 const ReferralContext = createContext({
@@ -12,12 +13,6 @@ const ReferralContext = createContext({
 
 const REFERRAL_STORAGE_KEY = "bogearth_referral";
 const REFERRAL_EXPIRY_DAYS = 30; // Referral session expires in 30 days
-// Use consistent API base URL across the client app
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
 
 export const ReferralProvider = ({ children }) => {
   const [referralCode, setReferralCode] = useState(null);

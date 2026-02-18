@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { getAccessTokenSecret } from "../config/authSecrets.js";
 
 /**
  * Optional auth middleware.
@@ -40,7 +41,7 @@ const authOptional = async (req, res, next) => {
       return next();
     }
 
-    const secretKey = process.env.SECRET_KEY_ACCESS_TOKEN;
+    const secretKey = getAccessTokenSecret();
     if (!secretKey) {
       return next();
     }

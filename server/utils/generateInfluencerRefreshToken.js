@@ -1,18 +1,18 @@
 import jwt from "jsonwebtoken";
 import InfluencerModel from "../models/influencer.model.js";
+import {
+  INFLUENCER_REFRESH_TOKEN_SECRET_KEYS,
+  getInfluencerRefreshTokenSecret,
+} from "../config/authSecrets.js";
 
 const DEFAULT_EXPIRY = "30d";
 
 const generateInfluencerRefreshToken = async (influencerId) => {
-  const secret =
-    process.env.INFLUENCER_REFRESH_TOKEN_SECRET ||
-    process.env.INFLUENCER_JWT_SECRET ||
-    process.env.JSON_WEB_TOKEN_SECRET_KEY ||
-    "";
+  const secret = getInfluencerRefreshTokenSecret();
 
   if (!secret) {
     throw new Error(
-      "INFLUENCER_REFRESH_TOKEN_SECRET or INFLUENCER_JWT_SECRET is not defined",
+      `Influencer refresh token secret is not configured. Expected one of: ${INFLUENCER_REFRESH_TOKEN_SECRET_KEYS.join(", ")}`,
     );
   }
 

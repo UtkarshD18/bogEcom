@@ -1,5 +1,7 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
+
 import PaymentUnavailableModal from "@/components/PaymentUnavailableModal";
 import UseCurrentLocationGoogleMaps from "@/components/UseCurrentLocationGoogleMaps";
 import { useCart } from "@/context/CartContext";
@@ -43,13 +45,7 @@ import { HiOutlineFire } from "react-icons/hi";
 import { IoCartOutline } from "react-icons/io5";
 import { MdHome, MdInfo, MdLocationOn, MdWork } from "react-icons/md";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-)
-  .trim()
-  .replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 /**
  * Checkout Page

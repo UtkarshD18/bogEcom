@@ -1,4 +1,8 @@
 import jwt from "jsonwebtoken";
+import {
+  ACCESS_TOKEN_SECRET_KEYS,
+  getAccessTokenSecret,
+} from "../config/authSecrets.js";
 
 const auth = async (req, res, next) => {
   let token = null;
@@ -54,9 +58,11 @@ const auth = async (req, res, next) => {
     }
 
     // Verify secret key exists
-    const secretKey = process.env.SECRET_KEY_ACCESS_TOKEN;
+    const secretKey = getAccessTokenSecret();
     if (!secretKey) {
-      console.error("SECRET_KEY_ACCESS_TOKEN is not defined");
+      console.error(
+        `Access token secret is not configured. Expected one of: ${ACCESS_TOKEN_SECRET_KEYS.join(", ")}`,
+      );
       return res.status(500).json({
         message: "Server configuration error",
         error: true,

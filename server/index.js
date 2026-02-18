@@ -7,10 +7,90 @@ import http from "http";
 import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  ACCESS_TOKEN_SECRET_KEYS,
+  REFRESH_TOKEN_SECRET_KEYS,
+  getAccessTokenSecret,
+  getRefreshTokenSecret,
+} from "./config/authSecrets.js";
 import connectDb from "./config/connectDb.js";
+import {
+  adminLimiter,
+  authLimiter,
+  generalLimiter,
+  uploadLimiter,
+} from "./middlewares/rateLimiter.js";
+import { UPLOAD_ROOT } from "./middlewares/upload.js";
+
 dotenv.config();
 
+const normalizeEnvValue = (value) => {
+  let normalized = String(value || "").trim();
+
+  const hasWrappedDoubleQuotes =
+    normalized.startsWith('"') && normalized.endsWith('"');
+  const hasWrappedSingleQuotes =
+    normalized.startsWith("'") && normalized.endsWith("'");
+
+  if (hasWrappedDoubleQuotes || hasWrappedSingleQuotes) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  return normalized;
+};
+
+const isValidMongoUri = (value) => /^mongodb(\+srv)?:\/\//.test(value);
+const primaryMongoUri = normalizeEnvValue(process.env.MONGO_URI);
+const fallbackMongoUri = normalizeEnvValue(process.env.MONGODB_URI);
+const normalizedMongoUri = isValidMongoUri(primaryMongoUri)
+  ? primaryMongoUri
+  : isValidMongoUri(fallbackMongoUri)
+    ? fallbackMongoUri
+    : "";
+
+if (!normalizedMongoUri) {
+  if (!primaryMongoUri && !fallbackMongoUri) {
+    throw new Error(
+      "Database URI is missing. Set MONGO_URI or MONGODB_URI in environment variables.",
+    );
+  }
+
+  throw new Error(
+    "Invalid MongoDB URI format. Set MONGO_URI or MONGODB_URI to a value that starts with mongodb:// or mongodb+srv://",
+  );
+}
+
+process.env.MONGO_URI = normalizedMongoUri;
+
+const requiredServerEnvVars = [
+  "MONGO_URI",
+  "CLIENT_URL",
+  "ADMIN_URL",
+];
+
+for (const envKey of requiredServerEnvVars) {
+  if (!process.env[envKey]) {
+    throw new Error(`${envKey} is not defined`);
+  }
+}
+
+const accessTokenSecret = getAccessTokenSecret();
+if (!accessTokenSecret) {
+  throw new Error(
+    `Access token secret is not configured. Set one of: ${ACCESS_TOKEN_SECRET_KEYS.join(", ")}`,
+  );
+}
+
+const refreshTokenSecret = getRefreshTokenSecret();
+if (!refreshTokenSecret) {
+  throw new Error(
+    `Refresh token secret is not configured. Set one of: ${REFRESH_TOKEN_SECRET_KEYS.join(", ")}`,
+  );
+}
+
 // Route imports
+import { initializeFirebaseAdmin } from "./config/firebaseAdmin.js";
+import { initializeSettings } from "./controllers/settings.controller.js";
 import { initSocket } from "./realtime/socket.js";
 import aboutPageRouter from "./routes/aboutPage.route.js";
 import addressRouter from "./routes/address.route.js";
@@ -36,8 +116,8 @@ import orderRouter from "./routes/order.route.js";
 import policyRouter from "./routes/policy.route.js";
 import productRouter from "./routes/product.route.js";
 import purchaseOrderRouter from "./routes/purchaseOrder.route.js";
-import reviewRouter from "./routes/review.route.js";
 import refundRouter from "./routes/refund.route.js";
+import reviewRouter from "./routes/review.route.js";
 import settingsRouter from "./routes/settings.route.js";
 import shippingRouter from "./routes/shipping.route.js";
 import statisticsRouter from "./routes/statistics.route.js";
@@ -49,38 +129,18 @@ import webhookRouter from "./routes/webhook.route.js";
 import wishlistRouter from "./routes/wishlist.route.js";
 import { startExpressbeesPolling } from "./services/expressbeesPolling.service.js";
 import { startInventoryReservationExpiryJob } from "./services/inventoryReservationExpiry.service.js";
-
-// Rate limiting - only import if package is installed
-let generalLimiter, authLimiter, paymentLimiter, uploadLimiter, adminLimiter;
-try {
-  const rateLimitModule = await import("./middlewares/rateLimiter.js");
-  generalLimiter = rateLimitModule.generalLimiter;
-  authLimiter = rateLimitModule.authLimiter;
-  paymentLimiter = rateLimitModule.paymentLimiter;
-  uploadLimiter = rateLimitModule.uploadLimiter;
-  adminLimiter = rateLimitModule.adminLimiter;
-  console.log("✓ Rate limiting enabled");
-} catch (e) {
-  // express-rate-limit not installed - skip rate limiting
-  console.log(
-    "⚠ Rate limiting disabled (install express-rate-limit to enable)",
-  );
-  const noopMiddleware = (req, res, next) => next();
-  generalLimiter =
-    authLimiter =
-    paymentLimiter =
-    uploadLimiter =
-    adminLimiter =
-      noopMiddleware;
-}
-
-// Route imports
+import { startLocationLogRetentionJob } from "./services/userLocationLog.service.js";
 
 // Get __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+const server = http.createServer(app);
+
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 
 // Redirect duplicate slashes in request paths (e.g., //api/cart -> /api/cart)
 app.use((req, res, next) => {
@@ -95,51 +155,24 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ CORS configuration
 const normalizeOrigin = (origin) =>
   String(origin || "")
     .trim()
     .replace(/\/+$/, "");
 
-const envOrigins = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(",").map(normalizeOrigin).filter(Boolean)
-  : [];
-// Fallback to SITE_BASE_URL when FRONTEND_URL is not provided
-if (envOrigins.length === 0 && process.env.SITE_BASE_URL) {
-  envOrigins.push(normalizeOrigin(process.env.SITE_BASE_URL));
-}
-
-const isProduction = process.env.NODE_ENV === "production";
-const defaultDevOrigins = ["http://localhost:3000", "http://localhost:3001"];
-// In production, only allow explicitly configured origins
-const allowedOrigins = Array.from(
-  new Set([...envOrigins, ...(isProduction ? [] : defaultDevOrigins)]),
+const allowedOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL].map(
+  normalizeOrigin,
 );
-const allowVercelPreviewOrigins =
-  String(process.env.ALLOW_VERCEL_PREVIEW_ORIGINS || "true").toLowerCase() ===
-  "true";
-const isVercelOrigin = (origin) =>
-  /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow non-browser/server-to-server requests with no Origin header.
-      if (!origin) {
-        return callback(null, true);
-      }
-
+    origin: function (origin, callback) {
       const normalized = normalizeOrigin(origin);
-      const isExplicitlyAllowed = allowedOrigins.includes(normalized);
-      const isAllowedVercelPreview =
-        allowVercelPreviewOrigins && isVercelOrigin(normalized);
-
-      if (isExplicitlyAllowed || isAllowedVercelPreview) {
-        return callback(null, true);
+      if (!origin || allowedOrigins.includes(normalized)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
       }
-
-      // Block by omitting CORS allow headers for unknown origins.
-      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -147,28 +180,24 @@ app.use(
   }),
 );
 
-// middlewares
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
-
-// Logging: Use 'combined' format in production, 'dev' in development
-if (process.env.NODE_ENV === "production") {
-  app.use(morgan("combined")); // Apache-style logs for production
-} else {
-  app.use(morgan("dev")); // Colored concise output for development
-}
-
 app.use(
   helmet({
     crossOriginResourcePolicy: false,
   }),
 );
 
-// Serve static files (uploads)
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+if (process.env.NODE_ENV === "production") {
+  app.use(morgan("combined"));
+} else {
+  app.use(morgan("dev"));
+}
 
-// test route
+// Serve uploaded files from the same root multer writes to.
+app.use("/uploads", express.static(UPLOAD_ROOT));
+
 app.get("/", (req, res) => {
   res.json({
     message: "Server is running",
@@ -218,7 +247,6 @@ app.use("/api/vendors", adminLimiter, vendorRouter);
 app.use("/api/refunds", adminLimiter, refundRouter);
 app.use("/api/admin/inventory", adminLimiter, inventoryAuditRouter);
 
-// 404 handler
 app.use((req, res, next) => {
   res.status(404).json({
     error: true,
@@ -227,11 +255,8 @@ app.use((req, res, next) => {
   });
 });
 
-// Global error handler - don't leak stack traces in production
 app.use((err, req, res, next) => {
   const isProduction = process.env.NODE_ENV === "production";
-
-  // Log error details server-side
   console.error("Global error:", isProduction ? err.message : err);
 
   res.status(err.status || 500).json({
@@ -244,33 +269,52 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Import settings initializer
-import { initializeFirebaseAdmin } from "./config/firebaseAdmin.js";
-import { initializeSettings } from "./controllers/settings.controller.js";
-import { startLocationLogRetentionJob } from "./services/userLocationLog.service.js";
-
-// start server after DB connect
 connectDb().then(async () => {
-  // Initialize default settings
   await initializeSettings();
 
-  // Initialize Firebase Admin SDK for push notifications
-  initializeFirebaseAdmin();
+  // Firebase is optional in production; skip initialization when credentials are absent.
+  if (process.env.FIREBASE_PRIVATE_KEY) {
+    try {
+      initializeFirebaseAdmin();
+    } catch (error) {
+      console.error(
+        "Firebase initialization skipped due to configuration error:",
+        error?.message || error,
+      );
+    }
+  } else {
+    console.log(
+      "Firebase credentials not provided; push notifications are disabled.",
+    );
+  }
 
-  // Soft-archive expired Google Maps location logs (90-day retention)
   startLocationLogRetentionJob();
 
-  const PORT = process.env.PORT || 8000;
-  const server = http.createServer(app);
+  const PORT = process.env.PORT || 8080;
+
   initSocket(server, {
     origins: allowedOrigins,
-    jwtSecret: process.env.SECRET_KEY_ACCESS_TOKEN,
-  });
-  server.listen(PORT, () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
-    console.log(`📦 API Base URL: http://localhost:${PORT}/api`);
+    jwtSecret: accessTokenSecret,
   });
 
-  startExpressbeesPolling();
+  server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log("API service started");
+  });
+
+  try {
+    startExpressbeesPolling();
+  } catch (error) {
+    console.error(
+      "Xpressbees polling startup skipped due to configuration error:",
+      error?.message || error,
+    );
+  }
   startInventoryReservationExpiryJob();
+}).catch((error) => {
+  console.error(
+    "Server startup failed:",
+    error?.message || error,
+  );
+  process.exit(1);
 });

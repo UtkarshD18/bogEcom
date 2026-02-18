@@ -1,12 +1,11 @@
 import { MyContext } from "@/context/ThemeProvider";
+import { API_BASE_URL } from "@/utils/api";
 import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
 import { useContext, useState } from "react";
 
 // Backend API URL
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL || "http://localhost:8000"
-).replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 /**
  * Custom Hook for Payment Processing

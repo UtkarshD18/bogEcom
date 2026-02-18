@@ -1,6 +1,7 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
+import { API_BASE_URL } from "@/utils/api";
 import {
   Alert,
   Button,
@@ -18,21 +19,6 @@ import {
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import { MdAdd, MdDelete, MdInfo, MdRefresh, MdSave } from "react-icons/md";
-
-const normalizeApiBaseUrl = (raw) => {
-  const cleaned = String(raw || "")
-    .trim()
-    .replace(/^\"|\"$/g, "")
-    .replace(/\/+$/, "");
-  if (!cleaned) return "";
-  return cleaned.endsWith("/api") ? cleaned.slice(0, -4) : cleaned;
-};
-
-const API_BASE_URL = normalizeApiBaseUrl(
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  "http://localhost:8000",
-);
 
 const buildApiUrl = (path) => {
   const safePath = String(path || "").startsWith("/") ? path : `/${path}`;

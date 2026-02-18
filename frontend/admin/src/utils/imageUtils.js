@@ -7,10 +7,28 @@
  * - Placeholder fallbacks
  */
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(
-  /\/+$/,
-  "",
-);
+import { API_BASE_URL } from "@/utils/api";
+
+const API_URL = API_BASE_URL;
+
+const normalizeImageInput = (imageValue) => {
+  if (!imageValue) return "";
+
+  if (typeof imageValue === "string") {
+    return imageValue.trim();
+  }
+
+  // Accept common API object formats: { url }, { secure_url }, { src }
+  if (typeof imageValue === "object") {
+    if (typeof imageValue.url === "string") return imageValue.url.trim();
+    if (typeof imageValue.secure_url === "string") {
+      return imageValue.secure_url.trim();
+    }
+    if (typeof imageValue.src === "string") return imageValue.src.trim();
+  }
+
+  return "";
+};
 
 const normalizeImageInput = (imageValue) => {
   if (!imageValue) return "";

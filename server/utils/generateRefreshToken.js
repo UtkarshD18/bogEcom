@@ -1,16 +1,26 @@
 import UserModel from "../models/user.model.js";
 import jwt from "jsonwebtoken";
-const generateRefreshToken = async (userId) => {
-    const token = await jwt.sign(
-        { id: userId },
-        process.env.SECRET_KEY_REFRESH_TOKEN,
-        { expiresIn: "7d" }
-    )
-    const updateRefreshTokenUser = await UserModel.updateOne(
-        { _id: userId },
-        { refreshToken: token }
-    )
-    return token
+import {
+  REFRESH_TOKEN_SECRET_KEYS,
+  getRefreshTokenSecret,
+} from "../config/authSecrets.js";
 
-}
+const generateRefreshToken = async (userId) => {
+  const secret = getRefreshTokenSecret();
+  if (!secret) {
+    throw new Error(
+      `Refresh token secret is not configured. Expected one of: ${REFRESH_TOKEN_SECRET_KEYS.join(", ")}`,
+    );
+  }
+
+  const token = jwt.sign({ id: userId }, secret, { expiresIn: "7d" });
+
+  await UserModel.updateOne(
+    { _id: userId },
+    { refreshToken: token },
+  );
+
+  return token;
+};
+
 export default generateRefreshToken;

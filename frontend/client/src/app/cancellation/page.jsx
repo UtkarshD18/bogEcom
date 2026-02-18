@@ -1,17 +1,13 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
+
 import { sanitizeHTML } from "@/utils/sanitize";
 import { CircularProgress } from "@mui/material";
 import { useEffect, useState } from "react";
 import { MdInfo } from "react-icons/md";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-)
-  .trim()
-  .replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 
 const THEME_PRESETS = {
   mint: {

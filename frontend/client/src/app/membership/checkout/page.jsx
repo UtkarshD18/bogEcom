@@ -1,14 +1,12 @@
 "use client";
 
+import { API_BASE_URL } from "@/utils/api";
+
 import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+const API_URL = API_BASE_URL;
 const PENDING_PAYMENT_KEY = "membershipPaymentPending";
 
 export default function MembershipCheckoutPage() {

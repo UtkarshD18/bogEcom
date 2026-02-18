@@ -1,4 +1,6 @@
 "use client";
+
+import { API_BASE_URL } from "@/utils/api";
 import Cookies from "js-cookie";
 import { useRouter } from "next/navigation";
 import { createContext, useEffect, useState } from "react";
@@ -109,7 +111,7 @@ const ThemeProvider = ({ children }) => {
       const refreshToken = Cookies.get("refreshToken");
       if (refreshToken) {
         fetch(
-          `${(process.env.NEXT_PUBLIC_APP_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").trim().replace(/\/+$/, "")}/api/user/refresh-token`,
+          `${API_BASE_URL}/api/user/refresh-token`,
           {
             method: "POST",
             credentials: "include",

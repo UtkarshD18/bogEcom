@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { getAccessTokenSecret } from "../config/authSecrets.js";
 
 /**
  * Optional Auth Middleware
@@ -29,11 +30,16 @@ const optionalAuth = async (req, res, next) => {
     }
 
     if (token && typeof token === "string" && token.length > 0) {
-      const decode = jwt.verify(token, process.env.SECRET_KEY_ACCESS_TOKEN);
+      const secret = getAccessTokenSecret();
+      if (!secret) {
+        return next();
+      }
+
+      const decode = jwt.verify(token, secret);
       if (decode && decode.id) {
         req.user = decode.id;
         if (!isProduction) {
-          console.log("✓ optionalAuth: User authenticated");
+          console.log("optionalAuth: User authenticated");
         }
       }
     }
@@ -42,7 +48,7 @@ const optionalAuth = async (req, res, next) => {
   } catch (error) {
     // Token invalid or expired - continue as guest (silent failure)
     if (!isProduction) {
-      console.log("! optionalAuth: Continuing as guest");
+      console.log("optionalAuth: Continuing as guest");
     }
     next();
   }

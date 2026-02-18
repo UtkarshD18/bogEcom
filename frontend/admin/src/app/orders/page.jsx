@@ -1,6 +1,6 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData, putData } from "@/utils/api";
+import { API_BASE_URL, deleteData, getData, putData } from "@/utils/api";
 import {
   Button,
   Dialog,
@@ -19,7 +19,7 @@ import { FaAngleDown } from "react-icons/fa6";
 import { FiSearch } from "react-icons/fi";
 import { MdDateRange, MdLocalShipping } from "react-icons/md";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = API_BASE_URL;
 
 const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const normalizeStatus = (status) => {
