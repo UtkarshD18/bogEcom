@@ -36,7 +36,7 @@ const API_URL = API_BASE_URL;
 const EMPTY_ITEM = {
   productId: "",
   quantity: 1,
-  price: 0,
+  price: "",
   packing: "",
 };
 
@@ -227,10 +227,21 @@ export default function PurchaseOrdersPage() {
     return items.map((item, index) => {
       const product = products.find((p) => p._id === item.productId);
       const quantity = Number(item.quantity || 0);
-      const price = Number(item.price || product?.price || 0);
+      const priceInput = item.price ?? "";
+      const parsedPrice = Number(priceInput);
+      const price = Number.isFinite(parsedPrice) ? parsedPrice : 0;
       const amount = quantity * price;
       const packing = item.packing || "";
-      return { ...item, product, quantity, price, amount, packing, index };
+      return {
+        ...item,
+        product,
+        quantity,
+        price,
+        priceInput,
+        amount,
+        packing,
+        index,
+      };
     });
   }, [items, products]);
 
@@ -287,6 +298,12 @@ export default function PurchaseOrdersPage() {
     const validItems = itemRows.filter((row) => row.product?._id);
     if (validItems.length === 0) {
       toast.error("Add at least one product");
+      return;
+    }
+    if (
+      validItems.some((row) => String(row.priceInput ?? "").trim() === "")
+    ) {
+      toast.error("Enter rate for each selected item");
       return;
     }
     if (
@@ -433,7 +450,7 @@ export default function PurchaseOrdersPage() {
         productTitle: item.productTitle,
         orderedQty: Number(item.quantity || 0),
         receivedQty: Number(item.receivedQuantity || 0),
-        receiveNow: 0,
+        receiveNow: "",
       })),
     });
     setReceiveDialogOpen(true);
@@ -534,8 +551,8 @@ export default function PurchaseOrdersPage() {
             New Purchase Order
           </h2>
           <p className="text-sm text-gray-500 mb-6">
-            Add items to your purchase order. Select a product to auto-fill
-            rate.
+            Add items to your purchase order. Select a product and enter rate
+            manually.
           </p>
 
           {/* Vendor Selector */}
@@ -676,7 +693,7 @@ export default function PurchaseOrdersPage() {
                 />
                 <TextField
                   size="small"
-                  value={row.price}
+                  value={row.priceInput}
                   onChange={(e) =>
                     updateItem(row.index, "price", e.target.value)
                   }
@@ -1004,9 +1021,7 @@ export default function PurchaseOrdersPage() {
                     type="number"
                     size="small"
                     value={item.receiveNow}
-                    onChange={(e) =>
-                      updateReceiveItem(index, Number(e.target.value || 0))
-                    }
+                    onChange={(e) => updateReceiveItem(index, e.target.value)}
                     inputProps={{ min: 0, max: remaining }}
                     fullWidth
                   />

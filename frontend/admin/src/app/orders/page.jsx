@@ -20,6 +20,20 @@ import { FiSearch } from "react-icons/fi";
 import { MdDateRange, MdLocalShipping } from "react-icons/md";
 
 const API_URL = API_BASE_URL;
+const ORDER_TABLE_COLUMNS = [
+  "48px",
+  "84px",
+  "76px",
+  "172px",
+  "76px",
+  "96px",
+  "192px",
+  "72px",
+  "96px",
+  "84px",
+  "168px",
+  "96px",
+];
 
 const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const normalizeStatus = (status) => {
@@ -446,7 +460,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 font-bold">
           #{order?._id?.slice(-6) || "------"}
         </td>
-        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 whitespace-nowrap">
+        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 break-words">
           {purchaseOrderId ? (
             <span className="text-[12px] font-[600] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
               PO #{String(purchaseOrderId).slice(-6).toUpperCase()}
@@ -456,7 +470,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           )}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
-          <div className="flex items-center gap-3 w-[300px]">
+          <div className="flex items-center gap-3 max-w-[170px] min-w-0">
             <div className="rounded-full w-[50px] h-[50px] overflow-hidden bg-gray-200">
               <img
                 src={order?.user?.avatar || "/Profile1.png"}
@@ -464,28 +478,28 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
                 className="w-full h-full object-cover"
               />
             </div>
-            <div className="info flex flex-col gap-0">
-              <span className="text-gray-800 text-[14px]">
+            <div className="info flex flex-col gap-0 min-w-0">
+              <span className="text-gray-800 text-[14px] truncate">
                 {order?.user?.name || "Customer Name"}
               </span>
-              <span className="text-gray-500 text-[14px]">
+              <span className="text-gray-500 text-[13px] break-all leading-5">
                 {order?.user?.email || "customer@email.com"}
               </span>
             </div>
           </div>
         </td>
-        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 whitespace-nowrap">
+        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 break-all">
           {order?.paymentId || "N/A"}
         </td>
-        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 whitespace-nowrap">
+        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 break-all">
           {order?.user?.mobile || order?.delivery_address?.mobile || "N/A"}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
-          <div className="w-[350px] py-3">
+          <div className="max-w-[190px] py-2">
             <span className="bg-gray-100 rounded-md px-2 py-1 border border-[rgba(0,0,0,0.1)]">
               {order?.delivery_address?.addressType || "Home"}
             </span>
-            <p className="pt-2">
+            <p className="pt-2 break-words leading-6">
               {order?.delivery_address
                 ? `${order.delivery_address.address_line1 || order.delivery_address.address_line || ""}, ${order.delivery_address.city || ""}, ${order.delivery_address.state || ""}`
                 : "No address"}
@@ -498,7 +512,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
           ₹{order?.finalAmount || order?.totalAmt || "0"}
         </td>
-        <td className="text-[14px] text-gray-600 px-4 py-2 whitespace-nowrap text-primary font-bold">
+        <td className="text-[14px] text-gray-600 px-4 py-2 text-primary font-bold break-all">
           {order?.user?._id?.slice(-6) || "------"}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
@@ -509,6 +523,20 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             inputProps={{ "aria-label": "Without label" }}
             size="small"
             disabled={updating}
+            fullWidth
+            sx={{
+              "& .MuiSelect-select": {
+                py: "9px",
+                pr: "28px",
+                fontSize: "14px",
+                fontWeight: 500,
+              },
+              borderRadius: "10px",
+              backgroundColor: "#ffffff",
+              "& fieldset": {
+                borderColor: "rgba(148, 163, 184, 0.6)",
+              },
+            }}
           >
             <MenuItem value="pending">Pending</MenuItem>
             <MenuItem value="pending_payment">Pending Payment</MenuItem>
@@ -521,9 +549,9 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             <MenuItem value="confirmed">Confirmed (Legacy)</MenuItem>
           </Select>
         </td>
-        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 whitespace-nowrap">
-          <div className="flex items-center gap-1">
-            <MdDateRange size={20} />
+        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
+          <div className="inline-flex items-center gap-1 text-[14px] whitespace-nowrap">
+            <MdDateRange size={18} />
             {order?.createdAt
               ? new Date(order.createdAt).toLocaleDateString()
               : new Date().toLocaleDateString()}
@@ -992,10 +1020,12 @@ const Orders = () => {
 
   return (
     <div className="wrapper w-full p-4">
-      <div className="bg-white shadow-md rounded-md mb-5 p-5">
+      <div className="bg-white border border-gray-200 shadow-sm rounded-xl mb-5 p-5">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="info">
-            <h1 className="text-[20px] font-[600] text-gray-600">Orders</h1>
+            <h1 className="text-[28px] leading-none font-[700] text-gray-800">
+              Orders
+            </h1>
             <p className="text-gray-500">
               There {orders.length === 1 ? "is" : "are"}{" "}
               <span className="text-primary font-bold">{orders.length}</span>{" "}
@@ -1007,7 +1037,12 @@ const Orders = () => {
               variant="outlined"
               size="small"
               onClick={() => router.push("/purchase-orders")}
-              sx={{ textTransform: "none" }}
+              sx={{
+                textTransform: "none",
+                borderRadius: "10px",
+                px: 2,
+                py: 0.8,
+              }}
             >
               Purchase Orders
             </Button>
@@ -1019,9 +1054,21 @@ const Orders = () => {
                   placeholder="Search Order..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-md w-[300px] outline-none focus:border-blue-500"
+                  className="pl-10 pr-4 py-2 border border-gray-300 bg-gray-50 rounded-lg w-[300px] outline-none focus:border-blue-500"
                 />
               </div>
+              <Button
+                type="submit"
+                variant="contained"
+                sx={{
+                  textTransform: "none",
+                  borderRadius: "10px",
+                  px: 2,
+                  py: 0.8,
+                }}
+              >
+                Search
+              </Button>
             </form>
           </div>
         </div>
@@ -1036,42 +1083,47 @@ const Orders = () => {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto w-full mt-5 scroll">
-              <table className="w-full">
+            <div className="w-full mt-5 border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full table-fixed">
+                <colgroup>
+                  {ORDER_TABLE_COLUMNS.map((width, idx) => (
+                    <col key={idx} style={{ width }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-gray-200">
                   <tr>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left border-b-[1px] border-[rgba(0,0,0,0.1)]"></th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left border-b-[1px] border-[rgba(0,0,0,0.1)] uppercase tracking-wide"></th>
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Order Id
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       PO
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Customer
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Payment Id
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Phone Number
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Address
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Pincode
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Total Amount
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       User Id
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Order Status
                     </th>
-                    <th className="text-[14px] text-gray-700 font-[600] px-4 py-3 whitespace-nowrap text-left">
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Date
                     </th>
                   </tr>

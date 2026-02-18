@@ -4,7 +4,13 @@ import { API_BASE_URL } from "@/utils/api";
 
 import { useEffect, useState } from "react";
 import { Button, CircularProgress } from "@mui/material";
-import { FiCopy, FiTrendingUp, FiUser } from "react-icons/fi";
+import {
+  FiCopy,
+  FiExternalLink,
+  FiGlobe,
+  FiTrendingUp,
+  FiUser,
+} from "react-icons/fi";
 import { useRouter } from "next/navigation";
 
 const API_URL = API_BASE_URL;
@@ -13,6 +19,76 @@ const INFLUENCER_TOKEN_KEY = "influencerToken";
 const INFLUENCER_REFRESH_TOKEN_KEY = "influencerRefreshToken";
 const SESSION_KEY = "influencerPortalSession";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const normalizePlatformKey = (platform) =>
+  String(platform || "").trim().toLowerCase();
+
+const indexPromotionPlatforms = (platforms = []) => {
+  const validPlatforms = (platforms || [])
+    .map((entry) => ({
+      platform: String(entry?.platform || "").trim(),
+      username: String(entry?.username || "")
+        .replace(/^@+/, "")
+        .trim(),
+    }))
+    .filter((entry) => entry.platform && entry.username);
+
+  const totals = {};
+  validPlatforms.forEach((entry) => {
+    const key = normalizePlatformKey(entry.platform);
+    if (!key) return;
+    totals[key] = (totals[key] || 0) + 1;
+  });
+
+  const seen = {};
+  return validPlatforms.map((entry) => {
+    const key = normalizePlatformKey(entry.platform);
+    const duplicateCount = totals[key] || 1;
+    const duplicateIndex = (seen[key] || 0) + 1;
+    seen[key] = duplicateIndex;
+    return {
+      ...entry,
+      displayPlatform:
+        duplicateCount > 1
+          ? `${entry.platform} ${duplicateIndex}`
+          : entry.platform,
+    };
+  });
+};
+
+const buildPlatformProfileUrl = (platform, username) => {
+  const cleanUsername = String(username || "")
+    .replace(/^@+/, "")
+    .trim();
+  if (!cleanUsername) return "";
+
+  if (/^https?:\/\//i.test(cleanUsername)) {
+    return cleanUsername;
+  }
+
+  const key = normalizePlatformKey(platform);
+  switch (key) {
+    case "instagram":
+      return `https://instagram.com/${cleanUsername}`;
+    case "youtube":
+      return `https://youtube.com/@${cleanUsername}`;
+    case "facebook":
+      return `https://facebook.com/${cleanUsername}`;
+    case "x":
+    case "twitter":
+      return `https://x.com/${cleanUsername}`;
+    case "linkedin":
+      return `https://www.linkedin.com/in/${cleanUsername}`;
+    case "telegram":
+      return `https://t.me/${cleanUsername}`;
+    case "whatsapp":
+      return `https://wa.me/${cleanUsername.replace(/\D/g, "")}`;
+    case "website":
+      return `https://${cleanUsername}`;
+    default:
+      return "";
+  }
+};
 
 const AffiliatePortalPage = () => {
   const router = useRouter();
@@ -184,6 +260,9 @@ const AffiliatePortalPage = () => {
 
   const stats = data?.stats || {};
   const referralUrl = data?.influencer?.referralUrl || "";
+  const indexedPlatforms = indexPromotionPlatforms(
+    data?.influencer?.promotionPlatforms || [],
+  );
 
   const handleCopyReferralLink = async () => {
     if (!referralUrl || typeof window === "undefined") return;
@@ -310,6 +389,59 @@ const AffiliatePortalPage = () => {
                   </p>
                 </div>
               </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm p-6">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <FiGlobe className="text-indigo-500" />
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    Promotion Platforms
+                  </h3>
+                </div>
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">
+                  {indexedPlatforms.length} Platform
+                  {indexedPlatforms.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {indexedPlatforms.length ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {indexedPlatforms.map((entry, index) => {
+                    const profileUrl = buildPlatformProfileUrl(
+                      entry.platform,
+                      entry.username,
+                    );
+                    return (
+                      <div
+                        key={`${entry.platform}-${entry.username}-${index}`}
+                        className="bg-gray-50 rounded-xl px-4 py-3"
+                      >
+                        <p className="text-sm font-semibold text-gray-800">
+                          {entry.displayPlatform}
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          @{entry.username}
+                        </p>
+                        {profileUrl && (
+                          <a
+                            href={profileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            <FiExternalLink />
+                            Open profile
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  No promotion platforms have been configured yet.
+                </p>
+              )}
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm p-6">

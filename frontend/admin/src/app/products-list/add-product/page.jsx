@@ -567,18 +567,18 @@ const AddProduct = () => {
                   {variants.map((v, i) => (
                     <div
                       key={i}
-                      className={`grid grid-cols-1 sm:grid-cols-7 gap-3 items-end p-4 rounded-lg relative ${v.isDefault ? "bg-blue-50 border border-blue-200" : "bg-gray-50"}`}
+                      className={`grid grid-cols-1 sm:grid-cols-8 gap-3 items-end p-4 rounded-lg relative ${v.isDefault ? "bg-blue-50 border border-blue-200" : "bg-gray-50"}`}
                     >
                       {v.isDefault && (
                         <span className="absolute -top-2 left-3 bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                           DEFAULT
                         </span>
                       )}
-                      <div className="sm:col-span-1 flex flex-col gap-1">
+                      <div className="sm:col-span-2 flex flex-col gap-1">
                         <span className="text-xs text-gray-600 font-medium">
                           Weight *
                         </span>
-                        <div className="flex gap-1">
+                        <div className="flex items-center gap-1">
                           <input
                             type="number"
                             value={v.weight}
@@ -587,14 +587,14 @@ const AddProduct = () => {
                             }
                             placeholder="500"
                             min="0"
-                            className="flex-1 h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
+                            className="flex-1 min-w-0 h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
                           />
                           <select
                             value={v.unit || "g"}
                             onChange={(e) =>
                               updateVariant(i, "unit", e.target.value)
                             }
-                            className="w-14 h-[36px] border border-gray-300 rounded-md px-1 text-sm focus:border-blue-500 outline-none"
+                            className="w-[68px] shrink-0 h-[36px] border border-gray-300 rounded-md px-1 text-sm focus:border-blue-500 outline-none"
                           >
                             <option value="g">g</option>
                             <option value="kg">kg</option>
