@@ -2,7 +2,7 @@
 import { useAdmin } from "@/context/AdminContext";
 import { Button } from "@mui/material";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { IoIosLogOut } from "react-icons/io";
 import { IoBagCheckOutline } from "react-icons/io5";
 import { LiaImageSolid } from "react-icons/lia";
@@ -13,7 +13,6 @@ import {
   MdNotificationsActive,
   MdOutlineArticle,
   MdOutlineCategory,
-  MdOutlineInventory2,
   MdOutlinePolicy,
   MdSettings,
 } from "react-icons/md";
@@ -23,8 +22,9 @@ import { RxDashboard } from "react-icons/rx";
 import { TbBrandProducthunt, TbShare, TbUsers } from "react-icons/tb";
 
 const Sidebar = () => {
-  const { logout, admin } = useAdmin();
+  const { logout } = useAdmin();
   const pathname = usePathname();
+  const router = useRouter();
 
   const sidebarTabs = [
     {
@@ -46,11 +46,6 @@ const Sidebar = () => {
       name: "Products",
       icon: <TbBrandProducthunt size={22} />,
       href: "/products-list",
-    },
-    {
-      name: "Low Stock",
-      icon: <MdOutlineInventory2 size={22} />,
-      href: "/products-list?lowStock=true",
     },
     {
       name: "Users",
@@ -134,6 +129,11 @@ const Sidebar = () => {
     return pathname.startsWith(href);
   };
 
+  const handleAdminHomeRefresh = () => {
+    router.push("/");
+    router.refresh();
+  };
+
   return (
     <aside className="w-[250px] bg-white shadow-md h-screen fixed top-0 left-0 z-40 flex flex-col">
       {/* Logo */}
@@ -145,10 +145,16 @@ const Sidebar = () => {
 
       {/* Admin Info */}
       <div className="px-4 py-3 border-b border-gray-100">
-        <p className="text-sm font-medium text-gray-800 truncate">
-          {admin?.name || "Admin"}
-        </p>
-        <p className="text-xs text-gray-500 truncate">{admin?.email || ""}</p>
+        <button
+          type="button"
+          onClick={handleAdminHomeRefresh}
+          className="w-full text-left"
+          title="Go to admin home and refresh"
+        >
+          <p className="text-base font-semibold text-gray-900 hover:text-blue-700 transition-colors">
+            Admin Panel
+          </p>
+        </button>
       </div>
 
       {/* Navigation */}

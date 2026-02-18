@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   FiGrid,
   FiImage,
-  FiLogOut,
   FiPackage,
   FiShoppingCart,
   FiUsers,
@@ -16,7 +15,7 @@ import {
 import { MdOutlineSlideshow } from "react-icons/md";
 
 export default function AdminDashboard() {
-  const { admin, loading, isAuthenticated, logout, token } = useAdmin();
+  const { admin, loading, isAuthenticated, token } = useAdmin();
   const router = useRouter();
   const [stats, setStats] = useState({
     totalProducts: 0,
@@ -131,35 +130,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="Logo" className="h-10" />
-              <span className="text-xl font-bold text-gray-800">
-                Admin Panel
-              </span>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-700">
-                  {admin?.name}
-                </p>
-                <p className="text-xs text-gray-500">{admin?.email}</p>
-              </div>
-              <button
-                onClick={logout}
-                className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
-              >
-                <FiLogOut />
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Card */}

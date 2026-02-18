@@ -13,6 +13,28 @@ import generateInfluencerRefreshToken from "../utils/generateInfluencerRefreshTo
  * Commission tracking and statistics
  */
 
+const normalizePromotionPlatforms = (platforms) => {
+  if (!Array.isArray(platforms)) return [];
+
+  const dedupe = new Set();
+  return platforms
+    .map((entry) => {
+      const platform = String(entry?.platform || "").trim();
+      let username = String(entry?.username || "").trim();
+      if (username.startsWith("@")) {
+        username = username.slice(1).trim();
+      }
+      return { platform, username };
+    })
+    .filter((entry) => entry.platform && entry.username)
+    .filter((entry) => {
+      const key = `${entry.platform.toLowerCase()}::${entry.username.toLowerCase()}`;
+      if (dedupe.has(key)) return false;
+      dedupe.add(key);
+      return true;
+    });
+};
+
 // ==================== PUBLIC ENDPOINTS ====================
 
 /**
@@ -114,6 +136,7 @@ const buildInfluencerPortalPayload = async (influencer) => {
       code: influencer.code,
       referralUrl: influencer.referralUrl,
       isActive: influencer.isActive,
+      promotionPlatforms: influencer.promotionPlatforms || [],
     },
     stats: {
       totalOrders: influencer.totalOrders || 0,
@@ -192,6 +215,7 @@ export const loginInfluencer = async (req, res) => {
           email: influencer.email,
           code: influencer.code,
           referralUrl: influencer.referralUrl,
+          promotionPlatforms: influencer.promotionPlatforms || [],
         },
       },
     });
@@ -549,6 +573,7 @@ export const createInfluencer = async (req, res) => {
       name,
       email,
       phone,
+      promotionPlatforms,
       code,
       discountType,
       discountValue,
@@ -593,6 +618,7 @@ export const createInfluencer = async (req, res) => {
       name,
       email,
       phone,
+      promotionPlatforms: normalizePromotionPlatforms(promotionPlatforms),
       code: code.toUpperCase().trim(),
       discountType: discountType || "PERCENT",
       discountValue,
@@ -650,6 +676,11 @@ export const updateInfluencer = async (req, res) => {
     delete updateData.totalOrders;
     delete updateData.totalRevenue;
     delete updateData.totalCommissionEarned;
+    if ("promotionPlatforms" in updateData) {
+      updateData.promotionPlatforms = normalizePromotionPlatforms(
+        updateData.promotionPlatforms,
+      );
+    }
 
     const influencer = await InfluencerModel.findById(id);
 
@@ -810,6 +841,7 @@ export const getInfluencerStats = async (req, res) => {
           code: influencer.code,
           referralUrl: influencer.referralUrl,
           isActive: influencer.isActive,
+          promotionPlatforms: influencer.promotionPlatforms || [],
         },
         stats: {
           ...stats,

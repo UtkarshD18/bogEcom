@@ -6,9 +6,11 @@ import { useAdmin } from "@/context/AdminContext";
 import {
   Button,
   CircularProgress,
-  TextField,
   FormControlLabel,
   Switch,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -25,7 +27,7 @@ const ShippingAdminPage = () => {
   const [serviceability, setServiceability] = useState({
     origin: "",
     destination: "",
-    payment_type: "cod",
+    payment_type: "prepaid",
     order_amount: "",
     weight: "500",
     length: "10",
@@ -97,6 +99,41 @@ const ShippingAdminPage = () => {
     } finally {
       setLoadingAction(false);
     }
+  };
+
+  const handlePaymentTypeChange = (_event, value) => {
+    if (!value) return;
+    setServiceability((prev) => ({
+      ...prev,
+      payment_type: value,
+    }));
+  };
+
+  const updateServiceabilityField = (field, value) => {
+    setServiceability((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const setNumericServiceabilityField = (field, value) => {
+    const normalized = String(value || "").replace(/[^\d]/g, "");
+    setServiceability((prev) => ({
+      ...prev,
+      [field]: normalized,
+    }));
+  };
+
+  const adjustServiceabilityField = (field, delta) => {
+    setServiceability((prev) => {
+      const current = Number.parseInt(prev[field] || "0", 10);
+      const safeCurrent = Number.isFinite(current) ? current : 0;
+      const next = Math.max(0, safeCurrent + delta);
+      return {
+        ...prev,
+        [field]: String(next),
+      };
+    });
   };
 
   const handleTrack = async () => {
@@ -247,84 +284,213 @@ const ShippingAdminPage = () => {
             <MdLocalShipping className="text-xl text-orange-500" />
             <h2 className="font-semibold text-gray-800">Serviceability</h2>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <TextField
-              label="Origin Pincode"
-              value={serviceability.origin}
-              onChange={(e) =>
-                setServiceability({ ...serviceability, origin: e.target.value })
-              }
-              size="small"
-            />
-            <TextField
-              label="Destination Pincode"
-              value={serviceability.destination}
-              onChange={(e) =>
-                setServiceability({
-                  ...serviceability,
-                  destination: e.target.value,
-                })
-              }
-              size="small"
-            />
-            <TextField
-              label="Payment Type (cod/prepaid)"
-              value={serviceability.payment_type}
-              onChange={(e) =>
-                setServiceability({
-                  ...serviceability,
-                  payment_type: e.target.value,
-                })
-              }
-              size="small"
-            />
-            <TextField
-              label="Order Amount"
-              value={serviceability.order_amount}
-              onChange={(e) =>
-                setServiceability({
-                  ...serviceability,
-                  order_amount: e.target.value,
-                })
-              }
-              size="small"
-            />
-            <TextField
-              label="Weight (g)"
-              value={serviceability.weight}
-              onChange={(e) =>
-                setServiceability({ ...serviceability, weight: e.target.value })
-              }
-              size="small"
-            />
-            <TextField
-              label="Length (cm)"
-              value={serviceability.length}
-              onChange={(e) =>
-                setServiceability({ ...serviceability, length: e.target.value })
-              }
-              size="small"
-            />
-            <TextField
-              label="Breadth (cm)"
-              value={serviceability.breadth}
-              onChange={(e) =>
-                setServiceability({ ...serviceability, breadth: e.target.value })
-              }
-              size="small"
-            />
-            <TextField
-              label="Height (cm)"
-              value={serviceability.height}
-              onChange={(e) =>
-                setServiceability({ ...serviceability, height: e.target.value })
-              }
-              size="small"
-            />
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-gray-600">
+                  Origin Pincode
+                </span>
+                <TextField
+                  value={serviceability.origin}
+                  onChange={(e) =>
+                    updateServiceabilityField("origin", e.target.value)
+                  }
+                  placeholder="Origin Pincode"
+                  size="small"
+                  fullWidth
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-gray-600">
+                  Destination Pincode
+                </span>
+                <TextField
+                  value={serviceability.destination}
+                  onChange={(e) =>
+                    updateServiceabilityField("destination", e.target.value)
+                  }
+                  placeholder="Destination Pincode"
+                  size="small"
+                  fullWidth
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-gray-600">
+                  Payment Type
+                </span>
+                <ToggleButtonGroup
+                  value={serviceability.payment_type}
+                  exclusive
+                  onChange={handlePaymentTypeChange}
+                  size="small"
+                  fullWidth
+                >
+                  <ToggleButton value="prepaid">Prepaid</ToggleButton>
+                  <ToggleButton value="cod">COD</ToggleButton>
+                </ToggleButtonGroup>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-gray-600">
+                  Order Amount
+                </span>
+                <TextField
+                  value={serviceability.order_amount}
+                  onChange={(e) =>
+                    updateServiceabilityField("order_amount", e.target.value)
+                  }
+                  placeholder="Order Amount"
+                  size="small"
+                  fullWidth
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3.5">
+              <p className="text-sm font-semibold text-gray-700 mb-3">
+                Package Dimensions
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                <div className="bg-white border border-gray-200 rounded-lg p-2.5 h-full">
+                  <p className="text-xs font-medium text-gray-600 mb-2">
+                    Weight (g)
+                  </p>
+                  <div className="flex items-stretch gap-2">
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => adjustServiceabilityField("weight", -100)}
+                      sx={{ minWidth: 34, width: 34, height: 40, p: 0 }}
+                    >
+                      -
+                    </Button>
+                    <TextField
+                      value={serviceability.weight}
+                      onChange={(e) =>
+                        setNumericServiceabilityField("weight", e.target.value)
+                      }
+                      size="small"
+                      inputProps={{ inputMode: "numeric", style: { textAlign: "center" } }}
+                      fullWidth
+                    />
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => adjustServiceabilityField("weight", 100)}
+                      sx={{ minWidth: 34, width: 34, height: 40, p: 0 }}
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-lg p-2.5 h-full">
+                  <p className="text-xs font-medium text-gray-600 mb-2">
+                    Length (cm)
+                  </p>
+                  <div className="flex items-stretch gap-2">
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => adjustServiceabilityField("length", -1)}
+                      sx={{ minWidth: 34, width: 34, height: 40, p: 0 }}
+                    >
+                      -
+                    </Button>
+                    <TextField
+                      value={serviceability.length}
+                      onChange={(e) =>
+                        setNumericServiceabilityField("length", e.target.value)
+                      }
+                      size="small"
+                      inputProps={{ inputMode: "numeric", style: { textAlign: "center" } }}
+                      fullWidth
+                    />
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => adjustServiceabilityField("length", 1)}
+                      sx={{ minWidth: 34, width: 34, height: 40, p: 0 }}
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-lg p-2.5 h-full">
+                  <p className="text-xs font-medium text-gray-600 mb-2">
+                    Breadth (cm)
+                  </p>
+                  <div className="flex items-stretch gap-2">
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => adjustServiceabilityField("breadth", -1)}
+                      sx={{ minWidth: 34, width: 34, height: 40, p: 0 }}
+                    >
+                      -
+                    </Button>
+                    <TextField
+                      value={serviceability.breadth}
+                      onChange={(e) =>
+                        setNumericServiceabilityField("breadth", e.target.value)
+                      }
+                      size="small"
+                      inputProps={{ inputMode: "numeric", style: { textAlign: "center" } }}
+                      fullWidth
+                    />
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => adjustServiceabilityField("breadth", 1)}
+                      sx={{ minWidth: 34, width: 34, height: 40, p: 0 }}
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-lg p-2.5 h-full">
+                  <p className="text-xs font-medium text-gray-600 mb-2">
+                    Height (cm)
+                  </p>
+                  <div className="flex items-stretch gap-2">
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => adjustServiceabilityField("height", -1)}
+                      sx={{ minWidth: 34, width: 34, height: 40, p: 0 }}
+                    >
+                      -
+                    </Button>
+                    <TextField
+                      value={serviceability.height}
+                      onChange={(e) =>
+                        setNumericServiceabilityField("height", e.target.value)
+                      }
+                      size="small"
+                      inputProps={{ inputMode: "numeric", style: { textAlign: "center" } }}
+                      fullWidth
+                    />
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => adjustServiceabilityField("height", 1)}
+                      sx={{ minWidth: 34, width: 34, height: 40, p: 0 }}
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <Button
             variant="contained"
             sx={{ mt: 3, bgcolor: "#059669", "&:hover": { bgcolor: "#047857" } }}
+            className="w-full sm:w-auto"
             onClick={handleServiceability}
             disabled={loadingAction}
           >

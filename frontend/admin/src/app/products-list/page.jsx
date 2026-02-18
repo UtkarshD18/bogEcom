@@ -262,8 +262,8 @@ const ProductsListContent = () => {
           </div>
         ) : (
           <>
-            <TableContainer sx={{ maxHeight: 440 }}>
-              <Table stickyHeader aria-label="products table">
+            <TableContainer sx={{ width: "100%" }}>
+              <Table aria-label="products table">
                 <TableHead>
                   <TableRow>
                     {columns.map((column) => (
