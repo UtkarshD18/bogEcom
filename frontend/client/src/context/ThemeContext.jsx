@@ -3,7 +3,7 @@
 import { API_BASE_URL } from "@/utils/api";
 import Cookies from "js-cookie";
 import { useRouter } from "next/navigation";
-import { createContext, useEffect, useState } from "react";
+import { createContext, useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
 export const MyContext = createContext();
@@ -54,6 +54,48 @@ export const FLAVORS = {
 
 // Default flavor is Creamy
 const DEFAULT_FLAVOR = FLAVORS.creamy;
+const resolveInitialFlavor = () => {
+  if (typeof window === "undefined") {
+    return DEFAULT_FLAVOR;
+  }
+
+  const savedFlavor = localStorage.getItem("selectedFlavor");
+  if (!savedFlavor) {
+    return DEFAULT_FLAVOR;
+  }
+
+  try {
+    const parsed = JSON.parse(savedFlavor);
+    const flavorKey = Object.keys(FLAVORS).find(
+      (key) => FLAVORS[key].name === parsed.name,
+    );
+    return flavorKey ? FLAVORS[flavorKey] : DEFAULT_FLAVOR;
+  } catch {
+    return DEFAULT_FLAVOR;
+  }
+};
+const getStoredAccessToken = () => {
+  if (typeof window === "undefined") return Cookies.get("accessToken") || "";
+  return (
+    Cookies.get("accessToken") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("token") ||
+    ""
+  );
+};
+const decodeJwtPayload = (token) => {
+  try {
+    const tokenPart = String(token || "").split(".")[1];
+    if (!tokenPart) return null;
+    const normalized = tokenPart
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(tokenPart.length / 4) * 4, "=");
+    return JSON.parse(atob(normalized));
+  } catch {
+    return null;
+  }
+};
 
 const ThemeProvider = ({ children }) => {
   const [isOpenAddressBox, setIsOpenAddressBox] = useState(false);
@@ -62,120 +104,10 @@ const ThemeProvider = ({ children }) => {
     email: "",
     Password: "",
   });
-  const [flavor, setFlavor] = useState(DEFAULT_FLAVOR);
-  const [mounted, setMounted] = useState(false);
+  const [flavor, setFlavor] = useState(resolveInitialFlavor);
 
   const router = useRouter();
-
-  // Initialize theme from localStorage on mount
-  useEffect(() => {
-    const savedFlavor = localStorage.getItem("selectedFlavor");
-    if (savedFlavor) {
-      try {
-        const parsed = JSON.parse(savedFlavor);
-        // Match with our FLAVORS object to get full palette
-        const flavorKey = Object.keys(FLAVORS).find(
-          (key) => FLAVORS[key].name === parsed.name,
-        );
-        const resolvedFlavor = flavorKey ? FLAVORS[flavorKey] : DEFAULT_FLAVOR;
-        setFlavor(resolvedFlavor);
-        applyThemeToDOM(resolvedFlavor);
-      } catch {
-        setFlavor(DEFAULT_FLAVOR);
-        applyThemeToDOM(DEFAULT_FLAVOR);
-      }
-    } else {
-      // Set default flavor in localStorage on first visit
-      localStorage.setItem("selectedFlavor", JSON.stringify(DEFAULT_FLAVOR));
-      applyThemeToDOM(DEFAULT_FLAVOR);
-    }
-    setMounted(true);
-
-    const token = Cookies.get("accessToken");
-    let tokenValid = false;
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        tokenValid = payload.exp * 1000 > Date.now();
-      } catch { }
-    }
-    if (tokenValid) {
-      Cookies.remove("actionType");
-      setIsLogin(true);
-      setUser({
-        name: Cookies.get("userName"),
-        email: Cookies.get("userEmail"),
-      });
-    } else if (token) {
-      // Token expired — try refreshing before giving up
-      const refreshToken = Cookies.get("refreshToken");
-      if (refreshToken) {
-        fetch(
-          `${API_BASE_URL}/api/user/refresh-token`,
-          {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refreshToken }),
-          },
-        )
-          .then((r) => (r.ok ? r.json() : null))
-          .then((data) => {
-            const newToken = data?.data?.accessToken;
-            if (newToken) {
-              Cookies.set("accessToken", newToken, { expires: 7 });
-              setIsLogin(true);
-              setUser({
-                name: Cookies.get("userName"),
-                email: Cookies.get("userEmail"),
-              });
-            } else {
-              // Refresh failed — clear stale cookies
-              Cookies.remove("accessToken");
-              Cookies.remove("refreshToken");
-              Cookies.remove("userName");
-              Cookies.remove("userEmail");
-              Cookies.remove("userPhoto");
-              setIsLogin(false);
-            }
-          })
-          .catch(() => {
-            Cookies.remove("accessToken");
-            Cookies.remove("refreshToken");
-            Cookies.remove("userName");
-            Cookies.remove("userEmail");
-            Cookies.remove("userPhoto");
-            setIsLogin(false);
-          });
-      } else {
-        // No refresh token — clear stale cookies
-        Cookies.remove("accessToken");
-        Cookies.remove("userName");
-        Cookies.remove("userEmail");
-        Cookies.remove("userPhoto");
-        setIsLogin(false);
-      }
-    }
-  }, []);
-
-  // Listen for flavor changes from FlavorSwitcherBar
-  useEffect(() => {
-    const handleFlavorChange = (event) => {
-      const newFlavor = event.detail;
-      // Match with our FLAVORS object to get full palette
-      const flavorKey = Object.keys(FLAVORS).find(
-        (key) => FLAVORS[key].name === newFlavor.name,
-      );
-      const fullFlavor = flavorKey ? FLAVORS[flavorKey] : newFlavor;
-      setFlavor(fullFlavor);
-      applyThemeToDOM(fullFlavor);
-    };
-
-    window.addEventListener("themeChange", handleFlavorChange);
-    return () => window.removeEventListener("themeChange", handleFlavorChange);
-  }, []);
-
-  const applyThemeToDOM = (themeColor) => {
+  const applyThemeToDOM = useCallback((themeColor) => {
     if (typeof window === "undefined") return;
 
     const root = document.documentElement;
@@ -198,7 +130,147 @@ const ThemeProvider = ({ children }) => {
 
     // Update body background
     document.body.style.background = `linear-gradient(180deg, ${themeColor.light} 0%, #FFFFFF 100%)`;
-  };
+  }, []);
+
+  // Initialize theme + auth state from persisted storage on mount.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (!localStorage.getItem("selectedFlavor")) {
+        localStorage.setItem("selectedFlavor", JSON.stringify(flavor));
+      }
+      applyThemeToDOM(flavor);
+    }
+    const token = getStoredAccessToken();
+    let tokenValid = false;
+    if (token) {
+      const payload = decodeJwtPayload(token);
+      tokenValid = Boolean(payload?.exp && payload.exp * 1000 > Date.now());
+    }
+    if (tokenValid) {
+      Cookies.remove("actionType");
+      setIsLogin(true);
+      setUser({
+        name:
+          Cookies.get("userName") ||
+          (typeof window !== "undefined"
+            ? localStorage.getItem("userName")
+            : ""),
+        email:
+          Cookies.get("userEmail") ||
+          (typeof window !== "undefined"
+            ? localStorage.getItem("userEmail")
+            : ""),
+      });
+    } else if (token) {
+      // Token expired — try refreshing before giving up
+      const refreshToken =
+        Cookies.get("refreshToken") ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("refreshToken")
+          : "");
+      if (refreshToken) {
+        fetch(
+          `${API_BASE_URL}/api/user/refresh-token`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken }),
+          },
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            const newToken = data?.data?.accessToken;
+            if (newToken) {
+              Cookies.set("accessToken", newToken, { expires: 7 });
+              if (typeof window !== "undefined") {
+                localStorage.setItem("accessToken", newToken);
+                localStorage.setItem("token", newToken);
+              }
+              setIsLogin(true);
+              setUser({
+                name:
+                  Cookies.get("userName") ||
+                  (typeof window !== "undefined"
+                    ? localStorage.getItem("userName")
+                    : ""),
+                email:
+                  Cookies.get("userEmail") ||
+                  (typeof window !== "undefined"
+                    ? localStorage.getItem("userEmail")
+                    : ""),
+              });
+            } else {
+              // Refresh failed — clear stale cookies
+              Cookies.remove("accessToken");
+              Cookies.remove("refreshToken");
+              Cookies.remove("userName");
+              Cookies.remove("userEmail");
+              Cookies.remove("userPhoto");
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("accessToken");
+                localStorage.removeItem("token");
+                localStorage.removeItem("refreshToken");
+                localStorage.removeItem("userName");
+                localStorage.removeItem("userEmail");
+                localStorage.removeItem("userPhoto");
+              }
+              setIsLogin(false);
+            }
+          })
+          .catch(() => {
+            Cookies.remove("accessToken");
+            Cookies.remove("refreshToken");
+            Cookies.remove("userName");
+            Cookies.remove("userEmail");
+            Cookies.remove("userPhoto");
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("accessToken");
+              localStorage.removeItem("token");
+              localStorage.removeItem("refreshToken");
+              localStorage.removeItem("userName");
+              localStorage.removeItem("userEmail");
+              localStorage.removeItem("userPhoto");
+            }
+            setIsLogin(false);
+          });
+      } else {
+        // No refresh token — clear stale cookies
+        Cookies.remove("accessToken");
+        Cookies.remove("userName");
+        Cookies.remove("userEmail");
+        Cookies.remove("userPhoto");
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("accessToken");
+          localStorage.removeItem("token");
+          localStorage.removeItem("refreshToken");
+          localStorage.removeItem("userName");
+          localStorage.removeItem("userEmail");
+          localStorage.removeItem("userPhoto");
+        }
+        setIsLogin(false);
+      }
+    }
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Listen for flavor changes from FlavorSwitcherBar
+  useEffect(() => {
+    const handleFlavorChange = (event) => {
+      const newFlavor = event.detail;
+      // Match with our FLAVORS object to get full palette
+      const flavorKey = Object.keys(FLAVORS).find(
+        (key) => FLAVORS[key].name === newFlavor.name,
+      );
+      const fullFlavor = flavorKey ? FLAVORS[flavorKey] : newFlavor;
+      setFlavor(fullFlavor);
+      applyThemeToDOM(fullFlavor);
+    };
+
+    window.addEventListener("themeChange", handleFlavorChange);
+    return () => window.removeEventListener("themeChange", handleFlavorChange);
+  }, []);
 
   const setSelectedFlavor = (newFlavor) => {
     setFlavor(newFlavor);
@@ -227,7 +299,7 @@ const ThemeProvider = ({ children }) => {
     isLogin,
     setUser,
     user,
-    flavor: mounted ? flavor : DEFAULT_FLAVOR,
+    flavor,
     setSelectedFlavor,
     FLAVORS,
   };

@@ -18,7 +18,26 @@ import { toast } from "react-hot-toast";
  */
 
 const CartContext = createContext();
-const API_URL = API_BASE_URL;
+const API_URL = String(API_BASE_URL || "")
+  .trim()
+  .replace(/\/+$/, "")
+  .replace(/\/api$/i, "");
+const USE_DEV_PROXY = process.env.NODE_ENV !== "production";
+
+const buildApiUrl = (path) => {
+  const normalizedPath = String(path || "").startsWith("/")
+    ? String(path)
+    : `/${String(path || "")}`;
+  const apiPath = normalizedPath.startsWith("/api/")
+    ? normalizedPath
+    : `/api${normalizedPath}`;
+
+  if (USE_DEV_PROXY) {
+    return apiPath;
+  }
+
+  return `${API_URL}${apiPath}`;
+};
 
 // Generate or get session ID for guest carts
 const getSessionId = () => {
@@ -66,7 +85,7 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const response = await fetch(`${API_URL}/api/cart`, {
+      const response = await fetch(buildApiUrl("/cart"), {
         method: "GET",
         headers,
         credentials: "include",
@@ -132,7 +151,7 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const response = await fetch(`${API_URL}/api/cart/add`, {
+      const response = await fetch(buildApiUrl("/cart/add"), {
         method: "POST",
         headers,
         credentials: "include",
@@ -287,7 +306,7 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const response = await fetch(`${API_URL}/api/cart/update`, {
+      const response = await fetch(buildApiUrl("/cart/update"), {
         method: "PUT",
         headers,
         credentials: "include",
@@ -350,7 +369,7 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const response = await fetch(`${API_URL}/api/cart/remove/${productId}`, {
+      const response = await fetch(buildApiUrl(`/cart/remove/${productId}`), {
         method: "DELETE",
         headers,
         credentials: "include",
@@ -408,7 +427,7 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      await fetch(`${API_URL}/api/cart/clear`, {
+      await fetch(buildApiUrl("/cart/clear"), {
         method: "DELETE",
         headers,
         credentials: "include",

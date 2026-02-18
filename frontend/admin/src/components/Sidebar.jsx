@@ -1,8 +1,10 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
+import { fetchUnresolvedSupportCount } from "@/services/supportApi";
 import { Button } from "@mui/material";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { IoIosLogOut } from "react-icons/io";
 import { IoBagCheckOutline } from "react-icons/io5";
 import { LiaImageSolid } from "react-icons/lia";
@@ -16,6 +18,7 @@ import {
   MdOutlineInventory2,
   MdOutlinePolicy,
   MdSettings,
+  MdSupportAgent,
 } from "react-icons/md";
 import { PiImageSquare } from "react-icons/pi";
 import { RiCoupon2Line, RiVipCrownLine } from "react-icons/ri";
@@ -23,8 +26,42 @@ import { RxDashboard } from "react-icons/rx";
 import { TbBrandProducthunt, TbShare, TbUsers } from "react-icons/tb";
 
 const Sidebar = () => {
-  const { logout, admin } = useAdmin();
+  const { logout, admin, token } = useAdmin();
   const pathname = usePathname();
+  const [openTicketCount, setOpenTicketCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    let intervalId = null;
+
+    const loadUnresolvedCount = async () => {
+      if (!token) {
+        if (active) setOpenTicketCount(0);
+        return;
+      }
+
+      try {
+        const response = await fetchUnresolvedSupportCount(token);
+        if (active && response?.success) {
+          setOpenTicketCount(Number(response.data?.count || 0));
+        }
+      } catch (error) {
+        if (active) {
+          setOpenTicketCount(0);
+        }
+      }
+    };
+
+    loadUnresolvedCount();
+    intervalId = setInterval(loadUnresolvedCount, 60000);
+
+    return () => {
+      active = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [token]);
 
   const sidebarTabs = [
     {
@@ -61,6 +98,12 @@ const Sidebar = () => {
       name: "Orders",
       icon: <IoBagCheckOutline size={22} />,
       href: "/orders",
+    },
+    {
+      name: "Customer Care",
+      icon: <MdSupportAgent size={22} />,
+      href: "/customer-care",
+      badgeCount: openTicketCount,
     },
     {
       name: "Shipping",
@@ -168,6 +211,11 @@ const Sidebar = () => {
               {tab.icon}
             </span>
             <span className="font-medium">{tab.name}</span>
+            {tab.badgeCount > 0 && (
+              <span className="ml-auto min-w-[24px] h-[24px] px-2 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold flex items-center justify-center">
+                {tab.badgeCount > 99 ? "99+" : tab.badgeCount}
+              </span>
+            )}
           </Link>
         ))}
       </div>

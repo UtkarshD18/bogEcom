@@ -34,6 +34,28 @@ const resolveUserPhotoUrl = (photo, apiUrl) => {
 };
 
 const normalizeIdentity = (value) => String(value || "").trim().toLowerCase();
+const getStoredAuthToken = () => {
+  if (typeof window === "undefined") return cookies.get("accessToken") || "";
+  return (
+    cookies.get("accessToken") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("token") ||
+    ""
+  );
+};
+const decodeJwtPayload = (token) => {
+  try {
+    const tokenPart = String(token || "").split(".")[1];
+    if (!tokenPart) return null;
+    const normalized = tokenPart
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(tokenPart.length / 4) * 4, "=");
+    return JSON.parse(atob(normalized));
+  } catch {
+    return null;
+  }
+};
 const getPhotoStorageKey = (emailValue) => {
   const normalizedEmail = normalizeIdentity(emailValue);
   return normalizedEmail ? `userPhoto:${normalizedEmail}` : "";
@@ -104,10 +126,19 @@ const Header = () => {
 
   // Function to check login status
   const checkLoginStatus = () => {
-    const accessToken = cookies.get("accessToken");
-    const userEmailCookie = cookies.get("userEmail");
-    const userNameCookie = cookies.get("userName");
-    const userPhotoCookie = cookies.get("userPhoto");
+    const accessToken = getStoredAuthToken();
+    const userEmailCookie =
+      cookies.get("userEmail") ||
+      (typeof window !== "undefined" ? localStorage.getItem("userEmail") : "") ||
+      "";
+    const userNameCookie =
+      cookies.get("userName") ||
+      (typeof window !== "undefined" ? localStorage.getItem("userName") : "") ||
+      "";
+    const userPhotoCookie =
+      cookies.get("userPhoto") ||
+      (typeof window !== "undefined" ? localStorage.getItem("userPhoto") : "") ||
+      "";
     const removalOverride = isPhotoRemovalOverride(userEmailCookie);
     const userPhotoLocal = getStoredPhotoForUser(userEmailCookie);
     const resolvedUserPhoto = resolveUserPhotoUrl(
@@ -117,10 +148,8 @@ const Header = () => {
 
     let tokenValid = false;
     if (accessToken) {
-      try {
-        const payload = JSON.parse(atob(accessToken.split(".")[1]));
-        tokenValid = payload.exp * 1000 > Date.now();
-      } catch { }
+      const payload = decodeJwtPayload(accessToken);
+      tokenValid = Boolean(payload?.exp && payload.exp * 1000 > Date.now());
     }
 
     if (tokenValid) {
@@ -191,6 +220,14 @@ const Header = () => {
       cookies.remove("userEmail");
       cookies.remove("userName");
       cookies.remove("userPhoto");
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("userEmail");
+        localStorage.removeItem("userName");
+        localStorage.removeItem("userPhoto");
+      }
       clearStoredPhotoForUser(userEmail || cookies.get("userEmail"));
       context?.setUser?.({});
       setIsLoggedIn(false);
@@ -204,6 +241,14 @@ const Header = () => {
       cookies.remove("userEmail");
       cookies.remove("userName");
       cookies.remove("userPhoto");
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("userEmail");
+        localStorage.removeItem("userName");
+        localStorage.removeItem("userPhoto");
+      }
       clearStoredPhotoForUser(userEmail || cookies.get("userEmail"));
       setIsLoggedIn(false);
       setAnchorEl(null);

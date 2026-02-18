@@ -62,17 +62,47 @@ if (!normalizedMongoUri) {
 
 process.env.MONGO_URI = normalizedMongoUri;
 
-const requiredServerEnvVars = [
-  "MONGO_URI",
-  "CLIENT_URL",
-  "ADMIN_URL",
-];
-
-for (const envKey of requiredServerEnvVars) {
-  if (!process.env[envKey]) {
-    throw new Error(`${envKey} is not defined`);
+const runtimeIsProduction = process.env.NODE_ENV === "production";
+const normalizeOriginEnv = (value) =>
+  normalizeEnvValue(value).replace(/\/+$/, "");
+const isValidHttpUrl = (value) => {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
   }
+};
+
+const fallbackClientUrl = "http://localhost:3000";
+const fallbackAdminUrl = "http://localhost:3001";
+
+let normalizedClientUrl = normalizeOriginEnv(process.env.CLIENT_URL);
+let normalizedAdminUrl = normalizeOriginEnv(process.env.ADMIN_URL);
+
+if (!isValidHttpUrl(normalizedClientUrl)) {
+  if (runtimeIsProduction) {
+    throw new Error("CLIENT_URL is not defined or invalid");
+  }
+  normalizedClientUrl = fallbackClientUrl;
+  console.warn(
+    `CLIENT_URL is missing/invalid; defaulting to ${normalizedClientUrl} for local development.`,
+  );
 }
+
+if (!isValidHttpUrl(normalizedAdminUrl)) {
+  if (runtimeIsProduction) {
+    throw new Error("ADMIN_URL is not defined or invalid");
+  }
+  normalizedAdminUrl = fallbackAdminUrl;
+  console.warn(
+    `ADMIN_URL is missing/invalid; defaulting to ${normalizedAdminUrl} for local development.`,
+  );
+}
+
+process.env.CLIENT_URL = normalizedClientUrl;
+process.env.ADMIN_URL = normalizedAdminUrl;
 
 const accessTokenSecret = getAccessTokenSecret();
 if (!accessTokenSecret) {
@@ -120,6 +150,7 @@ import refundRouter from "./routes/refund.route.js";
 import reviewRouter from "./routes/review.route.js";
 import settingsRouter from "./routes/settings.route.js";
 import shippingRouter from "./routes/shipping.route.js";
+import supportRouter from "./routes/support.route.js";
 import statisticsRouter from "./routes/statistics.route.js";
 import uploadRouter from "./routes/upload.route.js";
 import userRouter from "./routes/user.route.js";
@@ -246,6 +277,7 @@ app.use("/api/admin/reviews", adminLimiter, adminReviewRouter);
 app.use("/api/vendors", adminLimiter, vendorRouter);
 app.use("/api/refunds", adminLimiter, refundRouter);
 app.use("/api/admin/inventory", adminLimiter, inventoryAuditRouter);
+app.use("/api/support", generalLimiter, supportRouter);
 
 app.use((req, res, next) => {
   res.status(404).json({

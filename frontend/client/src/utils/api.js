@@ -16,6 +16,12 @@ export const axiosClient = axios.create({
 });
 
 const normalizePath = (url) => (url?.startsWith("/") ? url : `/${url}`);
+const getStoredAccessToken = () => {
+  const cookieToken = Cookies.get("accessToken");
+  if (cookieToken) return cookieToken;
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("accessToken") || localStorage.getItem("token");
+};
 
 const clearAuthCookies = () => {
   Cookies.remove("accessToken");
@@ -23,6 +29,14 @@ const clearAuthCookies = () => {
   Cookies.remove("userName");
   Cookies.remove("userEmail");
   Cookies.remove("userPhoto");
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("userName");
+    localStorage.removeItem("userEmail");
+    localStorage.removeItem("userPhoto");
+  }
 };
 
 let refreshPromise = null;
@@ -52,6 +66,10 @@ const refreshAccessToken = async () => {
       const token = response?.data?.data?.accessToken || null;
       if (token) {
         Cookies.set("accessToken", token, { expires: 7 });
+        if (typeof window !== "undefined") {
+          localStorage.setItem("accessToken", token);
+          localStorage.setItem("token", token);
+        }
       } else {
         clearAuthCookies();
       }
@@ -68,7 +86,7 @@ const refreshAccessToken = async () => {
 };
 
 axiosClient.interceptors.request.use((config) => {
-  const accessToken = Cookies.get("accessToken");
+  const accessToken = getStoredAccessToken();
   if (accessToken) {
     config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${accessToken}`;

@@ -8,7 +8,8 @@ if (!rawApiUrl) {
   throw new Error("NEXT_PUBLIC_API_URL is not defined");
 }
 
-const parsedApiUrl = new URL(rawApiUrl);
+const normalizedApiUrl = rawApiUrl.replace(/\/+$/, "").replace(/\/api$/i, "");
+const parsedApiUrl = new URL(normalizedApiUrl);
 const apiImagePattern = [
   {
     protocol: parsedApiUrl.protocol.replace(":", ""),
@@ -31,6 +32,22 @@ const nextConfig = {
         pathname: "/**",
       },
     ],
+  },
+  async rewrites() {
+    if (process.env.NODE_ENV === "production") {
+      return [];
+    }
+
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${normalizedApiUrl}/api/:path*`,
+      },
+      {
+        source: "/uploads/:path*",
+        destination: `${normalizedApiUrl}/uploads/:path*`,
+      },
+    ];
   },
 };
 
