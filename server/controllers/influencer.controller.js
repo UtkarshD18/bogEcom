@@ -4,6 +4,7 @@ import OrderModel from "../models/order.model.js";
 import { getInfluencerRefreshTokenSecret } from "../config/authSecrets.js";
 import generateInfluencerToken from "../utils/generateInfluencerToken.js";
 import generateInfluencerRefreshToken from "../utils/generateInfluencerRefreshToken.js";
+import { matchesStoredToken, normalizeTokenString } from "../utils/tokenHash.js";
 
 /**
  * Influencer Controller
@@ -351,7 +352,7 @@ export const getInfluencerPortalStatsAuth = async (req, res) => {
  */
 export const refreshInfluencerToken = async (req, res) => {
   try {
-    const refreshToken = req.body?.refreshToken;
+    const refreshToken = normalizeTokenString(req.body?.refreshToken);
 
     if (!refreshToken) {
       return res.status(401).json({
@@ -374,7 +375,7 @@ export const refreshInfluencerToken = async (req, res) => {
     const decoded = jwt.verify(refreshToken, secret);
     const influencer = await InfluencerModel.findById(decoded?.id);
 
-    if (!influencer || influencer.refreshToken !== refreshToken) {
+    if (!influencer || !matchesStoredToken(influencer.refreshToken, refreshToken)) {
       return res.status(401).json({
         error: true,
         success: false,

@@ -14,6 +14,7 @@ import {
   getRefreshTokenSecret,
 } from "./config/authSecrets.js";
 import connectDb from "./config/connectDb.js";
+import createCookieCsrfGuard from "./middlewares/csrfGuard.js";
 import {
   adminLimiter,
   authLimiter,
@@ -122,6 +123,23 @@ if (!refreshTokenSecret) {
   );
 }
 
+const MIN_JWT_SECRET_LENGTH = 32;
+if (accessTokenSecret.length < MIN_JWT_SECRET_LENGTH) {
+  throw new Error(
+    `Access token secret must be at least ${MIN_JWT_SECRET_LENGTH} characters long.`,
+  );
+}
+if (refreshTokenSecret.length < MIN_JWT_SECRET_LENGTH) {
+  throw new Error(
+    `Refresh token secret must be at least ${MIN_JWT_SECRET_LENGTH} characters long.`,
+  );
+}
+if (accessTokenSecret === refreshTokenSecret) {
+  throw new Error(
+    "Access and refresh token secrets must be different values.",
+  );
+}
+
 // Route imports
 import { initializeFirebaseAdmin } from "./config/firebaseAdmin.js";
 import { initializeSettings } from "./controllers/settings.controller.js";
@@ -174,6 +192,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
+app.disable("x-powered-by");
 
 if (isProductionEnv) {
   app.set("trust proxy", 1);
@@ -216,6 +235,12 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 app.use(
+  createCookieCsrfGuard({
+    allowedOrigins,
+    isProduction: isProductionEnv,
+  }),
+);
+app.use(
   helmet({
     crossOriginResourcePolicy: false,
   }),
@@ -247,7 +272,7 @@ app.use("/api/categories", generalLimiter, categoryRouter);
 app.use("/api/banners", adminLimiter, bannerRouter);
 app.use("/api/home-slides", adminLimiter, homeSlideRouter);
 app.use("/api/blogs", adminLimiter, blogRouter);
-app.use("/api/orders", adminLimiter, orderRouter);
+app.use("/api/orders", generalLimiter, orderRouter);
 app.use("/api/admin/orders", adminLimiter, adminOrdersRouter);
 app.use("/api/admin", adminLimiter, adminMembershipRouter);
 app.use("/api/cart", generalLimiter, cartRouter);
@@ -265,10 +290,10 @@ app.use("/api/coupons", generalLimiter, couponRouter);
 app.use("/api/coins", generalLimiter, coinRouter);
 app.use("/api/influencers", generalLimiter, influencerRouter);
 app.use("/api/invoices", generalLimiter, invoiceRouter);
-app.use("/api/settings", adminLimiter, settingsRouter);
 app.use("/api/notifications", generalLimiter, notificationRouter);
 app.use("/api/newsletter", generalLimiter, newsletterRouter);
-app.use("/api/shipping", adminLimiter, shippingRouter);
+app.use("/api/settings", generalLimiter, settingsRouter);
+app.use("/api/shipping", generalLimiter, shippingRouter);
 app.use("/api/webhooks", generalLimiter, webhookRouter);
 app.use("/api/policies", generalLimiter, policyRouter);
 app.use("/api/cancellation", generalLimiter, cancellationPolicyRouter);

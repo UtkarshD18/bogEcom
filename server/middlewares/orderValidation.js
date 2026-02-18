@@ -283,6 +283,7 @@ export const validateCreateOrderRequest = (req, res, next) => {
       affiliateCode: affiliateCode ? String(affiliateCode).trim() : null,
       affiliateSource: affiliateSource ? String(affiliateSource) : null,
       guestDetails: normalizedGuest,
+      location: normalizedLocation,
       coinRedeem: validatedCoinRedeem,
       purchaseOrderId: purchaseOrderId || null,
       paymentType: normalizedPaymentType,

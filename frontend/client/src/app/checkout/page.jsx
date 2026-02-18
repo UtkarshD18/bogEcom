@@ -232,9 +232,7 @@ const Checkout = () => {
   const checkoutStateForPreview = isGuestCheckout
     ? guestDetails.state
     : addresses.find((a) => a._id === selectedAddress)?.state || "";
-  const hasCheckoutStateInput = Boolean(
-    String(checkoutStateForPreview || "").trim(),
-  );
+  const hasCheckoutStateInput = Boolean(String(checkoutStateForPreview || "").trim());
   const normalizedCheckoutState = normalizeStateValue(checkoutStateForPreview);
   const isRajasthanDelivery = normalizedCheckoutState === "Rajasthan";
   const { displayShippingCharge } = useShippingDisplayCharge({
@@ -323,7 +321,7 @@ const Checkout = () => {
   const couponDiscount = totalsBeforeCoin.couponDiscount;
   const subtotal = totalsBeforeCoin.discountedSubtotal; // GST-exclusive after coupon
   const tax = totalsBeforeCoin.tax; // GST on discounted base
-  const payableShipping = totalsBeforeCoin.shipping;
+  const payableShipping = 0;
 
   const productCostAfterCoupon = round2(subtotal + tax); // GST-inclusive after coupon (no shipping)
 
@@ -361,6 +359,10 @@ const Checkout = () => {
   // Step 8: Final payable = discounted base + GST + shipping - coinRedeem
   const finalTotals = calculateOrderTotals({
     ...checkoutTotalsInput,
+    shippingCost: payableShipping,
+    shippingRules: {
+      shippingCostOverride: payableShipping,
+    },
     coinRedeemAmount,
   });
   const total = finalTotals.totalPayable;

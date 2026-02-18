@@ -1,300 +1,311 @@
-# bogEcom Enterprise Upgrade (MERN)
+# bogEcom
 
-This repository now includes a phased, production-safe enterprise upgrade covering:
+Production-focused MERN commerce platform with:
+- Storefront (`frontend/client`)
+- Admin panel (`frontend/admin`)
+- API and background jobs (`server`)
 
-1. Wishlist + Product UI improvements
-2. Purchase Order (PO) system
-3. Centralized GST/Tax engine
-4. ExpressBees shipping quote integration
-5. Invoice generation + download
-6. Dynamic membership discounts
-7. Dynamic coin settings + redemption/earning
-8. Dynamic Policy CMS + footer sync
-9. Guest checkout validation
-10. Refund policy sync enforcement
-11. Account/logout/settings improvements
-12. Service-oriented backend architecture upgrades
+The repository is structured for real-world operations: auth, checkout, coins, membership, shipping, invoices, support tickets, and App Engine deployment.
 
-## 🔄 Recent Updates
-- Added order status timeline with guarded transitions (PENDING → PAYMENT_PENDING → ACCEPTED → IN_WAREHOUSE → SHIPPED → OUT_FOR_DELIVERY → DELIVERED)
-- ExpressBees webhook sync with fallback polling for tracking updates, idempotent handling, and RTO safety
-- Real-time order updates via Socket.io with client-side order tracker animations
-- New admin status update endpoint: `PATCH /api/admin/orders/:id/status` (Zod validated)
-- Added user alias endpoint: `GET /api/orders/my-orders`
-- Added ExpressBees webhook endpoint: `POST /api/webhooks/expressbees`
-- Expanded admin UI status options for Accepted/In Warehouse/Out for Delivery
-- Firestore sync updated to mirror status timeline entries
-- Production inventory system with atomic reserve/deduct/release/restore and idempotent guards
-- Variant-aware inventory tracking with audit trail logging
-- Reservation expiry job for unpaid orders (configurable via env flags)
-- Low-stock dashboard card + admin filter link
-- Inventory audit APIs for admin monitoring
-
-## Phase Plan
-
-### Phase 1
-- Policy CMS
-- Wishlist upgrades
-- Product page UI refresh
-
-### Phase 2
-- GST engine centralization
-- Shipping quote integration with fallback
-
-### Phase 3
-- Purchase Orders
-- Invoice persistence + PDF download
-
-### Phase 4
-- Membership discount application
-- Coin earn/redeem system
-
-Deploy and validate after each phase.
-
-## Architecture Updates
-
-### New backend services
-- `server/services/tax.service.js`
-- `server/services/refund.service.js`
-- `server/services/coin.service.js`
-- `server/services/membership.service.js`
-- `server/services/shippingRate.service.js`
-
-### Controller/route modularization added
-- Policy, Coin, PurchaseOrder, Invoice, Refund modules
-
-### Centralized logic rules
-- Tax logic only from `TaxService.calculateTax(subtotal, state)`
-- Refund checks only from `RefundService.evaluateRefundEligibility(...)`
-- Shipping quote from shipping service with ExpressBees fallback
-- Membership discount applied before tax
-- Coin redemption applied before tax, capped by admin-defined max %
-
-## Database Blueprint
-
-Core collections:
-- Users
-- Products
-- Orders
-- PurchaseOrders
-- Invoices
-- MembershipPlans
-- CoinSettings
-- Policies
-- Wishlists
-
-### New collections/models
-- `PurchaseOrder`
-- `Invoice`
-- `Policy`
-- `CoinSettings`
-
-### Key schema additions
-- `Order`: `subtotal`, `gst`, `gstNumber`, `billingDetails`, `guestDetails`, `membershipDiscount`, `membershipPlan`, `coinRedemption`, `coinsAwarded`, `purchaseOrder`
-- `User`: `coinBalance`, notification defaults enabled
-- `MembershipPlan`: `durationDays`, `discountPercentage`, `active` (legacy compatibility kept)
-- `Wishlist`: duplicate protection + indexing
-
-### Indexing and constraints
-- Policy slug unique index
-- Invoice `orderId` unique, `invoiceNumber` unique
-- PurchaseOrder user/status/time indexes
-- Order gst/purchaseOrder/invoice indexes
-- Wishlist user + item product composite index
-- CoinSettings singleton (`isDefault` unique)
-
-## Migration
-
-Enterprise migration script:
-
-```bash
-cd server
-npm run migrate:enterprise
+## System Architecture
+```mermaid
+flowchart LR
+  C[Client Next.js] -->|HTTPS API| B[Express API]
+  A[Admin Next.js] -->|HTTPS API| B
+  B --> M[(MongoDB)]
+  B --> F[(Firebase Admin / FCM)]
+  B --> X[(Xpressbees)]
+  B --> P[(PhonePe)]
+  B --> U[(Cloudinary/Uploads)]
+  GH[GitHub Actions] --> GAE[Google App Engine]
+  GAE --> C
+  GAE --> A
+  GAE --> B
 ```
 
-What it does:
-- Backfills user coin balances and enabled notification defaults
-- Normalizes membership fields
-- Ensures default coin settings singleton
-- Seeds default policies (`terms-and-conditions`, `return-policy`)
-- Backfills order subtotal/GST/billing/coin fields
-
-Inventory backfill migration:
-
-```bash
-cd server
-node migrations/2026-02-inventory-backfill.mjs
+## Monorepo Structure
+```text
+bogEcom/
+  frontend/
+    client/                  # Customer storefront (Next.js)
+    admin/                   # Admin dashboard (Next.js)
+  server/                    # Express API, models, services, jobs
+  .github/workflows/         # CI + deployment automation
+  scripts/                   # Repo-level automation scripts
+  dispatch.yaml              # App Engine dispatch routing
 ```
 
-What it does:
-- Backfills `stock_quantity`, `reserved_quantity`, `track_inventory`, `low_stock_threshold`
-- Syncs legacy `stock` values
-- Backfills variant stock/reserved fields
+## Backend Overview
+- Entry: `server/index.js`
+- Data layer: Mongoose models in `server/models`
+- API composition: route modules in `server/routes`
+- Business logic: controllers + service layer in `server/controllers` and `server/services`
+- Security middleware:
+  - `helmet`, `cors`, `cookie-parser`
+  - rate limits in `server/middlewares/rateLimiter.js`
+  - auth/admin guards in `server/middlewares/auth.js` and `server/middlewares/admin.js`
+  - cookie-CSRF origin guard in `server/middlewares/csrfGuard.js`
+- Error stack:
+  - centralized helpers in `server/utils/errorHandler.js`
+  - 404 and global error middleware in `server/index.js`
+- Background jobs:
+  - reservation expiry
+  - membership expiry
+  - location log retention
+  - Xpressbees polling fallback
 
-## New Environment Variables
+## Frontend Overview
+### Client (`frontend/client`)
+- Next.js App Router storefront
+- Checkout, cart, wishlist, policy pages, membership, account, orders
+- Firebase auth integration for Google sign-in
+- Shared API utility and hooks for token/session handling
 
-Add/update these in `server/.env`:
+### Admin (`frontend/admin`)
+- Next.js App Router admin console
+- Product/category/banner/blog/content management
+- Order and support workflows
+- Membership and coin settings management
+- Shipping and operational settings screens
 
-- `SHIPPER_PINCODE` or `XPRESSBEES_ORIGIN_PINCODE`
-- `XPRESSBEES_BASE_URL`
-- `XPRESSBEES_TOKEN_TTL_MINUTES`
-- `XPRESSBEES_TOKEN` or `XPRESSBEES_EMAIL` + `XPRESSBEES_PASSWORD`
-- `XPRESSBEES_WEBHOOK_SECRET` (optional)
-- `XPRESSBEES_POLL_ENABLED` (optional)
-- `XPRESSBEES_POLL_INTERVAL_MINUTES` (optional)
-- `XPRESSBEES_POLL_BATCH_SIZE` (optional)
-- `INVOICE_SELLER_NAME`
-- `INVOICE_SELLER_GSTIN`
-- `INVOICE_SELLER_ADDRESS`
-- `INVOICE_SELLER_STATE`
-- `INVOICE_SELLER_STATE_CODE`
-- `INVOICE_SELLER_PHONE`
-- `INVOICE_SELLER_EMAIL`
-- `INVOICE_CURRENCY_SYMBOL`
-- `INVOICE_DEFAULT_HSN`
-- `INVOICE_DEFAULT_GST_RATE` (set `5`)
-- `PHONEPE_ORDER_REDIRECT_URL` (optional override)
-- `PHONEPE_ORDER_CALLBACK_URL` (optional override)
-- `INVENTORY_RESERVATION_ENABLED` (optional, default false)
-- `INVENTORY_RESERVATION_MINUTES` (optional, default 30)
-- `INVENTORY_RESERVATION_INTERVAL_MINUTES` (optional, default 5)
-- `INVENTORY_RESERVATION_BATCH_SIZE` (optional, default 50)
+## Authentication Flow
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant FE as Frontend
+  participant API as Express API
+  participant DB as MongoDB
 
-## GST Rules
+  U->>FE: Login/Register/Google Sign-in
+  FE->>API: /api/user/login or /api/user/authWithGoogle
+  API->>DB: Validate/create user
+  API->>API: Issue JWT access + refresh
+  API->>DB: Store hashed refresh token
+  API-->>FE: Cookies + auth payload
+  FE->>API: Authenticated requests (Bearer/cookies)
+  API->>API: Verify access token + role checks
+```
 
-Tax rate: `5%`
+### Security Notes
+- Refresh tokens are now stored hashed (`server/utils/tokenHash.js`) with backward-compatible verification.
+- Logout now invalidates refresh tokens reliably even when only refresh cookie is present.
+- Password reset OTP expiry logic uses proper timestamp comparison.
+- Backup password and password reset flows enforce password complexity.
+- JWT secrets are length-validated and access/refresh secrets must differ.
 
-- Rajasthan: `CGST 2.5% + SGST 2.5%`
-- Other states: `IGST 5%`
+## E-commerce Logic
 
-Formula:
+### Cart System
+- Guest + user carts
+- Stock-aware add/update
+- Variant-aware checks
+- Merge logic hardened to cap quantity and skip unavailable products
 
-`tax = subtotal * 5 / 100`
+### Wishlist
+- Auth-required wishlist operations
+- Product ID validation and active-product enforcement
+- Safe move-to-cart with stock and quantity caps
 
-## Shipping Rules
+### Membership
+- Admin-managed plans (`MembershipPlan`)
+- Payment integration path via PhonePe (feature-flagged)
+- Membership activation and expiry tracked in DB
+- Membership discount dynamically applied during checkout calculations
 
-- Pincode must be 6 digits
-- ExpressBees quote attempted first
-- Fallback amount returned from admin shipping settings when API fails
-- Quote responses are cached in-memory for performance
+### Coins
+- Dynamic coin settings (`CoinSettings`)
+- Earn/redeem/expire ledger (`CoinTransaction`)
+- FIFO redemption and idempotency safeguards
+- Membership bonus multiplier support
+- Server-side caps and validation to prevent frontend manipulation
 
-## Refund Policy Enforcement
+### Shipping (Xpressbees + fallback)
+- Quote endpoint with pincode validation
+- Xpressbees booking/tracking/cancel/manifest/NDR/reverse flows
+- Webhook support with optional secret validation
+- Polling fallback for tracking resiliency
 
-Current enforced policy:
-- Prepaid orders only
-- Manual approval required
-- No standard returns flow
-- Refundable amount = product cost only
-- Shipping is non-refundable
+### Guest Checkout
+- Guest details normalized + validated in middleware
+- Backend remains source-of-truth for order totals, discounts, and inventory
 
-Endpoint:
-- `POST /api/refunds/evaluate` (admin-authenticated)
+## API Flow and Middleware Chain
+```mermaid
+flowchart TD
+  R[Request] --> N[Normalize URL]
+  N --> CORS[CORS Validation]
+  CORS --> BP[Body Parser + Cookies]
+  BP --> CSRF[Cookie CSRF Origin Guard]
+  CSRF --> H[Helmet]
+  H --> RL[Rate Limiter]
+  RL --> AUTH[Auth/OptionalAuth/Admin]
+  AUTH --> VAL[Validation Middleware]
+  VAL --> CTRL[Controller + Services]
+  CTRL --> DB[(MongoDB)]
+  CTRL --> RESP[Standard JSON Response]
+  RESP --> ERR[Global Error Handler]
+```
 
-## Policy CMS
+## CI/CD
 
-Public:
-- `GET /api/policies/public`
-- `GET /api/policies/public/:slug`
+### Quality Pipeline (`.github/workflows/ci.yml`)
+- Validates env example files
+- Runs backend tests
+- Builds client and admin
+- Runs lint checks (non-blocking step due existing lint debt)
 
-Admin:
-- `GET /api/policies/admin/all`
-- `POST /api/policies/admin`
-- `PUT /api/policies/admin/:id`
-- `PATCH /api/policies/admin/:id/toggle`
-- `DELETE /api/policies/admin/:id`
+### Deployment Pipelines
+- `deploy-client.yml`: deploys `frontend/client` to App Engine `client` service
+- `deploy-admin.yml`: deploys `frontend/admin` to App Engine `admin` service
+- `deploy-backend.yml`: deploys `server` to App Engine `default` service
 
-Frontend:
-- Dynamic policy page: `/policy/[slug]`
-- Footer links synced dynamically to policy slugs
+All deploy workflows:
+- authenticate using service account secret
+- build temporary deploy yaml with injected env vars
+- deploy via `gcloud app deploy`
+- cleanup generated yaml artifacts
 
-## Purchase Order + Invoice APIs
+## Environment Variables
 
-Purchase order:
-- `POST /api/purchase-orders`
-- `GET /api/purchase-orders/:id`
-- `GET /api/purchase-orders/:id/pdf`
-- `POST /api/purchase-orders/:id/convert`
+### Backend (`server/.env`)
+| Variable | Required | Purpose |
+|---|---|---|
+| `NODE_ENV` | Yes | Runtime mode (`development`/`production`) |
+| `PORT` | Yes | API listen port |
+| `MONGO_URI` | Yes | MongoDB connection string |
+| `ACCESS_TOKEN_SECRET` | Yes | Access JWT secret (32+ chars) |
+| `REFRESH_TOKEN_SECRET` | Yes | Refresh JWT secret (32+ chars) |
+| `CLIENT_URL` | Yes | Allowed storefront origin(s) |
+| `ADMIN_URL` | Yes | Allowed admin origin(s) |
+| `CORS_ORIGINS` | No | Extra comma-separated CORS origins |
+| `COOKIE_DOMAIN` | No | Cookie domain override in production |
+| `EMAIL`, `EMAIL_PASSWORD` | No | SMTP for OTP/support |
+| `PHONEPE_*` | Conditional | PhonePe integration |
+| `XPRESSBEES_*` | Conditional | Xpressbees integration |
+| `FIREBASE_*` | Conditional | Firebase Admin/FCM |
+| `CLOUDINARY_*` | Optional | Media storage integration |
 
-Invoice:
-- `GET /api/invoices/order/:orderId`
-- `GET /api/invoices/order/:orderId/download`
-- Existing download route also available: `GET /api/orders/:orderId/invoice`
+### Client (`frontend/client/.env.local`)
+| Variable | Required | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | Yes | API base URL |
+| `NEXT_PUBLIC_APP_API_URL` | No | Explicit app API override |
+| `NEXT_PUBLIC_SITE_URL` | Yes | Public canonical site URL |
+| `NEXT_PUBLIC_FIREBASE_*` | Conditional | Firebase Web SDK config |
+| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | Optional | Push messaging |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Optional | Maps/address helpers |
 
-## Inventory APIs (Admin)
+### Admin (`frontend/admin/.env.local`)
+| Variable | Required | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | Yes | API base URL |
+| `NEXT_PUBLIC_FIREBASE_*` | Conditional | Firebase Web SDK config |
+| `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` | Optional | Analytics |
 
-- `GET /api/admin/inventory/audit`
-- `GET /api/admin/inventory/audit/:productId`
+## Local Development
 
-## Guest Checkout
+1. Install dependencies:
+```bash
+cd server && npm ci
+cd ../frontend/client && npm ci
+cd ../admin && npm ci
+```
 
-Required fields:
-- `fullName`
-- `phone`
-- `address`
-- `pincode`
-- `state`
-- `email`
+2. Configure env files from examples:
+- `server/.env`
+- `frontend/client/.env.local`
+- `frontend/admin/.env.local`
 
-Optional:
-- `gst`
+3. Run services:
+```bash
+cd server && npm run dev
+cd frontend/client && npm run dev
+cd frontend/admin && npm run dev
+```
 
-Validated in frontend and backend.
+4. Validate env docs:
+```bash
+node scripts/validate-env-examples.mjs
+```
 
-## Validation Checklist
+## Production Setup (App Engine)
 
-Manual regression checklist:
-- Guest checkout with required fields
-- GST split in Rajasthan
-- GST as IGST for non-Rajasthan
-- Shipping quote + fallback behavior
-- Coin redemption cap
-- Membership discount before tax
-- PO creation and conversion
-- Invoice generation and PDF download
-- Dynamic policy rendering by slug
-- Footer policy links resolve dynamically
-- Refund eligibility matches policy
-- Inventory reserve on order creation
-- Inventory deduct on payment success
-- Inventory release on payment failure/cancel
-- Reservation expiry auto-release (if enabled)
-- Low-stock dashboard count updates
-- Inventory audit entries created
+1. Configure GitHub secrets required by deploy workflows.
+2. Push to `main` (path-based workflows deploy changed service).
+3. Optionally run `workflow_dispatch` for manual deploy.
+4. Verify App Engine traffic split and health checks.
 
-## Deployment Safety Plan
+## Docker Support
+- Backend container spec added:
+  - `server/Dockerfile`
+  - `server/.dockerignore`
 
-1. Backup database and export current indexes
-2. Deploy backend with feature flags/env set
-3. Run migration: `npm run migrate:enterprise`
-4. Smoke test APIs (policy, tax, shipping quote, order flow)
-5. Deploy client and admin frontend
-6. Run checkout and order lifecycle tests in staging
-7. Enable phase-wise rollout to production
-8. Monitor logs and payment/shipping error rates
-9. Roll back by disabling new routes/features via config if required
+Example build/run:
+```bash
+cd server
+docker build -t bogecom-api .
+docker run --env-file .env -p 8080:8080 bogecom-api
+```
 
-## Risk Analysis
+## Security Measures Implemented
+- Hashed refresh token persistence and secure verification
+- JWT secret strength enforcement
+- CORS allowlist enforcement
+- Cookie-auth CSRF origin guard for mutating routes
+- Helmet security headers
+- Route-level rate limiting
+- Input validation and sanitization in key checkout/support/auth paths
+- Admin route protection with auth + role checks
+- Global error handling and controlled error responses in production
 
-### GST miscalculation
-- Mitigation: single tax service used by Order + PO + Invoice
+## Performance and Reliability
+- Mongoose indexes on key query paths (orders/products/coins/wishlist/support/etc.)
+- Shipping config caching and settings cache
+- Idempotent coin and inventory operations
+- Reservation expiry jobs for stale checkouts
+- Firestore sync hooks for realtime visibility
 
-### Discount stacking conflicts
-- Mitigation: deterministic sequence
-  membership -> influencer -> coupon -> coin redemption -> tax
+## API Documentation (High-level)
 
-### Coin abuse
-- Mitigation: server-side coin cap, balance validation, post-payment deduction
+### Auth/User
+- `POST /api/user/register`
+- `POST /api/user/login`
+- `POST /api/user/refresh-token`
+- `GET /api/user/logout`
+- `POST /api/user/authWithGoogle`
 
-### Shipping API downtime
-- Mitigation: fallback shipping calculation + cache
+### Orders/Checkout
+- `POST /api/orders`
+- `POST /api/orders/save-for-later`
+- `GET /api/orders/payment-status`
+- `POST /api/orders/webhook/phonepe`
 
-### Duplicate invoice creation
-- Mitigation: invoice upsert keyed by `orderId`
+### Membership/Coins
+- `GET /api/membership/active`
+- `POST /api/membership/create-order`
+- `POST /api/membership/verify-payment`
+- `GET /api/coins/settings/public`
+- `GET /api/user/coins-summary`
 
-### Policy XSS risk
-- Mitigation: sanitize HTML before save and before render
+### Shipping
+- `POST /api/shipping/quote`
+- `GET /api/shipping/display-metrics`
+- `POST /api/webhooks/expressbees`
 
-## Notes
+### Admin
+- `GET /api/orders/admin/all`
+- `PATCH /api/admin/orders/:id/status`
+- `GET /api/settings/admin/all`
+- `GET /api/support/admin/all`
 
-- Existing routes were preserved; new capabilities were added modularly.
-- Lint output currently includes pre-existing repo-wide issues unrelated to this upgrade; server-side syntax checks pass for upgraded modules.
+## Current Gaps / Future Improvements
+- Gradually convert client/admin lint warnings into blocking CI
+- Add Redis cache for rate-limits/session-scale
+- Add queue workers (BullMQ) for async jobs and retries
+- Add structured logging transport (Winston + GCP logging)
+- Add Prometheus/OpenTelemetry metrics and alerting
+- Break out auth and notification services for microservice evolution
+
+## Additional Study Material
+- Deep technical walkthrough: `PROJECT_DEEP_STUDY_GUIDE.md`
+

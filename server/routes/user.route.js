@@ -1,6 +1,7 @@
 import { Router } from "express";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import authOptional from "../middlewares/authOptional.js";
 import { handleUploadError, uploadSingle } from "../middlewares/upload.js";
 
 import {
@@ -38,7 +39,7 @@ userRouter.post("/register", registerUserController);
 userRouter.post("/verifyEmail", verifyEmailController);
 userRouter.post("/login", loginUserController);
 userRouter.post("/refresh-token", refreshTokenController);
-userRouter.get("/logout", logoutController);
+userRouter.get("/logout", authOptional, logoutController);
 userRouter.post("/forgot-Password", forgotPasswordController);
 userRouter.post(
   "/verify-Forgot-Password-OTP",

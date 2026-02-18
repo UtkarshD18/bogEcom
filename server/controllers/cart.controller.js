@@ -1,4 +1,5 @@
 import CartModel from "../models/cart.model.js";
+import mongoose from "mongoose";
 import ProductModel from "../models/product.model.js";
 
 const getAvailableQuantity = (product, variantId = null) => {
@@ -19,6 +20,37 @@ const getAvailableQuantity = (product, variantId = null) => {
   return Math.max(stock - reserved, 0);
 };
 
+const MAX_CART_ITEM_QTY = 100;
+
+const normalizeSessionId = (value) =>
+  String(value || "")
+    .trim()
+    .slice(0, 128);
+
+const normalizeQuantity = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.floor(parsed);
+};
+
+const isValidObjectId = (value) =>
+  mongoose.Types.ObjectId.isValid(String(value || "").trim());
+
+const getActorIdentifiers = (req) => ({
+  userId: req.user || null,
+  sessionId: normalizeSessionId(req.headers["x-session-id"] || req.cookies.sessionId),
+});
+
+const normalizeVariantId = (variantId) => {
+  if (variantId === undefined || variantId === null || variantId === "") {
+    return null;
+  }
+  return String(variantId).trim();
+};
+
+const isSameVariant = (itemVariant, targetVariant) =>
+  String(itemVariant || "") === String(targetVariant || "");
+
 /**
  * Cart Controller
  *
@@ -31,8 +63,7 @@ const getAvailableQuantity = (product, variantId = null) => {
  */
 export const getCart = async (req, res) => {
   try {
-    const userId = req.user;
-    const sessionId = req.headers["x-session-id"] || req.cookies.sessionId;
+    const { userId, sessionId } = getActorIdentifiers(req);
 
     let cart;
     if (userId) {
@@ -104,15 +135,33 @@ export const getCart = async (req, res) => {
  */
 export const addToCart = async (req, res) => {
   try {
-    const userId = req.user;
-    const sessionId = req.headers["x-session-id"] || req.cookies.sessionId;
-    const { productId, quantity = 1, variantId, variantName } = req.body;
+    const { userId, sessionId } = getActorIdentifiers(req);
+    const productId = String(req.body?.productId || "").trim();
+    const variantId = normalizeVariantId(req.body?.variantId);
+    const variantName = String(req.body?.variantName || "").trim().slice(0, 120);
+    const quantity = normalizeQuantity(req.body?.quantity ?? 1);
 
-    if (!productId) {
+    if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "Product ID is required",
+        message: "Valid product ID is required",
+      });
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_CART_ITEM_QTY) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: `Quantity must be an integer between 1 and ${MAX_CART_ITEM_QTY}`,
+      });
+    }
+
+    if (variantId && !isValidObjectId(variantId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid variant ID",
       });
     }
 
@@ -133,13 +182,19 @@ export const addToCart = async (req, res) => {
 
     if (variantId && product.hasVariants) {
       const variant = product.variants.id(variantId);
-      if (variant) {
-        const variantStock = Number(variant.stock_quantity ?? variant.stock ?? 0);
-        const variantReserved = Number(variant.reserved_quantity ?? 0);
-        availableStock = Math.max(variantStock - variantReserved, 0);
-        price = variant.price;
-        originalPrice = variant.originalPrice || product.originalPrice;
+      if (!variant) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Selected variant is not available",
+        });
       }
+
+      const variantStock = Number(variant.stock_quantity ?? variant.stock ?? 0);
+      const variantReserved = Number(variant.reserved_quantity ?? 0);
+      availableStock = Math.max(variantStock - variantReserved, 0);
+      price = variant.price;
+      originalPrice = variant.originalPrice || product.originalPrice;
     }
 
     if (Number.isFinite(availableStock) && availableStock < quantity) {
@@ -174,7 +229,7 @@ export const addToCart = async (req, res) => {
     const existingItemIndex = cart.items.findIndex(
       (item) =>
         item.product.toString() === productId &&
-        (!variantId || item.variant?.toString() === variantId),
+        isSameVariant(item.variant, variantId),
     );
 
     if (existingItemIndex >= 0) {
@@ -235,15 +290,40 @@ export const addToCart = async (req, res) => {
  */
 export const updateCartItem = async (req, res) => {
   try {
-    const userId = req.user;
-    const sessionId = req.headers["x-session-id"] || req.cookies.sessionId;
-    const { productId, quantity, variantId } = req.body;
+    const { userId, sessionId } = getActorIdentifiers(req);
+    const productId = String(req.body?.productId || "").trim();
+    const quantity = normalizeQuantity(req.body?.quantity);
+    const variantId = normalizeVariantId(req.body?.variantId);
 
-    if (!productId || quantity === undefined) {
+    if (!productId || quantity === null) {
       return res.status(400).json({
         error: true,
         success: false,
         message: "Product ID and quantity are required",
+      });
+    }
+
+    if (!isValidObjectId(productId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
+
+    if (variantId && !isValidObjectId(variantId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid variant ID",
+      });
+    }
+
+    if (quantity < 0 || quantity > MAX_CART_ITEM_QTY) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: `Quantity must be between 0 and ${MAX_CART_ITEM_QTY}`,
       });
     }
 
@@ -267,7 +347,7 @@ export const updateCartItem = async (req, res) => {
     const itemIndex = cart.items.findIndex(
       (item) =>
         item.product.toString() === productId &&
-        (!variantId || item.variant?.toString() === variantId),
+        isSameVariant(item.variant, variantId),
     );
 
     if (itemIndex === -1) {
@@ -284,15 +364,27 @@ export const updateCartItem = async (req, res) => {
     } else {
       // Check stock
       const product = await ProductModel.findById(productId);
+      if (!product || !product.isActive) {
+        return res.status(404).json({
+          error: true,
+          success: false,
+          message: "Product not found or unavailable",
+        });
+      }
       let availableStock = getAvailableQuantity(product, variantId);
 
       if (variantId && product.hasVariants) {
         const variant = product.variants.id(variantId);
-        if (variant) {
-          const variantStock = Number(variant.stock_quantity ?? variant.stock ?? 0);
-          const variantReserved = Number(variant.reserved_quantity ?? 0);
-          availableStock = Math.max(variantStock - variantReserved, 0);
+        if (!variant) {
+          return res.status(400).json({
+            error: true,
+            success: false,
+            message: "Selected variant is not available",
+          });
         }
+        const variantStock = Number(variant.stock_quantity ?? variant.stock ?? 0);
+        const variantReserved = Number(variant.reserved_quantity ?? 0);
+        availableStock = Math.max(variantStock - variantReserved, 0);
       }
 
       if (Number.isFinite(availableStock) && quantity > availableStock) {
@@ -339,10 +431,17 @@ export const updateCartItem = async (req, res) => {
  */
 export const removeFromCart = async (req, res) => {
   try {
-    const userId = req.user;
-    const sessionId = req.headers["x-session-id"] || req.cookies.sessionId;
-    const { productId } = req.params;
-    const { variantId } = req.query;
+    const { userId, sessionId } = getActorIdentifiers(req);
+    const productId = String(req.params?.productId || "").trim();
+    const variantId = normalizeVariantId(req.query?.variantId);
+
+    if (!productId || !isValidObjectId(productId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
 
     let cart;
     if (userId) {
@@ -363,7 +462,7 @@ export const removeFromCart = async (req, res) => {
       (item) =>
         !(
           (item.product._id || item.product).toString() === productId &&
-          (!variantId || item.variant?.toString() === variantId)
+          isSameVariant(item.variant, variantId)
         ),
     );
 
@@ -400,8 +499,7 @@ export const removeFromCart = async (req, res) => {
  */
 export const clearCart = async (req, res) => {
   try {
-    const userId = req.user;
-    const sessionId = req.headers["x-session-id"] || req.cookies.sessionId;
+    const { userId, sessionId } = getActorIdentifiers(req);
 
     let cart;
     if (userId) {
@@ -439,7 +537,7 @@ export const clearCart = async (req, res) => {
 export const mergeCart = async (req, res) => {
   try {
     const userId = req.user;
-    const { sessionId } = req.body;
+    const sessionId = normalizeSessionId(req.body?.sessionId);
 
     if (!sessionId) {
       return res.status(200).json({
@@ -469,18 +567,61 @@ export const mergeCart = async (req, res) => {
       guestCart.expiresAt = null;
       await guestCart.save();
     } else {
+      const productIds = [
+        ...new Set(guestCart.items.map((item) => String(item.product || "")).filter(Boolean)),
+      ];
+      const products = await ProductModel.find({ _id: { $in: productIds } }).lean();
+      const productMap = new Map(products.map((product) => [String(product._id), product]));
+
       // Merge items
       for (const guestItem of guestCart.items) {
+        const productId = String(guestItem.product || "");
+        const product = productMap.get(productId);
+        if (!product || !product.isActive) {
+          continue;
+        }
+
+        const variantId = normalizeVariantId(guestItem.variant);
+        const requestedQty = Math.max(normalizeQuantity(guestItem.quantity) || 0, 0);
+        if (requestedQty <= 0) {
+          continue;
+        }
+
+        const availableStock = getAvailableQuantity(product, variantId);
+        const maxAllowed = Number.isFinite(availableStock)
+          ? Math.min(availableStock, MAX_CART_ITEM_QTY)
+          : MAX_CART_ITEM_QTY;
+
+        if (maxAllowed <= 0) {
+          continue;
+        }
+
         const existingIndex = userCart.items.findIndex(
           (item) =>
-            item.product.toString() === guestItem.product.toString() &&
-            item.variant?.toString() === guestItem.variant?.toString(),
+            item.product.toString() === productId &&
+            isSameVariant(item.variant, variantId),
         );
 
         if (existingIndex >= 0) {
-          userCart.items[existingIndex].quantity += guestItem.quantity;
+          const mergedQuantity = Math.min(
+            Number(userCart.items[existingIndex].quantity || 0) + requestedQty,
+            maxAllowed,
+          );
+          userCart.items[existingIndex].quantity = mergedQuantity;
         } else {
-          userCart.items.push(guestItem);
+          const safeQuantity = Math.min(requestedQty, maxAllowed);
+          if (safeQuantity <= 0) continue;
+
+          userCart.items.push({
+            product: guestItem.product,
+            quantity: safeQuantity,
+            variant: variantId || null,
+            variantName: String(guestItem.variantName || "").trim().slice(0, 120),
+            price: Number(guestItem.price || product.price || 0),
+            originalPrice: Number(
+              guestItem.originalPrice || product.originalPrice || product.price || 0,
+            ),
+          });
         }
       }
       await userCart.save();

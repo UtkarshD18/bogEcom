@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import ProductModel from "../models/product.model.js";
 import WishlistModel from "../models/wishlist.model.js";
 
@@ -9,6 +10,17 @@ const getAvailableQuantity = (product) => {
   const stock = Number(product.stock_quantity ?? product.stock ?? 0);
   const reserved = Number(product.reserved_quantity ?? 0);
   return Math.max(stock - reserved, 0);
+};
+
+const MAX_MOVE_TO_CART_QTY = 100;
+
+const isValidObjectId = (value) =>
+  mongoose.Types.ObjectId.isValid(String(value || "").trim());
+
+const normalizeQuantity = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.floor(parsed);
 };
 
 /**
@@ -75,23 +87,25 @@ export const getWishlist = async (req, res) => {
 export const addToWishlist = async (req, res) => {
   try {
     const userId = req.user;
-    const { productId, notifyOnSale = true, notifyOnStock = true } = req.body;
+    const productId = String(req.body?.productId || "").trim();
+    const notifyOnSale = Boolean(req.body?.notifyOnSale ?? true);
+    const notifyOnStock = Boolean(req.body?.notifyOnStock ?? true);
 
-    if (!productId) {
+    if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "Product ID is required",
+        message: "Valid product ID is required",
       });
     }
 
     // Verify product exists
     const product = await ProductModel.findById(productId);
-    if (!product) {
+    if (!product || !product.isActive) {
       return res.status(404).json({
         error: true,
         success: false,
-        message: "Product not found",
+        message: "Product not found or unavailable",
       });
     }
 
@@ -154,7 +168,15 @@ export const addToWishlist = async (req, res) => {
 export const removeFromWishlist = async (req, res) => {
   try {
     const userId = req.user;
-    const { productId } = req.params;
+    const productId = String(req.params?.productId || "").trim();
+
+    if (!productId || !isValidObjectId(productId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
 
     const wishlist = await WishlistModel.findOne({ user: userId });
     if (!wishlist) {
@@ -210,13 +232,24 @@ export const removeFromWishlist = async (req, res) => {
 export const toggleWishlist = async (req, res) => {
   try {
     const userId = req.user;
-    const { productId } = req.body;
+    const productId = String(req.body?.productId || "").trim();
 
-    if (!productId) {
+    if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "Product ID is required",
+        message: "Valid product ID is required",
+      });
+    }
+
+    const product = await ProductModel.findById(productId)
+      .select("_id isActive")
+      .lean();
+    if (!product || !product.isActive) {
+      return res.status(404).json({
+        error: true,
+        success: false,
+        message: "Product not found or unavailable",
       });
     }
 
@@ -273,7 +306,15 @@ export const toggleWishlist = async (req, res) => {
 export const checkWishlist = async (req, res) => {
   try {
     const userId = req.user;
-    const { productId } = req.params;
+    const productId = String(req.params?.productId || "").trim();
+
+    if (!productId || !isValidObjectId(productId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
 
     const wishlist = await WishlistModel.findOne({ user: userId });
 
@@ -331,7 +372,24 @@ export const clearWishlist = async (req, res) => {
 export const moveToCart = async (req, res) => {
   try {
     const userId = req.user;
-    const { productId, quantity = 1 } = req.body;
+    const productId = String(req.body?.productId || "").trim();
+    const quantity = normalizeQuantity(req.body?.quantity ?? 1);
+
+    if (!productId || !isValidObjectId(productId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Valid product ID is required",
+      });
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_MOVE_TO_CART_QTY) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: `Quantity must be an integer between 1 and ${MAX_MOVE_TO_CART_QTY}`,
+      });
+    }
 
     // Import cart controller
     const CartModel = (await import("../models/cart.model.js")).default;
@@ -389,7 +447,18 @@ export const moveToCart = async (req, res) => {
     );
 
     if (cartItemIndex >= 0) {
-      cart.items[cartItemIndex].quantity += quantity;
+      const mergedQuantity = Math.min(
+        Number(cart.items[cartItemIndex].quantity || 0) + quantity,
+        MAX_MOVE_TO_CART_QTY,
+      );
+      if (Number.isFinite(availableStock) && mergedQuantity > availableStock) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: `Only ${availableStock} items available`,
+        });
+      }
+      cart.items[cartItemIndex].quantity = mergedQuantity;
     } else {
       cart.items.push({
         product: productId,

@@ -1,4 +1,11 @@
 {
+  "private": true,
+  "scripts": {
+    "validate:env": "node scripts/validate-env-examples.mjs",
+    "test:server": "npm --prefix server test",
+    "build:client": "npm --prefix frontend/client run build",
+    "build:admin": "npm --prefix frontend/admin run build"
+  },
   "dependencies": {
     "node-fetch": "^2.7.0"
   }
