@@ -132,107 +132,21 @@ const AccountSidebar = () => {
     reader.readAsDataURL(file);
   };
 
-  const normalizeIdentity = (value) => String(value || "").trim().toLowerCase();
-  const getPhotoStorageKey = (emailValue) => {
-    const normalizedEmail = normalizeIdentity(emailValue);
-    return normalizedEmail ? `userPhoto:${normalizedEmail}` : "";
-  };
-  const getPhotoRemovedKey = (emailValue) => {
-    const normalizedEmail = normalizeIdentity(emailValue);
-    return normalizedEmail ? `userPhotoRemoved:${normalizedEmail}` : "";
-  };
-  const getStoredPhotoForUser = (emailValue) => {
-    const key = getPhotoStorageKey(emailValue);
-    if (!key) return "";
-    return localStorage.getItem(key) || "";
-  };
-  const isPhotoRemovalOverride = (emailValue) => {
-    const key = getPhotoRemovedKey(emailValue);
-    if (!key) return false;
-    return localStorage.getItem(key) === "1";
-  };
-  const setPhotoRemovalOverride = (emailValue, removed) => {
-    const key = getPhotoRemovedKey(emailValue);
-    if (!key) return;
-    if (removed) {
-      localStorage.setItem(key, "1");
-    } else {
-      localStorage.removeItem(key);
-    }
-  };
-  const clearStoredPhotoForUser = (emailValue) => {
-    const key = getPhotoStorageKey(emailValue);
-    const removedKey = getPhotoRemovedKey(emailValue);
-    if (key) localStorage.removeItem(key);
-    if (removedKey) localStorage.removeItem(removedKey);
-    // Cleanup old global key to prevent cross-account leakage.
-    localStorage.removeItem("userPhoto");
-  };
-
-  const resolveImageUrl = (value) => {
-    const photo = String(value || "").trim();
-    if (!photo) return "";
-    if (photo.startsWith("data:")) return photo;
-    if (photo.startsWith("http://") || photo.startsWith("https://")) {
-      return photo;
-    }
-    if (photo.startsWith("/uploads/")) return `${API_URL}${photo}`;
-    if (photo.startsWith("uploads/")) return `${API_URL}/${photo}`;
-    if (photo.startsWith("/")) return photo;
-    return photo;
-  };
-
-  const setPhotoEverywhere = (
-    photoValue,
-    {
-      persistCookie = true,
-      emailOverride = "",
-      emitEvent = true,
-      markRemoved = false,
-    } = {},
-  ) => {
-    const effectiveEmail =
-      emailOverride || userEmail || cookies.get("userEmail") || "";
-    const resolved = resolveImageUrl(photoValue);
-    setUserPhoto(resolved);
-    if (photoValue) {
-      if (persistCookie) {
-        cookies.set("userPhoto", photoValue, { expires: 7 });
-      } else {
-        cookies.remove("userPhoto");
-      }
-      const storageKey = getPhotoStorageKey(effectiveEmail);
-      if (storageKey) localStorage.setItem(storageKey, photoValue);
-      localStorage.removeItem("userPhoto");
-      setPhotoRemovalOverride(effectiveEmail, false);
-    } else {
-      cookies.remove("userPhoto");
-      clearStoredPhotoForUser(effectiveEmail);
-      if (markRemoved) {
-        setPhotoRemovalOverride(effectiveEmail, true);
-      }
-    }
-    if (emitEvent) {
-      window.dispatchEvent(new Event("loginSuccess"));
-    }
-  };
-
-  const applyLocalPhotoFallback = (file, successMessage) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const photoUrl = event.target?.result;
-      setPhotoEverywhere(photoUrl, { persistCookie: false });
-      toast.success(successMessage);
-    };
-    reader.readAsDataURL(file);
-  };
-
   const syncFromCookies = () => {
-    const name = cookies.get("userName") || "User";
-    const email = cookies.get("userEmail") || "";
+    const name =
+      cookies.get("userName") ||
+      (typeof window !== "undefined" ? localStorage.getItem("userName") : "") ||
+      "User";
+    const email =
+      cookies.get("userEmail") ||
+      (typeof window !== "undefined" ? localStorage.getItem("userEmail") : "") ||
+      "";
     const photo = isPhotoRemovalOverride(email)
       ? ""
-      : cookies.get("userPhoto") || getStoredPhotoForUser(email) || "";
+      : cookies.get("userPhoto") ||
+        (typeof window !== "undefined" ? localStorage.getItem("userPhoto") : "") ||
+        getStoredPhotoForUser(email) ||
+        "";
     setUserName(name);
     setUserEmail(email);
     setUserPhoto(resolveImageUrl(photo));
@@ -378,8 +292,8 @@ const AccountSidebar = () => {
       const formData = new FormData();
       formData.append("image", file);
 
-      const token = cookies.get("accessToken");
-      if (!token) {
+      const fallbackToken = getAuthToken();
+      if (!fallbackToken) {
         applyLocalPhotoFallback(file, "Profile photo updated locally!");
         return;
       }
@@ -421,8 +335,8 @@ const AccountSidebar = () => {
 
     setUploadingPhoto(true);
     try {
-      const token = cookies.get("accessToken");
-      if (!token) {
+      const fallbackToken = getAuthToken();
+      if (!fallbackToken) {
         setPhotoEverywhere("", { persistCookie: false, markRemoved: true });
         toast.success("Profile photo removed!");
         return;
@@ -449,7 +363,7 @@ const AccountSidebar = () => {
         const response = await fetch(attempt.url, {
           method: attempt.method,
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${fallbackToken}`,
             ...(attempt.body ? { "Content-Type": "application/json" } : {}),
           },
           credentials: "include",
@@ -494,6 +408,14 @@ const AccountSidebar = () => {
       cookies.remove("userEmail");
       cookies.remove("userName");
       cookies.remove("userPhoto");
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("userEmail");
+        localStorage.removeItem("userName");
+        localStorage.removeItem("userPhoto");
+      }
       clearStoredPhotoForUser(userEmail || cookies.get("userEmail"));
 
       toast.success("Logged out successfully");

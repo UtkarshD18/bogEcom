@@ -10,8 +10,9 @@ const API_URL = String(API_BASE_URL || "")
   .trim()
   .replace(/\/+$/, "")
   .replace(/\/api$/i, "");
+const USE_DEV_PROXY = process.env.NODE_ENV !== "production";
 
-const buildApiUrlCandidates = (path) => {
+const buildApiUrl = (path) => {
   const normalizedPath = String(path || "").startsWith("/")
     ? String(path)
     : `/${String(path || "")}`;
@@ -19,44 +20,11 @@ const buildApiUrlCandidates = (path) => {
     ? normalizedPath
     : `/api${normalizedPath}`;
 
-  const candidates = [];
-  if (API_URL) {
-    candidates.push(`${API_URL}${apiPath}`);
-  }
-  candidates.push(apiPath);
-
-  return [...new Set(candidates)];
-};
-
-const fetchSettingsPayload = async (url) => {
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    // Public settings do not require cookies/auth.
-    cache: "no-store",
-  });
-
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch (_err) {
-    payload = null;
+  if (USE_DEV_PROXY) {
+    return apiPath;
   }
 
-  if (!response.ok) {
-    const backendMessage =
-      payload?.message ||
-      payload?.error?.message ||
-      payload?.error ||
-      null;
-    throw new Error(
-      backendMessage || `Failed to fetch settings (${response.status})`,
-    );
-  }
-
-  return payload;
+  return `${API_URL}${apiPath}`;
 };
 
 /**
@@ -150,14 +118,16 @@ export const SettingsProvider = ({ children }) => {
       let data = null;
       let lastError = null;
 
-      for (const url of candidates) {
-        try {
-          data = await fetchSettingsPayload(url);
-          lastError = null;
-          break;
-        } catch (err) {
-          lastError = err;
-        }
+      const response = await fetch(buildApiUrl("/settings/public"), {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch settings");
       }
 
       if (!data) {

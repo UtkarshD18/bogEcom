@@ -20,12 +20,6 @@ import { Suspense, useContext, useEffect, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 
-const GOOGLE_REDIRECT_ATTEMPT_KEY = "googleAuthRedirectAttempted";
-const GOOGLE_POPUP_CANCEL_CODES = new Set([
-  "auth/popup-closed-by-user",
-  "auth/cancelled-popup-request",
-]);
-
 const getStoredToken = () => {
   if (typeof window === "undefined") return cookies.get("accessToken") || null;
   return (
@@ -221,7 +215,7 @@ const LoginForm = () => {
           return;
         }
       } catch {}
-      // Token is expired or invalid â€” clear stale cookies so user can login fresh
+      // Token is expired or invalid — clear stale cookies so user can login fresh
       clearStoredSession();
     }
     cookies.remove("actionType");
@@ -254,25 +248,14 @@ const LoginForm = () => {
       .then((res) => {
         console.log("Login response:", res);
         if (res?.error !== true) {
-          // Set cookies - data is returned directly, not nested under user
-          console.log("Setting cookies with:", {
-            accessToken: res?.data?.accessToken ? "present" : "missing",
-            userName: res?.data?.userName,
-            userEmail: res?.data?.userEmail,
-          });
-          cookies.set("accessToken", res?.data?.accessToken, { expires: 7 });
-          cookies.set("refreshToken", res?.data?.refreshToken, { expires: 7 });
-          cookies.set("userName", res?.data?.userName || "User", {
-            expires: 7,
-          });
-          cookies.set("userEmail", res?.data?.userEmail || formFields.email, {
-            expires: 7,
-          });
-          const serverPhoto = res?.data?.userPhoto || res?.data?.avatar || "";
-          if (serverPhoto) {
-            cookies.set("userPhoto", serverPhoto, { expires: 7 });
-          } else {
-            cookies.remove("userPhoto");
+          const persisted = persistSession(res?.data, formFields.email);
+          if (!persisted) {
+            context?.alertBox(
+              "error",
+              "Login response is missing token. Please try again.",
+            );
+            setIsLoading(false);
+            return;
           }
 
           // Update context immediately
@@ -331,10 +314,59 @@ const LoginForm = () => {
           typeof window !== "undefined" &&
           sessionStorage.getItem(GOOGLE_REDIRECT_ATTEMPT_KEY) !== "1";
 
-        if (canRetryWithRedirect) {
-          sessionStorage.setItem(GOOGLE_REDIRECT_ATTEMPT_KEY, "1");
-          context?.alertBox("info", "Retrying Google sign-in with redirect...");
-          await signInWithRedirect(auth, provider);
+        try {
+          // Send Google user data to backend
+          const backendResponse = await postData(
+            "/api/user/authWithGoogle",
+            googleUserData,
+          );
+
+          if (backendResponse?.error !== true) {
+            const persisted = persistSession(
+              {
+                ...backendResponse?.data,
+                accessToken: backendResponse?.data?.accessToken || token,
+                userName: user.displayName || "Google User",
+                userEmail: user.email,
+                userPhoto: user.photoURL || "",
+              },
+              user.email,
+            );
+            if (!persisted) {
+              throw new Error("Google auth token missing");
+            }
+
+            // Update context
+            context?.setIsLogin?.(true);
+            context?.setUser?.({
+              name: user.displayName,
+              email: user.email,
+            });
+
+            context?.alertBox(
+              "success",
+              backendResponse?.message || "Google Sign-In successful!",
+            );
+
+            // Dispatch event first, then navigate
+            window.dispatchEvent(new Event("loginSuccess"));
+            setTimeout(() => {
+              router.push("/");
+            }, 100);
+          } else {
+            throw new Error(
+              backendResponse?.message || "Backend registration failed",
+            );
+          }
+        } catch (backendError) {
+          console.error("Backend registration failed:", backendError.message);
+
+          // SECURITY: Do not create fake tokens - require backend authentication
+          context?.alertBox(
+            "error",
+            "Authentication service unavailable. Please try again later.",
+          );
+          setGoogleLoading(false);
           return;
         }
 

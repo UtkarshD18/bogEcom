@@ -40,34 +40,6 @@ const buildApiUrl = (path) => {
   return `${API_URL}${apiPath}`;
 };
 
-const normalizeCartItems = (rawItems) => {
-  if (!Array.isArray(rawItems)) return [];
-
-  return rawItems
-    .filter((item) => item && typeof item === "object")
-    .map((item) => {
-      const quantity = Number(item.quantity);
-      return {
-        ...item,
-        quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
-      };
-    });
-};
-
-const parseStoredCart = (savedCart) => {
-  const parsed = JSON.parse(savedCart);
-
-  if (Array.isArray(parsed)) {
-    return normalizeCartItems(parsed);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    return normalizeCartItems(parsed.items);
-  }
-
-  return [];
-};
-
 // Generate or get session ID for guest carts
 const getSessionId = () => {
   if (typeof window === "undefined") return null;
@@ -435,10 +407,7 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const query = resolvedVariantId
-        ? `?variantId=${encodeURIComponent(String(resolvedVariantId))}`
-        : "";
-      const response = await fetch(buildApiUrl(`/cart/remove/${productId}${query}`), {
+      const response = await fetch(buildApiUrl(`/cart/remove/${productId}`), {
         method: "DELETE",
         headers,
         credentials: "include",

@@ -54,7 +54,7 @@ export const FLAVORS = {
 
 // Default flavor is Creamy
 const DEFAULT_FLAVOR = FLAVORS.creamy;
-const resolveStoredFlavor = () => {
+const resolveInitialFlavor = () => {
   if (typeof window === "undefined") {
     return DEFAULT_FLAVOR;
   }
@@ -104,7 +104,7 @@ const ThemeProvider = ({ children }) => {
     email: "",
     Password: "",
   });
-  const [flavor, setFlavor] = useState(DEFAULT_FLAVOR);
+  const [flavor, setFlavor] = useState(resolveInitialFlavor);
 
   const router = useRouter();
   const applyThemeToDOM = useCallback((themeColor) => {
@@ -136,10 +136,10 @@ const ThemeProvider = ({ children }) => {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const storedFlavor = resolveStoredFlavor();
-      setFlavor(storedFlavor);
-      localStorage.setItem("selectedFlavor", JSON.stringify(storedFlavor));
-      applyThemeToDOM(storedFlavor);
+      if (!localStorage.getItem("selectedFlavor")) {
+        localStorage.setItem("selectedFlavor", JSON.stringify(flavor));
+      }
+      applyThemeToDOM(flavor);
     }
     const token = getStoredAccessToken();
     let tokenValid = false;
