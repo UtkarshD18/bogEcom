@@ -1,0 +1,354 @@
+{
+  "runId": "2026-02-18T17-43-11-578Z",
+  "startedAt": "2026-02-18T17:43:11.583Z",
+  "baseUrl": "http://127.0.0.1:8011",
+  "testEmail": "piyushsongara825@gmai.com",
+  "artifacts": {
+    "root": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-43-11-578Z",
+    "invoicesDir": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-43-11-578Z\\invoices",
+    "reportPath": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-43-11-578Z\\report.json"
+  },
+  "setup": {
+    "server": {
+      "startedByScript": true,
+      "port": 8011,
+      "stdoutLog": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-43-11-578Z\\server.stdout.log",
+      "stderrLog": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-43-11-578Z\\server.stderr.log"
+    },
+    "paymentGatewaySettingBefore": {
+      "existed": true,
+      "previousValue": false
+    },
+    "paymentStatusEndpoint": {
+      "error": false,
+      "success": true,
+      "message": "Success",
+      "data": {
+        "paymentEnabled": true,
+        "provider": "PHONEPE",
+        "message": "PHONEPE payment gateway is active",
+        "canSaveOrder": true,
+        "onboardingStatus": "complete"
+      },
+      "timestamp": "2026-02-18T17:43:17.572Z"
+    },
+    "user": {
+      "created": true,
+      "userId": "6995fa35c355c8cd5d91def2",
+      "email": "piyushsongara825@gmai.com",
+      "status": "active",
+      "role": "User"
+    },
+    "admin": {
+      "created": false,
+      "userId": "6970b0799da902b64021249f",
+      "email": "piyushsongara69@gmail.com"
+    },
+    "address": {
+      "addressId": "6995fa35c355c8cd5d91defb",
+      "city": "Jaipur",
+      "state": "Rajasthan",
+      "pincode": "302019",
+      "mobile": "9876543210"
+    },
+    "storeInfoUsed": {
+      "name": "BuyOneGram",
+      "phone": "+91 9876541234",
+      "address": "Sitapura Industrial Area, Jaipur, Rajasthan 302019",
+      "gstNumber": ""
+    },
+    "orderItems": [
+      {
+        "productId": "6973b57bce9eb5ada79a3d43",
+        "productTitle": "Peanut Butter Lovers Gift Box",
+        "quantity": 2,
+        "price": 1299,
+        "image": "/product_1.png",
+        "subTotal": 2598
+      },
+      {
+        "productId": "6973b57bce9eb5ada79a3d44",
+        "productTitle": "Fitness Pack - Protein Duo",
+        "quantity": 1,
+        "price": 999,
+        "image": "/product_1.png",
+        "subTotal": 999
+      }
+    ],
+    "orderSubtotal": 3597,
+    "paymentStatusEndpointAfter": {
+      "error": false,
+      "success": true,
+      "message": "Success",
+      "data": {
+        "paymentEnabled": true,
+        "provider": "PHONEPE",
+        "message": "PHONEPE payment gateway is active",
+        "canSaveOrder": true,
+        "onboardingStatus": "complete"
+      },
+      "timestamp": "2026-02-18T17:43:23.408Z"
+    }
+  },
+  "orders": [
+    {
+      "label": "without_coupon",
+      "orderId": "6995fa365a70c9c27a7c51e5",
+      "paymentId": "TESTPAY_A_1771436600454",
+      "paymentStatus": "paid",
+      "orderStatus": "accepted",
+      "userEmail": "piyushsongara825@gmai.com",
+      "deliveryAddress": {
+        "_id": "6995fa35c355c8cd5d91defb",
+        "name": "Piyush Songara",
+        "address_line1": "Shop No. 8, Vardaan Market, Sitapura",
+        "city": "Jaipur",
+        "state": "Rajasthan",
+        "pincode": "302019",
+        "country": "India",
+        "mobile": 9876543210,
+        "selected": true,
+        "landmark": "Near Sitapura Circle",
+        "addressType": "Home",
+        "location": {},
+        "userId": "6995fa35c355c8cd5d91def2",
+        "createdAt": "2026-02-18T17:43:17.789Z",
+        "updatedAt": "2026-02-18T17:43:17.789Z",
+        "__v": 0
+      },
+      "pricing": {
+        "subtotal": 3425.71,
+        "discount": 0,
+        "shipping": 52,
+        "totalAmt": 3649,
+        "finalAmount": 3649,
+        "couponCode": null
+      },
+      "invoice": {
+        "filePath": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-43-11-578Z\\invoices\\invoice_6995fa365a70c9c27a7c51e5_no_coupon.pdf",
+        "sizeBytes": 78836,
+        "invoiceNumber": "INV-20260218-7C51E5",
+        "billingDetails": {
+          "fullName": "Piyush Songara",
+          "email": "piyushsongara825@gmai.com",
+          "phone": "9876543210",
+          "address": "Shop No. 8, Vardaan Market, Sitapura",
+          "pincode": "302019",
+          "state": "Rajasthan"
+        },
+        "hasSellerNameText": false,
+        "hasSellerAddressText": false
+      }
+    },
+    {
+      "label": "with_coupon",
+      "orderId": "6995fa375a70c9c27a7c51ff",
+      "paymentId": "TESTPAY_B_1771436601467",
+      "paymentStatus": "paid",
+      "orderStatus": "accepted",
+      "userEmail": "piyushsongara825@gmai.com",
+      "deliveryAddress": {
+        "_id": "6995fa35c355c8cd5d91defb",
+        "name": "Piyush Songara",
+        "address_line1": "Shop No. 8, Vardaan Market, Sitapura",
+        "city": "Jaipur",
+        "state": "Rajasthan",
+        "pincode": "302019",
+        "country": "India",
+        "mobile": 9876543210,
+        "selected": true,
+        "landmark": "Near Sitapura Circle",
+        "addressType": "Home",
+        "location": {},
+        "userId": "6995fa35c355c8cd5d91def2",
+        "createdAt": "2026-02-18T17:43:17.789Z",
+        "updatedAt": "2026-02-18T17:43:17.789Z",
+        "__v": 0
+      },
+      "pricing": {
+        "subtotal": 3330.48,
+        "discount": 100,
+        "shipping": 52,
+        "totalAmt": 3549,
+        "finalAmount": 3549,
+        "couponCode": "SAGAR67"
+      },
+      "invoice": {
+        "filePath": "d:\\bogEcom\\test-artifacts\\order-flow-2026-02-18T17-43-11-578Z\\invoices\\invoice_6995fa375a70c9c27a7c51ff_with_coupon.pdf",
+        "sizeBytes": 78861,
+        "invoiceNumber": "INV-20260218-7C51FF",
+        "billingDetails": {
+          "fullName": "Piyush Songara",
+          "email": "piyushsongara825@gmai.com",
+          "phone": "9876543210",
+          "address": "Shop No. 8, Vardaan Market, Sitapura",
+          "pincode": "302019",
+          "state": "Rajasthan"
+        },
+        "hasSellerNameText": false,
+        "hasSellerAddressText": false
+      }
+    }
+  ],
+  "shipping": {
+    "login": {
+      "ok": true,
+      "status": 200,
+      "message": "Xpressbees token retrieved",
+      "tokenPreview": "eyJ0****KPDg",
+      "response": {
+        "error": false,
+        "success": true,
+        "message": "Xpressbees token retrieved",
+        "data": {
+          "status": true,
+          "data": "[REDACTED_XPRESSBEES_JWT]"
+        },
+        "timestamp": "2026-02-18T17:43:23.049Z"
+      }
+    },
+    "serviceability": {
+      "ok": true,
+      "status": 200,
+      "payload": {
+        "origin": "302019",
+        "destination": "302019",
+        "payment_type": "prepaid",
+        "order_amount": 3549
+      },
+      "response": {
+        "error": false,
+        "success": true,
+        "message": "Serviceability fetched",
+        "data": {
+          "status": true,
+          "data": [
+            {
+              "id": "12938",
+              "name": "Xpressbees Same Day Delivery",
+              "freight_charges": 49,
+              "cod_charges": 0,
+              "total_charges": 49,
+              "min_weight": 500,
+              "chargeable_weight": 500
+            },
+            {
+              "id": "3",
+              "name": "Xpressbees 5 K.G",
+              "freight_charges": 150,
+              "cod_charges": 0,
+              "total_charges": 150,
+              "min_weight": 5000,
+              "chargeable_weight": 5000
+            },
+            {
+              "id": "2",
+              "name": "Xpressbees 2 K.G",
+              "freight_charges": 101,
+              "cod_charges": 0,
+              "total_charges": 101,
+              "min_weight": 2000,
+              "chargeable_weight": 2000
+            },
+            {
+              "id": "6",
+              "name": "Air Xpressbees 0.5 K.G",
+              "freight_charges": 33,
+              "cod_charges": 0,
+              "total_charges": 33,
+              "min_weight": 500,
+              "chargeable_weight": 500
+            },
+            {
+              "id": "1",
+              "name": "Surface Xpressbees 0.5 K.G",
+              "freight_charges": 33,
+              "cod_charges": 0,
+              "total_charges": 33,
+              "min_weight": 500,
+              "chargeable_weight": 500
+            },
+            {
+              "id": "4",
+              "name": "Xpressbees 10 K.G",
+              "freight_charges": 220,
+              "cod_charges": 0,
+              "total_charges": 220,
+              "min_weight": 10000,
+              "chargeable_weight": 10000
+            },
+            {
+              "id": "12298",
+              "name": "Xpressbees 1 K.G",
+              "freight_charges": 60,
+              "cod_charges": 0,
+              "total_charges": 60,
+              "min_weight": 1000,
+              "chargeable_weight": 1000
+            }
+          ]
+        },
+        "timestamp": "2026-02-18T17:43:23.289Z"
+      }
+    },
+    "booking": {
+      "ok": false,
+      "status": 500,
+      "payload": {
+        "order_number": "E2E-7c51ff-3290",
+        "payment_type": "prepaid",
+        "order_amount": 3549,
+        "package_weight": 500,
+        "package_length": 10,
+        "package_breadth": 10,
+        "package_height": 10,
+        "request_auto_pickup": "no",
+        "consignee": {
+          "name": "Piyush Songara",
+          "address": "Shop No. 8, Vardaan Market, Sitapura",
+          "address_2": "Near Sitapura Circle",
+          "city": "Jaipur",
+          "state": "Rajasthan",
+          "pincode": "302019",
+          "phone": "9876543210"
+        },
+        "pickup": {
+          "warehouse_name": "BuyOneGram Warehouse",
+          "name": "Warehouse Manager",
+          "address": "Sitapura Industrial Area, Jaipur, Rajasthan 302019",
+          "address_2": "",
+          "city": "Jaipur",
+          "state": "Rajasthan",
+          "pincode": "302019",
+          "phone": "9876541234"
+        }
+      },
+      "response": {
+        "error": true,
+        "success": false,
+        "code": "INTERNAL_ERROR",
+        "message": "Order Items is required\nCollectable Amount is required\n",
+        "timestamp": "2026-02-18T17:43:23.405Z"
+      },
+      "awb": null
+    },
+    "manifest": null,
+    "cancel": null
+  },
+  "notes": [
+    {
+      "at": "2026-02-18T17:43:16.707Z",
+      "message": "Started API server for test run",
+      "extra": {
+        "port": 8011
+      }
+    },
+    {
+      "at": "2026-02-18T17:43:17.186Z",
+      "message": "Connected to database",
+      "extra": null
+    }
+  ],
+  "completedAt": "2026-02-18T17:43:23.408Z",
+  "success": true
+}

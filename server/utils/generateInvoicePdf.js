@@ -874,7 +874,9 @@ export const generateInvoicePdf = async ({
     y = drawSummaryRow(doc, "IGST", taxBreakup.igst, summaryX, y, currencySymbol);
     y = drawSummaryRow(doc, "CGST", taxBreakup.cgst, summaryX, y, currencySymbol);
     y = drawSummaryRow(doc, "SGST", taxBreakup.sgst, summaryX, y, currencySymbol);
-    y = drawSummaryRow(doc, "Shipping", summary.shippingTotal, summaryX, y, currencySymbol);
+    if (Number(summary.shippingTotal || 0) > 0) {
+      y = drawSummaryRow(doc, "Shipping", summary.shippingTotal, summaryX, y, currencySymbol);
+    }
     y = drawSummaryRow(doc, "Grand Total", summary.grandTotal, summaryX, y, currencySymbol, true);
 
     if (hsnSummary?.length) {

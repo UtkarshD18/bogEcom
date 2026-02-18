@@ -18,8 +18,6 @@ import UserModel from "../models/user.model.js";
 import {
   applyRedemptionToUser,
   awardCoinsToUser,
-  calculateRedemption,
-  getUserCoinSummary,
 } from "../services/coin.service.js";
 import { applyMembershipDiscount } from "../services/membership.service.js";
 import { createPhonePePayment } from "../services/phonepe.service.js";
@@ -1517,25 +1515,16 @@ export const createOrder = asyncHandler(async (req, res) => {
       checkoutContact.state,
     );
 
-    let coinBalance = 0;
-    if (userId) {
-      try {
-        const summary = await getUserCoinSummary({ userId });
-        coinBalance = Number(summary?.usable_coins || 0);
-      } catch (coinSummaryError) {
-        coinBalance = 0;
-      }
-    }
-
     const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
-    const redemption =
-      requestedCoins > 0 && userId
-        ? await calculateRedemption({
-            subtotal: subtotalAfterDiscount,
-            requestedCoins,
-            coinBalance,
-          })
-        : { coinsUsed: 0, redeemAmount: 0 };
+    if (requestedCoins > 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "Coin redemption is only available for membership subscriptions.",
+      });
+    }
+    const redemption = { coinsUsed: 0, redeemAmount: 0 };
 
     const netInclusiveSubtotal = Math.max(
       round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
@@ -1980,25 +1969,16 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       checkoutContact.state,
     );
 
-    let coinBalance = 0;
-    if (userId) {
-      try {
-        const summary = await getUserCoinSummary({ userId });
-        coinBalance = Number(summary?.usable_coins || 0);
-      } catch (coinSummaryError) {
-        coinBalance = 0;
-      }
-    }
-
     const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
-    const redemption =
-      requestedCoins > 0 && userId
-        ? await calculateRedemption({
-            subtotal: subtotalAfterDiscount,
-            requestedCoins,
-            coinBalance,
-          })
-        : { coinsUsed: 0, redeemAmount: 0 };
+    if (requestedCoins > 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "Coin redemption is only available for membership subscriptions.",
+      });
+    }
+    const redemption = { coinsUsed: 0, redeemAmount: 0 };
 
     const netInclusiveSubtotal = Math.max(
       round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),

@@ -591,9 +591,10 @@ export const redeemCoins = async ({
   await ensureCoinLedgerState(safeUserId);
   const usableCoins = await getUsableCoinBalanceFromLedger(safeUserId, new Date());
 
-  const maxRedeemRupees = round2(
-    (safeOrderTotal * Number(settings.maxRedeemPercentage || 0)) / 100,
-  );
+  const applyPercentageCap = source !== "membership";
+  const maxRedeemRupees = applyPercentageCap
+    ? round2((safeOrderTotal * Number(settings.maxRedeemPercentage || 0)) / 100)
+    : safeOrderTotal;
   const maxCoinsByLimit = floorInt(
     maxRedeemRupees / Number(settings.redeemRate || 1),
   );

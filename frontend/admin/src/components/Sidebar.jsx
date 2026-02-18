@@ -2,6 +2,7 @@
 import { useAdmin } from "@/context/AdminContext";
 import { fetchUnresolvedSupportCount } from "@/services/supportApi";
 import { Button } from "@mui/material";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -198,7 +199,14 @@ const Sidebar = () => {
       {/* Logo */}
       <div className="p-4 border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2">
-          <img src="/logo.jpeg" alt="Logo" className="h-10" />
+          <Image
+            src="/logo.png"
+            alt="Logo"
+            width={140}
+            height={40}
+            className="h-10 w-auto"
+            priority
+          />
         </Link>
       </div>
 

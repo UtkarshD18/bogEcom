@@ -163,13 +163,8 @@ export const getShippingQuote = async ({
   const weight = getWeightSlab(estimatedWeight);
   const zone = detectZoneByPincode(destinationPincode);
 
-  const selectedRate = DEFAULT_RATE_CHART[zone] || DEFAULT_RATE_CHART.B;
-  const charge =
-    weight <= 500
-      ? selectedRate.base500
-      : round2(
-          selectedRate.base500 + ((weight - 500) / 500) * selectedRate.add500,
-        );
+  // Business rule: free delivery for every order.
+  const charge = 0;
 
   return {
     success: true,

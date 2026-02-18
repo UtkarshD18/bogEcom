@@ -637,7 +637,7 @@ const ShippingAdminPage = () => {
             fullWidth
             multiline
             rows={6}
-            placeholder='{"order_number":"#123456","payment_type":"cod",...}'
+            placeholder='{"order_number":"#123456","payment_type":"cod","order_amount":999,"collectable_amount":999,"order_items":[{"name":"Item","qty":1,"price":999,"sku":"SKU-001"}],...}'
           />
           <Button
             variant="contained"

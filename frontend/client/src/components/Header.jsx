@@ -1195,11 +1195,7 @@ const Header = () => {
                   per coin.
                 </p>
                 <p>
-                  Maximum redemption per order is{" "}
-                  <span className="font-semibold">
-                    {Number(coinSettings.maxRedeemPercentage || 0).toFixed(0)}%
-                  </span>
-                  .
+                  Coins can only be redeemed on membership subscriptions.
                 </p>
                 <p>
                   Coins expire after{" "}
@@ -1207,20 +1203,6 @@ const Header = () => {
                     {Math.max(Math.floor(Number(coinSettings.expiryDays || 0)), 0)}
                   </span>{" "}
                   days.
-                </p>
-                <p>
-                  Active members earn a{" "}
-                  <span className="font-semibold">
-                    {Math.max(
-                      Math.round(
-                        (Number(coinSummary.membership_bonus_multiplier || 1) - 1) *
-                          100,
-                      ),
-                      0,
-                    )}
-                    %
-                  </span>{" "}
-                  bonus on earned coins.
                 </p>
               </div>
               <button

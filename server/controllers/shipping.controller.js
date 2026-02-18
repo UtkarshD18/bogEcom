@@ -60,6 +60,57 @@ const validatePaymentType = (value) => {
   }
 };
 
+const buildOrderItemsFromOrder = (orderDoc) => {
+  const products = Array.isArray(orderDoc?.products) ? orderDoc.products : [];
+  return products
+    .map((item, index) => ({
+      name: String(item?.productTitle || "Item"),
+      qty: Math.max(Number(item?.quantity || 1), 1),
+      price: Math.max(Number(item?.price || 0), 0),
+      sku: String(
+        item?.productId ||
+          item?.variantId ||
+          `SKU-${String(index + 1).padStart(3, "0")}`,
+      ),
+    }))
+    .filter((item) => item.qty > 0);
+};
+
+const normalizeShipmentPayload = async ({ shipment, orderId }) => {
+  const normalized = {
+    ...shipment,
+  };
+
+  const paymentType = String(normalized.payment_type || "").toLowerCase();
+  const orderAmount = Number(normalized.order_amount || 0);
+  const collectable = Number(normalized.collectable_amount);
+
+  if (
+    normalized.collectable_amount === undefined ||
+    normalized.collectable_amount === null ||
+    Number.isNaN(collectable)
+  ) {
+    normalized.collectable_amount =
+      paymentType === "cod" ? Math.max(orderAmount, 0) : 0;
+  } else {
+    normalized.collectable_amount = Math.max(collectable, 0);
+  }
+
+  const hasOrderItems =
+    Array.isArray(normalized.order_items) && normalized.order_items.length > 0;
+
+  if (!hasOrderItems && orderId) {
+    const orderDoc = await OrderModel.findById(orderId)
+      .select("products")
+      .lean();
+    if (orderDoc) {
+      normalized.order_items = buildOrderItemsFromOrder(orderDoc);
+    }
+  }
+
+  return normalized;
+};
+
 const updateOrderShipping = async (orderId, updates, context = "shipping") => {
   if (!orderId) return null;
   validateMongoId(orderId, "orderId");
@@ -172,7 +223,22 @@ export const xpressbeesBookShipment = asyncHandler(async (req, res) => {
     validatePincode(shipment?.pickup?.pincode, "pickup.pincode");
     validatePhone(shipment?.pickup?.phone, "pickup.phone");
 
-    const data = await bookShipment(shipment);
+    const normalizedShipment = await normalizeShipmentPayload({
+      shipment,
+      orderId,
+    });
+
+    if (
+      !Array.isArray(normalizedShipment.order_items) ||
+      normalizedShipment.order_items.length === 0
+    ) {
+      throw new AppError("MISSING_FIELD", {
+        field: "order_items",
+        message: "At least one order item is required for shipment booking",
+      });
+    }
+
+    const data = await bookShipment(normalizedShipment);
 
     if (orderId && data?.status && data?.data?.awb_number) {
       await updateOrderShipping(orderId, {

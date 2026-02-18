@@ -3,7 +3,7 @@
 import { API_BASE_URL } from "@/utils/api";
 import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 const API_URL = API_BASE_URL;
 const PENDING_PAYMENT_KEY = "membershipPaymentPending";
@@ -47,24 +47,13 @@ export default function MembershipCheckoutPage() {
   const router = useRouter();
 
   const redeemRate = Number(coinSummary?.settings?.redeemRate || 0);
-  const maxRedeemPercentage = Number(
-    coinSummary?.settings?.maxRedeemPercentage || 0,
-  );
   const usableCoins = Math.max(
     Math.floor(Number(coinSummary?.usable_coins || 0)),
     0,
   );
   const planPrice = Number(plan?.price || 0);
 
-  const maxRedeemRupees = useMemo(
-    () => round2((planPrice * maxRedeemPercentage) / 100),
-    [planPrice, maxRedeemPercentage],
-  );
-  const maxCoinsByLimit = useMemo(
-    () => (redeemRate > 0 ? Math.floor(maxRedeemRupees / redeemRate) : 0),
-    [maxRedeemRupees, redeemRate],
-  );
-  const maxUsableCoins = Math.min(usableCoins, maxCoinsByLimit);
+  const maxUsableCoins = usableCoins;
 
   const effectiveCoins = useCoins
     ? Math.min(Math.max(Math.floor(Number(requestedCoins || 0)), 0), maxUsableCoins)
@@ -455,10 +444,6 @@ export default function MembershipCheckoutPage() {
           <div style={{ fontSize: "0.9rem", color: "#92400e" }}>
             Available: <strong>{usableCoins}</strong> coins
           </div>
-          <div style={{ fontSize: "0.85rem", color: "#78350f", marginTop: 4 }}>
-            Max redeem allowed: Rs.{maxRedeemRupees.toFixed(2)}
-          </div>
-
           {useCoins && (
             <>
               <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
