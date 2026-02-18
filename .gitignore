@@ -72,6 +72,9 @@ next-env.d.ts
 # =====================================
 *.pem
 *.key
+github-deployer-key.json
+*-deployer-key*.json
+*service-account*.json
 
 # =====================================
 # Misc
