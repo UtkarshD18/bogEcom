@@ -145,6 +145,11 @@ const Sidebar = () => {
       name: "Membership",
       icon: <RiVipCrownLine size={22} />,
       href: "/membership",
+      children: [
+        { name: "Settings", href: "/membership" },
+        { name: "Members", href: "/membership/members" },
+        { name: "Analytics", href: "/membership/analytics" },
+      ],
     },
     {
       name: "Coins",
@@ -175,6 +180,11 @@ const Sidebar = () => {
 
   const isActive = (href) => {
     if (href === "/") return pathname === "/";
+    return pathname.startsWith(href);
+  };
+
+  const isMembershipChildActive = (href) => {
+    if (href === "/membership") return pathname === "/membership";
     return pathname.startsWith(href);
   };
 
@@ -212,28 +222,56 @@ const Sidebar = () => {
 
       {/* Navigation */}
       <div className="flex flex-col gap-1 mt-4 px-3 flex-1 overflow-y-auto">
-        {sidebarTabs.map((tab) => (
-          <Link
-            key={tab.name}
-            href={tab.href}
-            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${isActive(tab.href)
-                ? "bg-blue-50 text-blue-600 font-semibold"
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-              }`}
-          >
-            <span
-              className={isActive(tab.href) ? "text-blue-600" : "text-gray-500"}
-            >
-              {tab.icon}
-            </span>
-            <span className="font-medium">{tab.name}</span>
-            {tab.badgeCount > 0 && (
-              <span className="ml-auto min-w-[24px] h-[24px] px-2 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold flex items-center justify-center">
-                {tab.badgeCount > 99 ? "99+" : tab.badgeCount}
-              </span>
-            )}
-          </Link>
-        ))}
+        {sidebarTabs.map((tab) => {
+          const childActive = Array.isArray(tab.children)
+            ? tab.children.some((child) => isMembershipChildActive(child.href))
+            : false;
+          const tabActive = isActive(tab.href) || childActive;
+
+          return (
+            <div key={tab.name}>
+              <Link
+                href={tab.href}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                  tabActive
+                    ? "bg-blue-50 text-blue-600 font-semibold"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                }`}
+              >
+                <span className={tabActive ? "text-blue-600" : "text-gray-500"}>
+                  {tab.icon}
+                </span>
+                <span className="font-medium">{tab.name}</span>
+                {tab.badgeCount > 0 && (
+                  <span className="ml-auto min-w-[24px] h-[24px] px-2 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold flex items-center justify-center">
+                    {tab.badgeCount > 99 ? "99+" : tab.badgeCount}
+                  </span>
+                )}
+              </Link>
+
+              {Array.isArray(tab.children) && tab.children.length > 0 && (
+                <div className="ml-11 mt-1 mb-2 flex flex-col gap-1">
+                  {tab.children.map((child) => {
+                    const childIsActive = isMembershipChildActive(child.href);
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        className={`px-3 py-1.5 rounded-md text-sm transition-all ${
+                          childIsActive
+                            ? "text-blue-700 bg-blue-100 font-semibold"
+                            : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                        }`}
+                      >
+                        {child.name}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Logout Button */}

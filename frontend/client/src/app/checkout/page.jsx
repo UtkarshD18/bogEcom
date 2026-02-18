@@ -45,6 +45,8 @@ import { IoCartOutline } from "react-icons/io5";
 import { MdHome, MdInfo, MdLocationOn, MdWork } from "react-icons/md";
 
 const API_URL = API_BASE_URL;
+const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
+
 const buildAuthHeaders = (extraHeaders = {}) => {
   const token = getStoredAccessToken();
   return token
@@ -1021,6 +1023,22 @@ const Checkout = () => {
       const paymentUrl = data?.data?.paymentUrl;
       if (!paymentUrl) {
         throw new Error("Payment URL not received. Please try again.");
+      }
+
+      if (
+        typeof window !== "undefined" &&
+        token &&
+        data?.data?.orderId &&
+        data?.data?.merchantTransactionId
+      ) {
+        localStorage.setItem(
+          ORDER_PENDING_PAYMENT_KEY,
+          JSON.stringify({
+            orderId: data.data.orderId,
+            merchantTransactionId: data.data.merchantTransactionId,
+            createdAt: Date.now(),
+          }),
+        );
       }
 
       window.location.href = paymentUrl;

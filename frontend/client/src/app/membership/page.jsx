@@ -11,6 +11,20 @@ import { IoSparkles } from "react-icons/io5";
 
 const API_URL = API_BASE_URL;
 
+const getStoredAuthToken = () => {
+  const cookieToken = cookies.get("accessToken");
+  if (cookieToken) return cookieToken;
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("accessToken") || localStorage.getItem("token") || "";
+};
+
+const ensureAccessTokenCookie = (token) => {
+  if (!token) return;
+  if (!cookies.get("accessToken")) {
+    cookies.set("accessToken", token, { expires: 7 });
+  }
+};
+
 const THEME_PRESETS = {
   mint: {
     bg: "from-emerald-50/80 via-white to-teal-50/80",
@@ -212,24 +226,41 @@ export default function MembershipPage() {
   const [pageContent, setPageContent] = useState(DEFAULT_CONTENT);
   const router = useRouter();
 
+  const fetchMembershipStatus = async (token) => {
+    if (!token) {
+      setMembershipStatus(null);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/membership/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+      if (res.status === 401) {
+        setMembershipStatus(null);
+        setIsLoggedIn(false);
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        setMembershipStatus(data.data);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch membership status:", err);
+    }
+  };
+
   useEffect(() => {
     const checkAuth = async () => {
-      const token = cookies.get("accessToken");
+      const token = getStoredAuthToken();
       if (token) {
+        ensureAccessTokenCookie(token);
         setIsLoggedIn(true);
-        // Fetch membership status
-        try {
-          const res = await fetch(`${API_URL}/api/membership/status`, {
-            headers: { Authorization: `Bearer ${token}` },
-            credentials: "include",
-          });
-          const data = await res.json();
-          if (data.success) {
-            setMembershipStatus(data.data);
-          }
-        } catch (err) {
-          console.warn("Failed to fetch membership status:", err);
-        }
+        await fetchMembershipStatus(token);
+      } else {
+        setIsLoggedIn(false);
+        setMembershipStatus(null);
       }
       // Fetch active plan
       try {
@@ -273,6 +304,30 @@ export default function MembershipPage() {
     checkAuth();
   }, []);
 
+  useEffect(() => {
+    const handleAuthChanged = async () => {
+      const token = getStoredAuthToken();
+      const loggedIn = Boolean(token);
+      setIsLoggedIn(loggedIn);
+      if (loggedIn) {
+        ensureAccessTokenCookie(token);
+        await fetchMembershipStatus(token);
+      } else {
+        setMembershipStatus(null);
+      }
+    };
+
+    window.addEventListener("loginSuccess", handleAuthChanged);
+    window.addEventListener("storage", handleAuthChanged);
+    window.addEventListener("focus", handleAuthChanged);
+
+    return () => {
+      window.removeEventListener("loginSuccess", handleAuthChanged);
+      window.removeEventListener("storage", handleAuthChanged);
+      window.removeEventListener("focus", handleAuthChanged);
+    };
+  }, []);
+
   const theme = useMemo(() => {
     const key = pageContent?.theme?.style || "mint";
     return THEME_PRESETS[key] || THEME_PRESETS.mint;
@@ -280,13 +335,23 @@ export default function MembershipPage() {
 
   const handleSubscribe = () => {
     if (!isLoggedIn) {
-      router.push("/login?redirect=/membership");
+      router.push("/login?redirect=/membership/checkout");
       return;
     }
     if (membershipStatus?.isMember && !membershipStatus?.isExpired) {
       return;
     }
     router.push("/membership/checkout");
+  };
+
+  const handleSecondaryCta = () => {
+    const configuredLink =
+      pageContent?.cta?.buttonLink || DEFAULT_CONTENT.cta.buttonLink;
+    if (configuredLink === "/membership") {
+      handleSubscribe();
+      return;
+    }
+    router.push(configuredLink);
   };
 
   if (isLoading) {
@@ -540,12 +605,7 @@ export default function MembershipPage() {
                 </p>
               </div>
               <button
-                onClick={() =>
-                  router.push(
-                    pageContent?.cta?.buttonLink ||
-                    DEFAULT_CONTENT.cta.buttonLink,
-                  )
-                }
+                onClick={handleSecondaryCta}
                 className={`inline-flex items-center justify-center px-8 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r ${theme.accent} shadow-lg shadow-black/15 hover:scale-[1.02] transition-transform`}
               >
                 {pageContent?.cta?.buttonText || DEFAULT_CONTENT.cta.buttonText}
