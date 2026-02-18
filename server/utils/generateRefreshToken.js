@@ -4,6 +4,7 @@ import {
   REFRESH_TOKEN_SECRET_KEYS,
   getRefreshTokenSecret,
 } from "../config/authSecrets.js";
+import { hashTokenValue } from "./tokenHash.js";
 
 const generateRefreshToken = async (userId) => {
   const secret = getRefreshTokenSecret();
@@ -14,10 +15,11 @@ const generateRefreshToken = async (userId) => {
   }
 
   const token = jwt.sign({ id: userId }, secret, { expiresIn: "7d" });
+  const hashedToken = hashTokenValue(token);
 
   await UserModel.updateOne(
     { _id: userId },
-    { refreshToken: token },
+    { refreshToken: hashedToken || token },
   );
 
   return token;

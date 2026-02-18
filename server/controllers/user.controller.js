@@ -9,17 +9,33 @@ import {
 } from "../config/authSecrets.js";
 import generateAccessToken from "../utils/generateAccessToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
+import {
+  hashTokenValue,
+  matchesStoredToken,
+  normalizeTokenString,
+} from "../utils/tokenHash.js";
 import VerificationEmail from "../utils/verifyEmailTemplate.js";
 
 const ACCESS_TOKEN_MAX_AGE = 15 * 60 * 1000; // 15 minutes
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+const COOKIE_DOMAIN = String(process.env.COOKIE_DOMAIN || "").trim();
 
-const buildCookieOptions = (maxAge) => ({
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-  maxAge,
-});
+const buildCookieOptions = (maxAge) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  const options = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "None" : "Lax",
+    maxAge,
+    path: "/",
+  };
+
+  if (isProduction && COOKIE_DOMAIN) {
+    options.domain = COOKIE_DOMAIN;
+  }
+
+  return options;
+};
 
 /**
  * Validate password strength
@@ -63,13 +79,18 @@ function isValidEmail(email) {
   return emailRegex.test(email);
 }
 
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
 export async function registerUserController(req, res) {
   try {
     let user;
     const { name, email, password } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
     // Input validation
-    if (!name || !email || !password) {
+    if (!name || !normalizedEmail || !password) {
       return res.status(400).json({
         message: "All fields are required",
         error: true,
@@ -78,7 +99,7 @@ export async function registerUserController(req, res) {
     }
 
     // Validate email format
-    if (!isValidEmail(email)) {
+    if (!isValidEmail(normalizedEmail)) {
       return res.status(400).json({
         message: "Please provide a valid email address",
         error: true,
@@ -99,7 +120,7 @@ export async function registerUserController(req, res) {
     // Sanitize name (remove potential XSS)
     const sanitizedName = name.trim().replace(/<[^>]*>/g, "");
 
-    user = await UserModel.findOne({ email: email.toLowerCase().trim() });
+    user = await UserModel.findOne({ email: normalizedEmail });
     if (user) {
       return res.status(400).json({
         message: "User already exists",
@@ -111,7 +132,7 @@ export async function registerUserController(req, res) {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     user = new UserModel({
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
       password: hashedPassword,
       name: sanitizedName,
       otp: verifyCode,
@@ -120,7 +141,7 @@ export async function registerUserController(req, res) {
     });
     await user.save();
     const emailSent = await sendEmailFun({
-      sendTo: email,
+      sendTo: normalizedEmail,
       subject: "Verify email from BuyOneGram",
       text: "",
       html: VerificationEmail(name, verifyCode),
@@ -168,8 +189,10 @@ export async function registerUserController(req, res) {
 
 export async function verifyEmailController(req, res) {
   try {
-    const { email, otp } = req.body;
-    const user = await UserModel.findOne({ email: email });
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    const otp = String(req.body?.otp || "").trim();
+
+    const user = await UserModel.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(400).json({
         success: false,
@@ -214,8 +237,26 @@ export async function verifyEmailController(req, res) {
 
 export async function loginUserController(req, res) {
   try {
-    const { email, password } = req.body;
-    const user = await UserModel.findOne({ email: email });
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    const password = String(req.body?.password || "");
+
+    if (!normalizedEmail || !password) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Email and password are required",
+      });
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Please provide a valid email address",
+      });
+    }
+
+    const user = await UserModel.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(400).json({
         success: false,
@@ -253,7 +294,7 @@ export async function loginUserController(req, res) {
     const accessToken = await generateAccessToken(user._id);
     const refreshToken = await generateRefreshToken(user._id);
 
-    const updateUser = await UserModel.findByIdAndUpdate(user?._id, {
+    await UserModel.findByIdAndUpdate(user?._id, {
       last_login_date: new Date(),
     });
 
@@ -288,8 +329,9 @@ export async function loginUserController(req, res) {
 
 export async function refreshTokenController(req, res) {
   try {
-    const refreshToken =
-      req.cookies?.refreshToken || req.body?.refreshToken || null;
+    const refreshToken = normalizeTokenString(
+      req.cookies?.refreshToken || req.body?.refreshToken || null,
+    );
 
     if (!refreshToken) {
       return res.status(401).json({
@@ -312,7 +354,7 @@ export async function refreshTokenController(req, res) {
     const decoded = jwt.verify(refreshToken, secretKey);
     const user = await UserModel.findById(decoded?.id);
 
-    if (!user || user.refreshToken !== refreshToken) {
+    if (!user || !matchesStoredToken(user.refreshToken, refreshToken)) {
       return res.status(401).json({
         success: false,
         error: true,
@@ -342,15 +384,41 @@ export async function refreshTokenController(req, res) {
 
 export async function logoutController(req, res) {
   try {
-    const userId = req?.userId;
+    let userId = req?.userId || req?.user || null;
+    if (userId && typeof userId === "object") {
+      userId = userId._id || userId.id || null;
+    }
+
+    const refreshToken = normalizeTokenString(
+      req.cookies?.refreshToken || req.body?.refreshToken || null,
+    );
+
+    if (!userId && refreshToken) {
+      try {
+        const secret = getRefreshTokenSecret();
+        if (secret) {
+          const decoded = jwt.verify(refreshToken, secret);
+          userId = decoded?.id || null;
+        }
+      } catch {
+        // Ignore decode failures and continue with token-hash lookup fallback.
+      }
+    }
+
     const cookiesOption = buildCookieOptions(0);
 
     res.clearCookie("accessToken", cookiesOption);
     res.clearCookie("refreshToken", cookiesOption);
 
-    const removeRefreshToken = await UserModel.findByIdAndUpdate(userId, {
-      refreshToken: "",
-    });
+    if (userId) {
+      await UserModel.findByIdAndUpdate(userId, { refreshToken: "" });
+    } else if (refreshToken) {
+      const refreshTokenHash = hashTokenValue(refreshToken);
+      await UserModel.updateOne(
+        { refreshToken: { $in: [refreshToken, refreshTokenHash] } },
+        { $set: { refreshToken: "" } },
+      );
+    }
 
     return res.json({
       message: "Logout successful",
@@ -368,8 +436,16 @@ export async function logoutController(req, res) {
 
 export async function forgotPasswordController(req, res) {
   try {
-    const { email } = req.body;
-    const user = await UserModel.findOne({ email: email });
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Please provide a valid email address",
+      });
+    }
+
+    const user = await UserModel.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(400).json({
         success: false,
@@ -383,7 +459,7 @@ export async function forgotPasswordController(req, res) {
       user.otpExpires = Date.now() + 600000;
       await user.save();
       await sendEmailFun({
-        sendTo: email,
+        sendTo: normalizedEmail,
         subject: "verify OTP for password reset",
         text: "",
         html: VerificationEmail(user.name, verifyCode),
@@ -405,20 +481,22 @@ export async function forgotPasswordController(req, res) {
 
 export async function verifyForgotPasswordOTPController(req, res) {
   try {
-    const { email, otp, newPassword } = req.body;
-    const user = await UserModel.findOne({ email: email });
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    const otp = String(req.body?.otp || "").trim();
+    if (!normalizedEmail || !otp) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Email and OTP are required",
+      });
+    }
+
+    const user = await UserModel.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(400).json({
         success: false,
         error: true,
         message: "User not found",
-      });
-    }
-    if (!email || !otp) {
-      return res.status(400).json({
-        success: false,
-        error: true,
-        message: "Email and OTP are required",
       });
     }
     if (user.otp !== otp) {
@@ -429,16 +507,16 @@ export async function verifyForgotPasswordOTPController(req, res) {
       });
     }
 
-    const currentTime = new Date().toString();
-    if (user.otpExpires < currentTime) {
+    const otpExpiryTime = user.otpExpires ? new Date(user.otpExpires).getTime() : 0;
+    if (!otpExpiryTime || otpExpiryTime < Date.now()) {
       return res.status(400).json({
         success: false,
         error: true,
         message: "OTP has expired",
       });
     }
-    user.otp = "";
-    user.otpExpires = "";
+    user.otp = null;
+    user.otpExpires = null;
 
     await user.save();
 
@@ -458,8 +536,19 @@ export async function verifyForgotPasswordOTPController(req, res) {
 
 export async function changePasswordController(req, res) {
   try {
-    const { email, newPassword, confirmPassword } = req.body;
-    const user = await UserModel.findOne({ email: email });
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    const newPassword = String(req.body?.newPassword || "");
+    const confirmPassword = String(req.body?.confirmPassword || "");
+
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Please provide a valid email address",
+      });
+    }
+
+    const user = await UserModel.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(400).json({
         success: false,
@@ -467,7 +556,7 @@ export async function changePasswordController(req, res) {
         message: "User not found",
       });
     }
-    if (!email || !newPassword || !confirmPassword) {
+    if (!normalizedEmail || !newPassword || !confirmPassword) {
       return res.status(400).json({
         success: false,
         error: true,
@@ -482,10 +571,20 @@ export async function changePasswordController(req, res) {
       });
     }
 
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: passwordValidation.message,
+      });
+    }
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
     user.password = hashedPassword;
     user.signUpWithGoogle = false;
+    user.refreshToken = "";
     await user.save();
 
     return res.status(200).json({
@@ -505,8 +604,16 @@ export async function changePasswordController(req, res) {
 //resend OTP
 export async function resendOTPController(req, res) {
   try {
-    const { email } = req.body;
-    const user = await UserModel.findOne({ email: email });
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Please provide a valid email address",
+      });
+    }
+
+    const user = await UserModel.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(400).json({
         success: false,
@@ -520,13 +627,13 @@ export async function resendOTPController(req, res) {
 
     await user.save();
     const emailSent = await sendEmailFun({
-      sendTo: email,
+      sendTo: normalizedEmail,
       subject: "Verify email from HealthyOneGram",
       text: "",
       html: VerificationEmail(user?.name, verifyCode),
     });
     if (!emailSent) {
-      console.error("Verification email failed to send for:", email);
+      console.error("Verification email failed to send for:", normalizedEmail);
       return res.status(500).json({
         success: false,
         error: true,
@@ -549,14 +656,36 @@ export async function resendOTPController(req, res) {
 
 export async function authWithGoogle(req, res) {
   try {
-    const { email, name, password, avatar, mobile, role, googleId } = req.body;
-    let user = await UserModel.findOne({ email: email });
+    const { name, avatar, mobile, role, googleId } = req.body;
+    const normalizedEmail = normalizeEmail(req.body?.email);
+
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Valid email is required",
+      });
+    }
+
+    const sanitizedName = String(name || "")
+      .trim()
+      .replace(/<[^>]*>/g, "");
+
+    if (!sanitizedName) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: "Name is required",
+      });
+    }
+
+    let user = await UserModel.findOne({ email: normalizedEmail });
 
     if (!user) {
       // Create new user with Google auth
       user = new UserModel({
-        email: email,
-        name: name,
+        email: normalizedEmail,
+        name: sanitizedName,
         verifyEmail: true, // Fixed field name
         signUpWithGoogle: true,
         role: role === "Admin" ? "Admin" : "User",
@@ -620,14 +749,23 @@ export async function authWithGoogle(req, res) {
 // Set backup password for Google users
 export async function setBackupPassword(req, res) {
   try {
-    const { password } = req.body;
-    const userId = req.user?._id; // Assuming auth middleware provides user
+    const password = String(req.body?.password || "");
+    const userId = req.user?._id || req.userId || req.user || null;
 
     if (!password) {
       return res.status(400).json({
         success: false,
         error: true,
         message: "Password is required",
+      });
+    }
+
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: passwordValidation.message,
       });
     }
 
