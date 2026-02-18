@@ -59,6 +59,8 @@ jobs:
     name: Client Build
     runs-on: ubuntu-latest
     needs: validate-env
+    env:
+      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://healthy-one-gram.el.r.appspot.com' }}
     defaults:
       run:
         working-directory: frontend/client
@@ -87,6 +89,8 @@ jobs:
     name: Admin Build
     runs-on: ubuntu-latest
     needs: validate-env
+    env:
+      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://healthy-one-gram.el.r.appspot.com' }}
     defaults:
       run:
         working-directory: frontend/admin
