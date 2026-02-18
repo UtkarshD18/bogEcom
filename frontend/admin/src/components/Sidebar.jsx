@@ -3,7 +3,7 @@ import { useAdmin } from "@/context/AdminContext";
 import { fetchUnresolvedSupportCount } from "@/services/supportApi";
 import { Button } from "@mui/material";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { IoIosLogOut } from "react-icons/io";
 import { IoBagCheckOutline } from "react-icons/io5";
@@ -28,6 +28,7 @@ import { TbBrandProducthunt, TbShare, TbUsers } from "react-icons/tb";
 const Sidebar = () => {
   const { logout, admin, token } = useAdmin();
   const pathname = usePathname();
+  const router = useRouter();
   const [openTicketCount, setOpenTicketCount] = useState(0);
 
   useEffect(() => {
@@ -177,6 +178,11 @@ const Sidebar = () => {
     return pathname.startsWith(href);
   };
 
+  const handleAdminHomeRefresh = () => {
+    router.push("/");
+    router.refresh();
+  };
+
   return (
     <aside className="w-[250px] bg-white shadow-md h-screen fixed top-0 left-0 z-40 flex flex-col">
       {/* Logo */}
@@ -188,6 +194,16 @@ const Sidebar = () => {
 
       {/* Admin Info */}
       <div className="px-4 py-3 border-b border-gray-100">
+        <button
+          type="button"
+          onClick={handleAdminHomeRefresh}
+          className="w-full text-left"
+          title="Go to admin home and refresh"
+        >
+          <p className="text-base font-semibold text-gray-900 hover:text-blue-700 transition-colors">
+            Admin Panel
+          </p>
+        </button>
         <p className="text-sm font-medium text-gray-800 truncate">
           {admin?.name || "Admin"}
         </p>

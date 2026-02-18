@@ -62,47 +62,51 @@ if (!normalizedMongoUri) {
 
 process.env.MONGO_URI = normalizedMongoUri;
 
-const runtimeIsProduction = process.env.NODE_ENV === "production";
-const normalizeOriginEnv = (value) =>
-  normalizeEnvValue(value).replace(/\/+$/, "");
-const isValidHttpUrl = (value) => {
-  if (!value) return false;
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
+const isProductionEnv = process.env.NODE_ENV === "production";
+const normalizeOrigin = (origin) =>
+  String(origin || "")
+    .trim()
+    .replace(/\/+$/, "");
+const isDevLocalhostOrigin = (origin) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalizeOrigin(origin));
+const parseOriginList = (value) =>
+  String(normalizeEnvValue(value) || "")
+    .split(",")
+    .map(normalizeOrigin)
+    .filter(Boolean);
+
+const requiredServerEnvVars = ["MONGO_URI"];
+
+for (const envKey of requiredServerEnvVars) {
+  if (!process.env[envKey]) {
+    throw new Error(`${envKey} is not defined`);
   }
-};
-
-const fallbackClientUrl = "http://localhost:3000";
-const fallbackAdminUrl = "http://localhost:3001";
-
-let normalizedClientUrl = normalizeOriginEnv(process.env.CLIENT_URL);
-let normalizedAdminUrl = normalizeOriginEnv(process.env.ADMIN_URL);
-
-if (!isValidHttpUrl(normalizedClientUrl)) {
-  if (runtimeIsProduction) {
-    throw new Error("CLIENT_URL is not defined or invalid");
-  }
-  normalizedClientUrl = fallbackClientUrl;
-  console.warn(
-    `CLIENT_URL is missing/invalid; defaulting to ${normalizedClientUrl} for local development.`,
-  );
 }
 
-if (!isValidHttpUrl(normalizedAdminUrl)) {
-  if (runtimeIsProduction) {
-    throw new Error("ADMIN_URL is not defined or invalid");
-  }
-  normalizedAdminUrl = fallbackAdminUrl;
-  console.warn(
-    `ADMIN_URL is missing/invalid; defaulting to ${normalizedAdminUrl} for local development.`,
+const configuredCorsOrigins = [
+  ...parseOriginList(process.env.CLIENT_URL),
+  ...parseOriginList(process.env.ADMIN_URL),
+  ...parseOriginList(process.env.FRONTEND_URL),
+  ...parseOriginList(process.env.CORS_ORIGINS),
+];
+const defaultDevCorsOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+];
+const allowedOrigins = [
+  ...new Set([
+    ...configuredCorsOrigins,
+    ...(isProductionEnv ? [] : defaultDevCorsOrigins),
+  ]),
+];
+
+if (isProductionEnv && allowedOrigins.length === 0) {
+  throw new Error(
+    "At least one CORS origin must be configured via CLIENT_URL, ADMIN_URL, FRONTEND_URL, or CORS_ORIGINS.",
   );
 }
-
-process.env.CLIENT_URL = normalizedClientUrl;
-process.env.ADMIN_URL = normalizedAdminUrl;
 
 const accessTokenSecret = getAccessTokenSecret();
 if (!accessTokenSecret) {
@@ -169,7 +173,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 
-if (process.env.NODE_ENV === "production") {
+if (isProductionEnv) {
   app.set("trust proxy", 1);
 }
 
@@ -186,20 +190,15 @@ app.use((req, res, next) => {
   next();
 });
 
-const normalizeOrigin = (origin) =>
-  String(origin || "")
-    .trim()
-    .replace(/\/+$/, "");
-
-const allowedOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL].map(
-  normalizeOrigin,
-);
-
 app.use(
   cors({
     origin: function (origin, callback) {
       const normalized = normalizeOrigin(origin);
-      if (!origin || allowedOrigins.includes(normalized)) {
+      if (
+        !origin ||
+        allowedOrigins.includes(normalized) ||
+        (!isProductionEnv && isDevLocalhostOrigin(normalized))
+      ) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));

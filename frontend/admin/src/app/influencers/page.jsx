@@ -30,6 +30,49 @@ import { toast } from "react-hot-toast";
 import { FaChartLine, FaRegTrashAlt } from "react-icons/fa";
 import { RiEdit2Line, RiFileCopyLine } from "react-icons/ri";
 
+const PLATFORM_OPTIONS = [
+  "Instagram",
+  "YouTube",
+  "Facebook",
+  "X",
+  "LinkedIn",
+  "WhatsApp",
+  "Telegram",
+  "Website",
+  "Other",
+];
+
+const normalizePlatformKey = (platform) =>
+  String(platform || "").trim().toLowerCase();
+
+const indexPromotionPlatforms = (platforms = []) => {
+  const totals = {};
+  (platforms || []).forEach((entry) => {
+    const key = normalizePlatformKey(entry?.platform);
+    if (!key) return;
+    totals[key] = (totals[key] || 0) + 1;
+  });
+
+  const seen = {};
+  return (platforms || []).map((entry) => {
+    const platform = String(entry?.platform || "").trim();
+    const key = normalizePlatformKey(platform);
+    const duplicateCount = key ? totals[key] || 1 : 1;
+    const duplicateIndex = key ? (seen[key] || 0) + 1 : 1;
+    if (key) {
+      seen[key] = duplicateIndex;
+    }
+    return {
+      ...entry,
+      duplicateCount,
+      duplicateIndex,
+      isDuplicate: duplicateCount > 1,
+      displayPlatform:
+        duplicateCount > 1 ? `${platform} ${duplicateIndex}` : platform,
+    };
+  });
+};
+
 const Influencers = () => {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
@@ -41,6 +84,7 @@ const Influencers = () => {
   const [selectedInfluencer, setSelectedInfluencer] = useState(null);
   const [influencerStats, setInfluencerStats] = useState(null);
   const [editingInfluencer, setEditingInfluencer] = useState(null);
+  const [expandedPlatformRows, setExpandedPlatformRows] = useState({});
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -55,6 +99,7 @@ const Influencers = () => {
     expiresAt: "",
     isActive: true,
     notes: "",
+    promotionPlatforms: [],
   });
 
   const fetchInfluencers = useCallback(async () => {
@@ -104,6 +149,12 @@ const Influencers = () => {
           : "",
         isActive: influencer.isActive !== false,
         notes: influencer.notes || "",
+        promotionPlatforms: Array.isArray(influencer.promotionPlatforms)
+          ? influencer.promotionPlatforms.map((entry) => ({
+              platform: entry?.platform || "",
+              username: entry?.username || "",
+            }))
+          : [],
       });
     } else {
       setEditingInfluencer(null);
@@ -121,6 +172,7 @@ const Influencers = () => {
         expiresAt: "",
         isActive: true,
         notes: "",
+        promotionPlatforms: [],
       });
     }
     setOpenDialog(true);
@@ -136,6 +188,43 @@ const Influencers = () => {
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
+    }));
+  };
+
+  const handleAddPromotionPlatform = () => {
+    setFormData((prev) => ({
+      ...prev,
+      promotionPlatforms: [
+        ...(prev.promotionPlatforms || []),
+        { platform: "Instagram", username: "" },
+      ],
+    }));
+  };
+
+  const handlePromotionPlatformChange = (index, field, value) => {
+    setFormData((prev) => {
+      const next = [...(prev.promotionPlatforms || [])];
+      next[index] = { ...next[index], [field]: value };
+      return {
+        ...prev,
+        promotionPlatforms: next,
+      };
+    });
+  };
+
+  const handleRemovePromotionPlatform = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      promotionPlatforms: (prev.promotionPlatforms || []).filter(
+        (_, i) => i !== index,
+      ),
+    }));
+  };
+
+  const togglePlatformRow = (influencerId) => {
+    setExpandedPlatformRows((prev) => ({
+      ...prev,
+      [influencerId]: !prev[influencerId],
     }));
   };
 
@@ -187,6 +276,14 @@ const Influencers = () => {
         expiresAt: formData.expiresAt || null,
         isActive: formData.isActive,
         notes: formData.notes,
+        promotionPlatforms: (formData.promotionPlatforms || [])
+          .map((entry) => ({
+            platform: String(entry?.platform || "").trim(),
+            username: String(entry?.username || "")
+              .replace(/^@+/, "")
+              .trim(),
+          }))
+          .filter((entry) => entry.platform && entry.username),
       };
 
       let response;
@@ -343,6 +440,7 @@ const Influencers = () => {
               <TableHead className="bg-gray-50">
                 <TableRow>
                   <TableCell className="font-semibold">Name</TableCell>
+                  <TableCell className="font-semibold">Platforms</TableCell>
                   <TableCell className="font-semibold">Code</TableCell>
                   <TableCell className="font-semibold">Discount</TableCell>
                   <TableCell className="font-semibold">Commission</TableCell>
@@ -355,7 +453,14 @@ const Influencers = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {influencers.map((influencer) => (
+                {influencers.map((influencer) => {
+                  const indexedPlatforms = indexPromotionPlatforms(
+                    influencer.promotionPlatforms || [],
+                  );
+                  const hasPlatforms = indexedPlatforms.length > 0;
+                  const isPlatformsOpen = !!expandedPlatformRows[influencer._id];
+
+                  return (
                   <TableRow key={influencer._id} hover>
                     <TableCell>
                       <div>
@@ -366,6 +471,45 @@ const Influencers = () => {
                           </p>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell className="min-w-[220px]">
+                      {hasPlatforms ? (
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => togglePlatformRow(influencer._id)}
+                            className="w-full flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                            aria-label="Toggle platform details"
+                          >
+                            <span>
+                              {indexedPlatforms.length} Platform
+                              {indexedPlatforms.length > 1 ? "s" : ""}
+                            </span>
+                            <span className="font-semibold">
+                              {isPlatformsOpen ? "▲" : "▼"}
+                            </span>
+                          </button>
+                          {isPlatformsOpen && (
+                            <div className="mt-2 max-h-28 overflow-y-auto rounded-md border border-gray-200 bg-white px-2.5 py-2 space-y-1">
+                              {indexedPlatforms.map((entry, idx) => (
+                                <p
+                                  key={`${entry.platform}-${entry.username}-${idx}`}
+                                  className="text-xs leading-5"
+                                >
+                                  <span className="font-medium text-gray-700">
+                                    {entry.displayPlatform}:
+                                  </span>{" "}
+                                  <span className="text-blue-700">
+                                    @{entry.username}
+                                  </span>
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">Not set</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -469,7 +613,8 @@ const Influencers = () => {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>
@@ -543,6 +688,91 @@ const Influencers = () => {
                   </Button>
                 )}
               </div>
+            </div>
+
+            {/* Promotion Platforms */}
+            <div className="border-t pt-4 mt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-medium text-gray-700">
+                  Promotion Platforms
+                </h3>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  onClick={handleAddPromotionPlatform}
+                >
+                  + Add Platform
+                </Button>
+              </div>
+
+              {formData.promotionPlatforms.length === 0 ? (
+                <p className="text-xs text-gray-500">
+                  Add platforms where this influencer promotes your products
+                  (for example Instagram, YouTube).
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {indexPromotionPlatforms(formData.promotionPlatforms).map(
+                    (entry, index) => (
+                      <div
+                        key={`${entry.platform}-${index}`}
+                        className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-4 items-start md:items-center rounded-lg border border-gray-100 p-3"
+                      >
+                        <FormControl
+                          fullWidth
+                          size="small"
+                          className="md:col-span-5"
+                        >
+                          <InputLabel>Platform</InputLabel>
+                          <Select
+                            value={entry.platform || ""}
+                            onChange={(e) =>
+                              handlePromotionPlatformChange(
+                                index,
+                                "platform",
+                                e.target.value,
+                              )
+                            }
+                            label="Platform"
+                          >
+                            {PLATFORM_OPTIONS.map((platform) => (
+                              <MenuItem key={platform} value={platform}>
+                                {platform}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <TextField
+                          className="md:col-span-5"
+                          label="Username / Handle"
+                          value={entry.username || ""}
+                          onChange={(e) =>
+                            handlePromotionPlatformChange(
+                              index,
+                              "username",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="@username"
+                          fullWidth
+                          size="small"
+                        />
+                        <div className="md:col-span-2 flex justify-end md:justify-center md:items-center h-full">
+                          <Tooltip title="Remove platform">
+                            <IconButton
+                              color="error"
+                              onClick={() => handleRemovePromotionPlatform(index)}
+                            >
+                              <FaRegTrashAlt />
+                            </IconButton>
+                          </Tooltip>
+                        </div>
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Discount Settings */}
@@ -757,6 +987,30 @@ const Influencers = () => {
                     Copy
                   </Button>
                 </div>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  Promotion Platforms
+                </p>
+                {Array.isArray(influencerStats.influencer?.promotionPlatforms) &&
+                influencerStats.influencer.promotionPlatforms.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {indexPromotionPlatforms(
+                      influencerStats.influencer.promotionPlatforms,
+                    ).map((entry, idx) => (
+                        <Chip
+                          key={`${entry.platform}-${entry.username}-${idx}`}
+                          size="small"
+                          variant="outlined"
+                          label={`${entry.displayPlatform}: @${entry.username}`}
+                        />
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">Not set</p>
+                )}
               </div>
 
               {/* Recent Orders */}

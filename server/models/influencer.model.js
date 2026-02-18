@@ -1,5 +1,23 @@
 import mongoose from "mongoose";
 
+const influencerPlatformSchema = new mongoose.Schema(
+  {
+    platform: {
+      type: String,
+      trim: true,
+      required: true,
+      maxLength: [50, "Platform name cannot exceed 50 characters"],
+    },
+    username: {
+      type: String,
+      trim: true,
+      required: true,
+      maxLength: [100, "Username cannot exceed 100 characters"],
+    },
+  },
+  { _id: false },
+);
+
 /**
  * Influencer Model
  *
@@ -30,6 +48,12 @@ const influencerSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: null,
+    },
+
+    // Where influencer promotes and their platform usernames/handles
+    promotionPlatforms: {
+      type: [influencerPlatformSchema],
+      default: [],
     },
 
     // Unique referral code (admin-defined, used in URL)
