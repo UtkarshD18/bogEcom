@@ -1,0 +1,133 @@
+name: Deploy Backend (App Engine)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "server/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Build temporary backend deploy YAML
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
+          REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
+          CLIENT_URL: ${{ secrets.CLIENT_URL }}
+          ADMIN_URL: ${{ secrets.ADMIN_URL }}
+          EMAIL: ${{ secrets.EMAIL }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          required = [
+              "MONGO_URI",
+              "ACCESS_TOKEN_SECRET",
+              "REFRESH_TOKEN_SECRET",
+              "CLIENT_URL",
+              "ADMIN_URL",
+          ]
+          missing = [key for key in required if not os.environ.get(key)]
+          if missing:
+              sys.exit(
+                  "Missing required GitHub repository secrets: "
+                  + ", ".join(missing)
+              )
+
+          grouped_optional = {
+              "SMTP Email": [
+                  "EMAIL",
+                  "EMAIL_PASSWORD",
+              ],
+              "Cloudinary": [
+                  "CLOUDINARY_CLOUD_NAME",
+                  "CLOUDINARY_API_KEY",
+                  "CLOUDINARY_API_SECRET",
+              ],
+              "Firebase Admin": [
+                  "FIREBASE_PROJECT_ID",
+                  "FIREBASE_CLIENT_EMAIL",
+                  "FIREBASE_PRIVATE_KEY",
+              ],
+          }
+          for group_name, keys in grouped_optional.items():
+              provided = [k for k in keys if os.environ.get(k, "").strip()]
+              if 0 < len(provided) < len(keys):
+                  sys.exit(
+                      f"Partial {group_name} secrets detected. "
+                      f"Provide all or none: {', '.join(keys)}"
+                  )
+
+          lines = [
+              "runtime: nodejs22",
+              "service: default",
+              "",
+              "env_variables:",
+              f"  NODE_ENV: {json.dumps('production')}",
+              f"  MONGO_URI: {json.dumps(os.environ['MONGO_URI'])}",
+              f"  ACCESS_TOKEN_SECRET: {json.dumps(os.environ['ACCESS_TOKEN_SECRET'])}",
+              f"  REFRESH_TOKEN_SECRET: {json.dumps(os.environ['REFRESH_TOKEN_SECRET'])}",
+              f"  CLIENT_URL: {json.dumps(os.environ['CLIENT_URL'])}",
+              f"  ADMIN_URL: {json.dumps(os.environ['ADMIN_URL'])}",
+          ]
+
+          optional = [
+              "EMAIL",
+              "EMAIL_PASSWORD",
+              "CLOUDINARY_CLOUD_NAME",
+              "CLOUDINARY_API_KEY",
+              "CLOUDINARY_API_SECRET",
+              "FIREBASE_PROJECT_ID",
+              "FIREBASE_CLIENT_EMAIL",
+              "FIREBASE_PRIVATE_KEY",
+          ]
+          for key in optional:
+              value = os.environ.get(key, "")
+              if value:
+                  lines.append(f"  {key}: {json.dumps(value)}")
+
+          with open("server/app.deploy.yaml", "w", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+          PY
+
+      - name: Deploy backend service
+        run: gcloud app deploy server/app.deploy.yaml --project="${{ secrets.GCP_PROJECT_ID }}" --quiet
+
+      - name: Cleanup
+        if: always()
+        run: rm -f server/app.deploy.yaml

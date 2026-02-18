@@ -13,42 +13,51 @@ importScripts(
   "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js",
 );
 
-// Initialize Firebase with actual config
-// Note: Service workers can't access env vars, so config is hardcoded here
-firebase.initializeApp({
-  apiKey: "AIzaSyAmn-1DB4vmJlAccKvtQsU5ZQkwiKyng9k",
-  authDomain: "healthyom.firebaseapp.com",
-  projectId: "healthyom",
-  storageBucket: "healthyom.firebasestorage.app",
-  messagingSenderId: "554753723115",
-  appId: "1:554753723115:web:0b9fdb419765d243f9ccae",
-});
+// Service workers can't access process.env directly.
+// These placeholders are replaced at deploy time from GitHub secrets.
+const firebaseConfig = {
+  apiKey: "__NEXT_PUBLIC_FIREBASE_API_KEY__",
+  authDomain: "__NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN__",
+  projectId: "__NEXT_PUBLIC_FIREBASE_PROJECT_ID__",
+  storageBucket: "__NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET__",
+  messagingSenderId: "__NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID__",
+  appId: "__NEXT_PUBLIC_FIREBASE_APP_ID__",
+};
 
-const messaging = firebase.messaging();
+const isConfigured = Object.values(firebaseConfig).every(
+  (value) => typeof value === "string" && !value.startsWith("__NEXT_PUBLIC_"),
+);
 
-// Handle background messages
-messaging.onBackgroundMessage((payload) => {
-  console.log("[SW] Background message received:", payload);
+if (isConfigured) {
+  firebase.initializeApp(firebaseConfig);
+  const messaging = firebase.messaging();
 
-  const notificationTitle = payload.notification?.title || "New Notification";
-  const notificationOptions = {
-    body: payload.notification?.body || "",
-    icon: "/logo192.png",
-    badge: "/logo192.png",
-    tag: payload.data?.type || "default",
-    data: payload.data || {},
-    actions: [
-      {
-        action: "open",
-        title: "View",
-      },
-    ],
-    vibrate: [200, 100, 200],
-    requireInteraction: payload.data?.type === "order_update",
-  };
+  // Handle background messages
+  messaging.onBackgroundMessage((payload) => {
+    console.log("[SW] Background message received:", payload);
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
-});
+    const notificationTitle = payload.notification?.title || "New Notification";
+    const notificationOptions = {
+      body: payload.notification?.body || "",
+      icon: "/logo192.png",
+      badge: "/logo192.png",
+      tag: payload.data?.type || "default",
+      data: payload.data || {},
+      actions: [
+        {
+          action: "open",
+          title: "View",
+        },
+      ],
+      vibrate: [200, 100, 200],
+      requireInteraction: payload.data?.type === "order_update",
+    };
+
+    self.registration.showNotification(notificationTitle, notificationOptions);
+  });
+} else {
+  console.warn("[SW] Firebase config not injected. Push notifications disabled.");
+}
 
 // Handle notification click
 self.addEventListener("notificationclick", (event) => {

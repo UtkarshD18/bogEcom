@@ -20,6 +20,7 @@ const apiImagePattern = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  basePath: "/admin",
   turbopack: {
     root: __dirname,
   },

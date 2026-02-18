@@ -1,0 +1,117 @@
+name: Deploy Admin (App Engine)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "frontend/admin/**"
+      - ".github/workflows/deploy-admin.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-admin
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Build temporary admin deploy YAML
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          api_url = os.environ.get("NEXT_PUBLIC_API_URL", "").strip()
+          if not api_url:
+              sys.exit("Missing required GitHub repository secret: NEXT_PUBLIC_API_URL")
+
+          firebase_core_keys = [
+              "NEXT_PUBLIC_FIREBASE_API_KEY",
+              "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
+              "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
+              "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
+              "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
+              "NEXT_PUBLIC_FIREBASE_APP_ID",
+          ]
+          provided_firebase_core = [
+              key for key in firebase_core_keys if os.environ.get(key, "").strip()
+          ]
+          if 0 < len(provided_firebase_core) < len(firebase_core_keys):
+              sys.exit(
+                  "Partial Firebase admin client secrets detected. "
+                  "Provide all or none: " + ", ".join(firebase_core_keys)
+              )
+
+          public_env = {
+              "NEXT_PUBLIC_API_URL": api_url,
+          }
+
+          optional_public_keys = [
+              "NEXT_PUBLIC_FIREBASE_API_KEY",
+              "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
+              "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
+              "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
+              "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
+              "NEXT_PUBLIC_FIREBASE_APP_ID",
+              "NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID",
+          ]
+          for key in optional_public_keys:
+              value = os.environ.get(key, "").strip()
+              if value:
+                  public_env[key] = value
+
+          lines = [
+              "runtime: nodejs22",
+              "service: admin",
+              "",
+              "build_env_variables:",
+          ]
+          for key, value in public_env.items():
+              lines.append(f"  {key}: {json.dumps(value)}")
+
+          lines.extend([
+              "",
+              "env_variables:",
+          ])
+          for key, value in public_env.items():
+              lines.append(f"  {key}: {json.dumps(value)}")
+
+          with open("frontend/admin/app.deploy.yaml", "w", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+          PY
+
+      - name: Deploy admin service
+        run: gcloud app deploy frontend/admin/app.deploy.yaml --project="${{ secrets.GCP_PROJECT_ID }}" --quiet
+
+      - name: Cleanup
+        if: always()
+        run: rm -f frontend/admin/app.deploy.yaml

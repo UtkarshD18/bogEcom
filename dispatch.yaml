@@ -1,0 +1,29 @@
+dispatch:
+  - url: "healthyonegram.com/api/*"
+    service: default
+  - url: "www.healthyonegram.com/api/*"
+    service: default
+
+  - url: "healthyonegram.com/uploads/*"
+    service: default
+  - url: "www.healthyonegram.com/uploads/*"
+    service: default
+
+  - url: "healthyonegram.com/socket.io/*"
+    service: default
+  - url: "www.healthyonegram.com/socket.io/*"
+    service: default
+
+  - url: "healthyonegram.com/admin"
+    service: admin
+  - url: "healthyonegram.com/admin/*"
+    service: admin
+  - url: "www.healthyonegram.com/admin"
+    service: admin
+  - url: "www.healthyonegram.com/admin/*"
+    service: admin
+
+  - url: "healthyonegram.com/*"
+    service: client
+  - url: "www.healthyonegram.com/*"
+    service: client

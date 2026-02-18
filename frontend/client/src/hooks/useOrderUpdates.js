@@ -43,6 +43,11 @@ export const useOrderUpdates = (
       return;
     }
 
+    if (!firebaseApp) {
+      setLoading(false);
+      return;
+    }
+
     let unsubscribe;
 
     try {
@@ -91,6 +96,11 @@ export const useOrderUpdates = (
   useEffect(() => {
     if (!enabled || !userId || orderId) {
       // Skip if watching single order or disabled
+      return;
+    }
+
+    if (!firebaseApp) {
+      setLoading(false);
       return;
     }
 

@@ -11,6 +11,15 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
+const requiredFirebaseKeys = [
+  firebaseConfig.apiKey,
+  firebaseConfig.authDomain,
+  firebaseConfig.projectId,
+  firebaseConfig.messagingSenderId,
+  firebaseConfig.appId,
+];
+const isFirebaseConfigured = requiredFirebaseKeys.every(Boolean);
+
 // Only log in development
 if (process.env.NODE_ENV === "development") {
   console.log("Firebase Config Loaded:", {
@@ -21,7 +30,9 @@ if (process.env.NODE_ENV === "development") {
   });
 }
 
-export const firebaseApp = initializeApp(firebaseConfig);
+export const firebaseApp = isFirebaseConfigured
+  ? initializeApp(firebaseConfig)
+  : null;
 
 // Initialize Firestore for real-time order updates
-export const db = getFirestore(firebaseApp);
+export const db = firebaseApp ? getFirestore(firebaseApp) : null;

@@ -24,12 +24,23 @@ const normalizeSource = (source) => {
   return ALLOWED_SOURCES.has(value) ? value : "other";
 };
 
+const getPublicSiteUrl = () => {
+  const raw =
+    process.env.CLIENT_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "https://healthyonegram.com";
+  const first = String(raw).split(",")[0].trim();
+  return first.replace(/\/+$/, "");
+};
+
 /**
  * Generate welcome email HTML template
  * @param {string} email - Subscriber email
  * @returns {string} - HTML email template
  */
 const getWelcomeEmailTemplate = (email) => {
+  const siteUrl = getPublicSiteUrl();
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -79,7 +90,7 @@ const getWelcomeEmailTemplate = (email) => {
       
       <!-- CTA Button -->
       <div style="text-align: center; margin: 30px 0;">
-        <a href="https://buyonegram.com/products" style="display: inline-block; background: linear-gradient(135deg, #c1591c 0%, #e07830 100%); color: #ffffff; text-decoration: none; padding: 14px 35px; font-size: 16px; font-weight: 600; border-radius: 30px; box-shadow: 0 4px 15px rgba(193, 89, 28, 0.3);">
+        <a href="${siteUrl}/products" style="display: inline-block; background: linear-gradient(135deg, #c1591c 0%, #e07830 100%); color: #ffffff; text-decoration: none; padding: 14px 35px; font-size: 16px; font-weight: 600; border-radius: 30px; box-shadow: 0 4px 15px rgba(193, 89, 28, 0.3);">
           Explore Our Products
         </a>
       </div>
@@ -111,8 +122,9 @@ const getWelcomeEmailTemplate = (email) => {
  */
 const sendWelcomeEmail = async (email) => {
   try {
+    const siteUrl = getPublicSiteUrl();
     const subject = "🎉 Welcome to the BuyOneGram Family!";
-    const text = `Welcome to BuyOneGram! Thank you for subscribing to our newsletter. You'll now receive updates about exclusive discounts, new products, and healthy recipes. Visit us at https://buyonegram.com`;
+    const text = `Welcome to BuyOneGram! Thank you for subscribing to our newsletter. You'll now receive updates about exclusive discounts, new products, and healthy recipes. Visit us at ${siteUrl}`;
     const html = getWelcomeEmailTemplate(email);
 
     const result = await sendEmail(email, subject, text, html);
