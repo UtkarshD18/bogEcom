@@ -1,6 +1,6 @@
 "use client";
 
-import { API_BASE_URL } from "@/utils/api";
+import { API_BASE_URL, getStoredAccessToken } from "@/utils/api";
 
 import PaymentUnavailableModal from "@/components/PaymentUnavailableModal";
 import UseCurrentLocationGoogleMaps from "@/components/UseCurrentLocationGoogleMaps";
@@ -36,7 +36,6 @@ import {
   Snackbar,
   TextField,
 } from "@mui/material";
-import cookies from "js-cookie";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useContext, useEffect, useState } from "react";
@@ -46,6 +45,12 @@ import { IoCartOutline } from "react-icons/io5";
 import { MdHome, MdInfo, MdLocationOn, MdWork } from "react-icons/md";
 
 const API_URL = API_BASE_URL;
+const buildAuthHeaders = (extraHeaders = {}) => {
+  const token = getStoredAccessToken();
+  return token
+    ? { ...extraHeaders, Authorization: `Bearer ${token}` }
+    : extraHeaders;
+};
 
 /**
  * Checkout Page
@@ -61,7 +66,7 @@ const Checkout = () => {
   const context = useContext(MyContext);
   const { cartItems, clearCart, orderNote, setOrderNote } = useCart();
   const router = useRouter();
-  const authToken = cookies.get("accessToken");
+  const authToken = getStoredAccessToken();
   const isGuestCheckout = !authToken;
 
   // Get referral/influencer data from context
@@ -361,17 +366,15 @@ const Checkout = () => {
   // Fetch addresses from database
   const fetchAddresses = useCallback(async () => {
     try {
-      const token = cookies.get("accessToken");
-      if (!token) {
-        setAddressLoading(false);
+      const response = await fetch(`${API_URL}/api/address`, {
+        headers: buildAuthHeaders(),
+        credentials: "include",
+      });
+
+      if (response.status === 401) {
+        setAddresses([]);
         return;
       }
-
-      const response = await fetch(`${API_URL}/api/address`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
 
       const data = await response.json();
       if (data.success) {
@@ -569,22 +572,29 @@ const Checkout = () => {
 
     setAddressSaving(true);
     try {
-      const token = cookies.get("accessToken");
       const url = editingAddress
         ? `${API_URL}/api/address/${editingAddress._id}`
         : `${API_URL}/api/address`;
 
       const response = await fetch(url, {
         method: editingAddress ? "PUT" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: buildAuthHeaders({ "Content-Type": "application/json" }),
+        credentials: "include",
         body: JSON.stringify({
           ...formData,
           location: locationPayload,
         }),
       });
+
+      if (response.status === 401) {
+        setSnackbar({
+          open: true,
+          message: "Please login again to save your address.",
+          severity: "error",
+        });
+        router.push("/login?redirect=/checkout");
+        return;
+      }
 
       const data = await response.json();
 
@@ -755,7 +765,7 @@ const Checkout = () => {
     setCouponError("");
 
     try {
-      const token = cookies.get("accessToken");
+      const token = getStoredAccessToken();
       const response = await fetch(`${API_URL}/api/coupons/validate`, {
         method: "POST",
         headers: {
