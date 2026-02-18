@@ -1,6 +1,9 @@
 import MembershipPlanModel from "../models/membershipPlan.model.js";
+import MembershipUserModel from "../models/membershipUser.model.js";
 import UserModel from "../models/user.model.js";
 import { createPhonePePayment, getPhonePeStatus } from "../services/phonepe.service.js";
+import { getUserCoinSummary, redeemCoins } from "../services/coin.service.js";
+import { activateMembershipForUser } from "../services/membershipUser.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -17,6 +20,66 @@ const PAYMENT_PROVIDER = "PHONEPE";
  */
 const isPaymentEnabled = () => {
   return process.env.PHONEPE_ENABLED === "true";
+};
+const round2 = (value) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const floorInt = (value) => Math.max(Math.floor(Number(value || 0)), 0);
+
+const computeMembershipExpiry = (plan) => {
+  const expiry = new Date();
+  if (plan.durationUnit === "months") {
+    expiry.setMonth(expiry.getMonth() + Number(plan.duration || 0));
+  } else if (plan.durationUnit === "years") {
+    expiry.setFullYear(expiry.getFullYear() + Number(plan.duration || 0));
+  } else {
+    expiry.setDate(expiry.getDate() + Number(plan.duration || 0));
+  }
+  return expiry;
+};
+
+const activateMembership = async ({ user, plan, membershipPaymentId }) => {
+  const startDate = new Date();
+  const expiry = computeMembershipExpiry(plan);
+  await activateMembershipForUser({
+    userId: user._id,
+    startDate,
+    expiryDate: expiry,
+    membershipPlan: plan?._id || null,
+    membershipPaymentId: membershipPaymentId || null,
+  });
+  return expiry;
+};
+
+const getMembershipCoinPreview = async ({ userId, planPrice, requestedCoins }) => {
+  const safePlanPrice = Math.max(round2(planPrice), 0);
+  const safeRequestedCoins = floorInt(requestedCoins);
+
+  const summary = await getUserCoinSummary({ userId });
+  const settings = summary?.settings || {};
+  const redeemRate = Number(settings.redeemRate || 0);
+  const maxRedeemPercentage = Number(settings.maxRedeemPercentage || 0);
+  const usableCoins = floorInt(summary?.usable_coins || 0);
+
+  const maxRedeemRupees = round2((safePlanPrice * maxRedeemPercentage) / 100);
+  const maxCoinsByLimit =
+    redeemRate > 0 ? floorInt(maxRedeemRupees / redeemRate) : 0;
+  const coinsUsed = Math.min(safeRequestedCoins, usableCoins, maxCoinsByLimit);
+  const redeemAmount = round2(coinsUsed * redeemRate);
+  const payableAmount = Math.max(round2(safePlanPrice - redeemAmount), 0);
+
+  return {
+    requestedCoins: safeRequestedCoins,
+    usableCoins,
+    coinsUsed,
+    redeemAmount,
+    maxRedeemRupees,
+    maxCoinsByLimit,
+    payableAmount,
+    settings: {
+      redeemRate,
+      maxRedeemPercentage,
+    },
+  };
 };
 
 /**
@@ -67,7 +130,9 @@ export const getMembershipStatus = async (req, res) => {
     const userId = req.user;
 
     const user = await UserModel.findById(userId)
-      .select("isMember membershipPlan membershipExpiry")
+      .select(
+        "isMember is_member membership_id membershipPlan membershipExpiry",
+      )
       .populate(
         "membershipPlan",
         "name benefits discountPercent pointsMultiplier",
@@ -89,7 +154,8 @@ export const getMembershipStatus = async (req, res) => {
       error: false,
       success: true,
       data: {
-        isMember: user.isMember && !isExpired,
+        isMember: (Boolean(user.isMember) || Boolean(user.is_member)) && !isExpired,
+        membershipId: user.membership_id || null,
         membershipPlan: user.membershipPlan,
         membershipExpiry: user.membershipExpiry,
         isExpired,
@@ -113,17 +179,6 @@ export const getMembershipStatus = async (req, res) => {
  */
 export const createMembershipOrder = async (req, res) => {
   try {
-    // Check if payments are enabled (PhonePe onboarding)
-    if (!isPaymentEnabled()) {
-      return res.status(503).json({
-        error: true,
-        success: false,
-        message:
-          "Membership payments are temporarily unavailable. PhonePe onboarding is in progress.",
-        paymentProvider: PAYMENT_PROVIDER,
-      });
-    }
-
     const { planId } = req.body;
     if (!planId) {
       return res.status(400).json({
@@ -143,6 +198,86 @@ export const createMembershipOrder = async (req, res) => {
     }
 
     const userId = req.user;
+    const requestedCoins = floorInt(req.body?.coinRedeem?.coins || 0);
+    const coinPreview = await getMembershipCoinPreview({
+      userId,
+      planPrice: Number(plan.price || 0),
+      requestedCoins,
+    });
+
+    const merchantTransactionId = `MEM_${userId}_${Date.now()}`;
+
+    if (coinPreview.payableAmount <= 0) {
+      let redemptionResult = {
+        coinsUsed: 0,
+        redeemAmount: 0,
+      };
+      if (coinPreview.coinsUsed > 0) {
+        redemptionResult = await redeemCoins({
+          userId,
+          requestedCoins: coinPreview.coinsUsed,
+          orderTotal: Number(plan.price || 0),
+          source: "membership",
+          referenceId: merchantTransactionId,
+          meta: {
+            planId: String(plan._id),
+            reason: "membership-full-redeem",
+          },
+        });
+      }
+
+      const user = await UserModel.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          error: true,
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      const expiry = await activateMembership({
+        user,
+        plan,
+        membershipPaymentId: merchantTransactionId,
+      });
+
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Membership activated using coins",
+        data: {
+          membershipActivated: true,
+          merchantTransactionId,
+          paymentUrl: null,
+          planId: plan._id,
+          payableAmount: 0,
+          coinRedemption: {
+            coinsUsed: floorInt(redemptionResult?.coinsUsed || 0),
+            redeemAmount: round2(redemptionResult?.redeemAmount || 0),
+            maxRedeemRupees: coinPreview.maxRedeemRupees,
+            maxCoinsByLimit: coinPreview.maxCoinsByLimit,
+          },
+          membershipPlan: plan._id,
+          membershipExpiry: expiry,
+        },
+      });
+    }
+
+    // Check if payments are enabled (PhonePe onboarding)
+    if (!isPaymentEnabled()) {
+      return res.status(503).json({
+        error: true,
+        success: false,
+        message:
+          "Membership payments are temporarily unavailable. PhonePe onboarding is in progress.",
+        paymentProvider: PAYMENT_PROVIDER,
+        data: {
+          coinRedemption: coinPreview,
+          payableAmount: coinPreview.payableAmount,
+        },
+      });
+    }
+
     const primaryOrigin = String(process.env.CLIENT_URL || "")
       .split(",")[0]
       .trim()
@@ -157,7 +292,6 @@ export const createMembershipOrder = async (req, res) => {
       .trim()
       .replace(/\/+$/, "");
 
-    const merchantTransactionId = `MEM_${userId}_${Date.now()}`;
     const redirectUrl =
       process.env.PHONEPE_MEMBERSHIP_REDIRECT_URL ||
       process.env.PHONEPE_REDIRECT_URL ||
@@ -168,7 +302,7 @@ export const createMembershipOrder = async (req, res) => {
       `${backendUrl}/api/membership/verify-payment`;
 
     const phonepeResponse = await createPhonePePayment({
-      amount: plan.price,
+      amount: Math.max(coinPreview.payableAmount, 1),
       merchantTransactionId,
       merchantUserId: String(userId),
       redirectUrl,
@@ -194,9 +328,17 @@ export const createMembershipOrder = async (req, res) => {
       success: true,
       message: "Membership order created",
       data: {
+        membershipActivated: false,
         paymentUrl,
         merchantTransactionId,
         planId: plan._id,
+        payableAmount: coinPreview.payableAmount,
+        coinRedemption: {
+          coinsUsed: coinPreview.coinsUsed,
+          redeemAmount: coinPreview.redeemAmount,
+          maxRedeemRupees: coinPreview.maxRedeemRupees,
+          maxCoinsByLimit: coinPreview.maxCoinsByLimit,
+        },
       },
     });
   } catch (error) {
@@ -227,6 +369,7 @@ export const verifyMembershipPayment = async (req, res) => {
     }
 
     const { merchantTransactionId, planId } = req.body || {};
+    const requestedCoins = floorInt(req.body?.coinRedeem?.coins || 0);
 
     if (!merchantTransactionId || !planId) {
       return res.status(400).json({
@@ -269,20 +412,31 @@ export const verifyMembershipPayment = async (req, res) => {
       });
     }
 
-    const expiry = new Date();
-    if (plan.durationUnit === "months") {
-      expiry.setMonth(expiry.getMonth() + plan.duration);
-    } else if (plan.durationUnit === "years") {
-      expiry.setFullYear(expiry.getFullYear() + plan.duration);
-    } else {
-      expiry.setDate(expiry.getDate() + plan.duration);
+    let redemptionResult = {
+      coinsUsed: 0,
+      redeemAmount: 0,
+      maxRedeemRupees: 0,
+      maxCoinsByLimit: 0,
+    };
+    if (requestedCoins > 0) {
+      redemptionResult = await redeemCoins({
+        userId: req.user,
+        requestedCoins,
+        orderTotal: Number(plan.price || 0),
+        source: "membership",
+        referenceId: String(merchantTransactionId),
+        meta: {
+          planId: String(plan._id),
+          reason: "membership-payment-verify",
+        },
+      });
     }
 
-    user.isMember = true;
-    user.membershipPlan = plan._id;
-    user.membershipExpiry = expiry;
-    user.membershipPaymentId = merchantTransactionId;
-    await user.save();
+    const expiry = await activateMembership({
+      user,
+      plan,
+      membershipPaymentId: merchantTransactionId,
+    });
 
     return res.status(200).json({
       error: false,
@@ -291,6 +445,13 @@ export const verifyMembershipPayment = async (req, res) => {
       data: {
         membershipPlan: plan._id,
         membershipExpiry: expiry,
+        coinRedemption: {
+          coinsUsed: floorInt(redemptionResult?.coinsUsed || 0),
+          redeemAmount: round2(redemptionResult?.redeemAmount || 0),
+          maxRedeemRupees: round2(redemptionResult?.maxRedeemRupees || 0),
+          maxCoinsByLimit: floorInt(redemptionResult?.maxCoinsByLimit || 0),
+          remainingBalance: floorInt(redemptionResult?.remainingBalance || 0),
+        },
       },
     });
   } catch (error) {
@@ -535,17 +696,40 @@ export const activatePlan = async (req, res) => {
  */
 export const getMembershipStats = async (req, res) => {
   try {
-    const [totalMembers, activeMembers, expiredMembers] = await Promise.all([
-      UserModel.countDocuments({ isMember: true }),
-      UserModel.countDocuments({
-        isMember: true,
-        membershipExpiry: { $gt: new Date() },
-      }),
-      UserModel.countDocuments({
-        isMember: true,
-        membershipExpiry: { $lte: new Date() },
-      }),
-    ]);
+    const now = new Date();
+    const membershipUserCount = await MembershipUserModel.countDocuments({});
+
+    let totalMembers = 0;
+    let activeMembers = 0;
+    let expiredMembers = 0;
+
+    if (membershipUserCount > 0) {
+      [totalMembers, activeMembers, expiredMembers] = await Promise.all([
+        MembershipUserModel.countDocuments({}),
+        MembershipUserModel.countDocuments({
+          status: "active",
+          expiryDate: { $gt: now },
+        }),
+        MembershipUserModel.countDocuments({
+          $or: [
+            { status: "expired" },
+            { status: "active", expiryDate: { $lte: now } },
+          ],
+        }),
+      ]);
+    } else {
+      [totalMembers, activeMembers, expiredMembers] = await Promise.all([
+        UserModel.countDocuments({ isMember: true }),
+        UserModel.countDocuments({
+          isMember: true,
+          membershipExpiry: { $gt: now },
+        }),
+        UserModel.countDocuments({
+          isMember: true,
+          membershipExpiry: { $lte: now },
+        }),
+      ]);
+    }
 
     res.status(200).json({
       error: false,

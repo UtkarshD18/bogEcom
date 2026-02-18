@@ -8,11 +8,11 @@ export const getUserMembership = async (userId) => {
   if (!userId) return null;
 
   const user = await UserModel.findById(userId)
-    .select("isMember membershipPlan membershipExpiry")
+    .select("isMember is_member membershipPlan membershipExpiry")
     .populate("membershipPlan", "name discountPercent discountPercentage isActive active")
     .lean();
 
-  if (!user?.isMember || !user?.membershipPlan) return null;
+  if (!(user?.isMember || user?.is_member) || !user?.membershipPlan) return null;
 
   const expiry = user.membershipExpiry ? new Date(user.membershipExpiry) : null;
   if (expiry && expiry < new Date()) return null;

@@ -27,6 +27,10 @@ import {
   verifyEmailController,
   verifyForgotPasswordOTPController,
 } from "../controllers/user.controller.js";
+import {
+  getUserCoinsSummary,
+  getUserCoinsTransactions,
+} from "../controllers/coin.controller.js";
 
 const userRouter = Router();
 
@@ -81,6 +85,10 @@ userRouter.get("/user-details", auth, async (req, res) => {
     });
   }
 });
+
+// User coins
+userRouter.get("/coins-summary", auth, getUserCoinsSummary);
+userRouter.get("/coin-transactions", auth, getUserCoinsTransactions);
 
 // Admin routes for user management
 userRouter.get("/admin/users", auth, admin, getAllUsers);

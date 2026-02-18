@@ -19,6 +19,7 @@ import {
   applyRedemptionToUser,
   awardCoinsToUser,
   calculateRedemption,
+  getUserCoinSummary,
 } from "../services/coin.service.js";
 import { applyMembershipDiscount } from "../services/membership.service.js";
 import { createPhonePePayment } from "../services/phonepe.service.js";
@@ -1518,10 +1519,12 @@ export const createOrder = asyncHandler(async (req, res) => {
 
     let coinBalance = 0;
     if (userId) {
-      const user = await UserModel.findById(userId)
-        .select("coinBalance")
-        .lean();
-      coinBalance = Number(user?.coinBalance || 0);
+      try {
+        const summary = await getUserCoinSummary({ userId });
+        coinBalance = Number(summary?.usable_coins || 0);
+      } catch (coinSummaryError) {
+        coinBalance = 0;
+      }
     }
 
     const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
@@ -1979,10 +1982,12 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
 
     let coinBalance = 0;
     if (userId) {
-      const user = await UserModel.findById(userId)
-        .select("coinBalance")
-        .lean();
-      coinBalance = Number(user?.coinBalance || 0);
+      try {
+        const summary = await getUserCoinSummary({ userId });
+        coinBalance = Number(summary?.usable_coins || 0);
+      } catch (coinSummaryError) {
+        coinBalance = 0;
+      }
     }
 
     const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
@@ -2378,6 +2383,12 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           await applyRedemptionToUser({
             userId: order.user,
             coinsUsed: Number(order.coinRedemption.coinsUsed || 0),
+            source: "order",
+            referenceId: String(order._id),
+            meta: {
+              orderId: String(order._id),
+              paymentId: order.paymentId || null,
+            },
           });
         } catch (coinError) {
           logger.error(
@@ -2444,6 +2455,8 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           const awardResult = await awardCoinsToUser({
             userId: order.user,
             orderAmount: effectiveAmount,
+            source: "order",
+            referenceId: String(order._id),
           });
           if (awardResult.coinsAwarded > 0) {
             order.coinsAwarded = awardResult.coinsAwarded;

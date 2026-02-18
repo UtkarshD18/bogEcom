@@ -98,9 +98,18 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    is_member: {
+      type: Boolean,
+      default: false,
+    },
     membershipPlan: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "MembershipPlan",
+      default: null,
+    },
+    membership_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MembershipUser",
       default: null,
     },
     membershipExpiry: {

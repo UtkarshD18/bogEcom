@@ -13,6 +13,7 @@ import {
   FiUsers,
 } from "react-icons/fi";
 import { MdOutlineSlideshow } from "react-icons/md";
+import { RiVipCrownLine } from "react-icons/ri";
 
 export default function AdminDashboard() {
   const { admin, loading, isAuthenticated, token } = useAdmin();
@@ -24,13 +25,28 @@ export default function AdminDashboard() {
     totalUsers: 0,
     totalRevenue: 0,
   });
+  const [membershipStats, setMembershipStats] = useState({
+    activeMembers: 0,
+  });
   const [loadingStats, setLoadingStats] = useState(true);
 
   const fetchStats = useCallback(async () => {
     try {
-      const response = await getData("/api/statistics/dashboard", token);
-      if (response.success) {
-        setStats(response.data);
+      const [dashboardResponse, membershipResponse] = await Promise.all([
+        getData("/api/statistics/dashboard", token),
+        getData("/api/admin/membership-analytics", token),
+      ]);
+
+      if (dashboardResponse.success) {
+        setStats(dashboardResponse.data);
+      }
+
+      if (membershipResponse.success) {
+        setMembershipStats({
+          activeMembers: Number(
+            membershipResponse?.data?.summary?.activeMembers || 0,
+          ),
+        });
       }
     } catch (error) {
       console.error("Failed to fetch stats:", error);
@@ -143,7 +159,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-8">
           <div className="bg-white rounded-xl p-6 shadow-sm">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -193,6 +209,19 @@ export default function AdminDashboard() {
                   {loadingStats ? "..." : stats.totalUsers}
                 </p>
                 <p className="text-sm text-gray-500">Users</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl p-6 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                <RiVipCrownLine className="text-amber-600 text-xl" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-800">
+                  {loadingStats ? "..." : membershipStats.activeMembers}
+                </p>
+                <p className="text-sm text-gray-500">Active Members</p>
               </div>
             </div>
           </div>
