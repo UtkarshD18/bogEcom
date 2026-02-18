@@ -128,6 +128,7 @@ import { initializeSettings } from "./controllers/settings.controller.js";
 import { initSocket } from "./realtime/socket.js";
 import aboutPageRouter from "./routes/aboutPage.route.js";
 import addressRouter from "./routes/address.route.js";
+import adminMembershipRouter from "./routes/adminMembership.route.js";
 import adminOrdersRouter from "./routes/adminOrders.route.js";
 import adminReviewRouter from "./routes/adminReview.route.js";
 import bannerRouter from "./routes/banner.route.js";
@@ -164,6 +165,7 @@ import webhookRouter from "./routes/webhook.route.js";
 import wishlistRouter from "./routes/wishlist.route.js";
 import { startExpressbeesPolling } from "./services/expressbeesPolling.service.js";
 import { startInventoryReservationExpiryJob } from "./services/inventoryReservationExpiry.service.js";
+import { startMembershipExpiryJob } from "./services/membershipExpiry.service.js";
 import { startLocationLogRetentionJob } from "./services/userLocationLog.service.js";
 
 // Get __dirname in ES modules
@@ -247,6 +249,7 @@ app.use("/api/home-slides", adminLimiter, homeSlideRouter);
 app.use("/api/blogs", adminLimiter, blogRouter);
 app.use("/api/orders", adminLimiter, orderRouter);
 app.use("/api/admin/orders", adminLimiter, adminOrdersRouter);
+app.use("/api/admin", adminLimiter, adminMembershipRouter);
 app.use("/api/cart", generalLimiter, cartRouter);
 app.use("/api/wishlist", generalLimiter, wishlistRouter);
 app.use("/api/upload", uploadLimiter, uploadRouter);
@@ -342,6 +345,7 @@ connectDb().then(async () => {
     );
   }
   startInventoryReservationExpiryJob();
+  startMembershipExpiryJob();
 }).catch((error) => {
   console.error(
     "Server startup failed:",

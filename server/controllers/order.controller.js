@@ -18,7 +18,6 @@ import UserModel from "../models/user.model.js";
 import {
   applyRedemptionToUser,
   awardCoinsToUser,
-  calculateRedemption,
 } from "../services/coin.service.js";
 import { applyMembershipDiscount } from "../services/membership.service.js";
 import { createPhonePePayment } from "../services/phonepe.service.js";
@@ -1516,23 +1515,16 @@ export const createOrder = asyncHandler(async (req, res) => {
       checkoutContact.state,
     );
 
-    let coinBalance = 0;
-    if (userId) {
-      const user = await UserModel.findById(userId)
-        .select("coinBalance")
-        .lean();
-      coinBalance = Number(user?.coinBalance || 0);
-    }
-
     const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
-    const redemption =
-      requestedCoins > 0 && userId
-        ? await calculateRedemption({
-            subtotal: subtotalAfterDiscount,
-            requestedCoins,
-            coinBalance,
-          })
-        : { coinsUsed: 0, redeemAmount: 0 };
+    if (requestedCoins > 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "Coin redemption is only available for membership subscriptions.",
+      });
+    }
+    const redemption = { coinsUsed: 0, redeemAmount: 0 };
 
     const netInclusiveSubtotal = Math.max(
       round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
@@ -1977,23 +1969,16 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       checkoutContact.state,
     );
 
-    let coinBalance = 0;
-    if (userId) {
-      const user = await UserModel.findById(userId)
-        .select("coinBalance")
-        .lean();
-      coinBalance = Number(user?.coinBalance || 0);
-    }
-
     const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
-    const redemption =
-      requestedCoins > 0 && userId
-        ? await calculateRedemption({
-            subtotal: subtotalAfterDiscount,
-            requestedCoins,
-            coinBalance,
-          })
-        : { coinsUsed: 0, redeemAmount: 0 };
+    if (requestedCoins > 0) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "Coin redemption is only available for membership subscriptions.",
+      });
+    }
+    const redemption = { coinsUsed: 0, redeemAmount: 0 };
 
     const netInclusiveSubtotal = Math.max(
       round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
@@ -2378,6 +2363,12 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           await applyRedemptionToUser({
             userId: order.user,
             coinsUsed: Number(order.coinRedemption.coinsUsed || 0),
+            source: "order",
+            referenceId: String(order._id),
+            meta: {
+              orderId: String(order._id),
+              paymentId: order.paymentId || null,
+            },
           });
         } catch (coinError) {
           logger.error(
@@ -2444,6 +2435,8 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           const awardResult = await awardCoinsToUser({
             userId: order.user,
             orderAmount: effectiveAmount,
+            source: "order",
+            referenceId: String(order._id),
           });
           if (awardResult.coinsAwarded > 0) {
             order.coinsAwarded = awardResult.coinsAwarded;

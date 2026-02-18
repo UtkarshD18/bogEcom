@@ -4,7 +4,13 @@ import { firebaseApp } from "@/firebase";
 import { postData } from "@/utils/api";
 import { Button } from "@mui/material";
 import Checkbox from "@mui/material/Checkbox";
-import { GoogleAuthProvider, getAuth, signInWithPopup } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  getAuth,
+  getRedirectResult,
+  signInWithPopup,
+  signInWithRedirect,
+} from "firebase/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,6 +18,7 @@ import { FcGoogle } from "react-icons/fc";
 import { MdEmail, MdLock, MdVisibility, MdVisibilityOff } from "react-icons/md";
 
 const label = { slotProps: { input: { "aria-label": "Checkbox demo" } } };
+const GOOGLE_REDIRECT_ATTEMPT_KEY = "googleAuthRedirectAttemptedAdmin";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -27,12 +34,71 @@ const Login = () => {
   const { login, loginWithGoogle, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
 
+  const completeAdminGoogleSignIn = async (result) => {
+    const user = result?.user;
+    if (!user?.email) {
+      throw new Error("Google account email is missing");
+    }
+
+    const googleUserData = {
+      name: user.displayName || "Google User",
+      email: user.email,
+      avatar: user.photoURL || "",
+      mobile: "",
+      role: "Admin",
+      googleId: user.uid,
+    };
+
+    const backendResponse = await postData(
+      "/api/user/authWithGoogle",
+      googleUserData,
+    );
+
+    if (backendResponse?.error === true) {
+      throw new Error(backendResponse?.message || "Google Sign-In failed");
+    }
+
+    if (backendResponse?.data?.role !== "Admin") {
+      throw new Error("Access denied. Admin privileges required.");
+    }
+
+    localStorage.setItem("adminToken", backendResponse?.data?.accessToken);
+    localStorage.setItem("adminUser", JSON.stringify(backendResponse?.data));
+    router.push("/");
+  };
+
   // Initialize Firebase auth
   useEffect(() => {
     if (firebaseApp) {
       try {
-        setAuth(getAuth(firebaseApp));
-        setProvider(new GoogleAuthProvider());
+        const authInstance = getAuth(firebaseApp);
+        const providerInstance = new GoogleAuthProvider();
+        providerInstance.setCustomParameters({ prompt: "select_account" });
+        setAuth(authInstance);
+        setProvider(providerInstance);
+        getRedirectResult(authInstance)
+          .then(async (result) => {
+            if (result?.user) {
+              await completeAdminGoogleSignIn(result);
+            }
+          })
+          .catch((error) => {
+            console.error("Google redirect result error:", error);
+            if (error?.code === "auth/unauthorized-domain") {
+              const origin =
+                typeof window !== "undefined"
+                  ? window.location.origin
+                  : "unknown-origin";
+              setError(`Google sign-in blocked for ${origin}.`);
+            } else if (error?.message) {
+              setError(error.message);
+            }
+          })
+          .finally(() => {
+            if (typeof window !== "undefined") {
+              sessionStorage.removeItem(GOOGLE_REDIRECT_ATTEMPT_KEY);
+            }
+          });
         console.log("✓ Firebase auth initialized in admin login");
       } catch (error) {
         console.error("Firebase auth initialization error:", error);
@@ -79,49 +145,29 @@ const Login = () => {
 
     try {
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      // Prepare user data for backend
-      const googleUserData = {
-        name: user.displayName || "Google User",
-        email: user.email,
-        avatar: user.photoURL || "",
-        mobile: "",
-        role: "Admin", // Request admin role
-        googleId: user.uid,
-      };
-
-      // Send to backend
-      const backendResponse = await postData(
-        "/api/user/authWithGoogle",
-        googleUserData,
-      );
-
-      if (backendResponse?.error !== true) {
-        // Check if user is admin
-        if (backendResponse?.data?.role !== "Admin") {
-          setError("Access denied. Admin privileges required.");
-          setGoogleLoading(false);
-          return;
-        }
-
-        // Store token and admin data
-        localStorage.setItem("adminToken", backendResponse?.data?.accessToken);
-        localStorage.setItem(
-          "adminUser",
-          JSON.stringify(backendResponse?.data),
-        );
-
-        router.push("/");
-      } else {
-        setError(backendResponse?.message || "Google Sign-In failed");
-      }
+      await completeAdminGoogleSignIn(result);
     } catch (error) {
       console.error("Google Sign-In Error:", error);
-      if (error.code === "auth/popup-closed-by-user") {
+      if (error?.code === "auth/unauthorized-domain") {
+        const canRetryWithRedirect =
+          typeof window !== "undefined" &&
+          sessionStorage.getItem(GOOGLE_REDIRECT_ATTEMPT_KEY) !== "1";
+
+        if (canRetryWithRedirect) {
+          sessionStorage.setItem(GOOGLE_REDIRECT_ATTEMPT_KEY, "1");
+          setError("Retrying Google sign-in with redirect...");
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        const origin =
+          typeof window !== "undefined"
+            ? window.location.origin
+            : "unknown-origin";
+        setError(`Google sign-in blocked for ${origin}.`);
+      } else if (error.code === "auth/popup-closed-by-user") {
         setError("Sign-in cancelled");
       } else {
-        setError("Google Sign-In failed. Please try again.");
+        setError(error?.message || "Google Sign-In failed. Please try again.");
       }
     }
 

@@ -1,6 +1,6 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData, putData } from "@/utils/api";
+import { deleteData, getData, postData, putData } from "@/utils/api";
 import {
   Avatar,
   Button,
@@ -34,6 +34,7 @@ import {
   FiUserX,
 } from "react-icons/fi";
 import { MdOutlineAdminPanelSettings } from "react-icons/md";
+import { RiVipCrownLine } from "react-icons/ri";
 
 export default function UserManagement() {
   const { token, isAuthenticated, loading } = useAdmin();
@@ -197,6 +198,34 @@ export default function UserManagement() {
       alert("Failed to delete user");
     }
 
+    setActionLoading(false);
+  };
+
+  const handleConvertToMember = async (user) => {
+    if (!user?._id) return;
+    const shouldConvert = window.confirm(
+      `Convert ${user.name} into membership user for 365 days?`,
+    );
+    if (!shouldConvert) return;
+
+    setActionLoading(true);
+    try {
+      const response = await postData(
+        "/api/admin/membership-users/convert",
+        { userId: user._id, days: 365 },
+        token,
+      );
+
+      if (response.success) {
+        fetchUsers();
+        alert(response.message || "User converted to member successfully");
+      } else {
+        alert(response.message || "Failed to convert user to member");
+      }
+    } catch (error) {
+      console.error("Failed to convert user to member:", error);
+      alert("Failed to convert user to member");
+    }
     setActionLoading(false);
   };
 
@@ -380,6 +409,18 @@ export default function UserManagement() {
                             <FiTrash2 />
                           </IconButton>
                         </Tooltip>
+                        {user.role !== "Admin" && (
+                          <Tooltip title="Convert to Member">
+                            <IconButton
+                              size="small"
+                              color="warning"
+                              onClick={() => handleConvertToMember(user)}
+                              disabled={actionLoading}
+                            >
+                              <RiVipCrownLine />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

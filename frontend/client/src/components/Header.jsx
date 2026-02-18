@@ -3,15 +3,16 @@
 import { useCart } from "@/context/CartContext";
 import { MyContext } from "@/context/ThemeProvider";
 import { useWishlist } from "@/context/WishlistContext";
-import { postData } from "@/utils/api";
+import { fetchDataFromApi, postData } from "@/utils/api";
 import cookies from "js-cookie";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { FaRegHeart, FaUser } from "react-icons/fa";
 import { IoCartOutline, IoCloseOutline, IoMenuOutline } from "react-icons/io5";
 import {
+  MdInfoOutline,
   MdLogout,
   MdOutlineLocationOn,
   MdOutlineSettings,
@@ -83,6 +84,19 @@ const clearStoredPhotoForUser = (emailValue) => {
   // Cleanup old global key to prevent cross-account leakage.
   localStorage.removeItem("userPhoto");
 };
+const DEFAULT_COIN_SUMMARY = {
+  total_coins: 0,
+  usable_coins: 0,
+  rupee_value: 0,
+  expiring_soon: 0,
+  membership_bonus_multiplier: 1,
+  settings: {
+    coinsPerRupee: 0,
+    redeemRate: 0,
+    maxRedeemPercentage: 0,
+    expiryDays: 0,
+  },
+};
 
 const Header = () => {
   const pathname = usePathname();
@@ -96,6 +110,14 @@ const Header = () => {
   const [isMounted, setIsMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hideHeader, setHideHeader] = useState(false);
+  const [coinSummary, setCoinSummary] = useState(DEFAULT_COIN_SUMMARY);
+  const [animatedCoins, setAnimatedCoins] = useState(0);
+  const [coinPanelAnchor, setCoinPanelAnchor] = useState(null);
+  const [coinInfoOpen, setCoinInfoOpen] = useState(false);
+  const [coinLoading, setCoinLoading] = useState(false);
+  const coinDesktopRef = useRef(null);
+  const coinMobileRef = useRef(null);
+  const coinAnimationRef = useRef(0);
   const router = useRouter();
   const API_URL = (
     process.env.NEXT_PUBLIC_APP_API_URL ||
@@ -105,10 +127,11 @@ const Header = () => {
     .trim()
     .replace(/\/+$/, "");
   const context = useContext(MyContext);
-  const { cartCount, setIsDrawerOpen } = useCart();
+  const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
 
   const open = Boolean(anchorEl);
+  const isCoinPanelOpen = Boolean(coinPanelAnchor);
 
   // ============ MOBILE MENU: Auto-close on scroll ============
   useEffect(() => {
@@ -165,6 +188,66 @@ const Header = () => {
     }
   };
 
+  const fetchCoinSummary = useCallback(async () => {
+    if (!getStoredAuthToken()) {
+      setCoinSummary(DEFAULT_COIN_SUMMARY);
+      setCoinLoading(false);
+      return;
+    }
+
+    setCoinLoading(true);
+    try {
+      const response = await fetchDataFromApi("/api/user/coins-summary");
+      if (response?.success && response?.data) {
+        setCoinSummary({
+          ...DEFAULT_COIN_SUMMARY,
+          ...response.data,
+          settings: {
+            ...DEFAULT_COIN_SUMMARY.settings,
+            ...(response.data.settings || {}),
+          },
+        });
+      }
+    } catch (error) {
+      // Keep header resilient if coin service is unavailable.
+    } finally {
+      setCoinLoading(false);
+    }
+  }, []);
+
+  const closeCoinPanel = useCallback(() => {
+    setCoinPanelAnchor(null);
+  }, []);
+
+  const handleCoinButtonClick = useCallback(
+    (anchor) => {
+      if (!isLoggedIn) {
+        router.push("/login");
+        return;
+      }
+      setCoinPanelAnchor((prev) => (prev === anchor ? null : anchor));
+    },
+    [isLoggedIn, router],
+  );
+
+  const handleCoinInfoClick = useCallback(
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!isLoggedIn) {
+        router.push("/login");
+        return;
+      }
+      setCoinInfoOpen(true);
+    },
+    [isLoggedIn, router],
+  );
+
+  const handleViewCoinHistory = useCallback(() => {
+    closeCoinPanel();
+    router.push("/coin-history");
+  }, [closeCoinPanel, router]);
+
   useEffect(() => {
     setIsMounted(true);
     checkLoginStatus();
@@ -184,6 +267,87 @@ const Header = () => {
       window.removeEventListener("focus", checkLoginStatus);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setCoinSummary(DEFAULT_COIN_SUMMARY);
+      setAnimatedCoins(0);
+      coinAnimationRef.current = 0;
+      setCoinPanelAnchor(null);
+      return;
+    }
+    fetchCoinSummary();
+  }, [isLoggedIn, fetchCoinSummary]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const refresh = () => fetchCoinSummary();
+    const poll = window.setInterval(refresh, 45000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("coinBalanceRefresh", refresh);
+
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("coinBalanceRefresh", refresh);
+    };
+  }, [isLoggedIn, fetchCoinSummary]);
+
+  useEffect(() => {
+    const target = isLoggedIn
+      ? Math.max(
+          Math.floor(
+            Number(coinSummary?.usable_coins ?? coinSummary?.total_coins ?? 0),
+          ),
+          0,
+        )
+      : 0;
+    const start = coinAnimationRef.current;
+
+    if (start === target) {
+      setAnimatedCoins(target);
+      return;
+    }
+
+    const duration = 650;
+    const startAt = performance.now();
+    let rafId = 0;
+
+    const step = (now) => {
+      const progress = Math.min((now - startAt) / duration, 1);
+      const next = Math.round(start + (target - start) * progress);
+      coinAnimationRef.current = next;
+      setAnimatedCoins(next);
+      if (progress < 1) {
+        rafId = requestAnimationFrame(step);
+      }
+    };
+
+    rafId = requestAnimationFrame(step);
+    return () => {
+      cancelAnimationFrame(rafId);
+    };
+  }, [coinSummary?.usable_coins, coinSummary?.total_coins, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isCoinPanelOpen) return;
+
+    const activeRef =
+      coinPanelAnchor === "mobile" ? coinMobileRef : coinDesktopRef;
+
+    const handleOutsideClick = (event) => {
+      if (activeRef?.current?.contains(event.target)) return;
+      setCoinPanelAnchor(null);
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [coinPanelAnchor, isCoinPanelOpen]);
+
+  useEffect(() => {
+    setCoinPanelAnchor(null);
+  }, [pathname]);
 
   // Scroll detection
   useEffect(() => {
@@ -232,6 +396,7 @@ const Header = () => {
       context?.setUser?.({});
       setIsLoggedIn(false);
       setAnchorEl(null);
+      setCoinPanelAnchor(null);
       context?.alertBox("success", "Logged out successfully");
       router.push("/logout-confirmation");
     } catch (error) {
@@ -252,6 +417,7 @@ const Header = () => {
       clearStoredPhotoForUser(userEmail || cookies.get("userEmail"));
       setIsLoggedIn(false);
       setAnchorEl(null);
+      setCoinPanelAnchor(null);
       context?.alertBox("success", "Logged out successfully");
       router.push("/logout-confirmation");
     } finally {
@@ -266,6 +432,76 @@ const Header = () => {
     { name: "Blogs", href: "/blogs", icon: "📝" },
     { name: "About Us", href: "/about-us", icon: "✨" },
   ];
+  const coinCount = Math.max(Math.floor(Number(animatedCoins || 0)), 0);
+  const coinSettings = {
+    ...DEFAULT_COIN_SUMMARY.settings,
+    ...(coinSummary?.settings || {}),
+  };
+  const coinTooltip = isLoggedIn
+    ? `You have ${coinCount} coins`
+    : "Login to earn coins";
+
+  const renderCoinDropdown = (anchor) => (
+    <div
+      className={`${anchor === "mobile"
+        ? "fixed left-1/2 -translate-x-1/2 z-[100] top-[calc(var(--header-height,100px)+18px)] w-[min(92vw,300px)]"
+        : "absolute right-0 z-40 mt-3 w-[280px]"
+        } rounded-2xl border shadow-xl`}
+      style={{
+        backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+        borderColor:
+          "color-mix(in srgb, var(--flavor-color, #a7f3d0) 25%, transparent)",
+      }}
+    >
+      <div className="px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Coin Wallet
+          </p>
+          <button
+            type="button"
+            onClick={handleCoinInfoClick}
+            className="p-1 rounded-full hover:bg-gray-100 text-gray-500"
+            aria-label="Coin info"
+          >
+            <MdInfoOutline size={16} />
+          </button>
+        </div>
+        <p className="mt-1 text-xl font-bold text-gray-900">🪙 {coinCount}</p>
+      </div>
+      <div className="px-4 py-3 space-y-2 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-gray-600">Value in INR</span>
+          <span className="font-semibold text-gray-900">
+            ₹{Number(coinSummary?.rupee_value || 0).toFixed(2)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-gray-600">Expiring soon</span>
+          <span className="font-semibold text-amber-700">
+            {Math.max(Math.floor(Number(coinSummary?.expiring_soon || 0)), 0)}{" "}
+            coins
+          </span>
+        </div>
+        <div className="text-[11px] text-gray-500">
+          1 coin = ₹{Number(coinSettings.redeemRate || 0).toFixed(2)}
+        </div>
+      </div>
+      <div className="px-4 pb-4">
+        <button
+          type="button"
+          onClick={handleViewCoinHistory}
+          className="w-full rounded-xl py-2.5 text-sm font-semibold text-white hover:brightness-110 transition"
+          style={{
+            background:
+              "linear-gradient(135deg, var(--flavor-color), var(--flavor-hover))",
+          }}
+        >
+          View Coin History
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -442,6 +678,56 @@ const Header = () => {
               </div>
               {/* ACTIONS (Icons + Login Button) */}
               <div className="flex items-center justify-end shrink-0 gap-4">
+                <div className="relative" ref={coinDesktopRef}>
+                  <button
+                    id="coin-balance-anchor"
+                    type="button"
+                    onClick={() => handleCoinButtonClick("desktop")}
+                    className="relative group px-2.5 py-1.5 rounded-lg border transition-all duration-200 hover:shadow-sm hover:scale-[1.02]"
+                    aria-label="Coins"
+                    title={coinTooltip}
+                    style={{
+                      backgroundColor:
+                        "color-mix(in srgb, var(--flavor-color, #f5c16c) 14%, var(--flavor-card-bg, #fffbf5))",
+                      borderColor:
+                        "color-mix(in srgb, var(--flavor-color, #f5c16c) 36%, transparent)",
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[22px] leading-none">🪙</span>
+                      <span className="text-[15px] font-bold text-amber-700 min-w-8 text-left leading-none">
+                        {coinLoading && isLoggedIn
+                          ? "..."
+                          : coinCount > 9999
+                            ? "9999+"
+                            : coinCount}
+                      </span>
+                    </div>
+                    <span
+                      className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 text-xs font-medium text-gray-700 backdrop-blur-lg rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none"
+                      style={{
+                        backgroundColor:
+                          "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 90%, transparent)",
+                        border:
+                          "1px solid color-mix(in srgb, var(--flavor-color, #a7f3d0) 20%, transparent)",
+                      }}
+                    >
+                      {coinTooltip}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCoinInfoClick}
+                    className="absolute -right-1 -top-0.5 p-0.5 rounded-full bg-white/90 border border-gray-200 text-gray-500 hover:text-[var(--flavor-color)]"
+                    aria-label="Coin info"
+                    title="Coin info"
+                  >
+                    <MdInfoOutline size={12} />
+                  </button>
+                  {isCoinPanelOpen && coinPanelAnchor === "desktop" && isLoggedIn
+                    ? renderCoinDropdown("desktop")
+                    : null}
+                </div>
                 {/* Wishlist Icon */}
                 <Link
                   href="/my-list"
@@ -755,6 +1041,40 @@ const Header = () => {
                   </Link>
                 );
               })}
+
+              <button
+                type="button"
+                className="w-[calc(100%-1rem)] mx-2 mt-1 flex items-center justify-between px-4 py-3 rounded-xl text-[15px] font-semibold text-gray-700 hover:bg-[var(--flavor-glass)] hover:text-[var(--flavor-color)] active:bg-[var(--flavor-glass)] transition-all duration-200"
+                style={{
+                  border: "1px solid color-mix(in srgb, var(--flavor-color, #f5c16c) 24%, transparent)",
+                  background:
+                    "color-mix(in srgb, var(--flavor-color, #f5c16c) 8%, var(--flavor-card-bg, #fffbf5))",
+                }}
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  if (!isLoggedIn) {
+                    router.push("/login");
+                    return;
+                  }
+                  router.push("/coin-history");
+                }}
+                ref={coinMobileRef}
+                id="coin-balance-anchor-mobile"
+                aria-label="Coin wallet"
+                title={coinTooltip}
+              >
+                <span className="inline-flex items-center gap-3">
+                  <span className="text-lg w-6 text-center">🪙</span>
+                  <span>Coin Wallet</span>
+                </span>
+                <span className="text-[14px] font-bold text-amber-700">
+                  {coinLoading && isLoggedIn
+                    ? "..."
+                    : coinCount > 999
+                      ? "999+"
+                      : coinCount}
+                </span>
+              </button>
             </nav>
 
             {/* Divider */}
@@ -830,6 +1150,76 @@ const Header = () => {
           </div>
         </div>
       </div>
+
+      {coinInfoOpen && (
+        <div className="fixed inset-0 z-[120]">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+            onClick={() => setCoinInfoOpen(false)}
+          />
+          <div className="absolute inset-0 flex items-center justify-center px-4">
+            <div
+              className="w-full max-w-md rounded-2xl border shadow-2xl p-5"
+              style={{
+                backgroundColor: "var(--flavor-card-bg, #fffbf5)",
+                borderColor:
+                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
+              }}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <h3 className="text-lg font-bold text-gray-900">
+                  Coin System Rules
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setCoinInfoOpen(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                  aria-label="Close coin info"
+                >
+                  <IoCloseOutline size={22} />
+                </button>
+              </div>
+              <div className="mt-4 space-y-3 text-sm text-gray-700">
+                <p>
+                  You earn{" "}
+                  <span className="font-semibold">
+                    {Number(coinSettings.coinsPerRupee || 0).toFixed(2)}
+                  </span>{" "}
+                  coins for every ₹1 order value.
+                </p>
+                <p>
+                  Redeem value is{" "}
+                  <span className="font-semibold">
+                    ₹{Number(coinSettings.redeemRate || 0).toFixed(2)}
+                  </span>{" "}
+                  per coin.
+                </p>
+                <p>
+                  Coins can only be redeemed on membership subscriptions.
+                </p>
+                <p>
+                  Coins expire after{" "}
+                  <span className="font-semibold">
+                    {Math.max(Math.floor(Number(coinSettings.expiryDays || 0)), 0)}
+                  </span>{" "}
+                  days.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCoinInfoOpen(false)}
+                className="mt-5 w-full rounded-xl py-2.5 text-sm font-semibold text-white hover:brightness-110 transition"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--flavor-color), var(--flavor-hover))",
+                }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Search Bar - Shows when header is hidden */}
       <div

@@ -1,6 +1,7 @@
 "use client";
 
 import CartDrawer from "../components/CartDrawer";
+import CoinRewardLayer from "../components/CoinRewardLayer";
 import ErrorBoundary from "../components/ErrorBoundary";
 import Footer from "../components/Footer";
 import Header from "../components/Header";
@@ -47,6 +48,7 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
   return (
     <>
       <Header />
+      <CoinRewardLayer />
       <main className="min-h-screen pt-[120px] md:pt-[100px] overflow-x-hidden w-full">
         {children}
       </main>

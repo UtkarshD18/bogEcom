@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { MyContext } from "@/context/ThemeProvider";
 import { firebaseApp } from "@/firebase";
 import { postData } from "@/utils/api";
@@ -6,13 +6,21 @@ import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import IconButton from "@mui/material/IconButton";
 import TextField from "@mui/material/TextField";
-import { GoogleAuthProvider, getAuth, signInWithPopup } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  getAuth,
+  getRedirectResult,
+  signInWithPopup,
+  signInWithRedirect,
+} from "firebase/auth";
 import cookies from "js-cookie";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useContext, useEffect, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
+
+const GOOGLE_REDIRECT_ATTEMPT_KEY = "googleAuthRedirectAttempted";
 
 const getStoredToken = () => {
   if (typeof window === "undefined") return cookies.get("accessToken") || null;
@@ -92,14 +100,99 @@ const LoginForm = () => {
   });
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect") || "/";
+  const context = useContext(MyContext);
+  const router = useRouter();
+
+  const completeGoogleSignIn = async (result) => {
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const token = credential?.accessToken || "";
+    const user = result?.user;
+
+    if (!user?.email) {
+      throw new Error("Google account email is missing");
+    }
+
+    const googleUserData = {
+      name: user.displayName || "Google User",
+      email: user.email,
+      avatar: user.photoURL || "",
+      mobile: "",
+      role: "User",
+      googleId: user.uid,
+    };
+
+    const backendResponse = await postData(
+      "/api/user/authWithGoogle",
+      googleUserData,
+    );
+    if (backendResponse?.error === true) {
+      throw new Error(backendResponse?.message || "Backend registration failed");
+    }
+
+    const persisted = persistSession(
+      {
+        ...backendResponse?.data,
+        accessToken: backendResponse?.data?.accessToken || token,
+        userName: user.displayName || "Google User",
+        userEmail: user.email,
+        userPhoto: user.photoURL || "",
+      },
+      user.email,
+    );
+    if (!persisted) {
+      throw new Error("Google auth token missing");
+    }
+
+    context?.setIsLogin?.(true);
+    context?.setUser?.({
+      name: user.displayName,
+      email: user.email,
+    });
+    context?.alertBox(
+      "success",
+      backendResponse?.message || "Google Sign-In successful!",
+    );
+
+    window.dispatchEvent(new Event("loginSuccess"));
+    setTimeout(() => {
+      router.push(redirectUrl);
+    }, 100);
+  };
 
   // Initialize Firebase auth
   useEffect(() => {
     if (firebaseApp) {
       try {
-        setAuth(getAuth(firebaseApp));
-        setProvider(new GoogleAuthProvider());
-        console.log("✓ Firebase auth initialized in login page");
+        const authInstance = getAuth(firebaseApp);
+        const providerInstance = new GoogleAuthProvider();
+        providerInstance.setCustomParameters({ prompt: "select_account" });
+        setAuth(authInstance);
+        setProvider(providerInstance);
+        getRedirectResult(authInstance)
+          .then(async (result) => {
+            if (result?.user) {
+              await completeGoogleSignIn(result);
+            }
+          })
+          .catch((error) => {
+            console.error("Google redirect result error:", error);
+            if (error?.code === "auth/unauthorized-domain") {
+              const origin =
+                typeof window !== "undefined"
+                  ? window.location.origin
+                  : "unknown-origin";
+              context?.alertBox(
+                "error",
+                `Google sign-in blocked for ${origin}.`,
+              );
+            }
+          })
+          .finally(() => {
+            if (typeof window !== "undefined") {
+              sessionStorage.removeItem(GOOGLE_REDIRECT_ATTEMPT_KEY);
+            }
+          });
+        console.log("âœ“ Firebase auth initialized in login page");
       } catch (error) {
         console.error("Firebase auth initialization error:", error);
       }
@@ -124,14 +217,11 @@ const LoginForm = () => {
           return;
         }
       } catch {}
-      // Token is expired or invalid — clear stale cookies so user can login fresh
+      // Token is expired or invalid â€” clear stale cookies so user can login fresh
       clearStoredSession();
     }
     cookies.remove("actionType");
   }, []);
-  const context = useContext(MyContext);
-  const router = useRouter();
-
   const onChangeInput = (e) => {
     const { name, value } = e.target;
     setFormFields(() => {
@@ -202,7 +292,7 @@ const LoginForm = () => {
       });
   };
 
-  const signInWithGoogle = () => {
+  const signInWithGoogle = async () => {
     if (!auth || !provider) {
       console.warn("Auth or provider not initialized:", { auth, provider });
       context?.alertBox(
@@ -212,122 +302,49 @@ const LoginForm = () => {
       return;
     }
 
-    console.log("🔵 Starting Google Sign-In...");
     setGoogleLoading(true);
 
-    signInWithPopup(auth, provider)
-      .then(async (result) => {
-        console.log("✅ Google Sign-In Success");
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        const token = credential.accessToken;
-        const user = result.user;
+    try {
+      const result = await signInWithPopup(auth, provider);
+      await completeGoogleSignIn(result);
+    } catch (error) {
+      const errorCode = error?.code;
+      const errorMessage = error?.message;
+      console.error("Google Sign-In Error:", errorCode, errorMessage);
 
-        // Prepare user data for backend
-        const googleUserData = {
-          name: user.displayName || "Google User",
-          email: user.email,
-          avatar: user.photoURL || "",
-          mobile: "",
-          role: "User", // Valid enum value
-          googleId: user.uid, // Google user ID
-        };
+      if (errorCode === "auth/unauthorized-domain") {
+        const canRetryWithRedirect =
+          typeof window !== "undefined" &&
+          sessionStorage.getItem(GOOGLE_REDIRECT_ATTEMPT_KEY) !== "1";
 
-        try {
-          // Send Google user data to backend
-          const backendResponse = await postData(
-            "/api/user/authWithGoogle",
-            googleUserData,
-          );
-
-          if (backendResponse?.error !== true) {
-            const persisted = persistSession(
-              {
-                ...backendResponse?.data,
-                accessToken: backendResponse?.data?.accessToken || token,
-                userName: user.displayName || "Google User",
-                userEmail: user.email,
-                userPhoto: user.photoURL || "",
-              },
-              user.email,
-            );
-            if (!persisted) {
-              throw new Error("Google auth token missing");
-            }
-
-            // Update context
-            context?.setIsLogin?.(true);
-            context?.setUser?.({
-              name: user.displayName,
-              email: user.email,
-            });
-
-            context?.alertBox(
-              "success",
-              backendResponse?.message || "Google Sign-In successful!",
-            );
-
-            // Dispatch event first, then navigate
-            window.dispatchEvent(new Event("loginSuccess"));
-            setTimeout(() => {
-              router.push("/");
-            }, 100);
-          } else {
-            throw new Error(
-              backendResponse?.message || "Backend registration failed",
-            );
-          }
-        } catch (backendError) {
-          console.error("Backend registration failed:", backendError.message);
-
-          // SECURITY: Do not create fake tokens - require backend authentication
-          context?.alertBox(
-            "error",
-            "Authentication service unavailable. Please try again later.",
-          );
-          setGoogleLoading(false);
+        if (canRetryWithRedirect) {
+          sessionStorage.setItem(GOOGLE_REDIRECT_ATTEMPT_KEY, "1");
+          context?.alertBox("info", "Retrying Google sign-in with redirect...");
+          await signInWithRedirect(auth, provider);
           return;
-
-          // Removed insecure fallback that used fake token
-          /* REMOVED FOR SECURITY:
-          cookies.set("accessToken", token || "google-token", { expires: 7 });
-          cookies.set("userName", user.displayName || "Google User", {
-            expires: 7,
-          });
-          cookies.set("userEmail", user.email, { expires: 7 });
-          cookies.set("userPhoto", user.photoURL || "", { expires: 7 });
-
-          context?.setIsLogin?.(true);
-          context?.setUser?.({
-            name: user.displayName,
-            email: user.email,
-          });
-
-          */
         }
-      })
-      .catch((error) => {
-        const errorCode = error.code;
-        const errorMessage = error.message;
-        console.error("❌ Google Sign-In Error:", errorCode, errorMessage);
 
-        // Handle specific error types
-        if (
-          errorCode === "auth/cancelled-popup-request" ||
-          errorCode === "auth/popup-closed-by-user"
-        ) {
-          context?.alertBox("info", "Google Sign-In was cancelled");
-        } else if (errorCode === "auth/popup-blocked") {
-          context?.alertBox(
-            "error",
-            "Popup was blocked. Please allow popups for this site.",
-          );
-        } else {
-          context?.alertBox("error", `Google sign-in failed: ${errorMessage}`);
-        }
-      })
-      .finally(() => {
-        setGoogleLoading(false);
-      });
+        const origin =
+          typeof window !== "undefined"
+            ? window.location.origin
+            : "unknown-origin";
+        context?.alertBox("error", `Google sign-in blocked for ${origin}.`);
+      } else if (
+        errorCode === "auth/cancelled-popup-request" ||
+        errorCode === "auth/popup-closed-by-user"
+      ) {
+        context?.alertBox("info", "Google Sign-In was cancelled");
+      } else if (errorCode === "auth/popup-blocked") {
+        context?.alertBox(
+          "error",
+          "Popup was blocked. Please allow popups for this site.",
+        );
+      } else {
+        context?.alertBox("error", `Google sign-in failed: ${errorMessage}`);
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   return (
@@ -452,3 +469,4 @@ const Login = () => {
 };
 
 export default Login;
+
