@@ -1,6 +1,7 @@
 import CartModel from "../models/cart.model.js";
 import mongoose from "mongoose";
 import ProductModel from "../models/product.model.js";
+import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 
 const getAvailableQuantity = (product, variantId = null) => {
   if (!product) return 0;
@@ -51,6 +52,11 @@ const normalizeVariantId = (variantId) => {
 const isSameVariant = (itemVariant, targetVariant) =>
   String(itemVariant || "") === String(targetVariant || "");
 
+const canUserAccessExclusiveProducts = async (userId) => {
+  if (!userId) return false;
+  return checkExclusiveAccess(userId);
+};
+
 /**
  * Cart Controller
  *
@@ -64,19 +70,20 @@ const isSameVariant = (itemVariant, targetVariant) =>
 export const getCart = async (req, res) => {
   try {
     const { userId, sessionId } = getActorIdentifiers(req);
+    const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
 
     let cart;
     if (userId) {
       cart = await CartModel.findOne({ user: userId }).populate({
         path: "items.product",
         select:
-          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus variants",
+          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus variants isExclusive",
       });
     } else if (sessionId) {
       cart = await CartModel.findOne({ sessionId }).populate({
         path: "items.product",
         select:
-          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus variants",
+          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus variants isExclusive",
       });
     }
 
@@ -91,7 +98,11 @@ export const getCart = async (req, res) => {
     // Filter out unavailable products and update prices
     const validItems = [];
     for (const item of cart.items) {
-      if (item.product && item.product.isActive) {
+      if (
+        item.product &&
+        item.product.isActive &&
+        (hasExclusiveAccess || item.product.isExclusive !== true)
+      ) {
         // Update price if changed
         if (item.price !== item.product.price) {
           item.price = item.product.price;
@@ -173,6 +184,26 @@ export const addToCart = async (req, res) => {
         success: false,
         message: "Product not found or unavailable",
       });
+    }
+
+    if (product.isExclusive) {
+      if (!userId) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message:
+            "Login with an active membership to add exclusive products.",
+        });
+      }
+
+      const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
+      if (!hasExclusiveAccess) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message: "Active membership required for exclusive products.",
+        });
+      }
     }
 
     // Check stock
@@ -261,7 +292,7 @@ export const addToCart = async (req, res) => {
     await cart.populate({
       path: "items.product",
       select:
-        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus variants",
+        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus variants isExclusive",
     });
 
     res.status(200).json({
@@ -371,6 +402,26 @@ export const updateCartItem = async (req, res) => {
           message: "Product not found or unavailable",
         });
       }
+
+      if (product.isExclusive) {
+        if (!userId) {
+          return res.status(403).json({
+            error: true,
+            success: false,
+            message:
+              "Login with an active membership to buy exclusive products.",
+          });
+        }
+
+        const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
+        if (!hasExclusiveAccess) {
+          return res.status(403).json({
+            error: true,
+            success: false,
+            message: "Active membership required for exclusive products.",
+          });
+        }
+      }
       let availableStock = getAvailableQuantity(product, variantId);
 
       if (variantId && product.hasVariants) {
@@ -403,7 +454,7 @@ export const updateCartItem = async (req, res) => {
     await cart.populate({
       path: "items.product",
       select:
-        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus variants",
+        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus variants isExclusive",
     });
 
     res.status(200).json({
@@ -538,6 +589,7 @@ export const mergeCart = async (req, res) => {
   try {
     const userId = req.user;
     const sessionId = normalizeSessionId(req.body?.sessionId);
+    const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
 
     if (!sessionId) {
       return res.status(200).json({
@@ -578,6 +630,9 @@ export const mergeCart = async (req, res) => {
         const productId = String(guestItem.product || "");
         const product = productMap.get(productId);
         if (!product || !product.isActive) {
+          continue;
+        }
+        if (product.isExclusive && !hasExclusiveAccess) {
           continue;
         }
 

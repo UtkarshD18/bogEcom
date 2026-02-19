@@ -313,6 +313,11 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isExclusive: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
 
     // Reviews
     reviews: {

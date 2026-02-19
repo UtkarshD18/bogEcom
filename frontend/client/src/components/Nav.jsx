@@ -47,9 +47,10 @@ const Nav = () => {
                 : pathname.startsWith(item.link);
             return (
               <li key={item.name}>
+                {/* Keep nav labels like "About Us" on one line even when browser zoom changes */}
                 <Link
                   href={item.link}
-                  className={`relative px-5 py-2.5 text-[14px] font-medium rounded-full transition-all duration-300 ease-out active:scale-95
+                  className={`relative whitespace-nowrap flex-shrink-0 px-5 py-2.5 text-[14px] font-medium rounded-full transition-all duration-300 ease-out active:scale-95
                     ${isActive
                       ? "bg-[var(--flavor-glass)] text-primary font-bold shadow-sm"
                       : "text-neutral-600 hover:bg-primary hover:text-white hover:shadow-lg"

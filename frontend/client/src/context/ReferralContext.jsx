@@ -14,6 +14,17 @@ const ReferralContext = createContext({
 const REFERRAL_STORAGE_KEY = "bogearth_referral";
 const REFERRAL_EXPIRY_DAYS = 30; // Referral session expires in 30 days
 
+const parseResponsePayload = async (response) => {
+  const raw = await response.text();
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch (_error) {
+    return { success: false, message: raw };
+  }
+};
+
 export const ReferralProvider = ({ children }) => {
   const [referralCode, setReferralCode] = useState(null);
   const [referralData, setReferralData] = useState(null);
@@ -77,10 +88,24 @@ export const ReferralProvider = ({ children }) => {
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/influencers/validate?code=${encodeURIComponent(code)}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        },
       );
-      const result = await response.json();
+      const result = await parseResponsePayload(response);
 
-      if (result.success && result.valid) {
+      if (!response.ok) {
+        const message =
+          result?.message || `Failed to validate referral code (${response.status})`;
+        console.warn("Referral validation request failed:", message);
+        return { success: false, message };
+      }
+
+      if (result?.success && result?.valid && result?.data) {
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + REFERRAL_EXPIRY_DAYS);
 
@@ -108,8 +133,9 @@ export const ReferralProvider = ({ children }) => {
         return { success: true, data: referralInfo };
       }
 
+      const message = result?.message || "Invalid referral code";
       console.log("Invalid referral code:", code);
-      return { success: false, message: "Invalid referral code" };
+      return { success: false, message };
     } catch (error) {
       console.error("Error validating referral code:", error);
       return { success: false, message: "Failed to validate referral code" };

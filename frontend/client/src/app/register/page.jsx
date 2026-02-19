@@ -14,6 +14,11 @@ import { useContext, useEffect, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 
+const GOOGLE_POPUP_CANCEL_CODES = new Set([
+  "auth/popup-closed-by-user",
+  "auth/cancelled-popup-request",
+]);
+
 const Register = () => {
   const [auth, setAuth] = useState(null);
   const [provider, setProvider] = useState(null);
@@ -160,17 +165,19 @@ const Register = () => {
         }
       })
       .catch((error) => {
-        console.error("Google Sign-Up Error:", error);
         setGoogleLoading(false);
 
-        if (error.code === "auth/popup-blocked") {
+        if (GOOGLE_POPUP_CANCEL_CODES.has(error?.code)) {
+          // User manually closed/cancelled popup; this is expected behavior.
+          context?.alertBox("info", "Sign-up was cancelled.");
+        } else if (error.code === "auth/popup-blocked") {
+          console.warn("Google Sign-Up popup blocked:", error?.code, error?.message);
           context?.alertBox(
             "error",
             "Popup was blocked. Please allow popups and try again.",
           );
-        } else if (error.code === "auth/popup-closed-by-user") {
-          context?.alertBox("info", "Sign-up was cancelled.");
         } else {
+          console.error("Google Sign-Up Error:", error);
           context?.alertBox(
             "error",
             error.message || "Google registration failed. Please try again.",

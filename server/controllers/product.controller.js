@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import CategoryModel from "../models/category.model.js";
 import ProductModel from "../models/product.model.js";
+import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 // Debug-only logging to keep production output clean
@@ -8,6 +9,24 @@ const debugLog = (...args) => {
   if (!isProduction) {
     console.log(...args);
   }
+};
+
+const canRequestViewExclusive = async (req) => {
+  if (req?.userIsAdmin === true || req?.membershipActive === true) {
+    return true;
+  }
+  if (!req?.user) {
+    return false;
+  }
+  return checkExclusiveAccess(req.user);
+};
+
+const toBoolean = (value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    return value.trim().toLowerCase() === "true";
+  }
+  return Boolean(value);
 };
 
 /**
@@ -45,8 +64,13 @@ export const getProducts = async (req, res) => {
       exclude,
     } = req.query;
 
+    const canViewExclusive = await canRequestViewExclusive(req);
+
     // Build filter object
     const filter = { isActive: true };
+    if (!canViewExclusive) {
+      filter.isExclusive = { $ne: true };
+    }
     const exprFilters = [];
 
     // Debug: Count all products first
@@ -315,6 +339,7 @@ export const getProducts = async (req, res) => {
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
+    const canViewExclusive = await canRequestViewExclusive(req);
 
     // Try to find by ID or slug
     let product;
@@ -330,7 +355,7 @@ export const getProductById = async (req, res) => {
         .populate("reviews.user", "name avatar");
     }
 
-    if (!product) {
+    if (!product || (product.isExclusive && !canViewExclusive)) {
       return res.status(404).json({
         error: true,
         success: false,
@@ -367,11 +392,15 @@ export const getProductById = async (req, res) => {
 export const getFeaturedProducts = async (req, res) => {
   try {
     const { limit = 10 } = req.query;
+    const canViewExclusive = await canRequestViewExclusive(req);
 
-    const products = await ProductModel.find({
+    const filter = {
       isActive: true,
       isFeatured: true,
-    })
+      ...(canViewExclusive ? {} : { isExclusive: { $ne: true } }),
+    };
+
+    const products = await ProductModel.find(filter)
       .populate("category", "name slug")
       .select("-reviews -description")
       .sort({ sortOrder: 1, createdAt: -1 })
@@ -393,6 +422,77 @@ export const getFeaturedProducts = async (req, res) => {
 };
 
 /**
+ * Get exclusive products for active members only
+ * @route GET /api/products/exclusive
+ */
+export const getExclusiveProducts = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 15,
+      search = "",
+      sortBy = "createdAt",
+      order = "desc",
+    } = req.query;
+
+    const safePage = Math.max(Number(page) || 1, 1);
+    const safeLimit = Math.min(Math.max(Number(limit) || 15, 1), 100);
+    const skip = (safePage - 1) * safeLimit;
+
+    const filter = {
+      isActive: true,
+      isExclusive: true,
+    };
+
+    const searchTerm = String(search || "").trim();
+    if (searchTerm) {
+      const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(escapedTerm, "i");
+      filter.$or = [
+        { name: { $regex: regex } },
+        { brand: { $regex: regex } },
+        { tags: { $elemMatch: { $regex: regex } } },
+      ];
+    }
+
+    const sortOptions = { [sortBy]: order === "asc" ? 1 : -1 };
+
+    const [products, totalProducts] = await Promise.all([
+      ProductModel.find(filter)
+        .populate("category", "name slug")
+        .populate("subCategory", "name slug")
+        .select("-reviews -description")
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(safeLimit)
+        .lean(),
+      ProductModel.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(totalProducts / safeLimit) || 1;
+
+    res.status(200).json({
+      error: false,
+      success: true,
+      data: products,
+      totalProducts,
+      totalPages,
+      currentPage: safePage,
+      hasNextPage: safePage < totalPages,
+      hasPrevPage: safePage > 1,
+    });
+  } catch (error) {
+    console.error("Error fetching exclusive products:", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to fetch exclusive products",
+      details: error.message,
+    });
+  }
+};
+
+/**
  * Get related products by category
  * @route GET /api/products/:id/related
  */
@@ -400,9 +500,10 @@ export const getRelatedProducts = async (req, res) => {
   try {
     const { id } = req.params;
     const { limit = 5 } = req.query;
+    const canViewExclusive = await canRequestViewExclusive(req);
 
     const product = await ProductModel.findById(id);
-    if (!product) {
+    if (!product || (product.isExclusive && !canViewExclusive)) {
       return res.status(404).json({
         error: true,
         success: false,
@@ -410,11 +511,14 @@ export const getRelatedProducts = async (req, res) => {
       });
     }
 
-    const relatedProducts = await ProductModel.find({
+    const relatedFilter = {
       _id: { $ne: id },
       category: product.category,
       isActive: true,
-    })
+      ...(canViewExclusive ? {} : { isExclusive: { $ne: true } }),
+    };
+
+    const relatedProducts = await ProductModel.find(relatedFilter)
       .select("-reviews -description")
       .limit(Number(limit))
       .lean();
@@ -462,6 +566,7 @@ export const createProduct = async (req, res) => {
       tags,
       isFeatured,
       isNewArrival,
+      isExclusive,
       demandStatus,
       specifications,
       ingredients,
@@ -580,6 +685,7 @@ export const createProduct = async (req, res) => {
       tags: tags || [],
       isFeatured: isFeatured || false,
       isNewArrival: isNewArrival || false,
+      isExclusive: toBoolean(isExclusive),
       demandStatus: demandStatus || "NORMAL",
       specifications,
       ingredients,
@@ -671,6 +777,9 @@ export const updateProduct = async (req, res) => {
     }
     if ("rating" in updateData && !("adminStarRating" in updateData)) {
       updateData.adminStarRating = updateData.rating;
+    }
+    if ("isExclusive" in updateData) {
+      updateData.isExclusive = toBoolean(updateData.isExclusive);
     }
 
     const product = await ProductModel.findById(id);
@@ -1056,6 +1165,7 @@ export default {
   getProducts,
   getProductById,
   getFeaturedProducts,
+  getExclusiveProducts,
   getRelatedProducts,
   createProduct,
   updateProduct,

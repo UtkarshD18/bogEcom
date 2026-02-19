@@ -222,14 +222,9 @@ export const CartProvider = ({ children }) => {
           return { success: false, message: data.message };
         }
 
-        // Fallback to local storage ONLY for other errors (e.g. network/auth issues that aren't business logic rejections)
-        // But for "Out of Stock", we should trust the server.
-        // If it's a 404 (product not found) or 500, maybe fallback?
-        // Actually, for consistent "Out of Stock" behavior, better to NOT fallback if we know the stock.
-        // However, the original code fell back for *everything*.
-        // Let's refine: If 400, it's likely a business rule violation (stock).
-
-        if (response.status === 400) {
+        // Do not fallback to local cart for any client-side rejection (400-499),
+        // including membership/auth/business-rule errors returned by backend.
+        if (response.status >= 400 && response.status < 500) {
           toast.error(data.message || "Cannot add item");
           return { success: false, message: data.message };
         }
@@ -360,7 +355,7 @@ export const CartProvider = ({ children }) => {
         setCartTotal(round2(data.data.subtotal || 0));
         return { success: true };
       } else {
-        if (response.status === 400) {
+        if (response.status >= 400 && response.status < 500) {
           toast.error(data.message || "Cannot update quantity");
           return { success: false, message: data.message };
         }
