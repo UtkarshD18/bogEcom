@@ -7,15 +7,15 @@ const LockOverlay = () => {
   return (
     <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-[22px]">
       {/* Glass + gradient layers to create a premium locked-state effect */}
-      <div className="absolute inset-0 bg-white/20 backdrop-blur-md" />
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/45 via-fuchsia-800/25 to-sky-900/35" />
+      <div className="absolute inset-0 bg-[var(--glass-bg)]/35 backdrop-blur-[var(--glass-blur)]" />
+      <div className="absolute inset-0 bg-[image:var(--glass-accent)] opacity-35" />
 
       {/* Moving shimmer amplifies curiosity for conversion */}
       <div className="lock-shimmer absolute inset-y-0 -left-1/2 w-1/2" />
 
       <div className="relative z-10 flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
         <PremiumBadge />
-        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/25">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)]/45">
           <HiLockClosed className="text-xl text-white" />
         </div>
         <p className="text-sm font-extrabold text-white">Members Get First Access</p>

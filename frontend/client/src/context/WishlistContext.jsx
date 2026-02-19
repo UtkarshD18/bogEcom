@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL } from "@/utils/api";
+import { getResponseErrorMessage, parseJsonSafely } from "@/utils/safeJsonFetch";
 
 import Cookies from "js-cookie";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -45,9 +46,9 @@ export const WishlistProvider = ({ children }) => {
           credentials: "include",
         });
 
-        const data = await response.json();
+        const data = await parseJsonSafely(response);
 
-        if (data.success && data.data) {
+        if (data?.success && data?.data) {
           setWishlistItems(data.data.items || []);
           setWishlistCount(data.data.itemCount || data.data.items?.length || 0);
         } else {
@@ -105,13 +106,22 @@ export const WishlistProvider = ({ children }) => {
           body: JSON.stringify({ productId }),
         });
 
-        const data = await response.json();
+        const data = await parseJsonSafely(response);
+        const errorMessage = getResponseErrorMessage(
+          data,
+          "Failed to add item to wishlist",
+        );
 
-        if (data.success) {
+        if (data?.success) {
           setWishlistItems(data.data.items || []);
           setWishlistCount(data.data.itemCount || data.data.items?.length || 0);
           toast.success("Item added to wishlist");
           return { success: true };
+        }
+
+        if (response.status >= 400 && response.status < 500) {
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
         }
       }
 
@@ -178,13 +188,22 @@ export const WishlistProvider = ({ children }) => {
           },
         );
 
-        const data = await response.json();
+        const data = await parseJsonSafely(response);
+        const errorMessage = getResponseErrorMessage(
+          data,
+          "Failed to remove item from wishlist",
+        );
 
-        if (data.success) {
+        if (data?.success) {
           setWishlistItems(data.data.items || []);
           setWishlistCount(data.data.itemCount || data.data.items?.length || 0);
           toast.success("Item removed from wishlist");
           return { success: true };
+        }
+
+        if (response.status >= 400 && response.status < 500) {
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
         }
       }
 

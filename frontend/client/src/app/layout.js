@@ -1,7 +1,9 @@
-import ThemeProvider from "@/context/ThemeContext";
+import FlavorThemeProvider from "@/context/ThemeContext";
+import ThemeProvider from "@/context/theme-provider";
 import { Inter, Poppins } from "next/font/google";
 import ClientLayout from "./ClientLayout";
 import "./globals.css";
+import "../styles/themes.css";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -72,9 +74,11 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={`${inter.variable} ${poppins.variable} ${inter.className}`}>
-        <ThemeProvider>
-          <ClientLayout inter={inter}>{children}</ClientLayout>
-        </ThemeProvider>
+        <FlavorThemeProvider>
+          <ThemeProvider>
+            <ClientLayout inter={inter}>{children}</ClientLayout>
+          </ThemeProvider>
+        </FlavorThemeProvider>
       </body>
     </html>
   );

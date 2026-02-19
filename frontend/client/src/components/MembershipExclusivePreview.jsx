@@ -128,17 +128,17 @@ const MembershipExclusivePreview = ({ onUnlockExclusive }) => {
   return (
     <section
       ref={sectionRef}
-      className={`relative mb-14 rounded-3xl border border-white/50 bg-white/55 p-6 sm:p-8 backdrop-blur-xl shadow-[0_28px_90px_-50px_rgba(15,23,42,0.55)] transition-all duration-700 ${
+      className={`relative mb-14 rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-6 shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)] transition-all duration-700 sm:p-8 ${
         isVisible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
       }`}
     >
-      <div className="absolute -top-12 -right-10 h-40 w-40 rounded-full bg-fuchsia-300/25 blur-3xl" />
-      <div className="absolute -bottom-16 -left-10 h-44 w-44 rounded-full bg-sky-300/25 blur-3xl" />
+      <div className="absolute -top-12 -right-10 h-40 w-40 rounded-full bg-[image:var(--glass-accent)] opacity-25 blur-3xl" />
+      <div className="absolute -bottom-16 -left-10 h-44 w-44 rounded-full bg-[image:var(--glass-accent)] opacity-20 blur-3xl" />
 
       <div className="relative z-10">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200/80 bg-indigo-50/80 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-indigo-700">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-[var(--glass-text)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
               <FaCrown className="text-amber-500" />
               Members-Only Exclusive Products
             </span>
@@ -146,10 +146,10 @@ const MembershipExclusivePreview = ({ onUnlockExclusive }) => {
               Members-Only Exclusive Products
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-700">
+              <span className="inline-flex items-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--glass-text)]">
                 Limited Member Drop
               </span>
-              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-700">
+              <span className="inline-flex items-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--glass-text)]">
                 Prices Reveal After Upgrade
               </span>
             </div>
@@ -163,11 +163,11 @@ const MembershipExclusivePreview = ({ onUnlockExclusive }) => {
             ))}
           </div>
         ) : showMemberEmptyState ? (
-          <div className="rounded-2xl border border-dashed border-indigo-200/80 bg-indigo-50/40 p-8 text-center">
-            <p className="text-base font-bold text-indigo-900">
+          <div className="rounded-2xl border border-dashed border-[var(--glass-border)] bg-[var(--glass-bg)] p-8 text-center backdrop-blur-[var(--glass-blur)]">
+            <p className="text-base font-bold text-[var(--glass-text)]">
               No exclusive launches are live yet.
             </p>
-            <p className="mt-2 text-sm text-indigo-700">
+            <p className="mt-2 text-sm text-[var(--glass-text)]/80">
               Your membership is active. New drops will appear here first.
             </p>
           </div>
@@ -195,7 +195,7 @@ const MembershipExclusivePreview = ({ onUnlockExclusive }) => {
           <button
             type="button"
             onClick={handleUnlockCta}
-            className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-fuchsia-600 to-sky-500 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-indigo-700/25 ring-2 ring-fuchsia-300/35 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-fuchsia-600/30"
+            className="group relative inline-flex items-center gap-2 rounded-2xl bg-[image:var(--glass-accent)] px-6 py-3 text-sm font-extrabold text-white shadow-[var(--glass-shadow)] ring-2 ring-[var(--glass-border)] transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-[var(--glass-shadow)]"
           >
             <span className="absolute inset-0 rounded-2xl bg-gradient-to-r from-white/0 via-white/30 to-white/0 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
             <span className="relative z-10">
