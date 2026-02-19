@@ -15,7 +15,15 @@ const poppins = Poppins({
   variable: "--font-poppins",
 });
 
+const siteUrl = String(
+  process.env.NEXT_PUBLIC_SITE_URL || "https://healthyonegram.com",
+)
+  .trim()
+  .replace(/^["']|["']$/g, "")
+  .replace(/\/+$/, "");
+
 export const metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Healthy One Gram - Premium Peanut Butter Store",
   description:
     "Shop premium quality peanut butter and healthy food products at Healthy One Gram. Natural, organic, and delicious options for a healthier lifestyle.",
@@ -26,15 +34,30 @@ export const metadata = {
     title: "Healthy One Gram - Premium Peanut Butter Store",
     description:
       "Shop premium quality peanut butter and healthy food products. Natural, organic, and delicious options for a healthier lifestyle.",
+    url: siteUrl,
     type: "website",
     locale: "en_IN",
     siteName: "Healthy One Gram",
+    images: [
+      {
+        url: "/logo.png",
+        width: 512,
+        height: 512,
+        alt: "Healthy One Gram",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Healthy One Gram - Premium Peanut Butter Store",
     description:
       "Shop premium quality peanut butter and healthy food products.",
+    images: ["/logo.png"],
+  },
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
   },
   robots: {
     index: true,
