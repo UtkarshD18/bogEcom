@@ -25,17 +25,11 @@ import {
   validateIndianPincode,
 } from "../services/shippingRate.service.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
+import { mapExpressbeesToShipmentStatus } from "../utils/orderStatus.js";
 
 const normalizeShipmentStatus = (status) => {
-  if (!status) return "pending";
-  const value = String(status).toLowerCase();
-
-  if (value.includes("deliver")) return "delivered";
-  if (value.includes("cancel")) return "cancelled";
-  if (value.includes("ship") || value.includes("transit")) return "shipped";
-  if (value.includes("book")) return "booked";
-
-  return "pending";
+  const mapped = mapExpressbeesToShipmentStatus(status);
+  return mapped || "pending";
 };
 
 const validatePincode = (value, field) => {
@@ -269,8 +263,11 @@ export const xpressbeesTrackShipment = asyncHandler(async (req, res) => {
     if (orderId && data?.status) {
       const status =
         data?.data?.status ||
+        data?.data?.status_code ||
         data?.data?.shipment_status ||
-        data?.data?.current_status;
+        data?.data?.current_status ||
+        data?.status_code ||
+        data?.status;
 
       await updateOrderShipping(orderId, {
         shipment_status: normalizeShipmentStatus(status),

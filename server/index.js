@@ -231,7 +231,22 @@ app.use(
   }),
 );
 
-app.use(express.json({ limit: "50mb" }));
+const shouldCaptureRawBody = (req) => {
+  const requestPath = String(req?.originalUrl || req?.url || "");
+  return requestPath.startsWith("/api/webhooks/");
+};
+
+app.use(
+  express.json({
+    limit: "50mb",
+    verify: (req, _res, buf) => {
+      if (!buf || buf.length === 0) return;
+      if (shouldCaptureRawBody(req)) {
+        req.rawBody = buf.toString("utf8");
+      }
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 app.use(

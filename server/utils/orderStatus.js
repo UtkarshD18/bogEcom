@@ -174,12 +174,35 @@ export const applyOrderStatusTransition = (
 export const normalizeExpressbeesStatus = (status) => {
   if (!status) return null;
   const raw = String(status).trim().toLowerCase();
+  const compactCode = raw.toUpperCase().replace(/\s+/g, "").replace(/_/g, "-");
+
+  if (compactCode === "PP") return ORDER_STATUS.IN_WAREHOUSE;
+  if (compactCode === "IT") return ORDER_STATUS.SHIPPED;
+  if (compactCode === "EX") return ORDER_STATUS.SHIPPED;
+  if (compactCode === "OFD") return ORDER_STATUS.OUT_FOR_DELIVERY;
+  if (compactCode === "DL") return ORDER_STATUS.DELIVERED;
+  if (compactCode === "LT" || compactCode === "DG") return "rto_initiated";
+  if (compactCode === "RT") return "rto_initiated";
+  if (compactCode === "RT-IT" || compactCode === "RTIT") {
+    return "rto_in_transit";
+  }
+  if (compactCode === "RT-LT" || compactCode === "RTLT") {
+    return "rto_in_transit";
+  }
+  if (compactCode === "RT-DG" || compactCode === "RTDG") {
+    return "rto_in_transit";
+  }
+  if (compactCode === "RT-DL" || compactCode === "RTDL") {
+    return "rto_delivered";
+  }
 
   if (raw.includes("rto") && raw.includes("deliver")) return "rto_delivered";
   if (raw.includes("rto") && raw.includes("transit")) return "rto_in_transit";
   if (raw.includes("rto") && (raw.includes("init") || raw.includes("pickup"))) {
     return "rto_initiated";
   }
+  if (raw.includes("lost") || raw.includes("damage")) return "rto_initiated";
+  if (raw.includes("exception")) return ORDER_STATUS.SHIPPED;
   if (raw.includes("out for delivery") || raw.includes("out_for_delivery") || raw.includes("ofd")) {
     return ORDER_STATUS.OUT_FOR_DELIVERY;
   }

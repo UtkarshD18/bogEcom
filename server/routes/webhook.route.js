@@ -1,6 +1,6 @@
-import crypto from "crypto";
 import express from "express";
 import { handleExpressbeesWebhook } from "../controllers/expressbeesWebhook.controller.js";
+import { verifyExpressbeesWebhookAuth } from "../utils/expressbeesWebhookSignature.js";
 
 const router = express.Router();
 
@@ -19,12 +19,14 @@ const verifyExpressbeesSecret = (req, res, next) => {
     return next();
   }
 
-  const headerSecret =
-    req.headers["x-webhook-secret"] ||
-    req.headers["x-expressbees-secret"] ||
-    null;
+  const verification = verifyExpressbeesWebhookAuth({
+    headers: req.headers,
+    rawBody: req.rawBody,
+    body: req.body,
+    secret: configuredSecret,
+  });
 
-  if (!headerSecret) {
+  if (!verification.ok) {
     return res.status(401).json({
       error: true,
       success: false,
@@ -32,20 +34,7 @@ const verifyExpressbeesSecret = (req, res, next) => {
     });
   }
 
-  const providedSecret = String(headerSecret).trim();
-  const expectedBuffer = Buffer.from(configuredSecret);
-  const providedBuffer = Buffer.from(providedSecret);
-  const isMatch =
-    expectedBuffer.length === providedBuffer.length &&
-    crypto.timingSafeEqual(expectedBuffer, providedBuffer);
-
-  if (!isMatch) {
-    return res.status(401).json({
-      error: true,
-      success: false,
-      message: "Unauthorized webhook",
-    });
-  }
+  req.expressbeesAuthMode = verification.mode || "unknown";
 
   return next();
 };

@@ -22,8 +22,10 @@ const isEnabled = () => {
 const parseTrackingStatus = (data) => {
   return (
     data?.data?.status ||
+    data?.data?.status_code ||
     data?.data?.shipment_status ||
     data?.data?.current_status ||
+    data?.status_code ||
     data?.status ||
     null
   );

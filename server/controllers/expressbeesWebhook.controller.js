@@ -3,7 +3,6 @@ import {
   asyncHandler,
   logger,
   sendError,
-  sendSuccess,
 } from "../utils/errorHandler.js";
 import {
   applyOrderStatusTransition,
@@ -63,6 +62,13 @@ const extractTimestamp = (payload) => {
   );
 };
 
+const acknowledgeWebhook = (res, state, details = {}) =>
+  res.status(200).json({
+    ok: true,
+    state,
+    ...details,
+  });
+
 export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
   try {
     const payload = extractPayload(req.body);
@@ -75,22 +81,14 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
         awb: awbRaw || null,
         status: statusRaw || null,
       });
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Invalid payload: awb and status are required",
-      });
+      return acknowledgeWebhook(res, "ignored_missing_fields");
     }
 
     const awb = String(awbRaw).trim();
     const order = await OrderModel.findOne({ awb_number: awb });
     if (!order) {
       logger.warn("expressbeesWebhook", "Order not found for awb", { awb });
-      return res.status(404).json({
-        error: true,
-        success: false,
-        message: "Order not found for provided AWB",
-      });
+      return acknowledgeWebhook(res, "ignored_unknown_awb");
     }
 
     const mappedOrderStatus = mapExpressbeesToOrderStatus(statusRaw);
@@ -99,19 +97,11 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
         awb,
         status: statusRaw,
       });
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Unknown status value",
-      });
+      return acknowledgeWebhook(res, "ignored_unknown_status");
     }
 
     if (isFinalStatus(order.order_status) && normalizeOrderStatus(order.order_status) !== mappedOrderStatus) {
-      return res.status(409).json({
-        error: true,
-        success: false,
-        message: "Order is already in a final state",
-      });
+      return acknowledgeWebhook(res, "ignored_final_state");
     }
 
     const transitionResult = applyOrderStatusTransition(order, mappedOrderStatus, {
@@ -121,14 +111,10 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
 
     if (!transitionResult.updated) {
       if (transitionResult.reason === "invalid_transition") {
-        return res.status(409).json({
-          error: true,
-          success: false,
-          message: "Invalid status transition",
-        });
+        return acknowledgeWebhook(res, "ignored_invalid_transition");
       }
 
-      return res.status(200).json({ ok: true });
+      return acknowledgeWebhook(res, "duplicate_or_noop");
     }
 
     const shipmentStatus = mapExpressbeesToShipmentStatus(statusRaw);
@@ -153,6 +139,7 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
 
     logger.info("expressbeesWebhook", "Webhook processed", {
       source: "EXPRESSBEES_WEBHOOK",
+      authMode: req.expressbeesAuthMode || null,
       orderId: order._id,
       awb,
       status: statusRaw,
@@ -161,7 +148,9 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
       transition: transitionResult.reason || (transitionResult.updated ? "updated" : "skipped"),
     });
 
-    return res.status(200).json({ ok: true });
+    return acknowledgeWebhook(res, "processed", {
+      orderId: String(order._id),
+    });
   } catch (error) {
     return sendError(res, error);
   }
