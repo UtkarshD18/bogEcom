@@ -17,6 +17,7 @@ import {
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
 import optionalAuth from "../middlewares/optionalAuth.js";
+import { paymentLimiter } from "../middlewares/rateLimiter.js";
 import {
   validateCreateOrderRequest,
   validateSaveOrderRequest,
@@ -42,7 +43,7 @@ const router = express.Router();
 
 // ==================== WEBHOOKS (Public) ====================
 
-// PhonePe webhook (signature verified server-side)
+// PhonePe webhook (state verified server-side against PhonePe status API)
 router.post("/webhook/phonepe", handlePhonePeWebhook);
 
 // ==================== PUBLIC ROUTES ====================
@@ -55,6 +56,7 @@ router.get("/payment-status", getPaymentGatewayStatus);
 // Create order (Checkout) - with validation
 router.post(
   "/",
+  paymentLimiter,
   optionalAuth,
   validateCreateOrderRequest,
   createOrder
@@ -63,6 +65,7 @@ router.post(
 // Save order for later - with validation
 router.post(
   "/save-for-later",
+  paymentLimiter,
   optionalAuth,
   validateSaveOrderRequest,
   saveOrderForLater

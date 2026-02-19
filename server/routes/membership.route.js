@@ -8,11 +8,13 @@ import {
   getAllPlans,
   getMembershipStats,
   getMembershipStatus,
+  handleMembershipPhonePeCallback,
   updatePlan,
   verifyMembershipPayment,
 } from "../controllers/membership.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import { paymentLimiter } from "../middlewares/rateLimiter.js";
 
 const router = express.Router();
 
@@ -23,14 +25,17 @@ const router = express.Router();
 // Public - Get active membership plan
 router.get("/active", getActivePlan);
 
+// Public - Payment provider callback target (server-to-server)
+router.post("/webhook/phonepe", handleMembershipPhonePeCallback);
+
 // User - Get own membership status (requires login)
 router.get("/status", auth, getMembershipStatus);
 
 // User - Create membership order (initiates payment)
-router.post("/create-order", auth, createMembershipOrder);
+router.post("/create-order", paymentLimiter, auth, createMembershipOrder);
 
 // User - Verify payment and activate membership
-router.post("/verify-payment", auth, verifyMembershipPayment);
+router.post("/verify-payment", paymentLimiter, auth, verifyMembershipPayment);
 
 // Admin - Get all plans
 router.get("/admin/plans", auth, admin, getAllPlans);

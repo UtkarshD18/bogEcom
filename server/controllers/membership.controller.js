@@ -25,6 +25,54 @@ const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const floorInt = (value) => Math.max(Math.floor(Number(value || 0)), 0);
 
+const decodePhonePeEnvelope = (body = {}) => {
+  if (!body || typeof body !== "object") return {};
+
+  const base64Candidates = [];
+  if (typeof body.response === "string") base64Candidates.push(body.response);
+  if (typeof body.data === "string") base64Candidates.push(body.data);
+
+  for (const candidate of base64Candidates) {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(candidate, "base64").toString("utf8"),
+      );
+      if (decoded && typeof decoded === "object") {
+        return decoded;
+      }
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  if (body.data && typeof body.data === "object") {
+    return body.data;
+  }
+
+  return body;
+};
+
+const extractPhonePeFields = (payload = {}) => ({
+  merchantTransactionId:
+    payload?.merchantTransactionId ||
+    payload?.merchant_transaction_id ||
+    payload?.merchantOrderId ||
+    payload?.orderId ||
+    null,
+  transactionId:
+    payload?.transactionId ||
+    payload?.transaction_id ||
+    payload?.providerReferenceId ||
+    payload?.paymentTransactionId ||
+    null,
+  state:
+    payload?.state ||
+    payload?.code ||
+    payload?.status ||
+    payload?.paymentState ||
+    null,
+});
+
 const computeMembershipExpiry = (plan) => {
   const expiry = new Date();
   if (plan.durationUnit === "months") {
@@ -297,7 +345,7 @@ export const createMembershipOrder = async (req, res) => {
     const callbackUrl =
       process.env.PHONEPE_MEMBERSHIP_CALLBACK_URL ||
       process.env.PHONEPE_CALLBACK_URL ||
-      `${backendUrl}/api/membership/verify-payment`;
+      `${backendUrl}/api/membership/webhook/phonepe`;
 
     const phonepeResponse = await createPhonePePayment({
       amount: Math.max(coinPreview.payableAmount, 1),
@@ -345,6 +393,65 @@ export const createMembershipOrder = async (req, res) => {
       error: true,
       success: false,
       message: "Failed to create membership order",
+    });
+  }
+};
+
+/**
+ * Public PhonePe callback endpoint for membership flow
+ * @route POST /api/membership/webhook/phonepe
+ */
+export const handleMembershipPhonePeCallback = async (req, res) => {
+  try {
+    const payload = decodePhonePeEnvelope(req.body || {});
+    const callbackData = extractPhonePeFields(payload);
+    const merchantTransactionId = callbackData.merchantTransactionId;
+
+    if (!merchantTransactionId) {
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Callback acknowledged",
+      });
+    }
+
+    let verifiedState = callbackData.state || null;
+    let verifiedTransactionId = callbackData.transactionId || null;
+
+    try {
+      const status = await getPhonePeStatus({ merchantTransactionId });
+      const statusPayload =
+        status?.data && typeof status.data === "object"
+          ? status.data
+          : status || {};
+      const normalized = extractPhonePeFields(statusPayload);
+      verifiedState = normalized.state || verifiedState;
+      verifiedTransactionId = normalized.transactionId || verifiedTransactionId;
+    } catch (statusError) {
+      console.warn(
+        "Membership callback status verification failed:",
+        statusError?.message || statusError,
+      );
+    }
+
+    console.log("Membership callback received", {
+      merchantTransactionId,
+      state: verifiedState,
+      transactionId: verifiedTransactionId,
+    });
+
+    // Membership activation still happens via authenticated /verify-payment.
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Callback acknowledged",
+    });
+  } catch (error) {
+    console.error("Error processing membership callback:", error);
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Callback acknowledged",
     });
   }
 };

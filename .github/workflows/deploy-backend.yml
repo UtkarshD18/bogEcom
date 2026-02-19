@@ -49,6 +49,33 @@ jobs:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
           FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          PAYMENT_PROVIDER: ${{ secrets.PAYMENT_PROVIDER }}
+          PHONEPE_ENABLED: ${{ secrets.PHONEPE_ENABLED }}
+          PHONEPE_MERCHANT_ID: ${{ secrets.PHONEPE_MERCHANT_ID }}
+          PHONEPE_SALT_KEY: ${{ secrets.PHONEPE_SALT_KEY }}
+          PHONEPE_SALT_INDEX: ${{ secrets.PHONEPE_SALT_INDEX }}
+          PHONEPE_ENV: ${{ secrets.PHONEPE_ENV }}
+          PHONEPE_REDIRECT_URL: ${{ secrets.PHONEPE_REDIRECT_URL }}
+          PHONEPE_CALLBACK_URL: ${{ secrets.PHONEPE_CALLBACK_URL }}
+          PHONEPE_ORDER_REDIRECT_URL: ${{ secrets.PHONEPE_ORDER_REDIRECT_URL }}
+          PHONEPE_ORDER_CALLBACK_URL: ${{ secrets.PHONEPE_ORDER_CALLBACK_URL }}
+          PHONEPE_MEMBERSHIP_REDIRECT_URL: ${{ secrets.PHONEPE_MEMBERSHIP_REDIRECT_URL }}
+          PHONEPE_MEMBERSHIP_CALLBACK_URL: ${{ secrets.PHONEPE_MEMBERSHIP_CALLBACK_URL }}
+          PHONEPE_BASE_URL: ${{ secrets.PHONEPE_BASE_URL }}
+          PHONEPE_PAY_PATH: ${{ secrets.PHONEPE_PAY_PATH }}
+          PHONEPE_STATUS_PATH: ${{ secrets.PHONEPE_STATUS_PATH }}
+          XPRESSBEES_TOKEN: ${{ secrets.XPRESSBEES_TOKEN }}
+          XPRESSBEES_EMAIL: ${{ secrets.XPRESSBEES_EMAIL }}
+          XPRESSBEES_PASSWORD: ${{ secrets.XPRESSBEES_PASSWORD }}
+          XPRESSBEES_BASE_URL: ${{ secrets.XPRESSBEES_BASE_URL }}
+          XPRESSBEES_TOKEN_TTL_MINUTES: ${{ secrets.XPRESSBEES_TOKEN_TTL_MINUTES }}
+          XPRESSBEES_WEBHOOK_SECRET: ${{ secrets.XPRESSBEES_WEBHOOK_SECRET }}
+          XPRESSBEES_POLL_ENABLED: ${{ secrets.XPRESSBEES_POLL_ENABLED }}
+          XPRESSBEES_POLL_INTERVAL_MINUTES: ${{ secrets.XPRESSBEES_POLL_INTERVAL_MINUTES }}
+          XPRESSBEES_POLL_BATCH_SIZE: ${{ secrets.XPRESSBEES_POLL_BATCH_SIZE }}
+          XPRESSBEES_ORIGIN_PINCODE: ${{ secrets.XPRESSBEES_ORIGIN_PINCODE }}
         run: |
           python - <<'PY'
           import json
@@ -84,6 +111,15 @@ jobs:
                   "FIREBASE_CLIENT_EMAIL",
                   "FIREBASE_PRIVATE_KEY",
               ],
+              "PhonePe Credentials": [
+                  "PHONEPE_MERCHANT_ID",
+                  "PHONEPE_SALT_KEY",
+                  "PHONEPE_SALT_INDEX",
+              ],
+              "Xpressbees Login": [
+                  "XPRESSBEES_EMAIL",
+                  "XPRESSBEES_PASSWORD",
+              ],
           }
           for group_name, keys in grouped_optional.items():
               provided = [k for k in keys if os.environ.get(k, "").strip()]
@@ -115,6 +151,33 @@ jobs:
               "FIREBASE_PROJECT_ID",
               "FIREBASE_CLIENT_EMAIL",
               "FIREBASE_PRIVATE_KEY",
+              "BACKEND_URL",
+              "API_BASE_URL",
+              "PAYMENT_PROVIDER",
+              "PHONEPE_ENABLED",
+              "PHONEPE_MERCHANT_ID",
+              "PHONEPE_SALT_KEY",
+              "PHONEPE_SALT_INDEX",
+              "PHONEPE_ENV",
+              "PHONEPE_REDIRECT_URL",
+              "PHONEPE_CALLBACK_URL",
+              "PHONEPE_ORDER_REDIRECT_URL",
+              "PHONEPE_ORDER_CALLBACK_URL",
+              "PHONEPE_MEMBERSHIP_REDIRECT_URL",
+              "PHONEPE_MEMBERSHIP_CALLBACK_URL",
+              "PHONEPE_BASE_URL",
+              "PHONEPE_PAY_PATH",
+              "PHONEPE_STATUS_PATH",
+              "XPRESSBEES_TOKEN",
+              "XPRESSBEES_EMAIL",
+              "XPRESSBEES_PASSWORD",
+              "XPRESSBEES_BASE_URL",
+              "XPRESSBEES_TOKEN_TTL_MINUTES",
+              "XPRESSBEES_WEBHOOK_SECRET",
+              "XPRESSBEES_POLL_ENABLED",
+              "XPRESSBEES_POLL_INTERVAL_MINUTES",
+              "XPRESSBEES_POLL_BATCH_SIZE",
+              "XPRESSBEES_ORIGIN_PINCODE",
           ]
           for key in optional:
               value = os.environ.get(key, "")
