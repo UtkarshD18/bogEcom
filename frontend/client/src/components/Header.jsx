@@ -650,7 +650,8 @@ const Header = () => {
                       <Link
                         key={item.name}
                         href={item.href}
-                        className={`font-semibold text-base px-2 py-1 rounded-lg transition ${isActive
+                        // Keep nav labels like "About Us" on one line under browser zoom
+                        className={`whitespace-nowrap flex-shrink-0 font-semibold text-base px-2 py-1 rounded-lg transition ${isActive
                           ? "text-[var(--flavor-color)] bg-[var(--flavor-glass)]"
                           : "text-gray-700 hover:bg-[var(--flavor-glass)] hover:text-[var(--flavor-color)]"
                           }`}

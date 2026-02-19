@@ -159,6 +159,11 @@ const ViewProduct = () => {
                   New Arrival
                 </span>
               )}
+              {product.isExclusive && (
+                <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs font-medium">
+                  Members Only
+                </span>
+              )}
               {product.isBestSeller && (
                 <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-medium">
                   Best Seller

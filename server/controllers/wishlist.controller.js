@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import ProductModel from "../models/product.model.js";
 import WishlistModel from "../models/wishlist.model.js";
+import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 
 const getAvailableQuantity = (product) => {
   if (!product) return 0;
@@ -23,6 +24,11 @@ const normalizeQuantity = (value) => {
   return Math.floor(parsed);
 };
 
+const canUserAccessExclusiveProducts = async (userId) => {
+  if (!userId) return false;
+  return checkExclusiveAccess(userId);
+};
+
 /**
  * Wishlist Controller
  *
@@ -36,11 +42,12 @@ const normalizeQuantity = (value) => {
 export const getWishlist = async (req, res) => {
   try {
     const userId = req.user;
+    const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
 
     let wishlist = await WishlistModel.findOne({ user: userId }).populate({
       path: "items.product",
       select:
-        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand",
+        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive",
     });
 
     if (!wishlist) {
@@ -53,7 +60,10 @@ export const getWishlist = async (req, res) => {
 
     // Filter out unavailable products
     const validItems = wishlist.items.filter(
-      (item) => item.product && item.product.isActive,
+      (item) =>
+        item.product &&
+        item.product.isActive &&
+        (hasExclusiveAccess || item.product.isExclusive !== true),
     );
 
     if (validItems.length !== wishlist.items.length) {
@@ -109,6 +119,17 @@ export const addToWishlist = async (req, res) => {
       });
     }
 
+    if (product.isExclusive) {
+      const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
+      if (!hasExclusiveAccess) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message: "Active membership required for exclusive products.",
+        });
+      }
+    }
+
     // Find or create wishlist
     let wishlist = await WishlistModel.findOne({ user: userId });
     if (!wishlist) {
@@ -139,7 +160,7 @@ export const addToWishlist = async (req, res) => {
     await wishlist.populate({
       path: "items.product",
       select:
-        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand",
+        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive",
     });
 
     res.status(200).json({
@@ -204,7 +225,7 @@ export const removeFromWishlist = async (req, res) => {
     await wishlist.populate({
       path: "items.product",
       select:
-        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand",
+        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive",
     });
 
     res.status(200).json({
@@ -243,7 +264,7 @@ export const toggleWishlist = async (req, res) => {
     }
 
     const product = await ProductModel.findById(productId)
-      .select("_id isActive")
+      .select("_id isActive isExclusive")
       .lean();
     if (!product || !product.isActive) {
       return res.status(404).json({
@@ -251,6 +272,17 @@ export const toggleWishlist = async (req, res) => {
         success: false,
         message: "Product not found or unavailable",
       });
+    }
+
+    if (product.isExclusive) {
+      const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
+      if (!hasExclusiveAccess) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message: "Active membership required for exclusive products.",
+        });
+      }
     }
 
     let wishlist = await WishlistModel.findOne({ user: userId });
@@ -277,7 +309,7 @@ export const toggleWishlist = async (req, res) => {
     await wishlist.populate({
       path: "items.product",
       select:
-        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand",
+        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive",
     });
 
     res.status(200).json({
@@ -425,6 +457,17 @@ export const moveToCart = async (req, res) => {
         success: false,
         message: "Product not available",
       });
+    }
+
+    if (product.isExclusive) {
+      const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
+      if (!hasExclusiveAccess) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message: "Active membership required for exclusive products.",
+        });
+      }
     }
 
     const availableStock = getAvailableQuantity(product);

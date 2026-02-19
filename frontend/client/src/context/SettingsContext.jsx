@@ -10,9 +10,8 @@ const API_URL = String(API_BASE_URL || "")
   .trim()
   .replace(/\/+$/, "")
   .replace(/\/api$/i, "");
-const USE_DEV_PROXY = process.env.NODE_ENV !== "production";
 
-const buildApiUrl = (path) => {
+const buildApiUrlCandidates = (path) => {
   const normalizedPath = String(path || "").startsWith("/")
     ? String(path)
     : `/${String(path || "")}`;
@@ -20,11 +19,44 @@ const buildApiUrl = (path) => {
     ? normalizedPath
     : `/api${normalizedPath}`;
 
-  if (USE_DEV_PROXY) {
-    return apiPath;
+  const candidates = [];
+  if (API_URL) {
+    candidates.push(`${API_URL}${apiPath}`);
+  }
+  candidates.push(apiPath);
+
+  return [...new Set(candidates)];
+};
+
+const fetchSettingsPayload = async (url) => {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    // Public settings do not require cookies/auth.
+    cache: "no-store",
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (_err) {
+    payload = null;
   }
 
-  return `${API_URL}${apiPath}`;
+  if (!response.ok) {
+    const backendMessage =
+      payload?.message ||
+      payload?.error?.message ||
+      payload?.error ||
+      null;
+    throw new Error(
+      backendMessage || `Failed to fetch settings (${response.status})`,
+    );
+  }
+
+  return payload;
 };
 
 /**
@@ -114,20 +146,23 @@ export const SettingsProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
+      const candidates = buildApiUrlCandidates("/settings/public");
+      let data = null;
+      let lastError = null;
 
-      const response = await fetch(buildApiUrl("/settings/public"), {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch settings");
+      for (const url of candidates) {
+        try {
+          data = await fetchSettingsPayload(url);
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+        }
       }
 
-      const data = await response.json();
+      if (!data) {
+        throw lastError || new Error("Failed to fetch settings");
+      }
 
       if (data.success && data.data) {
         // Merge with defaults to ensure all keys exist
@@ -136,6 +171,8 @@ export const SettingsProvider = ({ children }) => {
           ...data.data,
         });
         setLastFetched(new Date());
+      } else {
+        throw new Error(data?.message || "Invalid settings response");
       }
     } catch (err) {
       console.error("Error fetching settings:", err);

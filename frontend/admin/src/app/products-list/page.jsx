@@ -35,6 +35,7 @@ const columns = [
   { id: "RESERVED", label: "RESERVED", minWidth: 90 },
   { id: "LOWSTOCK", label: "LOW STOCK", minWidth: 120 },
   { id: "DEMAND", label: "DEMAND STATUS", minWidth: 120 },
+  { id: "ACCESS", label: "ACCESS", minWidth: 120 },
   { id: "RATING", label: "RATING", minWidth: 100 },
   { id: "ACTIONS", label: "ACTIONS", minWidth: 200 },
 ];
@@ -396,6 +397,17 @@ const ProductsListContent = () => {
                             )
                           }
                           sx={{ cursor: "pointer" }}
+                        />
+                      </TableCell>
+
+                      <TableCell>
+                        <Chip
+                          label={
+                            product.isExclusive ? "Members Only" : "Public"
+                          }
+                          size="small"
+                          color={product.isExclusive ? "secondary" : "default"}
+                          variant={product.isExclusive ? "filled" : "outlined"}
                         />
                       </TableCell>
 
