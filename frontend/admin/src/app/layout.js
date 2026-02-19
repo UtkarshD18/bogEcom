@@ -32,7 +32,7 @@ export const metadata = {
     type: "website",
     images: [
       {
-        url: "/logo.png",
+        url: "/logo-og-v2.png",
         width: 512,
         height: 512,
         alt: "BuyOneGram Admin",
@@ -43,7 +43,7 @@ export const metadata = {
     card: "summary_large_image",
     title: "BuyOneGram Admin Panel",
     description: "Admin dashboard for BuyOneGram Peanut Butter Store",
-    images: ["/logo.png"],
+    images: ["/logo-og-v2.png"],
   },
   icons: {
     icon: "/logo.png",

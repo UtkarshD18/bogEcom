@@ -40,7 +40,7 @@ export const metadata = {
     siteName: "Healthy One Gram",
     images: [
       {
-        url: "/logo.png",
+        url: "/logo-og-v2.png",
         width: 512,
         height: 512,
         alt: "Healthy One Gram",
@@ -52,7 +52,7 @@ export const metadata = {
     title: "Healthy One Gram - Premium Peanut Butter Store",
     description:
       "Shop premium quality peanut butter and healthy food products.",
-    images: ["/logo.png"],
+    images: ["/logo-og-v2.png"],
   },
   icons: {
     icon: "/logo.png",
