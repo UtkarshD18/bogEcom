@@ -2,6 +2,7 @@
 
 import { API_BASE_URL } from "@/utils/api";
 
+import MembershipExclusivePreview from "@/components/MembershipExclusivePreview";
 import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -354,6 +355,21 @@ export default function MembershipPage() {
     router.push(configuredLink);
   };
 
+  const handlePreviewUnlockCta = () => {
+    if (!isLoggedIn) {
+      handleSubscribe();
+      return;
+    }
+
+    const pricingSection = document.getElementById("membership-pricing");
+    if (pricingSection) {
+      pricingSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    handleSubscribe();
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50">
@@ -447,6 +463,8 @@ export default function MembershipPage() {
           )}
         </header>
 
+        <MembershipExclusivePreview onUnlockExclusive={handlePreviewUnlockCta} />
+
         {/* Benefits Section */}
         <section className="mb-16">
           <div className="text-center mb-10">
@@ -479,7 +497,7 @@ export default function MembershipPage() {
         </section>
 
         {/* Pricing Section */}
-        <section className="text-center">
+        <section id="membership-pricing" className="text-center">
           {/* Price Card */}
           {activePlan && (
             <div className="inline-block mb-8">

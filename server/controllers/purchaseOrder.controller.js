@@ -12,9 +12,65 @@ import {
 import UserModel from "../models/user.model.js";
 import { validateIndianPincode } from "../services/shippingRate.service.js";
 import { splitGstInclusiveAmount } from "../services/tax.service.js";
+import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+const canUserAccessExclusiveProducts = async (userId) => {
+  if (!userId) return false;
+  return checkExclusiveAccess(userId);
+};
+
+const extractPurchaseOrderProductIds = (items = []) =>
+  Array.from(
+    new Set(
+      (Array.isArray(items) ? items : [])
+        .map((item) => String(item?.productId || item?._id || item?.id || ""))
+        .filter(Boolean),
+    ),
+  );
+
+const ensureExclusiveAccessForProducts = async ({
+  productIds = [],
+  userId = null,
+  isAdmin = false,
+}) => {
+  if (!Array.isArray(productIds) || productIds.length === 0) {
+    return;
+  }
+
+  const products = await ProductModel.find({ _id: { $in: productIds } })
+    .select("_id isExclusive isActive")
+    .lean();
+
+  const productMap = new Map(products.map((product) => [String(product._id), product]));
+  const missingIds = productIds.filter((id) => !productMap.has(String(id)));
+  if (missingIds.length > 0) {
+    throw new Error(`Product not found for ID: ${missingIds[0]}`);
+  }
+
+  const inactiveProduct = products.find((product) => product.isActive === false);
+  if (inactiveProduct) {
+    throw new Error("Product is not available");
+  }
+
+  const hasExclusiveProducts = products.some((product) => product.isExclusive === true);
+  if (!hasExclusiveProducts) {
+    return;
+  }
+
+  if (isAdmin) {
+    return;
+  }
+
+  const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
+  if (!hasExclusiveAccess) {
+    const accessError = new Error("Active membership required for exclusive products.");
+    accessError.statusCode = 403;
+    throw accessError;
+  }
+};
 
 const resolvePackingFromProduct = (item, product) => {
   if (item?.packing) return String(item.packing);
@@ -134,10 +190,7 @@ const validateAndNormalizeItems = async (itemsInput = []) => {
     throw new Error("At least one purchase order item is required");
   }
 
-  const productIds = itemsInput
-    .map((item) => item.productId || item._id || item.id)
-    .filter(Boolean);
-  const uniqueIds = Array.from(new Set(productIds.map((id) => String(id))));
+  const uniqueIds = extractPurchaseOrderProductIds(itemsInput);
   const products = await ProductModel.find({ _id: { $in: uniqueIds } })
     .select("_id name price images")
     .lean();
@@ -523,6 +576,11 @@ export const createPurchaseOrder = async (req, res) => {
     } = req.body || {};
 
     const normalizedItems = await validateAndNormalizeItems(items || products || []);
+    const normalizedProductIds = extractPurchaseOrderProductIds(normalizedItems);
+    await ensureExclusiveAccessForProducts({
+      productIds: normalizedProductIds,
+      userId,
+    });
 
     const deliveryInfo = await resolveDeliveryInfo({
       userId,
@@ -571,7 +629,8 @@ export const createPurchaseOrder = async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(400).json({
+    const statusCode = Number(error?.statusCode) || 400;
+    return res.status(statusCode).json({
       error: true,
       success: false,
       message: error.message || "Failed to create purchase order",
@@ -619,6 +678,13 @@ export const getPurchaseOrderById = async (req, res) => {
       }
     }
 
+    const purchaseOrderProductIds = extractPurchaseOrderProductIds(po.items);
+    await ensureExclusiveAccessForProducts({
+      productIds: purchaseOrderProductIds,
+      userId,
+      isAdmin,
+    });
+
     const normalizedPo = normalizePurchaseOrderTotals(po);
 
     return res.json({
@@ -627,10 +693,11 @@ export const getPurchaseOrderById = async (req, res) => {
       data: normalizedPo,
     });
   } catch (error) {
-    return res.status(500).json({
+    const statusCode = Number(error?.statusCode) || 500;
+    return res.status(statusCode).json({
       error: true,
       success: false,
-      message: "Failed to fetch purchase order",
+      message: error.message || "Failed to fetch purchase order",
     });
   }
 };
@@ -697,6 +764,13 @@ export const downloadPurchaseOrderPdf = async (req, res) => {
       }
     }
 
+    const purchaseOrderProductIds = extractPurchaseOrderProductIds(po.items);
+    await ensureExclusiveAccessForProducts({
+      productIds: purchaseOrderProductIds,
+      userId: requesterId,
+      isAdmin,
+    });
+
     if (!po.poNumber) {
       await ensurePoNumber(po);
     }
@@ -708,10 +782,11 @@ export const downloadPurchaseOrderPdf = async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.send(buffer);
   } catch (error) {
-    return res.status(500).json({
+    const statusCode = Number(error?.statusCode) || 500;
+    return res.status(statusCode).json({
       error: true,
       success: false,
-      message: "Failed to generate purchase order PDF",
+      message: error.message || "Failed to generate purchase order PDF",
     });
   }
 };
@@ -882,6 +957,13 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
       }
     }
 
+    const purchaseOrderProductIds = extractPurchaseOrderProductIds(po.items);
+    await ensureExclusiveAccessForProducts({
+      productIds: purchaseOrderProductIds,
+      userId,
+      isAdmin,
+    });
+
     const computedPoTotals = computePurchaseOrderTotals({
       items: po.items || [],
       gstRate: Number(po.gst?.rate || 5),
@@ -963,7 +1045,8 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({
+    const statusCode = Number(error?.statusCode) || 500;
+    return res.status(statusCode).json({
       error: true,
       success: false,
       message: error.message || "Failed to convert purchase order",

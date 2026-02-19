@@ -24,6 +24,7 @@ const AddProduct = () => {
   const [oldPrice, setOldPrice] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
   const [isNewArrival, setIsNewArrival] = useState(false);
+  const [isExclusive, setIsExclusive] = useState(false);
   const [demandStatus, setDemandStatus] = useState("NORMAL");
   const [stock, setStock] = useState("");
   const [brand, setBrand] = useState("");
@@ -212,6 +213,7 @@ const AddProduct = () => {
         originalPrice: oldPrice ? Number(oldPrice) : undefined,
         isFeatured,
         isNewArrival,
+        isExclusive,
         demandStatus,
         stock: stock ? Number(stock) : 0,
         brand,
@@ -494,7 +496,23 @@ const AddProduct = () => {
 
             <div className="col flex flex-col gap-1">
               <span className="text-[15px] text-gray-800 font-medium">
-                🔥 High Demand Status
+                Members Exclusive
+              </span>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={isExclusive}
+                  onChange={(e) => setIsExclusive(e.target.checked)}
+                  color="secondary"
+                />
+                <span className="text-sm text-gray-600">
+                  {isExclusive ? "Members Only" : "Public"}
+                </span>
+              </div>
+            </div>
+
+            <div className="col flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                High Demand Status
               </span>
               <div className="flex items-center gap-2">
                 <Switch
@@ -515,7 +533,6 @@ const AddProduct = () => {
               </p>
             </div>
           </div>
-
           {/* Size / Weight Variants */}
           <div className="mt-6 mb-5 border border-gray-200 rounded-lg p-5">
             <div className="flex items-center justify-between mb-4">

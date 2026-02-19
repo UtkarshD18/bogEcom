@@ -11,7 +11,8 @@ import {
 } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { FaEdit, FaHome, FaPlus, FaStar, FaTrash } from "react-icons/fa";
 
@@ -97,6 +98,7 @@ const DEFAULT_PAGE_CONTENT = {
 
 export default function MembershipPage() {
   const { token } = useAdmin();
+  const router = useRouter();
   const [plans, setPlans] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -111,6 +113,7 @@ export default function MembershipPage() {
   const [homeContentSaving, setHomeContentSaving] = useState(false);
   const [homeContent, setHomeContent] = useState(DEFAULT_HOME_CONTENT);
   const [showForm, setShowForm] = useState(false);
+  const authFailureHandledRef = useRef(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [formData, setFormData] = useState({
     name: "",
@@ -124,14 +127,42 @@ export default function MembershipPage() {
     active: false,
   });
 
+  const handleAdminAuthFailure = useCallback(
+    (message) => {
+      const normalized = String(message || "").toLowerCase();
+      const isAuthFailure =
+        normalized.includes("admin access required") ||
+        normalized.includes("authentication required") ||
+        normalized.includes("please provide token") ||
+        normalized.includes("invalid token") ||
+        normalized.includes("token expired") ||
+        normalized.includes("unauthorized");
+
+      if (!isAuthFailure) return false;
+      if (authFailureHandledRef.current) return true;
+
+      authFailureHandledRef.current = true;
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("adminToken");
+        localStorage.removeItem("adminUser");
+      }
+      toast.error("Admin session expired. Please login again.");
+      router.replace("/login");
+      return true;
+    },
+    [router],
+  );
+
   const fetchPlans = useCallback(async () => {
     const res = await getData("/api/membership/admin/plans", token);
     if (res.success) {
       setPlans(res.data);
+    } else if (!handleAdminAuthFailure(res.message)) {
+      console.warn("Failed to fetch plans:", res.message);
     } else {
-      console.error("Failed to fetch plans:", res.message);
+      setPlans([]);
     }
-  }, [token]);
+  }, [token, handleAdminAuthFailure]);
 
   const fetchPageContent = useCallback(async () => {
     setPageLoading(true);
@@ -152,9 +183,11 @@ export default function MembershipPage() {
         cta: { ...DEFAULT_PAGE_CONTENT.cta, ...(res.data.cta || {}) },
         theme: { ...DEFAULT_PAGE_CONTENT.theme, ...(res.data.theme || {}) },
       });
+    } else if (!handleAdminAuthFailure(res.message)) {
+      console.warn("Failed to fetch membership page content:", res.message);
     }
     setPageLoading(false);
-  }, [token]);
+  }, [token, handleAdminAuthFailure]);
 
   const fetchHomeContent = useCallback(async () => {
     setHomeContentLoading(true);
@@ -170,16 +203,20 @@ export default function MembershipPage() {
           ? res.data.checkItems
           : DEFAULT_HOME_CONTENT.checkItems,
       });
+    } else if (!handleAdminAuthFailure(res.message)) {
+      console.warn("Failed to fetch home membership content:", res.message);
     }
     setHomeContentLoading(false);
-  }, [token]);
+  }, [token, handleAdminAuthFailure]);
 
   const fetchStats = useCallback(async () => {
     const res = await getData("/api/membership/admin/stats", token);
     if (res.success) {
       setStats(res.data);
+    } else if (!handleAdminAuthFailure(res.message)) {
+      console.warn("Failed to fetch membership stats:", res.message);
     }
-  }, [token]);
+  }, [token, handleAdminAuthFailure]);
 
   useEffect(() => {
     // Wait for token to be available from AdminContext

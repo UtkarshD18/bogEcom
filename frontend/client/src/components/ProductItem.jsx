@@ -49,6 +49,7 @@ const ProductItem = (props) => {
         : productData.discount;
     const displayWeight = defaultVariant ? defaultVariant.weight : productData.weight;
     const displayUnit = defaultVariant ? (defaultVariant.unit || "g") : (productData.unit && productData.unit !== "piece" ? productData.unit : "g");
+    const isExclusiveProduct = Boolean(productData?.isExclusive);
 
     const handleWishlistClick = async (e) => {
         e.preventDefault();
@@ -92,6 +93,11 @@ const ProductItem = (props) => {
                 {displayDiscount > 0 && (
                     <span className="absolute left-2 top-2 z-10 rounded-full bg-gradient-to-r from-red-500 to-pink-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
                         {displayDiscount}% OFF
+                    </span>
+                )}
+                {isExclusiveProduct && (
+                    <span className={`absolute left-2 z-10 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm ${displayDiscount > 0 ? "top-8" : "top-2"}`}>
+                        Members Only
                     </span>
                 )}
 

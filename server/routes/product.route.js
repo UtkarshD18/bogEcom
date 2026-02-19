@@ -3,6 +3,7 @@ import {
   bulkUpdateProducts,
   createProduct,
   deleteProduct,
+  getExclusiveProducts,
   getFeaturedProducts,
   getProductById,
   getProducts,
@@ -13,6 +14,11 @@ import {
 } from "../controllers/product.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import {
+  attachMembershipStatus,
+  requireActiveMembership,
+} from "../middlewares/membershipGuard.js";
+import optionalAuth from "../middlewares/optionalAuth.js";
 
 const router = express.Router();
 
@@ -27,16 +33,20 @@ const router = express.Router();
 // ==================== PUBLIC ROUTES ====================
 
 // Get all products (with filters, pagination, search)
-router.get("/", getProducts);
+router.get("/", optionalAuth, attachMembershipStatus, getProducts);
 
 // Get featured products
-router.get("/featured", getFeaturedProducts);
+router.get("/featured", optionalAuth, attachMembershipStatus, getFeaturedProducts);
 
-// Get single product by ID or slug
-router.get("/:id", getProductById);
+// Get exclusive products (members only)
+// Security: auth + membership guard prevents non-members from receiving data.
+router.get("/exclusive", auth, requireActiveMembership, getExclusiveProducts);
 
 // Get related products
-router.get("/:id/related", getRelatedProducts);
+router.get("/:id/related", optionalAuth, attachMembershipStatus, getRelatedProducts);
+
+// Get single product by ID or slug
+router.get("/:id", optionalAuth, attachMembershipStatus, getProductById);
 
 // ==================== ADMIN ROUTES ====================
 

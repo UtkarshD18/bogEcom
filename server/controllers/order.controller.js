@@ -30,6 +30,7 @@ import {
   splitGstInclusiveAmount,
 } from "../services/tax.service.js";
 import { createUserLocationLog } from "../services/userLocationLog.service.js";
+import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 import {
   AppError,
   asyncHandler,
@@ -1426,13 +1427,37 @@ export const createOrder = asyncHandler(async (req, res) => {
     const dbProducts = await ProductModel.find({
       _id: { $in: productIds },
     })
-      .select("_id name price images thumbnail")
+      .select("_id name price images thumbnail isExclusive")
       .lean();
     const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
     const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
     if (missingIds.length > 0) {
       logger.warn("createOrder", "Some products not found", { missingIds });
       throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
+    }
+
+    const exclusiveProductIds = dbProducts
+      .filter((product) => product.isExclusive === true)
+      .map((product) => String(product._id));
+
+    if (exclusiveProductIds.length > 0) {
+      if (!userId) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message:
+            "Login with an active membership to purchase exclusive products.",
+        });
+      }
+
+      const hasExclusiveAccess = await checkExclusiveAccess(userId);
+      if (!hasExclusiveAccess) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message: "Active membership required for exclusive products.",
+        });
+      }
     }
 
     const normalizedProducts = normalizeOrderProducts({
@@ -1845,7 +1870,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       paymentType,
     } = req.validatedData;
 
-    const userId = req.user?.id || req.user || req.body.userId || null;
+    const userId = req.user || null;
 
     logger.debug("saveOrderForLater", "Saving order for later", {
       userId,
@@ -1856,7 +1881,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     const dbProducts = await ProductModel.find({
       _id: { $in: productIds },
     })
-      .select("_id name price images thumbnail")
+      .select("_id name price images thumbnail isExclusive")
       .lean();
     const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
     const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
@@ -1865,6 +1890,30 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         missingIds,
       });
       throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
+    }
+
+    const exclusiveProductIds = dbProducts
+      .filter((product) => product.isExclusive === true)
+      .map((product) => String(product._id));
+
+    if (exclusiveProductIds.length > 0) {
+      if (!userId) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message:
+            "Login with an active membership to purchase exclusive products.",
+        });
+      }
+
+      const hasExclusiveAccess = await checkExclusiveAccess(userId);
+      if (!hasExclusiveAccess) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message: "Active membership required for exclusive products.",
+        });
+      }
     }
 
     const normalizedProducts = normalizeOrderProducts({
