@@ -4,6 +4,7 @@ import { API_BASE_URL } from "@/utils/api";
 
 import { useSettings } from "@/context/SettingsContext";
 import { round2 } from "@/utils/gst";
+import { getResponseErrorMessage, parseJsonSafely } from "@/utils/safeJsonFetch";
 import Cookies from "js-cookie";
 import { createContext, useContext, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -119,9 +120,9 @@ export const CartProvider = ({ children }) => {
         credentials: "include",
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
 
-      if (data.success && data.data) {
+      if (data?.success && data?.data) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
@@ -203,9 +204,10 @@ export const CartProvider = ({ children }) => {
         }),
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
+      const errorMessage = getResponseErrorMessage(data, "Cannot add item");
 
-      if (data.success) {
+      if (data?.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
@@ -217,16 +219,20 @@ export const CartProvider = ({ children }) => {
         return { success: true };
       } else {
         // If server says "Only X items available", SHOW ERROR and DO NOT FALLBACK
-        if (response.status === 400 && data.message && data.message.includes("items available")) {
-          toast.error(data.message);
-          return { success: false, message: data.message };
+        if (
+          response.status === 400 &&
+          typeof errorMessage === "string" &&
+          errorMessage.includes("items available")
+        ) {
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
         }
 
         // Do not fallback to local cart for any client-side rejection (400-499),
         // including membership/auth/business-rule errors returned by backend.
         if (response.status >= 400 && response.status < 500) {
-          toast.error(data.message || "Cannot add item");
-          return { success: false, message: data.message };
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
         }
 
         addToCartLocal(product, quantity);
@@ -347,17 +353,21 @@ export const CartProvider = ({ children }) => {
         body: JSON.stringify({ productId, quantity }),
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
+      const errorMessage = getResponseErrorMessage(
+        data,
+        "Cannot update quantity",
+      );
 
-      if (data.success) {
+      if (data?.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
         return { success: true };
       } else {
         if (response.status >= 400 && response.status < 500) {
-          toast.error(data.message || "Cannot update quantity");
-          return { success: false, message: data.message };
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
         }
         updateQuantityLocal(productId, quantity);
       }
@@ -409,9 +419,9 @@ export const CartProvider = ({ children }) => {
         credentials: "include",
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
 
-      if (data.success) {
+      if (data?.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));

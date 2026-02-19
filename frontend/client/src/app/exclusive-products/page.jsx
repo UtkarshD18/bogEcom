@@ -48,7 +48,7 @@ const ExclusiveProductsContent = () => {
     <section className="min-h-screen pb-16 pt-10">
       <div className="container mx-auto px-4">
         <div className="mb-10">
-          <span className="inline-flex px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold uppercase tracking-wider">
+          <span className="inline-flex rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[var(--glass-text)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
             Members Zone
           </span>
           <h1 className="mt-3 text-4xl md:text-5xl font-black text-gray-900 tracking-tight">
@@ -75,7 +75,7 @@ const ExclusiveProductsContent = () => {
         ) : null}
 
         {!loading && !error && products.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-gray-300 p-10 text-center bg-white/70">
+          <div className="rounded-3xl border border-dashed border-[var(--glass-border)] bg-[var(--glass-bg)] p-10 text-center shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
             <h2 className="text-xl font-bold text-gray-800">
               No exclusive products available yet
             </h2>

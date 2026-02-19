@@ -27,16 +27,20 @@ const ExclusivePreviewCard = ({
       className={`group relative transition-all duration-500 ${
         isLocked
           ? "opacity-50 pointer-events-none"
-          : "cursor-pointer hover:scale-[1.03] hover:shadow-xl hover:shadow-indigo-900/15 hover:ring-1 hover:ring-indigo-300/60"
+          : "cursor-pointer hover:scale-[1.03] hover:shadow-xl hover:shadow-[var(--glass-shadow)] hover:ring-1 hover:ring-[var(--glass-border)]"
       }`}
       style={{ transitionDelay: `${animationDelayMs}ms` }}
       onClick={isLocked ? undefined : onClick}
     >
       {/* Premium gradient edge + glow for conversion-focused visual hierarchy */}
-      <div className="absolute -inset-[1px] rounded-3xl bg-gradient-to-r from-indigo-600 via-fuchsia-500 to-sky-500 opacity-90" />
-      <div className="premium-glow absolute -inset-3 rounded-[30px] bg-gradient-to-r from-indigo-500/30 via-fuchsia-500/25 to-sky-500/25 blur-2xl transition-opacity duration-500 group-hover:opacity-95" />
+      <div
+        className="absolute -inset-[1px] rounded-3xl bg-[image:var(--glass-accent)] opacity-90"
+      />
+      <div
+        className="premium-glow absolute -inset-3 rounded-[30px] bg-[image:var(--glass-accent)] blur-2xl opacity-70 transition-opacity duration-500 group-hover:opacity-95"
+      />
 
-      <div className="relative overflow-hidden rounded-[22px] border border-white/60 bg-white/85 backdrop-blur-xl">
+      <div className="relative overflow-hidden rounded-[22px] border border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
         <div className="absolute inset-0 bg-gradient-to-br from-white/65 to-slate-100/40" />
 
         {/* Product details are blurred for non-members and fully interactive for members */}
@@ -75,7 +79,7 @@ const ExclusivePreviewCard = ({
               </div>
 
               {!isLocked ? (
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 shadow-sm">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--glass-text)] shadow-[var(--glass-shadow)]">
                   <HiArrowUpRight className="text-lg" />
                 </span>
               ) : null}
