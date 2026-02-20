@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Order Confirmation</title>
+</head>
+<body style="margin:0;padding:0;background:#f6f2ec;font-family:Segoe UI,Arial,sans-serif;color:#222;">
+  <div style="max-width:640px;margin:0 auto;background:#fff;">
+    <div style="padding:28px 24px;background:#1f3d5b;color:#fff;">
+      <h1 style="margin:0;font-size:24px;">Order Confirmation</h1>
+      <p style="margin:10px 0 0;font-size:14px;opacity:.95;">Your order has been created successfully.</p>
+    </div>
+
+    <div style="padding:24px;">
+      <p style="margin:0 0 10px;">Hello <strong>{{customer_name}}</strong>,</p>
+      <p style="margin:0 0 14px;">Order <strong>{{order_id}}</strong> was created on <strong>{{order_date}}</strong>.</p>
+      <p style="margin:0 0 14px;">Order status: <strong>{{order_status}}</strong> | Payment status: <strong>{{payment_status}}</strong></p>
+
+      <h3 style="margin:18px 0 8px;font-size:16px;">Items</h3>
+      <pre style="white-space:pre-wrap;background:#f8f8f8;padding:12px;border-radius:6px;font-size:13px;line-height:1.5;margin:0 0 16px;">{{items_text}}</pre>
+
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <tr><td style="padding:6px 0;">Subtotal</td><td style="text-align:right;padding:6px 0;">{{subtotal}}</td></tr>
+        <tr><td style="padding:6px 0;">Discount</td><td style="text-align:right;padding:6px 0;">{{discount}}</td></tr>
+        <tr><td style="padding:6px 0;">Taxable Amount</td><td style="text-align:right;padding:6px 0;">{{taxable_amount}}</td></tr>
+        <tr><td style="padding:6px 0;">GST</td><td style="text-align:right;padding:6px 0;">{{tax_amount}}</td></tr>
+        <tr><td style="padding:6px 0;">Shipping</td><td style="text-align:right;padding:6px 0;">{{shipping_amount}}</td></tr>
+        <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #ddd;">Final Amount</td><td style="text-align:right;padding:10px 0;font-weight:700;border-top:1px solid #ddd;">{{final_amount}}</td></tr>
+      </table>
+
+      <p style="margin:18px 0 0;">Track your account at <a href="{{site_url}}" style="color:#1f3d5b;">{{site_url}}</a>.</p>
+      <p style="margin:8px 0 0;">Support: <a href="mailto:{{support_email}}" style="color:#1f3d5b;">{{support_email}}</a></p>
+    </div>
+
+    <div style="padding:18px 24px;background:#f3f3f3;font-size:12px;color:#666;">
+      <p style="margin:0;">&copy; {{year}} BuyOneGram</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New Support Ticket</title>
+</head>
+<body style="margin:0;padding:0;background:#f7f7f7;font-family:Segoe UI,Arial,sans-serif;color:#222;">
+  <div style="max-width:640px;margin:0 auto;background:#fff;">
+    <div style="padding:24px;background:#2d2d2d;color:#fff;">
+      <h1 style="margin:0;font-size:22px;">New Support Ticket</h1>
+      <p style="margin:8px 0 0;font-size:14px;">A new contact request was submitted.</p>
+    </div>
+
+    <div style="padding:24px;">
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <tr><td style="padding:6px 0;font-weight:600;">Ticket ID</td><td style="padding:6px 0;">{{ticket_id}}</td></tr>
+        <tr><td style="padding:6px 0;font-weight:600;">Status</td><td style="padding:6px 0;">{{status}}</td></tr>
+        <tr><td style="padding:6px 0;font-weight:600;">Name</td><td style="padding:6px 0;">{{name}}</td></tr>
+        <tr><td style="padding:6px 0;font-weight:600;">Email</td><td style="padding:6px 0;">{{email}}</td></tr>
+        <tr><td style="padding:6px 0;font-weight:600;">Phone</td><td style="padding:6px 0;">{{phone}}</td></tr>
+        <tr><td style="padding:6px 0;font-weight:600;">Order</td><td style="padding:6px 0;">{{order_id}}</td></tr>
+        <tr><td style="padding:6px 0;font-weight:600;">Created At</td><td style="padding:6px 0;">{{created_at}}</td></tr>
+      </table>
+
+      <div style="margin-top:14px;">
+        <p style="margin:0 0 6px;font-weight:600;">Subject</p>
+        <p style="margin:0 0 12px;">{{subject}}</p>
+        <p style="margin:0 0 6px;font-weight:600;">Message</p>
+        <pre style="white-space:pre-wrap;background:#f8f8f8;padding:12px;border-radius:6px;margin:0;">{{message}}</pre>
+      </div>
+
+      <p style="margin:16px 0 0;">Admin panel: <a href="{{admin_panel_url}}">{{admin_panel_url}}</a></p>
+    </div>
+
+    <div style="padding:16px 24px;background:#f0f0f0;font-size:12px;color:#666;">
+      <p style="margin:0;">&copy; {{year}} BuyOneGram automated support notice.</p>
+    </div>
+  </div>
+</body>
+</html>

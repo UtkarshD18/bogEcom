@@ -41,8 +41,16 @@ jobs:
           REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
           CLIENT_URL: ${{ secrets.CLIENT_URL }}
           ADMIN_URL: ${{ secrets.ADMIN_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
+          EMAIL_FROM_ADDRESS: ${{ secrets.EMAIL_FROM_ADDRESS }}
           EMAIL: ${{ secrets.EMAIL }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          SUPPORT_ADMIN_EMAIL: ${{ secrets.SUPPORT_ADMIN_EMAIL }}
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
@@ -97,7 +105,11 @@ jobs:
               )
 
           grouped_optional = {
-              "SMTP Email": [
+              "SMTP Email (modern)": [
+                  "SMTP_USER",
+                  "SMTP_PASS",
+              ],
+              "SMTP Email (legacy)": [
                   "EMAIL",
                   "EMAIL_PASSWORD",
               ],
@@ -143,8 +155,16 @@ jobs:
           ]
 
           optional = [
+              "SMTP_HOST",
+              "SMTP_PORT",
+              "SMTP_SECURE",
+              "SMTP_USER",
+              "SMTP_PASS",
+              "EMAIL_FROM_NAME",
+              "EMAIL_FROM_ADDRESS",
               "EMAIL",
               "EMAIL_PASSWORD",
+              "SUPPORT_ADMIN_EMAIL",
               "CLOUDINARY_CLOUD_NAME",
               "CLOUDINARY_API_KEY",
               "CLOUDINARY_API_SECRET",

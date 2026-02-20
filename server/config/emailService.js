@@ -1,30 +1,32 @@
-import http from "http";
-import nodemailer from "nodemailer";
+import {
+  initializeEmailService,
+  sendEmail as sendEmailObjectApi,
+  sendTemplatedEmail,
+  renderEmailTemplate,
+} from "../services/EmailService.js";
 
-//configure the SMTP transporter
-const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: {
-        user: process.env.EMAIL,
-        pass: process.env.EMAIL_PASSWORD
-    }
-});
+export { initializeEmailService, sendTemplatedEmail, renderEmailTemplate };
 
-//function to send email
-export async function sendEmail(to, subject, text, html) {
-    try {
-        const info = await transporter.sendMail({
-            from: process.env.EMAIL, //sender address
-            to, //list of receivers
-            subject, //Subject line
-            text, //plain text body
-            html //html body
-        });
-        return { success: true, messageId: info.messageId };
-    } catch (error) {
-        console.error("Error sending email:", error);
-        return { success: false, error: error.message };
-    }
-} 
+// Backward-compatible and modern signatures:
+// - sendEmail({ to, subject, text, html, context, from })
+// - sendEmail(to, subject, text, html, options)
+export const sendEmail = async (...args) => {
+  if (
+    args.length === 1 &&
+    args[0] &&
+    typeof args[0] === "object" &&
+    !Array.isArray(args[0])
+  ) {
+    return sendEmailObjectApi(args[0]);
+  }
+
+  const [to, subject, text, html, options = {}] = args;
+  return sendEmailObjectApi({
+    to,
+    subject,
+    text,
+    html,
+    context: options?.context || "legacy",
+    from: options?.from || null,
+  });
+};
