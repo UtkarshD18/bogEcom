@@ -83,6 +83,25 @@ function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
+function resolveIsActiveMember(user) {
+  if (!user) return false;
+  const hasMemberFlag = Boolean(user.isMember) || Boolean(user.is_member);
+  if (!hasMemberFlag) return false;
+  if (!user.membershipExpiry) return true;
+  const expiry = new Date(user.membershipExpiry);
+  if (Number.isNaN(expiry.getTime())) return false;
+  return expiry > new Date();
+}
+
+function withMembershipStatus(userDoc) {
+  if (!userDoc) return userDoc;
+  const user = userDoc?.toObject ? userDoc.toObject() : { ...userDoc };
+  return {
+    ...user,
+    isMember: resolveIsActiveMember(user),
+  };
+}
+
 export async function registerUserController(req, res) {
   try {
     let user;
@@ -316,6 +335,7 @@ export async function loginUserController(req, res) {
         role: user?.role,
         userId: user?._id,
         avatar: user?.avatar,
+        isMember: resolveIsActiveMember(user),
       },
     });
   } catch (error) {
@@ -734,6 +754,7 @@ export async function authWithGoogle(req, res) {
         userEmail: user?.email,
         userName: user?.name,
         userPhoto: user?.avatar,
+        isMember: resolveIsActiveMember(user),
       },
     });
   } catch (error) {
@@ -836,13 +857,14 @@ export async function getAllUsers(req, res) {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
+    const usersWithMembership = users.map((user) => withMembershipStatus(user));
 
     const total = await UserModel.countDocuments(query);
 
     return res.json({
       success: true,
       error: false,
-      data: users,
+      data: usersWithMembership,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -992,7 +1014,7 @@ export async function getUserDetails(req, res) {
     return res.json({
       success: true,
       error: false,
-      data: user,
+      data: withMembershipStatus(user),
     });
   } catch (error) {
     console.error("Get user details error:", error);
@@ -1222,7 +1244,7 @@ export async function updateUserProfile(req, res) {
       success: true,
       error: false,
       message: "Profile updated successfully",
-      data: user,
+      data: withMembershipStatus(user),
     });
   } catch (error) {
     return res.status(500).json({

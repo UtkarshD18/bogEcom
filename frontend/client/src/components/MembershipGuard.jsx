@@ -20,7 +20,7 @@ const LockedCard = ({
   secondaryLabel,
 }) => (
   <section className="min-h-[70vh] flex items-center justify-center px-4 py-10">
-    <div className="w-full max-w-xl rounded-3xl border border-gray-200 bg-white/90 backdrop-blur-md p-8 text-center shadow-[0_20px_60px_-40px_rgba(15,23,42,0.6)]">
+    <div className="w-full max-w-xl rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-8 text-center shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
       <span className="inline-flex px-3 py-1 text-xs font-bold tracking-wider uppercase rounded-full bg-[var(--flavor-glass)] text-[var(--flavor-color)]">
         Members Only
       </span>
@@ -36,7 +36,7 @@ const LockedCard = ({
         {secondaryHref ? (
           <Link
             href={secondaryHref}
-            className="w-full sm:w-auto px-6 py-3 rounded-xl font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+            className="w-full sm:w-auto px-6 py-3 rounded-xl font-semibold border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--glass-text)] hover:opacity-90 transition-colors"
           >
             {secondaryLabel}
           </Link>

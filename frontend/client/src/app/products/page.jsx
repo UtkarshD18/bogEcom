@@ -39,7 +39,8 @@ function ProductsPageContent() {
 
                 // Handle various API response structures (arrays, nested products, nested data)
                 const productsData = Array.isArray(res) ? res : (res?.products || res?.data || res?.items || []);
-                setProducts(productsData);
+                // Safety guard: even if API payload changes, keep exclusive items out of public products page.
+                setProducts(productsData.filter((product) => product?.isExclusive !== true));
             } catch (error) {
                 console.error("Error loading products:", error);
             } finally {

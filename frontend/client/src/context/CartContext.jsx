@@ -4,6 +4,7 @@ import { API_BASE_URL } from "@/utils/api";
 
 import { useSettings } from "@/context/SettingsContext";
 import { round2 } from "@/utils/gst";
+import { getResponseErrorMessage, parseJsonSafely } from "@/utils/safeJsonFetch";
 import Cookies from "js-cookie";
 import { createContext, useContext, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -95,6 +96,14 @@ export const CartProvider = ({ children }) => {
     return Cookies.get("accessToken") || localStorage.getItem("token");
   };
 
+  const resolveVariantId = (item) => {
+    const rawVariant = item?.variant?._id || item?.variant || item?.variantId;
+    if (rawVariant === undefined || rawVariant === null || rawVariant === "") {
+      return null;
+    }
+    return String(rawVariant);
+  };
+
   // Fetch cart from API or local storage
   const fetchCart = async () => {
     try {
@@ -119,9 +128,9 @@ export const CartProvider = ({ children }) => {
         credentials: "include",
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
 
-      if (data.success && data.data) {
+      if (data?.success && data?.data) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
@@ -203,9 +212,10 @@ export const CartProvider = ({ children }) => {
         }),
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
+      const errorMessage = getResponseErrorMessage(data, "Cannot add item");
 
-      if (data.success) {
+      if (data?.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
@@ -217,16 +227,20 @@ export const CartProvider = ({ children }) => {
         return { success: true };
       } else {
         // If server says "Only X items available", SHOW ERROR and DO NOT FALLBACK
-        if (response.status === 400 && data.message && data.message.includes("items available")) {
-          toast.error(data.message);
-          return { success: false, message: data.message };
+        if (
+          response.status === 400 &&
+          typeof errorMessage === "string" &&
+          errorMessage.includes("items available")
+        ) {
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
         }
 
         // Do not fallback to local cart for any client-side rejection (400-499),
         // including membership/auth/business-rule errors returned by backend.
         if (response.status >= 400 && response.status < 500) {
-          toast.error(data.message || "Cannot add item");
-          return { success: false, message: data.message };
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
         }
 
         addToCartLocal(product, quantity);
@@ -319,9 +333,9 @@ export const CartProvider = ({ children }) => {
   };
 
   // Update quantity
-  const updateQuantity = async (productId, quantity) => {
+  const updateQuantity = async (productId, quantity, variantId = null) => {
     if (quantity < 1) {
-      return removeFromCart(productId);
+      return removeFromCart(productId, variantId);
     }
 
     try {
@@ -344,38 +358,46 @@ export const CartProvider = ({ children }) => {
         method: "PUT",
         headers,
         credentials: "include",
-        body: JSON.stringify({ productId, quantity }),
+        body: JSON.stringify({
+          productId,
+          quantity,
+          variantId: variantId || undefined,
+        }),
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
+      const errorMessage = getResponseErrorMessage(
+        data,
+        "Cannot update quantity",
+      );
 
-      if (data.success) {
+      if (data?.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
         return { success: true };
       } else {
         if (response.status >= 400 && response.status < 500) {
-          toast.error(data.message || "Cannot update quantity");
-          return { success: false, message: data.message };
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
         }
-        updateQuantityLocal(productId, quantity);
+        updateQuantityLocal(productId, quantity, variantId);
       }
     } catch (error) {
       console.error("Error updating cart:", error);
-      updateQuantityLocal(productId, quantity);
+      updateQuantityLocal(productId, quantity, variantId);
     } finally {
       setLoading(false);
     }
   };
 
   // Update quantity locally
-  const updateQuantityLocal = (productId, quantity) => {
+  const updateQuantityLocal = (productId, quantity, variantId = null) => {
     setCartItems((prev) => {
       const newItems = prev.map((item) =>
-        String(
-          item.product?._id || item.product?.id || item.product || item.id,
-        ) === String(productId)
+        String(item.product?._id || item.product?.id || item.product || item.id) ===
+          String(productId) &&
+        String(resolveVariantId(item) || "") === String(variantId || "")
           ? { ...item, quantity }
           : item,
       );
@@ -386,7 +408,17 @@ export const CartProvider = ({ children }) => {
   };
 
   // Remove from cart
-  const removeFromCart = async (productId) => {
+  const removeFromCart = async (productId, variantId = null) => {
+    const resolvedVariantId =
+      variantId ??
+      resolveVariantId(
+        cartItems.find(
+          (item) =>
+            String(item.product?._id || item.product?.id || item.product || item.id) ===
+            String(productId),
+        ),
+      );
+
     try {
       setLoading(true);
       const token = getToken();
@@ -403,38 +435,47 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const response = await fetch(buildApiUrl(`/cart/remove/${productId}`), {
+      const query = resolvedVariantId
+        ? `?variantId=${encodeURIComponent(String(resolvedVariantId))}`
+        : "";
+      const response = await fetch(buildApiUrl(`/cart/remove/${productId}${query}`), {
         method: "DELETE",
         headers,
         credentials: "include",
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
 
-      if (data.success) {
+      if (data?.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
         // toast.success("Item removed from cart");
       } else {
-        removeFromCartLocal(productId);
+        removeFromCartLocal(productId, resolvedVariantId);
       }
     } catch (error) {
       console.error("Error removing from cart:", error);
-      removeFromCartLocal(productId);
+      removeFromCartLocal(productId, resolvedVariantId);
     } finally {
       setLoading(false);
     }
   };
 
   // Remove locally
-  const removeFromCartLocal = (productId) => {
+  const removeFromCartLocal = (productId, variantId = null) => {
     setCartItems((prev) => {
       const newItems = prev.filter(
-        (item) =>
-          String(
+        (item) => {
+          const itemProductId = String(
             item.product?._id || item.product?.id || item.product || item.id,
-          ) !== String(productId),
+          );
+          const itemVariantId = resolveVariantId(item);
+          const isSameProduct = itemProductId === String(productId);
+          const isSameVariant =
+            String(itemVariantId || "") === String(variantId || "");
+          return !(isSameProduct && isSameVariant);
+        },
       );
       calculateTotals(newItems);
       saveToLocalStorage(newItems);

@@ -64,10 +64,12 @@ export const getProducts = async (req, res) => {
       exclude,
     } = req.query;
 
-    const canViewExclusive = await canRequestViewExclusive(req);
+    const canViewExclusive = req?.userIsAdmin === true;
 
     // Build filter object
     const filter = { isActive: true };
+    // Exclusive products are never part of normal storefront listings.
+    // Only admins can include them in this endpoint for dashboard management.
     if (!canViewExclusive) {
       filter.isExclusive = { $ne: true };
     }
@@ -392,7 +394,7 @@ export const getProductById = async (req, res) => {
 export const getFeaturedProducts = async (req, res) => {
   try {
     const { limit = 10 } = req.query;
-    const canViewExclusive = await canRequestViewExclusive(req);
+    const canViewExclusive = req?.userIsAdmin === true;
 
     const filter = {
       isActive: true,

@@ -14,7 +14,7 @@ import { IoMdClose } from "react-icons/io";
 const MyWishlistPage = () => {
   const router = useRouter();
   const { addToCart } = useCart();
-  const { wishlistItems, wishlistCount, loading, removeFromWishlist } =
+  const { wishlistItems, wishlistCount, loading, removeFromWishlist, removingItems } =
     useWishlist();
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -104,6 +104,7 @@ const MyWishlistPage = () => {
                 {wishlistItems.map((item, index) => {
                   const product = getProduct(item);
                   const productId = product._id || product.id || item.product;
+                  const isRemoving = Boolean(removingItems[String(productId || "")]);
                   const oldPrice = getOldPrice(product);
                   const discount = calcDiscount(product.price, oldPrice);
                   const imageUrl =
@@ -165,8 +166,11 @@ const MyWishlistPage = () => {
                         </div>
 
                         <button
-                          onClick={() => removeFromWishlist(productId)}
-                          className="h-9 w-9 rounded-full grid place-items-center text-slate-500 hover:text-red-600 hover:bg-red-50 transition"
+                          onClick={() =>
+                            removeFromWishlist(item?.product?._id || item?.product)
+                          }
+                          disabled={isRemoving}
+                          className="h-9 w-9 rounded-full grid place-items-center text-slate-500 hover:text-red-600 hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                           aria-label="Remove from wishlist"
                         >
                           <IoMdClose size={20} />

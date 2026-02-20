@@ -1,0 +1,60 @@
+:root,
+[data-theme="mint-glass"],
+[data-theme="mint"] {
+  --glass-bg: rgba(236, 253, 245, 0.72);
+  --glass-border: rgba(16, 185, 129, 0.38);
+  --glass-shadow: 0 24px 60px -42px rgba(5, 150, 105, 0.42);
+  --glass-text: #047857;
+  --glass-accent: linear-gradient(90deg, #059669 0%, #0d9488 50%, #16a34a 100%);
+  --glass-blur: 16px;
+}
+
+[data-theme="sky-glass"],
+[data-theme="sky"] {
+  --glass-bg: rgba(240, 249, 255, 0.72);
+  --glass-border: rgba(2, 132, 199, 0.34);
+  --glass-shadow: 0 24px 60px -42px rgba(14, 116, 144, 0.42);
+  --glass-text: #0369a1;
+  --glass-accent: linear-gradient(90deg, #0284c7 0%, #0891b2 50%, #2563eb 100%);
+  --glass-blur: 16px;
+}
+
+[data-theme="aurora-glass"],
+[data-theme="aurora"] {
+  --glass-bg: rgba(247, 254, 231, 0.72);
+  --glass-border: rgba(101, 163, 13, 0.35);
+  --glass-shadow: 0 24px 60px -42px rgba(22, 163, 74, 0.4);
+  --glass-text: #3f6212;
+  --glass-accent: linear-gradient(90deg, #65a30d 0%, #059669 50%, #0f766e 100%);
+  --glass-blur: 16px;
+}
+
+[data-theme="lavender-glass"],
+[data-theme="lavender"] {
+  --glass-bg: rgba(245, 243, 255, 0.74);
+  --glass-border: rgba(124, 58, 237, 0.34);
+  --glass-shadow: 0 24px 60px -42px rgba(99, 102, 241, 0.43);
+  --glass-text: #4338ca;
+  --glass-accent: linear-gradient(90deg, #4f46e5 0%, #7c3aed 50%, #c026d3 100%);
+  --glass-blur: 16px;
+}
+
+[data-theme="sunset-glass"],
+[data-theme="sunset"] {
+  --glass-bg: rgba(255, 247, 237, 0.72);
+  --glass-border: rgba(234, 88, 12, 0.34);
+  --glass-shadow: 0 24px 60px -42px rgba(244, 63, 94, 0.43);
+  --glass-text: #c2410c;
+  --glass-accent: linear-gradient(90deg, #ea580c 0%, #e11d48 50%, #ec4899 100%);
+  --glass-blur: 16px;
+}
+
+[data-theme="midnight-glass"],
+[data-theme="midnight"] {
+  --glass-bg: rgba(241, 245, 249, 0.78);
+  --glass-border: rgba(51, 65, 85, 0.36);
+  --glass-shadow: 0 24px 60px -42px rgba(15, 23, 42, 0.52);
+  --glass-text: #334155;
+  --glass-accent: linear-gradient(90deg, #334155 0%, #1f2937 50%, #18181b 100%);
+  --glass-blur: 16px;
+}
