@@ -1,5 +1,6 @@
 "use client";
 import { API_BASE_URL, postData } from "@/utils/api";
+import MemberBadge from "@/components/MemberBadge";
 import { Button } from "@mui/material";
 import cookies from "js-cookie";
 import Link from "next/link";
@@ -27,6 +28,7 @@ const AccountSidebar = () => {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userName, setUserName] = useState("User");
   const [userEmail, setUserEmail] = useState("");
+  const [isMember, setIsMember] = useState(false);
   const [userPhoto, setUserPhoto] = useState("");
   const [userPhone, setUserPhone] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -173,8 +175,15 @@ const AccountSidebar = () => {
         const name = data.data?.name || "User";
         const email = data.data?.email || "";
         const avatar = data.data?.avatar || "";
+        const expiry = data.data?.membershipExpiry
+          ? new Date(data.data.membershipExpiry)
+          : null;
         setUserName(name);
         setUserEmail(email);
+        setIsMember(
+          Boolean(data.data?.isMember) &&
+            (!expiry || !Number.isNaN(expiry.getTime()) && expiry > new Date()),
+        );
         cookies.set("userName", name, { expires: 7 });
         cookies.set("userEmail", email, { expires: 7 });
         const removalOverride = isPhotoRemovalOverride(email);
@@ -497,7 +506,10 @@ const AccountSidebar = () => {
           </div>
 
           <div className="text-left lg:text-center shrink-0">
-            <h4 className="text-[16px] lg:text-[18px] font-[600] text-gray-700">{userName}</h4>
+            <div className="flex items-center gap-2 lg:justify-center">
+              <h4 className="text-[16px] lg:text-[18px] font-[600] text-gray-700">{userName}</h4>
+              <MemberBadge isMember={isMember} className="text-[9px]" />
+            </div>
             <p className="text-[13px] lg:text-[14px] text-gray-600">{userEmail}</p>
             {userPhone && (
               <p className="text-[12px] lg:text-[13px] text-gray-500 mt-0.5">{userPhone}</p>

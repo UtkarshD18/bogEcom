@@ -3,6 +3,7 @@
 import { API_BASE_URL, getStoredAccessToken } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import AuthenticationMethods from "@/components/AuthenticationMethods";
+import MemberBadge from "@/components/MemberBadge";
 import { Button } from "@mui/material";
 import TextField from "@mui/material/TextField";
 import cookies from "js-cookie";
@@ -20,6 +21,7 @@ const MyAccount = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [isMember, setIsMember] = useState(false);
 
   const formatPhone = (value) => {
     const digits = String(value || "").replace(/\D/g, "");
@@ -44,6 +46,13 @@ const MyAccount = () => {
         if (data.success && data.data) {
           setFullName(data.data?.name || "");
           setEmail(data.data?.email || "");
+          const expiry = data.data?.membershipExpiry
+            ? new Date(data.data.membershipExpiry)
+            : null;
+          setIsMember(
+            Boolean(data.data?.isMember) &&
+              (!expiry || !Number.isNaN(expiry.getTime()) && expiry > new Date()),
+          );
         }
       } catch (err) {
         // Silent fallback
@@ -142,6 +151,12 @@ const MyAccount = () => {
                 <p className="text-[16px] text-gray-500">
                   All your account information in one place
                 </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-[14px] text-gray-700 font-[500]">
+                    {fullName || "User"}
+                  </span>
+                  <MemberBadge isMember={isMember} className="text-[9px]" />
+                </div>
               </div>
             </div>
             <form className=" p-5" onSubmit={handleSubmit}>

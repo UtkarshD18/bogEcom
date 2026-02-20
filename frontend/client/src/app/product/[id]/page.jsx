@@ -159,7 +159,7 @@ const ProductDetailPage = () => {
       // Check if already in cart
       if (isInCart(productId)) {
         // Remove from cart
-        await removeFromCart(productId);
+        await removeFromCart(productId, selectedVariant?._id || null);
         setSnackbar({
           open: true,
           message: "Removed from cart!",

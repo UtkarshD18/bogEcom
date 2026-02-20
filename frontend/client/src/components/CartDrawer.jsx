@@ -263,7 +263,12 @@ const CartDrawer = () => {
                                                         <p className="text-xs text-gray-500">{data.brand}</p>
                                                     </div>
                                                     <button
-                                                        onClick={() => removeFromCart(productId || data.id)}
+                                                        onClick={() =>
+                                                            removeFromCart(
+                                                                productId || data.id,
+                                                                item?.variant || null,
+                                                            )
+                                                        }
                                                         className="p-1.5 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90"
                                                         aria-label="Remove item"
                                                     >
@@ -274,14 +279,26 @@ const CartDrawer = () => {
                                                 <div className="flex items-center justify-between mt-2">
                                                     <div className="flex items-center gap-3 bg-gray-50 rounded-full px-2 py-1">
                                                         <button
-                                                            onClick={() => updateQuantity(productId || data.id, Number(data.quantity) - 1)}
+                                                            onClick={() =>
+                                                                updateQuantity(
+                                                                    productId || data.id,
+                                                                    Number(data.quantity) - 1,
+                                                                    item?.variant || null,
+                                                                )
+                                                            }
                                                             className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-red-500 active:scale-90 transition-all"
                                                         >
                                                             <MdRemove size={14} />
                                                         </button>
                                                         <span className="text-sm font-bold w-4 text-center">{data.quantity}</span>
                                                         <button
-                                                            onClick={() => updateQuantity(productId || data.id, Number(data.quantity) + 1)}
+                                                            onClick={() =>
+                                                                updateQuantity(
+                                                                    productId || data.id,
+                                                                    Number(data.quantity) + 1,
+                                                                    item?.variant || null,
+                                                                )
+                                                            }
                                                             disabled={Number(data.quantity) >= (item.product?.stock || item.productData?.stock || item.stock || Infinity)}
                                                             className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                                                         >

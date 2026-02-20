@@ -51,17 +51,17 @@ wishlistSchema.virtual("itemCount").get(function () {
   return this.items.length;
 });
 
-wishlistSchema.pre("save", function (next) {
+wishlistSchema.pre("save", function () {
   const seen = new Set();
+  const deduped = [];
   for (const item of this.items || []) {
     const key = String(item.product || "");
     if (!key) continue;
-    if (seen.has(key)) {
-      return next(new Error("Duplicate product in wishlist"));
-    }
+    if (seen.has(key)) continue; // silently skip duplicates
     seen.add(key);
+    deduped.push(item);
   }
-  return next();
+  this.items = deduped;
 });
 
 wishlistSchema.index({ user: 1, "items.product": 1 });

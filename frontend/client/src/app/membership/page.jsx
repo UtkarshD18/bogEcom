@@ -2,6 +2,7 @@
 
 import { API_BASE_URL } from "@/utils/api";
 
+import MemberGate from "@/components/MemberGate";
 import MembershipExclusivePreview from "@/components/MembershipExclusivePreview";
 import { useTheme } from "@/context/theme-provider";
 import { parseJsonSafely } from "@/utils/safeJsonFetch";
@@ -193,6 +194,9 @@ const resolvePresetThemeKey = (styleKey) => {
   return normalizedKey || "mint";
 };
 
+const ACCENT_BG_IMAGE_CLASS = "bg-[image:var(--glass-accent)]";
+const ACCENT_TEXT_CLASS = `${ACCENT_BG_IMAGE_CLASS} bg-clip-text text-transparent`;
+
 // Floating particle component
 const FloatingParticle = ({ delay, size, left, duration }) => (
   <div
@@ -209,7 +213,7 @@ const FloatingParticle = ({ delay, size, left, duration }) => (
 );
 
 // Benefit Card Component with liquid glass effect
-const BenefitCard = ({ icon, title, description, accent, index }) => (
+const BenefitCard = ({ icon, title, description, index }) => (
   <div
     className="group relative overflow-hidden rounded-2xl transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1"
     style={{ animationDelay: `${index * 100}ms` }}
@@ -219,7 +223,7 @@ const BenefitCard = ({ icon, title, description, accent, index }) => (
 
     {/* Gradient overlay on hover */}
     <div
-      className={`absolute inset-0 bg-gradient-to-br ${accent} opacity-0 group-hover:opacity-10 transition-opacity duration-500 rounded-2xl`}
+      className={`absolute inset-0 ${ACCENT_BG_IMAGE_CLASS} opacity-0 group-hover:opacity-10 transition-opacity duration-500 rounded-2xl`}
     />
 
     {/* Shine effect */}
@@ -231,7 +235,7 @@ const BenefitCard = ({ icon, title, description, accent, index }) => (
     <div className="relative p-6 sm:p-7">
       {/* Icon container */}
       <div
-        className={`w-14 h-14 rounded-xl bg-gradient-to-br ${accent} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}
+        className={`w-14 h-14 rounded-xl ${ACCENT_BG_IMAGE_CLASS} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}
       >
         <span className="text-white text-2xl">{icon || "⭐"}</span>
       </div>
@@ -244,7 +248,7 @@ const BenefitCard = ({ icon, title, description, accent, index }) => (
 
     {/* Bottom accent line */}
     <div
-      className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${accent} transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left rounded-b-2xl`}
+      className={`absolute bottom-0 left-0 right-0 h-1 ${ACCENT_BG_IMAGE_CLASS} transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left rounded-b-2xl`}
     />
   </div>
 );
@@ -418,7 +422,18 @@ export default function MembershipPage() {
   }
 
   const isMemberActive =
-    membershipStatus?.isMember && !membershipStatus?.isExpired;
+    Boolean(
+      membershipStatus?.isMember ?? membershipStatus?.membershipActive,
+    ) && !Boolean(membershipStatus?.isExpired);
+  const user = { isMember: isMemberActive };
+  const unlockedBenefits = (
+    pageContent?.benefits?.items?.length
+      ? pageContent.benefits.items
+      : DEFAULT_CONTENT.benefits.items
+  ).slice(0, 3);
+  const membershipExpiryLabel = membershipStatus?.membershipExpiry
+    ? new Date(membershipStatus.membershipExpiry).toLocaleDateString()
+    : "";
 
   return (
     <main
@@ -462,11 +477,11 @@ export default function MembershipPage() {
 
           {/* Main title */}
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black mb-4">
-            <span className={`bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
+            <span className={ACCENT_TEXT_CLASS}>
               {pageContent?.hero?.title || activePlan?.name || "Buy One Gram Club"}
             </span>
             {pageContent?.hero?.titleHighlight && (
-              <span className={`block bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
+              <span className={`block ${ACCENT_TEXT_CLASS}`}>
                 {pageContent.hero.titleHighlight}
               </span>
             )}
@@ -486,7 +501,7 @@ export default function MembershipPage() {
 
           {/* Active member badge */}
           {isMemberActive && (
-            <div className={`inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r ${theme.badge} text-white shadow-xl shadow-black/10`}>
+            <div className={`inline-flex items-center gap-3 px-6 py-3 rounded-2xl ${ACCENT_BG_IMAGE_CLASS} text-white shadow-xl shadow-black/10`}>
               <FaCheck className="text-lg" />
               <span className="font-bold">You&apos;re a Member!</span>
               <span className="text-emerald-100">
@@ -501,11 +516,16 @@ export default function MembershipPage() {
 
         <MembershipExclusivePreview onUnlockExclusive={handlePreviewUnlockCta} />
 
+        <MemberGate
+          isMember={user?.isMember}
+          fallback={
+            <>
+
         {/* Benefits Section */}
         <section className="mb-16">
           <div className="text-center mb-10">
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">
-              <span className={`bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
+              <span className={ACCENT_TEXT_CLASS}>
                 {pageContent?.benefits?.title || DEFAULT_CONTENT.benefits.title}
               </span>
             </h2>
@@ -525,7 +545,6 @@ export default function MembershipPage() {
                 icon={benefit.icon}
                 title={benefit.title}
                 description={benefit.description}
-                accent={theme.accent}
                 index={index}
               />
             ))}
@@ -555,7 +574,7 @@ export default function MembershipPage() {
                   {/* Price */}
                   <div className="flex items-baseline justify-center gap-1 mb-2">
                     <span className="text-2xl font-bold text-gray-500">₹</span>
-                    <span className={`text-5xl sm:text-6xl font-black bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
+                    <span className={`text-5xl sm:text-6xl font-black ${ACCENT_TEXT_CLASS}`}>
                       {activePlan.price}
                     </span>
                     {activePlan.originalPrice > activePlan.price && (
@@ -578,7 +597,7 @@ export default function MembershipPage() {
 
                   {/* Save badge */}
                   {activePlan.originalPrice > activePlan.price && (
-                    <div className={`absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r ${theme.badge} text-white text-sm font-bold shadow-lg`}>
+                    <div className={`absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full ${ACCENT_BG_IMAGE_CLASS} text-white text-sm font-bold shadow-lg`}>
                       Save ₹{activePlan.originalPrice - activePlan.price}
                     </div>
                   )}
@@ -596,8 +615,8 @@ export default function MembershipPage() {
                 relative group inline-flex items-center gap-3 px-10 py-4 rounded-2xl text-white font-bold text-lg
                 transition-all duration-300 transform
                 ${isMemberActive
-                  ? `bg-gradient-to-r ${theme.badge} cursor-default opacity-90`
-                  : `bg-gradient-to-r ${theme.accent} bg-[length:200%_100%] hover:bg-right hover:scale-105 hover:shadow-2xl hover:shadow-black/20 active:scale-[0.98]`
+                  ? `${ACCENT_BG_IMAGE_CLASS} cursor-default opacity-90`
+                  : `${ACCENT_BG_IMAGE_CLASS} hover:scale-105 hover:shadow-2xl hover:shadow-black/20 active:scale-[0.98]`
                 }
                 shadow-xl shadow-black/15
               `}
@@ -637,36 +656,98 @@ export default function MembershipPage() {
         </section>
 
         {/* CTA Section */}
-        <section className="mt-16">
-          <div
-            className="relative overflow-hidden rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-8 py-10 shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)] sm:px-10"
-          >
-            <div className="absolute inset-0 opacity-40">
-              <div
-                className={`absolute -top-20 -right-20 h-48 w-48 rounded-full blur-3xl ${theme.glowB}`}
-              />
-              <div
-                className={`absolute -bottom-24 -left-24 h-56 w-56 rounded-full blur-3xl ${theme.glowA}`}
-              />
-            </div>
-            <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-              <div>
-                <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                  {pageContent?.cta?.title || DEFAULT_CONTENT.cta.title}
-                </h3>
-                <p className="text-gray-600 mt-2 max-w-2xl">
-                  {pageContent?.cta?.description || DEFAULT_CONTENT.cta.description}
-                </p>
+        {!isMemberActive && (
+          <section className="mt-16">
+            <div
+              className="relative overflow-hidden rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-8 py-10 shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)] sm:px-10"
+            >
+              <div className="absolute inset-0 opacity-40">
+                <div
+                  className={`absolute -top-20 -right-20 h-48 w-48 rounded-full blur-3xl ${theme.glowB}`}
+                />
+                <div
+                  className={`absolute -bottom-24 -left-24 h-56 w-56 rounded-full blur-3xl ${theme.glowA}`}
+                />
               </div>
-              <button
-                onClick={handleSecondaryCta}
-                className={`inline-flex items-center justify-center px-8 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r ${theme.accent} shadow-lg shadow-black/15 hover:scale-[1.02] transition-transform`}
-              >
-                {pageContent?.cta?.buttonText || DEFAULT_CONTENT.cta.buttonText}
-              </button>
+              <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                <div>
+                  <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                    {pageContent?.cta?.title || DEFAULT_CONTENT.cta.title}
+                  </h3>
+                  <p className="text-gray-600 mt-2 max-w-2xl">
+                    {pageContent?.cta?.description || DEFAULT_CONTENT.cta.description}
+                  </p>
+                </div>
+                <button
+                  onClick={handleSecondaryCta}
+                  className={`inline-flex items-center justify-center px-8 py-3 rounded-2xl font-semibold text-white ${ACCENT_BG_IMAGE_CLASS} shadow-lg shadow-black/15 hover:scale-[1.02] transition-transform`}
+                >
+                  {pageContent?.cta?.buttonText || DEFAULT_CONTENT.cta.buttonText}
+                </button>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
+            </>
+          }
+        >
+          <section className="mb-16">
+            <div className="relative overflow-hidden rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-8 shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)] sm:p-10">
+              <div className="absolute inset-0 opacity-40">
+                <div
+                  className={`absolute -top-20 -right-20 h-48 w-48 rounded-full blur-3xl ${theme.glowB}`}
+                />
+                <div
+                  className={`absolute -bottom-24 -left-24 h-56 w-56 rounded-full blur-3xl ${theme.glowA}`}
+                />
+              </div>
+
+              <div className="relative z-10">
+                <div className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-white shadow-lg ${ACCENT_BG_IMAGE_CLASS}`}>
+                  <FaCheck />
+                  Active Member
+                </div>
+
+                <h2 className="mt-5 text-2xl sm:text-3xl font-bold text-gray-900">
+                  <span className={ACCENT_TEXT_CLASS}>You are an Active Member</span>
+                </h2>
+
+                <p className="mt-2 text-gray-600">
+                  Your membership is currently active.
+                  {membershipExpiryLabel ? ` Valid until ${membershipExpiryLabel}.` : ""}
+                </p>
+
+                <div className="mt-6 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-5 shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
+                  <h3 className="text-lg font-semibold text-gray-900">Member status card</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Benefits unlocked summary and member-only access are active on your account.
+                  </p>
+                </div>
+
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Benefits unlocked summary
+                  </h3>
+                  <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    {unlockedBenefits.map((benefit, index) => (
+                      <div
+                        key={`${benefit.title || "benefit"}-${index}`}
+                        className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4 shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]"
+                      >
+                        <p className="text-sm font-semibold text-gray-900">
+                          {benefit.title}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-600">
+                          {benefit.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </MemberGate>
       </div>
 
       {/* Custom keyframes for floating animation */}

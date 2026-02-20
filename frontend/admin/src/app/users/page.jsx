@@ -254,6 +254,8 @@ export default function UserManagement() {
     );
   };
 
+  const isActiveMember = (user) => Boolean(user?.isMember);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -324,6 +326,7 @@ export default function UserManagement() {
                 <TableCell>Email</TableCell>
                 <TableCell>Role</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Membership Status</TableCell>
                 <TableCell>Provider</TableCell>
                 <TableCell>Joined</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -332,14 +335,14 @@ export default function UserManagement() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" className="py-8">
+                  <TableCell colSpan={8} align="center" className="py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600 mx-auto"></div>
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     align="center"
                     className="py-8 text-gray-500"
                   >
@@ -360,6 +363,16 @@ export default function UserManagement() {
                     <TableCell>{user.email}</TableCell>
                     <TableCell>{getRoleChip(user.role)}</TableCell>
                     <TableCell>{getStatusChip(user.status)}</TableCell>
+                    <TableCell>
+                      {isActiveMember(user) ? (
+                        <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
+                          <RiVipCrownLine />
+                          Member
+                        </span>
+                      ) : (
+                        <span className="text-gray-500">Normal</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Chip
                         label={user.provider || "email"}

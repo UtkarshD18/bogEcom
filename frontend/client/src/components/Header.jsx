@@ -3,6 +3,7 @@
 import { useCart } from "@/context/CartContext";
 import { MyContext } from "@/context/ThemeProvider";
 import { useWishlist } from "@/context/WishlistContext";
+import useMembership from "@/hooks/useMembership";
 import { fetchDataFromApi, postData } from "@/utils/api";
 import cookies from "js-cookie";
 import Image from "next/image";
@@ -129,6 +130,7 @@ const Header = () => {
   const context = useContext(MyContext);
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
+  const { isActiveMember } = useMembership({ autoFetch: true });
 
   const open = Boolean(anchorEl);
   const isCoinPanelOpen = Boolean(coinPanelAnchor);
@@ -858,7 +860,7 @@ const Header = () => {
                       </div>
                       <div className="flex flex-col items-start">
                         <span className="text-xs font-medium text-gray-500 leading-none">
-                          Profile
+                          {isActiveMember ? "👑 Premium Member" : "Profile"}
                         </span>
                         <span className="text-sm font-semibold text-gray-800 truncate max-w-25">
                           {userName}
@@ -1132,7 +1134,7 @@ const Header = () => {
                       {userName}
                     </p>
                     <p className="text-xs text-gray-500 truncate">
-                      {userEmail}
+                      {isActiveMember ? "👑 Premium Member" : userEmail}
                     </p>
                   </div>
                   <Link
