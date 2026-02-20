@@ -15,6 +15,7 @@ import ProductModel from "../models/product.model.js";
 import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
+import { sendTemplatedEmail } from "../config/emailService.js";
 import {
   applyRedemptionToUser,
   awardCoinsToUser,
@@ -42,11 +43,16 @@ import {
   sendError,
   sendSuccess,
   validateMongoId,
+  validateProductsArray,
 } from "../utils/errorHandler.js";
 import {
   generateInvoicePdf,
   getAbsolutePathFromStoredInvoicePath,
 } from "../utils/generateInvoicePdf.js";
+import {
+  calculateOrderTotal,
+  normalizeOrderForResponse,
+} from "../utils/calculateOrderTotal.js";
 import { syncOrderStatus, syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import {
   applyOrderStatusTransition,
@@ -344,6 +350,148 @@ const validateCouponForOrder = async ({
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
+const getPrimaryStoreUrl = () =>
+  String(
+    process.env.CLIENT_URL ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      "https://healthyonegram.com",
+  )
+    .split(",")[0]
+    .trim()
+    .replace(/\/+$/, "");
+
+const formatInr = (value) => `Rs. ${round2(value).toFixed(2)}`;
+
+const stringifyOrderItemsForEmail = (order) => {
+  const items = Array.isArray(order?.products) ? order.products : [];
+  if (items.length === 0) return "No items found for this order.";
+
+  return items
+    .map((item, index) => {
+      const name = String(item?.productTitle || item?.name || "Item").trim();
+      const quantity = Math.max(Number(item?.quantity || 0), 0);
+      const lineTotal = round2(
+        Number(item?.subTotal || item?.subTotalAmt || item?.price * quantity || 0),
+      );
+      return `${index + 1}. ${name} x ${quantity} = ${formatInr(lineTotal)}`;
+    })
+    .join("\n");
+};
+
+const sendOrderConfirmationEmail = async (order) => {
+  try {
+    const recipientEmail = String(
+      order?.billingDetails?.email ||
+        order?.guestDetails?.email ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (!recipientEmail) {
+      return false;
+    }
+
+    const customerName =
+      String(
+        order?.billingDetails?.fullName ||
+          order?.guestDetails?.fullName ||
+          "Customer",
+      ).trim() || "Customer";
+
+    const originalSubtotal = round2(
+      Number(
+        order?.originalPrice ||
+          (Number(order?.subtotal || 0) + Number(order?.discount || 0)) ||
+          0,
+      ),
+    );
+    const discount = round2(
+      Number(order?.discount || order?.discountAmount || 0) +
+        Number(order?.coinRedemption?.amount || 0),
+    );
+    const taxableAmount = round2(Number(order?.subtotal || 0));
+    const taxAmount = round2(Number(order?.tax || 0));
+    const shippingAmount = round2(Number(order?.shipping || 0));
+    const finalAmount = round2(Number(order?.finalAmount || order?.totalAmt || 0));
+
+    const text = [
+      `Order ${order?._id} created successfully.`,
+      `Status: ${order?.order_status || "pending"}`,
+      `Payment: ${order?.payment_status || "pending"}`,
+      `Final Amount: ${formatInr(finalAmount)}`,
+    ].join("\n");
+
+    const result = await sendTemplatedEmail({
+      to: recipientEmail,
+      subject: `Order Confirmation - ${order?._id}`,
+      templateFile: "orderConfirmation.html",
+      templateData: {
+        customer_name: customerName,
+        order_id: String(order?._id || ""),
+        order_date: new Date(order?.createdAt || Date.now()).toLocaleString(
+          "en-IN",
+          {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          },
+        ),
+        order_status: String(order?.order_status || "pending"),
+        payment_status: String(order?.payment_status || "pending"),
+        items_text: stringifyOrderItemsForEmail(order),
+        subtotal: formatInr(originalSubtotal),
+        discount: formatInr(discount),
+        taxable_amount: formatInr(taxableAmount),
+        tax_amount: formatInr(taxAmount),
+        shipping_amount: formatInr(shippingAmount),
+        final_amount: formatInr(finalAmount),
+        site_url: getPrimaryStoreUrl(),
+        support_email: String(
+          process.env.SUPPORT_EMAIL ||
+            process.env.EMAIL_FROM_ADDRESS ||
+            process.env.SMTP_USER ||
+            process.env.EMAIL ||
+            "support@healthyonegram.com",
+        ).trim(),
+        year: String(new Date().getFullYear()),
+      },
+      text,
+      context: "order.confirmation",
+    });
+
+    if (!result?.success) {
+      logger.warn("sendOrderConfirmationEmail", "Email send failed", {
+        orderId: order?._id,
+        recipientEmail,
+        error: result?.error || "Unknown error",
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error("sendOrderConfirmationEmail", "Unexpected email error", {
+      orderId: order?._id,
+      error: error?.message || String(error),
+    });
+    return false;
+  }
+};
+
+const CHECKOUT_GST_RATE = 5;
+const DEFAULT_PRODUCT_WEIGHT_GRAMS = 500;
+
+const toObjectIdOrNull = (value) => {
+  if (!value) return null;
+  const candidate =
+    value && typeof value === "object" && value._id ? value._id : value;
+  const asString = String(candidate || "").trim();
+  return mongoose.Types.ObjectId.isValid(asString) ? candidate : null;
+};
+
 const decodePhonePeWebhookEnvelope = (body = {}) => {
   if (!body || typeof body !== "object") return {};
 
@@ -468,6 +616,7 @@ const resolveCheckoutContact = async ({
   userId,
   deliveryAddressId,
   guestDetails,
+  strictGuestValidation = true,
 }) => {
   const normalizedGuest = normalizeGuestDetails(guestDetails);
   let userGstNumber = "";
@@ -498,7 +647,7 @@ const resolveCheckoutContact = async ({
       gst: normalizedGuest.gst || userGstNumber,
     };
 
-    if (!userId) {
+    if (!userId && strictGuestValidation) {
       validateGuestDetails(derived);
     }
 
@@ -510,7 +659,7 @@ const resolveCheckoutContact = async ({
     };
   }
 
-  if (!userId) {
+  if (!userId && strictGuestValidation) {
     validateGuestDetails(normalizedGuest);
   }
 
@@ -607,7 +756,7 @@ const isInvoiceEligible = (order) => {
 
 const getInvoiceEligibilityMessage = (order) => {
   if (!order) return "Order not found";
-  if (order.order_status === "cancelled") {
+  if (normalizeOrderStatus(order.order_status) === ORDER_STATUS.CANCELLED) {
     return "Invoice is not available for cancelled orders.";
   }
   if (!isInvoiceEligible(order)) {
@@ -649,12 +798,14 @@ const getOrderProductMetadata = async (order) => {
   if (productIds.length === 0) return {};
 
   const products = await ProductModel.find({ _id: { $in: productIds } })
-    .select("_id specifications unit weight")
+    .select("_id specifications hsnCode unit weight")
     .lean();
 
   const metadata = {};
   products.forEach((product) => {
-    const hsn = extractHsnFromSpecifications(product?.specifications);
+    const hsn =
+      String(product?.hsnCode || "").trim() ||
+      extractHsnFromSpecifications(product?.specifications);
     metadata[String(product._id)] = {
       hsn: hsn ? String(hsn) : process.env.INVOICE_DEFAULT_HSN || "2106",
       unit: product?.unit || "",
@@ -669,57 +820,247 @@ const getInvoiceSellerDetails = async () => {
   const storeInfo = (await getCachedSetting("storeInfo"))?.value || {};
 
   return {
-    name: process.env.INVOICE_SELLER_NAME || storeInfo.name || "BuyOneGram",
+    name: process.env.INVOICE_SELLER_NAME || storeInfo.name || "HealthyOneGram",
     gstin: process.env.INVOICE_SELLER_GSTIN || storeInfo.gstNumber || "",
     address:
       process.env.INVOICE_SELLER_ADDRESS ||
       storeInfo.address ||
       "Address not configured",
     state: process.env.INVOICE_SELLER_STATE || "Rajasthan",
+    placeOfSupplyStateCode:
+      process.env.INVOICE_SELLER_STATE_CODE || storeInfo.stateGstCode || "",
+    cin: process.env.INVOICE_SELLER_CIN || storeInfo.cinNumber || "",
+    msme: process.env.INVOICE_SELLER_MSME || storeInfo.msmeNumber || "",
+    fssai: process.env.INVOICE_SELLER_FSSAI || storeInfo.fssaiNumber || "",
     phone: process.env.INVOICE_SELLER_PHONE || storeInfo.phone || "",
     email: process.env.INVOICE_SELLER_EMAIL || storeInfo.email || "",
     currencySymbol: storeInfo.currencySymbol || "Rs. ",
   };
 };
 
-const ensureOrderInvoice = async (orderDoc) => {
-  if (!orderDoc?._id) {
-    return { ok: false, reason: "Order not found" };
+const fetchAndNormalizeOrderProducts = async (products = [], logContext = "order") => {
+  const productIds = products.map((p) => String(p.productId || ""));
+  const dbProducts = await ProductModel.find({
+    _id: { $in: productIds },
+  })
+    .select("_id name price images thumbnail isExclusive")
+    .lean();
+  const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
+  const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
+  if (missingIds.length > 0) {
+    logger.warn(logContext, "Some products not found", { missingIds });
+    throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
   }
 
-  const eligibilityMessage = getInvoiceEligibilityMessage(orderDoc);
-  if (eligibilityMessage) {
-    return { ok: false, reason: eligibilityMessage };
-  }
+  const normalizedProducts = normalizeOrderProducts({
+    products,
+    dbProductMap,
+  });
 
-  const existingAbsolutePath = getAbsolutePathFromStoredInvoicePath(
-    orderDoc.invoicePath,
+  return { normalizedProducts, dbProducts };
+};
+
+const calculateCheckoutPricing = async ({
+  normalizedProducts,
+  userId,
+  couponCode,
+  influencerCode,
+  checkoutContact,
+  coinRedeem,
+  paymentType = "prepaid",
+  logContext = "checkoutPricing",
+}) => {
+  const originalAmount = round2(
+    normalizedProducts.reduce(
+      (sum, item) => sum + Number(item.subTotal || 0),
+      0,
+    ),
   );
 
-  const populatedOrder =
-    orderDoc?.user?.name && orderDoc?.delivery_address?.address_line1
-      ? orderDoc
-      : await OrderModel.findById(orderDoc._id)
-          .populate("user", "name email")
-          .populate("delivery_address");
+  // Product catalog prices are GST-inclusive; derive a GST-exclusive base first.
+  const baseSplit = splitGstInclusiveAmount(
+    originalAmount,
+    CHECKOUT_GST_RATE,
+    checkoutContact?.state,
+  );
+  const baseSubtotal = round2(baseSplit.taxableAmount || 0);
 
-  if (!populatedOrder) {
-    return { ok: false, reason: "Order not found" };
+  const membershipResult = userId
+    ? await applyMembershipDiscount(baseSubtotal, userId)
+    : { membership: null, discount: 0, netSubtotal: baseSubtotal };
+  const membershipDiscount = round2(membershipResult.discount || 0);
+
+  let workingTaxableAmount = round2(membershipResult.netSubtotal || baseSubtotal);
+
+  let influencerDiscount = 0;
+  let influencerData = null;
+  if (influencerCode) {
+    const referralResult = await calculateReferralDiscount(
+      influencerCode,
+      workingTaxableAmount,
+    );
+    if (referralResult?.influencer) {
+      influencerDiscount = round2(referralResult.discount || 0);
+      influencerData = referralResult.influencer;
+      workingTaxableAmount = Math.max(
+        round2(workingTaxableAmount - influencerDiscount),
+        0,
+      );
+    }
   }
 
-  const [sellerDetails, productMetaById] = await Promise.all([
-    getInvoiceSellerDetails(),
-    getOrderProductMetadata(populatedOrder),
-  ]);
+  const couponResult = await validateCouponForOrder({
+    code: couponCode,
+    orderAmount: workingTaxableAmount,
+    userId,
+    influencerCode: influencerDiscount > 0 ? influencerCode : null,
+  });
 
-  let generated = null;
-  let absolutePath = existingAbsolutePath;
-  let generatedNewFile = false;
+  if (couponResult.errorMessage) {
+    return {
+      errorMessage: couponResult.errorMessage,
+    };
+  }
 
-  if (orderDoc.invoicePath && existingAbsolutePath) {
-    try {
-      await fsPromises.access(existingAbsolutePath);
-    } catch {
+  const normalizedCouponCode = couponResult.normalizedCode;
+  const couponDiscount = Math.min(
+    round2(couponResult.discount || 0),
+    workingTaxableAmount,
+  );
+
+  const taxableAmount = Math.max(
+    round2(workingTaxableAmount - couponDiscount),
+    0,
+  );
+  const taxData = calculateTax(taxableAmount, checkoutContact?.state || "");
+  const gstAmount = round2(taxData.tax || 0);
+
+  const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
+  if (requestedCoins > 0) {
+    return {
+      errorMessage:
+        "Coin redemption is only available for membership subscriptions.",
+    };
+  }
+
+  const redemption = { coinsUsed: 0, redeemAmount: 0 };
+  const postDiscountInclusive = Math.max(
+    round2(taxableAmount + gstAmount - Number(redemption.redeemAmount || 0)),
+    0,
+  );
+
+  const totalWeight = normalizedProducts.reduce(
+    (sum, item) =>
+      sum + (Math.max(Number(item.quantity || 0), 0) * DEFAULT_PRODUCT_WEIGHT_GRAMS),
+    0,
+  );
+
+  let shippingCharge = 0;
+  try {
+    if (validateIndianPincode(checkoutContact?.pincode || "")) {
+      const shippingQuote = await getShippingQuote({
+        destinationPincode: checkoutContact.pincode,
+        subtotal: postDiscountInclusive,
+        totalWeightGrams: totalWeight,
+        paymentType: paymentType || "prepaid",
+      });
+      shippingCharge = Number(shippingQuote?.charge || 0);
+    }
+  } catch (shippingErr) {
+    logger.warn(logContext, "Shipping quote failed, defaulting to 0", {
+      error: shippingErr?.message || String(shippingErr),
+    });
+    shippingCharge = 0;
+  }
+  shippingCharge = Math.max(round2(shippingCharge), 0);
+
+  const finalAmount = round2(postDiscountInclusive + shippingCharge);
+  const totalDiscount = round2(
+    membershipDiscount + influencerDiscount + couponDiscount,
+  );
+
+  let influencerCommission = 0;
+  if (influencerData?._id) {
+    influencerCommission = await calculateInfluencerCommission(
+      influencerData._id,
+      taxableAmount,
+    );
+  }
+
+  return {
+    originalAmount,
+    subtotal: baseSubtotal,
+    taxableAmount,
+    gstAmount,
+    shippingCharge,
+    finalAmount,
+    totalDiscount,
+    membershipDiscount,
+    couponDiscount,
+    influencerDiscount,
+    normalizedCouponCode,
+    influencerData,
+    influencerCode:
+      influencerData?.code || (influencerDiscount > 0 ? influencerCode : null),
+    influencerCommission,
+    membershipPlan: membershipResult.membership || null,
+    taxData: {
+      ...taxData,
+      taxableAmount,
+      tax: gstAmount,
+    },
+    redemption,
+  };
+};
+
+const ensureOrderInvoice = async (orderDoc) => {
+  try {
+    if (!orderDoc?._id) {
+      return { ok: false, reason: "Order not found" };
+    }
+
+    const eligibilityMessage = getInvoiceEligibilityMessage(orderDoc);
+    if (eligibilityMessage) {
+      return { ok: false, reason: eligibilityMessage };
+    }
+
+    const existingAbsolutePath = getAbsolutePathFromStoredInvoicePath(
+      orderDoc.invoicePath,
+    );
+
+    const populatedOrder =
+      orderDoc?.user?.name && orderDoc?.delivery_address?.address_line1
+        ? orderDoc
+        : await OrderModel.findById(orderDoc._id)
+            .populate("user", "name email")
+            .populate("delivery_address");
+
+    if (!populatedOrder) {
+      return { ok: false, reason: "Order not found" };
+    }
+
+    const [sellerDetails, productMetaById] = await Promise.all([
+      getInvoiceSellerDetails(),
+      getOrderProductMetadata(populatedOrder),
+    ]);
+
+    let generated = null;
+    let absolutePath = existingAbsolutePath;
+    let generatedNewFile = false;
+
+    if (orderDoc.invoicePath && existingAbsolutePath) {
+      try {
+        await fsPromises.access(existingAbsolutePath);
+      } catch {
+        generated = await generateInvoicePdf({
+          order: populatedOrder,
+          sellerDetails,
+          productMetaById,
+        });
+        generatedNewFile = true;
+        absolutePath = generated.absolutePath;
+      }
+    } else {
       generated = await generateInvoicePdf({
         order: populatedOrder,
         sellerDetails,
@@ -728,114 +1069,154 @@ const ensureOrderInvoice = async (orderDoc) => {
       generatedNewFile = true;
       absolutePath = generated.absolutePath;
     }
-  } else {
-    generated = await generateInvoicePdf({
-      order: populatedOrder,
-      sellerDetails,
-      productMetaById,
-    });
-    generatedNewFile = true;
-    absolutePath = generated.absolutePath;
-  }
 
-  if (generated) {
-    orderDoc.invoiceNumber = generated.invoiceNumber;
-    orderDoc.invoicePath = generated.invoicePath;
-    orderDoc.invoiceGeneratedAt = generated.invoiceGeneratedAt;
-    await orderDoc.save();
-  }
+    if (generated) {
+      orderDoc.invoiceNumber = generated.invoiceNumber;
+      orderDoc.invoicePath = generated.invoicePath;
+      orderDoc.invoiceGeneratedAt = generated.invoiceGeneratedAt;
 
-  const subtotal = round2(
-    populatedOrder.subtotal ||
-      populatedOrder.products?.reduce(
-        (sum, item) => sum + Number(item.subTotal || 0),
-        0,
-      ) ||
-      0,
-  );
-  const state =
-    populatedOrder.billingDetails?.state ||
-    populatedOrder.guestDetails?.state ||
-    populatedOrder.delivery_address?.state ||
-    "";
-  const taxBreakdownFromService = calculateTax(subtotal, state);
-  const gst = populatedOrder.gst || {};
-  const taxBreakdown = {
-    rate: Number(gst.rate ?? taxBreakdownFromService.rate),
-    state: gst.state || taxBreakdownFromService.state,
-    taxableAmount: Number(
-      gst.taxableAmount ?? taxBreakdownFromService.taxableAmount,
-    ),
-    cgst: Number(gst.cgst ?? taxBreakdownFromService.cgst),
-    sgst: Number(gst.sgst ?? taxBreakdownFromService.sgst),
-    igst: Number(gst.igst ?? taxBreakdownFromService.igst),
-    totalTax: round2(
-      Number(populatedOrder.tax || taxBreakdownFromService.tax || 0),
-    ),
-  };
+      // Avoid validating legacy fields while persisting generated invoice refs.
+      try {
+        await OrderModel.updateOne(
+          { _id: orderDoc._id },
+          {
+            $set: {
+              invoiceNumber: generated.invoiceNumber,
+              invoicePath: generated.invoicePath,
+              invoiceGeneratedAt: generated.invoiceGeneratedAt,
+            },
+          },
+        );
+      } catch (persistError) {
+        logger.warn(
+          "ensureOrderInvoice",
+          "Failed to persist order invoice metadata; continuing with generated PDF",
+          {
+            orderId: orderDoc._id,
+            invoiceNumber: generated.invoiceNumber,
+            invoicePath: generated.invoicePath,
+            error: persistError?.message || String(persistError),
+          },
+        );
+      }
+    }
 
-  const billingDetails = {
-    fullName:
-      populatedOrder.billingDetails?.fullName ||
-      populatedOrder.guestDetails?.fullName ||
-      populatedOrder.delivery_address?.name ||
-      populatedOrder.user?.name ||
-      "",
-    email:
-      populatedOrder.billingDetails?.email ||
-      populatedOrder.guestDetails?.email ||
-      populatedOrder.user?.email ||
-      "",
-    phone:
-      populatedOrder.billingDetails?.phone ||
-      populatedOrder.guestDetails?.phone ||
-      String(populatedOrder.delivery_address?.mobile || ""),
-    address:
-      populatedOrder.billingDetails?.address ||
-      populatedOrder.guestDetails?.address ||
-      populatedOrder.delivery_address?.address_line1 ||
-      "",
-    pincode:
-      populatedOrder.billingDetails?.pincode ||
-      populatedOrder.guestDetails?.pincode ||
-      populatedOrder.delivery_address?.pincode ||
-      "",
-    state,
-  };
+    if (!absolutePath) {
+      return { ok: false, reason: "Invoice file path could not be resolved" };
+    }
 
-  const invoiceNumber =
-    orderDoc.invoiceNumber ||
-    generated?.invoiceNumber ||
-    orderDoc._id.toString();
-  const invoicePath = orderDoc.invoicePath || generated?.invoicePath || "";
+    const pricing = calculateOrderTotal(populatedOrder);
+    const state =
+      populatedOrder.billingDetails?.state ||
+      populatedOrder.guestDetails?.state ||
+      populatedOrder.delivery_address?.state ||
+      "";
+    const taxBreakdownFromService = calculateTax(pricing.subtotal, state);
+    const gst = populatedOrder.gst || {};
+    const taxBreakdown = {
+      rate: Number(gst.rate ?? taxBreakdownFromService.rate),
+      state: gst.state || taxBreakdownFromService.state,
+      taxableAmount: Number(
+        gst.taxableAmount ?? taxBreakdownFromService.taxableAmount,
+      ),
+      cgst: Number(gst.cgst ?? taxBreakdownFromService.cgst),
+      sgst: Number(gst.sgst ?? taxBreakdownFromService.sgst),
+      igst: Number(gst.igst ?? taxBreakdownFromService.igst),
+      totalTax: round2(Number(gst.totalTax ?? pricing.tax)),
+    };
 
-  await InvoiceModel.findOneAndUpdate(
-    { orderId: orderDoc._id },
-    {
-      orderId: orderDoc._id,
-      invoiceNumber,
-      subtotal,
-      taxBreakdown,
-      shipping: round2(populatedOrder.shipping || 0),
-      total: round2(populatedOrder.finalAmount || populatedOrder.totalAmt || 0),
-      gstNumber:
-        populatedOrder.gstNumber ||
-        populatedOrder.guestDetails?.gst ||
-        sellerDetails.gstin ||
+    const billingDetails = {
+      fullName:
+        populatedOrder.billingDetails?.fullName ||
+        populatedOrder.guestDetails?.fullName ||
+        populatedOrder.delivery_address?.name ||
+        populatedOrder.user?.name ||
+        "Customer",
+      email:
+        populatedOrder.billingDetails?.email ||
+        populatedOrder.guestDetails?.email ||
+        populatedOrder.user?.email ||
         "",
-      billingDetails,
-      invoicePath,
-      createdBy: orderDoc.user || null,
-    },
-    { upsert: true, new: true, runValidators: true },
-  );
+      phone:
+        populatedOrder.billingDetails?.phone ||
+        populatedOrder.guestDetails?.phone ||
+        String(populatedOrder.delivery_address?.mobile || ""),
+      address:
+        populatedOrder.billingDetails?.address ||
+        populatedOrder.guestDetails?.address ||
+        populatedOrder.delivery_address?.address_line1 ||
+        "Address not available",
+      pincode:
+        populatedOrder.billingDetails?.pincode ||
+        populatedOrder.guestDetails?.pincode ||
+        populatedOrder.delivery_address?.pincode ||
+        "",
+      state,
+    };
 
-  return {
-    ok: true,
-    generated: generatedNewFile,
-    order: orderDoc,
-    absolutePath,
-  };
+    const invoiceNumber =
+      orderDoc.invoiceNumber ||
+      generated?.invoiceNumber ||
+      orderDoc._id.toString();
+    const invoicePath = orderDoc.invoicePath || generated?.invoicePath || "";
+
+    const createdBy = toObjectIdOrNull(
+      orderDoc.user || orderDoc.user?._id || populatedOrder.user || populatedOrder.user?._id,
+    );
+
+    try {
+      await InvoiceModel.findOneAndUpdate(
+        { orderId: orderDoc._id },
+        {
+          orderId: orderDoc._id,
+          invoiceNumber,
+          subtotal: pricing.subtotal,
+          taxBreakdown,
+          shipping: pricing.shipping,
+          total: pricing.total,
+          gstNumber:
+            populatedOrder.gstNumber ||
+            populatedOrder.guestDetails?.gst ||
+            sellerDetails.gstin ||
+            "",
+          billingDetails,
+          invoicePath,
+          createdBy,
+        },
+        { upsert: true, new: true, runValidators: true },
+      );
+    } catch (invoicePersistError) {
+      logger.warn(
+        "ensureOrderInvoice",
+        "Failed to upsert invoice metadata; continuing with generated PDF",
+        {
+          orderId: orderDoc._id,
+          invoiceNumber,
+          invoicePath,
+          error: invoicePersistError?.message || String(invoicePersistError),
+        },
+      );
+    }
+
+    return {
+      ok: true,
+      generated: generatedNewFile,
+      order: orderDoc,
+      absolutePath,
+    };
+  } catch (error) {
+    logger.error("ensureOrderInvoice", "Invoice pipeline failed", {
+      orderId: orderDoc?._id,
+      paymentStatus: orderDoc?.payment_status,
+      orderStatus: orderDoc?.order_status,
+      error: error?.message || String(error),
+    });
+    return {
+      ok: false,
+      reason: "Failed to generate invoice",
+      error,
+    };
+  }
 };
 
 // ==================== ADMIN ENDPOINTS ====================
@@ -897,6 +1278,7 @@ export const getAllOrders = asyncHandler(async (req, res) => {
         .lean(),
       OrderModel.countDocuments(filter),
     ]);
+    const normalizedOrders = orders.map((order) => normalizeOrderForResponse(order));
 
     logger.info("getAllOrders", `Retrieved ${orders.length} orders`, {
       total,
@@ -907,7 +1289,7 @@ export const getAllOrders = asyncHandler(async (req, res) => {
     return sendSuccess(
       res,
       {
-        orders,
+        orders: normalizedOrders,
         pagination: {
           total,
           page,
@@ -1154,7 +1536,11 @@ export const getOrderById = asyncHandler(async (req, res) => {
 
     logger.info("getOrderById", "Order retrieved", { id });
 
-    return sendSuccess(res, order, "Order retrieved successfully");
+    return sendSuccess(
+      res,
+      normalizeOrderForResponse(order),
+      "Order retrieved successfully",
+    );
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -1298,12 +1684,13 @@ export const getUserOrders = asyncHandler(async (req, res) => {
       .populate("influencerId", "code name")
       .sort({ createdAt: -1 })
       .lean();
+    const normalizedOrders = orders.map((order) => normalizeOrderForResponse(order));
 
     logger.info("getUserOrders", `Retrieved ${orders.length} orders for user`, {
       userId,
     });
 
-    return sendSuccess(res, orders, "Orders retrieved successfully");
+    return sendSuccess(res, normalizedOrders, "Orders retrieved successfully");
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -1361,7 +1748,11 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
 
     logger.info("getUserOrderById", "Order retrieved", { userId, orderId: id });
 
-    return sendSuccess(res, order, "Order retrieved successfully");
+    return sendSuccess(
+      res,
+      normalizeOrderForResponse(order),
+      "Order retrieved successfully",
+    );
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -1414,12 +1805,19 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
 
     const invoiceResult = await ensureOrderInvoice(order);
     if (!invoiceResult.ok) {
+      logger.warn("downloadOrderInvoice", "Invoice unavailable", {
+        orderId,
+        reason: invoiceResult.reason,
+        error: invoiceResult.error?.message || null,
+      });
       return res.status(400).json({
         error: true,
         success: false,
         message: invoiceResult.reason,
       });
     }
+
+    await fsPromises.access(invoiceResult.absolutePath);
 
     const filename = `${invoiceResult.order.invoiceNumber || `invoice_${orderId}`}.pdf`;
 
@@ -1497,19 +1895,10 @@ export const createOrder = asyncHandler(async (req, res) => {
       productCount: products.length,
     });
 
-    // Verify products exist in database and normalize pricing server-side
-    const productIds = products.map((p) => String(p.productId));
-    const dbProducts = await ProductModel.find({
-      _id: { $in: productIds },
-    })
-      .select("_id name price images thumbnail isExclusive")
-      .lean();
-    const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
-    const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
-    if (missingIds.length > 0) {
-      logger.warn("createOrder", "Some products not found", { missingIds });
-      throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
-    }
+    const { normalizedProducts, dbProducts } = await fetchAndNormalizeOrderProducts(
+      products,
+      "createOrder",
+    );
 
     const exclusiveProductIds = dbProducts
       .filter((product) => product.isExclusive === true)
@@ -1535,139 +1924,43 @@ export const createOrder = asyncHandler(async (req, res) => {
       }
     }
 
-    const normalizedProducts = normalizeOrderProducts({
-      products,
-      dbProductMap,
-    });
-    const subtotal = round2(
-      normalizedProducts.reduce(
-        (sum, item) => sum + Number(item.subTotal || 0),
-        0,
-      ),
-    );
-
     const checkoutContact = await resolveCheckoutContact({
       userId,
       deliveryAddressId: delivery_address || null,
       guestDetails:
         guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
     });
-
-    const membershipResult = userId
-      ? await applyMembershipDiscount(subtotal, userId)
-      : { membership: null, discount: 0, netSubtotal: subtotal };
-
-    let workingAmount = membershipResult.netSubtotal;
-
-    // Calculate influencer discount (if any)
-    let influencerDiscount = 0;
-    let influencerData = null;
-    if (influencerCode) {
-      const referralResult = await calculateReferralDiscount(
-        influencerCode,
-        workingAmount,
-      );
-      if (referralResult?.influencer) {
-        influencerDiscount = referralResult.discount || 0;
-        influencerData = referralResult.influencer;
-        workingAmount = Math.max(round2(workingAmount - influencerDiscount), 0);
-      }
-    }
-
-    // Validate coupon (if provided)
-    const couponResult = await validateCouponForOrder({
-      code: couponCode,
-      orderAmount: workingAmount,
+    const pricing = await calculateCheckoutPricing({
+      normalizedProducts,
       userId,
-      influencerCode: influencerDiscount > 0 ? influencerCode : null,
+      couponCode,
+      influencerCode,
+      checkoutContact,
+      coinRedeem,
+      paymentType,
+      logContext: "createOrder",
     });
 
-    if (couponResult.errorMessage) {
+    if (pricing.errorMessage) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: couponResult.errorMessage,
+        message: pricing.errorMessage,
       });
     }
 
-    const normalizedCouponCode = couponResult.normalizedCode;
-    const subtotalBeforeCoupon = workingAmount;
-    const couponDiscount = Math.min(
-      couponResult.discount || 0,
-      subtotalBeforeCoupon,
-    );
-    const membershipDiscount = round2(membershipResult.discount || 0);
-
-    // Apply coupon discount to get post-coupon inclusive amount
-    workingAmount = Math.max(round2(subtotalBeforeCoupon - couponDiscount), 0);
-
-    const totalDiscountBeforeCoins = round2(
-      membershipDiscount + influencerDiscount + couponDiscount,
-    );
-    const subtotalAfterDiscount = workingAmount;
-
-    // GST is calculated on the post-coupon amount. Coupons are trade discounts
-    // that reduce the taxable value per Indian GST rules. Coin redemptions are
-    // a payment method and do NOT reduce the taxable value.
-    const taxData = splitGstInclusiveAmount(
-      subtotalAfterDiscount,
-      5,
-      checkoutContact.state,
-    );
-
-    const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
-    if (requestedCoins > 0) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message:
-          "Coin redemption is only available for membership subscriptions.",
-      });
-    }
-    const redemption = { coinsUsed: 0, redeemAmount: 0 };
-
-    const netInclusiveSubtotal = Math.max(
-      round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
-      0,
-    );
-
-    // ---- SHIPPING: backend source-of-truth via getShippingQuote ----
-    const totalWeight = normalizedProducts.reduce(
-      (sum, item) => sum + ((Number(item.quantity) || 1) * 500),
-      0,
-    );
-    let shippingCharge = 0;
-    try {
-      if (validateIndianPincode(checkoutContact.pincode)) {
-        const shippingQuote = await getShippingQuote({
-          destinationPincode: checkoutContact.pincode,
-          subtotal: totalWeight,
-          paymentType: paymentType || "prepaid",
-        });
-        shippingCharge = Number(shippingQuote.charge || 0);
-      }
-    } catch (shippingErr) {
-      logger.warn("createOrder", "Shipping quote failed, defaulting to 0", {
-        error: shippingErr?.message || String(shippingErr),
-      });
-      shippingCharge = 0;
-    }
-
-    const computedFinalAmount = round2(
-      netInclusiveSubtotal + shippingCharge,
-    );
+    const normalizedCouponCode = pricing.normalizedCouponCode;
+    const couponDiscount = pricing.couponDiscount;
+    const membershipDiscount = pricing.membershipDiscount;
+    const influencerDiscount = pricing.influencerDiscount;
+    const influencerData = pricing.influencerData;
+    const influencerCommission = pricing.influencerCommission;
+    const redemption = pricing.redemption;
+    const taxData = pricing.taxData;
+    const shippingCharge = pricing.shippingCharge;
+    const computedFinalAmount = pricing.finalAmount;
+    const totalDiscount = pricing.totalDiscount;
     const payableAmount = Math.max(computedFinalAmount, 1);
-
-    // Calculate influencer commission based on final amount
-    let influencerCommission = 0;
-    if (influencerData?._id) {
-      influencerCommission = await calculateInfluencerCommission(
-        influencerData._id,
-        taxData.taxableAmount,
-      );
-    }
-
-    const totalDiscount = round2(totalDiscountBeforeCoins);
 
     const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
       purchaseOrderId,
@@ -1688,13 +1981,13 @@ export const createOrder = asyncHandler(async (req, res) => {
         { status: ORDER_STATUS.PENDING, source: "ORDER_CREATE", timestamp: new Date() },
       ],
       paymentMethod: PAYMENT_PROVIDER,
-      originalPrice: subtotal,
+      originalPrice: pricing.originalAmount,
       finalAmount: computedFinalAmount,
       couponCode: normalizedCouponCode,
       discountAmount: couponDiscount,
       discount: totalDiscount,
       membershipDiscount,
-      membershipPlan: membershipResult.membership?.planId || null,
+      membershipPlan: pricing.membershipPlan?.planId || null,
       tax: taxData.tax,
       shipping: shippingCharge,
       gst: {
@@ -1721,10 +2014,10 @@ export const createOrder = asyncHandler(async (req, res) => {
       },
       notes: notes || "",
       influencerId: influencerData?._id || null,
-      influencerCode: influencerData?.code || influencerCode || null,
+      influencerCode: pricing.influencerCode || null,
       influencerDiscount,
       influencerCommission,
-      affiliateCode: affiliateCode || influencerCode || null,
+      affiliateCode: affiliateCode || pricing.influencerCode || null,
       affiliateSource: affiliateSource || (influencerData ? "referral" : null),
       purchaseOrder: checkoutPurchaseOrder?._id || null,
     });
@@ -1836,6 +2129,8 @@ export const createOrder = asyncHandler(async (req, res) => {
       userId,
     });
 
+    await sendOrderConfirmationEmail(order);
+
     if (PAYMENT_PROVIDER === "PHONEPE") {
       const primaryOrigin = String(process.env.CLIENT_URL || "")
         .split(",")[0]
@@ -1925,6 +2220,139 @@ export const createOrder = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Preview checkout pricing (server source of truth)
+ * @route POST /api/orders/preview
+ * @access User (authenticated) / Guest
+ */
+export const previewOrderPricing = asyncHandler(async (req, res) => {
+  try {
+    const {
+      products,
+      delivery_address,
+      couponCode,
+      influencerCode,
+      guestDetails,
+      coinRedeem,
+      paymentType,
+    } = req.body || {};
+
+    validateProductsArray(products, "products");
+
+    if (delivery_address) {
+      validateMongoId(delivery_address, "delivery_address");
+    }
+
+    const normalizedPaymentType = String(paymentType || "prepaid")
+      .trim()
+      .toLowerCase();
+    const allowedPaymentTypes = new Set(["prepaid", "cod", "reverse"]);
+    if (!allowedPaymentTypes.has(normalizedPaymentType)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid paymentType",
+      });
+    }
+
+    const userId = req.user?._id || req.user?.id || req.user || null;
+
+    const { normalizedProducts, dbProducts } = await fetchAndNormalizeOrderProducts(
+      products,
+      "previewOrderPricing",
+    );
+
+    const exclusiveProductIds = dbProducts
+      .filter((product) => product.isExclusive === true)
+      .map((product) => String(product._id));
+    if (exclusiveProductIds.length > 0) {
+      if (!userId) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message:
+            "Login with an active membership to purchase exclusive products.",
+        });
+      }
+      const hasExclusiveAccess = await checkExclusiveAccess(userId);
+      if (!hasExclusiveAccess) {
+        return res.status(403).json({
+          error: true,
+          success: false,
+          message: "Active membership required for exclusive products.",
+        });
+      }
+    }
+
+    const checkoutContact = await resolveCheckoutContact({
+      userId,
+      deliveryAddressId: delivery_address || null,
+      guestDetails: guestDetails || {},
+      strictGuestValidation: false,
+    });
+
+    const pricing = await calculateCheckoutPricing({
+      normalizedProducts,
+      userId,
+      couponCode,
+      influencerCode,
+      checkoutContact,
+      coinRedeem,
+      paymentType: normalizedPaymentType,
+      logContext: "previewOrderPricing",
+    });
+
+    if (pricing.errorMessage) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: pricing.errorMessage,
+      });
+    }
+
+    return sendSuccess(
+      res,
+      {
+        subtotal: pricing.subtotal,
+        discount: pricing.totalDiscount,
+        taxableAmount: pricing.taxableAmount,
+        gstAmount: pricing.gstAmount,
+        shipping: pricing.shippingCharge,
+        finalAmount: pricing.finalAmount,
+        originalAmount: pricing.originalAmount,
+        discountBreakdown: {
+          membership: pricing.membershipDiscount,
+          influencer: pricing.influencerDiscount,
+          coupon: pricing.couponDiscount,
+          total: pricing.totalDiscount,
+        },
+        codes: {
+          couponCode: pricing.normalizedCouponCode || null,
+          influencerCode: pricing.influencerCode || null,
+        },
+        gst: {
+          rate: pricing.taxData?.rate ?? CHECKOUT_GST_RATE,
+          state: pricing.taxData?.state || checkoutContact?.state || "",
+          taxableAmount: pricing.taxableAmount,
+          cgst: pricing.taxData?.cgst ?? 0,
+          sgst: pricing.taxData?.sgst ?? 0,
+          igst: pricing.taxData?.igst ?? pricing.gstAmount,
+          totalTax: pricing.gstAmount,
+        },
+      },
+      "Checkout preview generated successfully",
+      200,
+    );
+  } catch (error) {
+    if (error instanceof AppError) {
+      return sendError(res, error);
+    }
+
+    const dbError = handleDatabaseError(error, "previewOrderPricing");
+    return sendError(res, dbError);
+  }
+});
+
+/**
  * Save order for later (When payments unavailable)
  * @route POST /api/orders/save-for-later
  * @access User (authenticated) / Guest
@@ -1952,20 +2380,10 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       productCount: products.length,
     });
 
-    const productIds = products.map((p) => String(p.productId));
-    const dbProducts = await ProductModel.find({
-      _id: { $in: productIds },
-    })
-      .select("_id name price images thumbnail isExclusive")
-      .lean();
-    const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
-    const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
-    if (missingIds.length > 0) {
-      logger.warn("saveOrderForLater", "Some products not found", {
-        missingIds,
-      });
-      throw new AppError("PRODUCT_NOT_FOUND", { missingIds });
-    }
+    const { normalizedProducts, dbProducts } = await fetchAndNormalizeOrderProducts(
+      products,
+      "saveOrderForLater",
+    );
 
     const exclusiveProductIds = dbProducts
       .filter((product) => product.isExclusive === true)
@@ -1991,169 +2409,49 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       }
     }
 
-    const normalizedProducts = normalizeOrderProducts({
-      products,
-      dbProductMap,
-    });
-    const subtotal = round2(
-      normalizedProducts.reduce(
-        (sum, item) => sum + Number(item.subTotal || 0),
-        0,
-      ),
-    );
-
     const checkoutContact = await resolveCheckoutContact({
       userId,
       deliveryAddressId: delivery_address || null,
       guestDetails:
         guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
     });
+    const pricing = await calculateCheckoutPricing({
+      normalizedProducts,
+      userId,
+      couponCode,
+      influencerCode,
+      checkoutContact,
+      coinRedeem,
+      paymentType,
+      logContext: "saveOrderForLater",
+    });
 
-    const membershipResult = userId
-      ? await applyMembershipDiscount(subtotal, userId)
-      : { membership: null, discount: 0, netSubtotal: subtotal };
-
-    // Backend discount calculation
-    const originalPrice = subtotal;
-    let workingAmount = membershipResult.netSubtotal;
-    let influencerDiscount = 0;
-    let influencerData = null;
-    let influencerCommission = 0;
-    let couponDiscount = 0;
-    const membershipDiscount = round2(membershipResult.discount || 0);
-    let normalizedCouponCode = couponCode
-      ? couponCode.toUpperCase().trim()
-      : null;
-
-    // Apply influencer discount first
-    if (influencerCode) {
-      try {
-        const referralResult = await calculateReferralDiscount(
-          influencerCode,
-          workingAmount,
-        );
-        if (referralResult.influencer) {
-          influencerDiscount = referralResult.discount;
-          influencerData = referralResult.influencer;
-          workingAmount = Math.max(
-            round2(workingAmount - influencerDiscount),
-            0,
-          );
-          logger.info("saveOrderForLater", "Influencer discount applied", {
-            code: influencerCode,
-            discount: influencerDiscount,
-          });
-        }
-      } catch (error) {
-        logger.warn("saveOrderForLater", "Invalid influencer code", {
-          code: influencerCode,
-          error: error.message,
-        });
-      }
-    }
-
-    const subtotalBeforeCoupon = workingAmount;
-
-    // Validate and apply coupon discount
-    if (couponCode) {
-      const couponResult = await validateCouponForOrder({
-        code: couponCode,
-        orderAmount: workingAmount,
-        userId,
-        influencerCode: influencerDiscount > 0 ? influencerCode : null,
-      });
-
-      if (couponResult.errorMessage) {
-        return res.status(400).json({
-          error: true,
-          success: false,
-          message: couponResult.errorMessage,
-        });
-      }
-
-      normalizedCouponCode = couponResult.normalizedCode;
-      couponDiscount = Math.min(couponResult.discount || 0, workingAmount);
-      if (couponDiscount > 0) {
-        workingAmount = Math.max(round2(workingAmount - couponDiscount), 0);
-        logger.info("saveOrderForLater", "Coupon discount applied", {
-          code: normalizedCouponCode,
-          discount: couponDiscount,
-        });
-      }
-    }
-
-    const subtotalAfterDiscount = workingAmount;
-
-    // Match checkout pricing logic:
-    // GST is recalculated on post-discount subtotal (trade discounts reduce
-    // taxable value). Coin redemption is handled later as a payment method.
-    const taxData = splitGstInclusiveAmount(
-      subtotalAfterDiscount,
-      5,
-      checkoutContact.state,
-    );
-
-    const requestedCoins = Number(coinRedeem?.coins || coinRedeem || 0);
-    if (requestedCoins > 0) {
+    if (pricing.errorMessage) {
       return res.status(400).json({
         error: true,
         success: false,
-        message:
-          "Coin redemption is only available for membership subscriptions.",
+        message: pricing.errorMessage,
       });
     }
-    const redemption = { coinsUsed: 0, redeemAmount: 0 };
 
-    const netInclusiveSubtotal = Math.max(
-      round2(subtotalAfterDiscount - Number(redemption.redeemAmount || 0)),
-      0,
-    );
-    // ---- SHIPPING: backend source-of-truth via getShippingQuote ----
-    const totalWeight = normalizedProducts.reduce(
-      (sum, item) => sum + ((Number(item.quantity) || 1) * 500),
-      0,
-    );
-    let shippingCharge = 0;
-    try {
-      if (validateIndianPincode(checkoutContact.pincode)) {
-        const shippingQuote = await getShippingQuote({
-          destinationPincode: checkoutContact.pincode,
-          subtotal: totalWeight,
-          paymentType: paymentType || "prepaid",
-        });
-        shippingCharge = Number(shippingQuote.charge || 0);
-      }
-    } catch (shippingErr) {
-      logger.warn("saveOrderForLater", "Shipping quote failed, defaulting to 0", {
-        error: shippingErr?.message || String(shippingErr),
-      });
-      shippingCharge = 0;
-    }
-
-    // Calculate final amount
-    const finalOrderAmount = round2(
-      netInclusiveSubtotal + shippingCharge,
-    );
-    const totalDiscount = round2(
-      membershipDiscount + influencerDiscount + couponDiscount,
-    );
+    const originalPrice = pricing.originalAmount;
+    const normalizedCouponCode = pricing.normalizedCouponCode;
+    const couponDiscount = pricing.couponDiscount;
+    const membershipDiscount = pricing.membershipDiscount;
+    const influencerDiscount = pricing.influencerDiscount;
+    const influencerData = pricing.influencerData;
+    const influencerCommission = pricing.influencerCommission;
+    const redemption = pricing.redemption;
+    const taxData = pricing.taxData;
+    const shippingCharge = pricing.shippingCharge;
+    const finalOrderAmount = pricing.finalAmount;
+    const totalDiscount = pricing.totalDiscount;
 
     const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
       purchaseOrderId,
       userId,
       checkoutContact,
     });
-
-    // Calculate influencer commission
-    if (influencerData) {
-      influencerCommission = await calculateInfluencerCommission(
-        influencerData._id,
-        taxData.taxableAmount,
-      );
-      logger.info("saveOrderForLater", "Influencer commission calculated", {
-        commission: influencerCommission,
-      });
-    }
 
     // Create saved order
     const savedOrder = new OrderModel({
@@ -2172,10 +2470,10 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       discountAmount: couponDiscount,
       discount: totalDiscount,
       membershipDiscount,
-      membershipPlan: membershipResult.membership?.planId || null,
+      membershipPlan: pricing.membershipPlan?.planId || null,
       finalAmount: finalOrderAmount,
       influencerId: influencerData?._id || null,
-      influencerCode: influencerData?.code || null,
+      influencerCode: pricing.influencerCode || null,
       influencerDiscount,
       influencerCommission,
       commissionPaid: false,
@@ -2204,8 +2502,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         coinsUsed: Number(redemption.coinsUsed || 0),
         amount: Number(redemption.redeemAmount || 0),
       },
-      affiliateCode: affiliateCode || influencerCode || null,
-      affiliateSource: affiliateSource || (influencerCode ? "referral" : null),
+      affiliateCode: affiliateCode || pricing.influencerCode || null,
+      affiliateSource:
+        affiliateSource || (pricing.influencerCode ? "referral" : null),
       purchaseOrder: checkoutPurchaseOrder?._id || null,
       isSavedOrder: true,
       notes: notes || "Order saved - awaiting payment gateway activation",
@@ -2317,6 +2616,8 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       orderId: savedOrder._id,
     });
 
+    await sendOrderConfirmationEmail(savedOrder);
+
     // Update influencer stats
     if (influencerData) {
       await updateInfluencerStats(
@@ -2352,7 +2653,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
           finalAmount: finalOrderAmount,
         },
         discountsApplied: {
-          influencer: !!influencerCode,
+          influencer: Boolean(pricing.influencerCode),
           coupon: !!normalizedCouponCode,
           affiliate: !!savedOrder.affiliateCode,
         },
@@ -2683,18 +2984,21 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     }
 
     // Create order items
-    const orderProducts = products.map((product) => ({
-      productId: product._id.toString(),
-      productTitle: product.name,
-      quantity: Math.floor(Math.random() * 3) + 1,
-      price: product.price,
-      image: product.image,
-      subTotal: product.price * (Math.floor(Math.random() * 3) + 1),
-    }));
+    const orderProducts = products.map((product) => {
+      const quantity = Math.floor(Math.random() * 3) + 1;
+      const price = round2(Number(product.price || 0));
+      return {
+        productId: product._id.toString(),
+        productTitle: product.name,
+        quantity,
+        price,
+        image: product.image,
+        subTotal: round2(price * quantity),
+      };
+    });
 
-    const totalAmount = orderProducts.reduce(
-      (sum, item) => sum + item.subTotal,
-      0,
+    const totalAmount = round2(
+      orderProducts.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
     );
 
     // Create test order
@@ -2702,6 +3006,11 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       user: userId,
       products: orderProducts,
       totalAmt: totalAmount,
+      subtotal: totalAmount,
+      tax: 0,
+      shipping: 0,
+      finalAmount: totalAmount,
+      paymentMethod: "TEST",
       payment_status: "paid",
       order_status: ORDER_STATUS.ACCEPTED,
       statusTimeline: [

@@ -1,7 +1,8 @@
 import admin from "firebase-admin";
-import { sendEmail } from "../config/emailService.js";
+import { sendEmail, sendTemplatedEmail } from "../config/emailService.js";
 import { isFirebaseReady } from "../config/firebaseAdmin.js";
 import Newsletter from "../models/newsletter.model.js";
+import { logger } from "../utils/errorHandler.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 // Debug-only logging to keep production output clean
@@ -47,68 +48,24 @@ const getWelcomeEmailTemplate = (email) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to BuyOneGram Family!</title>
+  <title>Welcome to HealthyOneGram Family</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9f5f0;">
-  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-    <!-- Header -->
-    <div style="background: linear-gradient(135deg, #c1591c 0%, #e07830 100%); padding: 40px 30px; text-align: center;">
-      <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700;">
-        🥜 Welcome to BuyOneGram!
-      </h1>
-      <p style="color: #fff8f0; margin: 10px 0 0; font-size: 16px;">
-        Your journey to healthy, delicious peanut butter starts here
-      </p>
+<body style="margin:0;padding:0;font-family:Segoe UI,Arial,sans-serif;background:#f9f5f0;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;">
+    <div style="background:linear-gradient(135deg,#c1591c 0%,#e07830 100%);padding:32px 24px;text-align:center;color:#fff;">
+      <h1 style="margin:0;font-size:26px;">Welcome to HealthyOneGram</h1>
+      <p style="margin:10px 0 0;font-size:15px;">Your healthy shopping journey starts here.</p>
     </div>
-    
-    <!-- Main Content -->
-    <div style="padding: 40px 30px;">
-      <h2 style="color: #333333; margin: 0 0 20px; font-size: 22px;">
-        Hello, Peanut Butter Lover! 👋
-      </h2>
-      
-      <p style="color: #555555; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">
-        Thank you for joining the <strong style="color: #c1591c;">BuyOneGram Family!</strong> We're thrilled to have you on board.
-      </p>
-      
-      <p style="color: #555555; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">
-        As a valued subscriber, you'll be the first to know about:
-      </p>
-      
-      <ul style="color: #555555; font-size: 15px; line-height: 1.8; padding-left: 20px; margin: 0 0 25px;">
-        <li>🎉 <strong>Exclusive discounts</strong> and special offers</li>
-        <li>🆕 <strong>New product launches</strong> and flavors</li>
-        <li>📖 <strong>Healthy recipes</strong> and nutrition tips</li>
-        <li>🎁 <strong>Member-only deals</strong> and early access</li>
-      </ul>
-      
-      <div style="background-color: #fff8f0; border-left: 4px solid #c1591c; padding: 20px; margin: 25px 0; border-radius: 0 8px 8px 0;">
-        <p style="color: #333333; font-size: 15px; margin: 0; font-style: italic;">
-          "At BuyOneGram, we believe in delivering the purest, most delicious peanut butter made with love and care. Every jar is a promise of quality!"
-        </p>
-      </div>
-      
-      <!-- CTA Button -->
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${siteUrl}/products" style="display: inline-block; background: linear-gradient(135deg, #c1591c 0%, #e07830 100%); color: #ffffff; text-decoration: none; padding: 14px 35px; font-size: 16px; font-weight: 600; border-radius: 30px; box-shadow: 0 4px 15px rgba(193, 89, 28, 0.3);">
-          Explore Our Products
-        </a>
-      </div>
-      
-      <p style="color: #555555; font-size: 16px; line-height: 1.6; margin: 25px 0 0;">
-        With warm wishes and nutty vibes,<br>
-        <strong style="color: #c1591c;">The BuyOneGram Team</strong> 🥜
-      </p>
+
+    <div style="padding:28px 24px;color:#444;line-height:1.6;">
+      <p>Thank you for subscribing with <strong>${email}</strong>.</p>
+      <p>You will receive product updates, special offers, and healthy recipes.</p>
+      <p><a href="${siteUrl}/products" style="display:inline-block;background:#c1591c;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;">Explore Products</a></p>
+      <p style="margin-top:18px;">Regards,<br><strong>HealthyOneGram Team</strong></p>
     </div>
-    
-    <!-- Footer -->
-    <div style="background-color: #2c2c2c; padding: 30px; text-align: center;">
-      <p style="color: #aaaaaa; font-size: 13px; margin: 0 0 10px;">
-        © ${new Date().getFullYear()} BuyOneGram. All rights reserved.
-      </p>
-      <p style="color: #888888; font-size: 12px; margin: 0;">
-        You're receiving this email because you subscribed to BuyOneGram updates.
-      </p>
+
+    <div style="background:#2c2c2c;padding:20px 24px;color:#aaa;font-size:12px;">
+      <p style="margin:0;">&copy; ${new Date().getFullYear()} HealthyOneGram. All rights reserved.</p>
     </div>
   </div>
 </body>
@@ -123,24 +80,49 @@ const getWelcomeEmailTemplate = (email) => {
 const sendWelcomeEmail = async (email) => {
   try {
     const siteUrl = getPublicSiteUrl();
-    const subject = "🎉 Welcome to the BuyOneGram Family!";
-    const text = `Welcome to BuyOneGram! Thank you for subscribing to our newsletter. You'll now receive updates about exclusive discounts, new products, and healthy recipes. Visit us at ${siteUrl}`;
-    const html = getWelcomeEmailTemplate(email);
+    const subject = "Welcome to the HealthyOneGram Family!";
+    const text = `Welcome to HealthyOneGram! Thank you for subscribing to our newsletter. You'll now receive updates about exclusive discounts, new products, and healthy recipes. Visit us at ${siteUrl}`;
 
-    const result = await sendEmail(email, subject, text, html);
+    const templateResult = await sendTemplatedEmail({
+      to: email,
+      subject,
+      templateFile: "newsletterConfirmation.html",
+      templateData: {
+        subscriber_email: email,
+        site_url: siteUrl,
+        products_url: `${siteUrl}/products`,
+        year: String(new Date().getFullYear()),
+      },
+      text,
+      context: "newsletter.welcome",
+    });
+
+    const result =
+      templateResult?.success
+        ? templateResult
+        : await sendEmail({
+            to: email,
+            subject,
+            text,
+            html: getWelcomeEmailTemplate(email),
+            context: "newsletter.welcome.fallback",
+          });
 
     if (result.success) {
-      debugLog(`✓ Welcome email sent to: ${email}`);
+      debugLog(`Welcome email sent to: ${email}`);
     } else {
-      console.error(
-        `✗ Failed to send welcome email to ${email}:`,
-        result.error,
-      );
+      logger.error("newsletter.sendWelcomeEmail", "Failed to send welcome email", {
+        email,
+        error: result.error,
+      });
     }
 
     return result;
   } catch (error) {
-    console.error("Welcome email error:", error.message);
+    logger.error("newsletter.sendWelcomeEmail", "Unexpected email error", {
+      email,
+      error: error?.message || String(error),
+    });
     return { success: false, error: error.message };
   }
 };
@@ -174,7 +156,7 @@ const saveToFirebase = async (subscriberData) => {
       { merge: true },
     );
 
-    debugLog(`✓ Subscriber saved to Firebase: ${subscriberData.email}`);
+    debugLog(`Subscriber saved to Firebase: ${subscriberData.email}`);
     return true;
   } catch (error) {
     console.error("Firebase save error:", error.message);
@@ -272,8 +254,8 @@ export const subscribe = async (req, res) => {
       // Also update in Firebase
       await updateFirebaseSubscriber(normalizedEmail, true);
 
-      // Send welcome back email
-      sendWelcomeEmail(normalizedEmail);
+      // Send welcome back email (awaited for reliable logging)
+      await sendWelcomeEmail(normalizedEmail);
 
       return res.status(200).json({
         success: true,
@@ -293,8 +275,8 @@ export const subscribe = async (req, res) => {
       source: safeSource,
     });
 
-    // Send welcome email to new subscriber
-    sendWelcomeEmail(normalizedEmail);
+    // Send welcome email to new subscriber (awaited for reliable logging)
+    await sendWelcomeEmail(normalizedEmail);
 
     res.status(201).json({
       success: true,

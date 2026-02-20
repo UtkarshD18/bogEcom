@@ -161,7 +161,7 @@ export async function registerUserController(req, res) {
     await user.save();
     const emailSent = await sendEmailFun({
       sendTo: normalizedEmail,
-      subject: "Verify email from BuyOneGram",
+      subject: "Verify email from HealthyOneGram",
       text: "",
       html: VerificationEmail(name, verifyCode),
     });
