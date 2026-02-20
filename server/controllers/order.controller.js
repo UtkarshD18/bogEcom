@@ -820,7 +820,7 @@ const getInvoiceSellerDetails = async () => {
   const storeInfo = (await getCachedSetting("storeInfo"))?.value || {};
 
   return {
-    name: process.env.INVOICE_SELLER_NAME || storeInfo.name || "BuyOneGram",
+    name: process.env.INVOICE_SELLER_NAME || storeInfo.name || "HealthyOneGram",
     gstin: process.env.INVOICE_SELLER_GSTIN || storeInfo.gstNumber || "",
     address:
       process.env.INVOICE_SELLER_ADDRESS ||

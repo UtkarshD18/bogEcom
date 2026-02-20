@@ -148,8 +148,8 @@ const buildTicketSummary = (ticket) => {
 };
 
 const SUPPORT_STORE_URL =
-  String(process.env.CLIENT_URL || "https://buyonegram.com").trim() ||
-  "https://buyonegram.com";
+  String(process.env.CLIENT_URL || "https://healthyonegram.com").trim() ||
+  "https://healthyonegram.com";
 const SUPPORT_ADMIN_EMAIL = String(
   process.env.SUPPORT_ADMIN_EMAIL ||
     process.env.SUPPORT_EMAIL ||
@@ -236,11 +236,11 @@ const buildSupportEmailLayout = ({
         </div>
         <p style="color:#555555;font-size:16px;line-height:1.6;margin:20px 0 0;">
           ${closingLine}<br/>
-          <strong style="color:#c1591c;">BuyOneGram Customer Care</strong>
+          <strong style="color:#c1591c;">HealthyOneGram Customer Care</strong>
         </p>
       </div>
       <div style="background-color:#2c2c2c;padding:24px;text-align:center;">
-        <p style="color:#aaaaaa;font-size:13px;margin:0 0 8px;">&copy; ${new Date().getFullYear()} BuyOneGram. All rights reserved.</p>
+        <p style="color:#aaaaaa;font-size:13px;margin:0 0 8px;">&copy; ${new Date().getFullYear()} HealthyOneGram. All rights reserved.</p>
         <p style="color:#888888;font-size:12px;margin:0;">This is a service email for your support request.</p>
       </div>
     </div>
@@ -260,7 +260,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
 
   const html = buildSupportEmailLayout({
     title: "Support Ticket Generated Successfully",
-    subtitle: "Your request has been registered with BuyOneGram Customer Care",
+    subtitle: "Your request has been registered with HealthyOneGram Customer Care",
     greeting: `Hello, ${safeName}!`,
     intro:
       "Thank you for contacting us. Your support ticket has been generated successfully and registered with our customer care team.",
@@ -273,7 +273,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
     ],
     highlight:
       "Please keep your Ticket ID for tracking. You will also receive email notifications for every status update on this ticket.",
-    ctaLabel: "Visit BuyOneGram",
+    ctaLabel: "Visit HealthyOneGram",
     ctaUrl: SUPPORT_STORE_URL,
     closingLine: "We are here to help and will get back to you as soon as possible.",
   });
@@ -287,7 +287,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
     `Order: ${ticket.orderId ? String(ticket.orderId) : "Not linked"}`,
     `Created At: ${createdAt}`,
     "You will receive ticket status updates by email.",
-    "BuyOneGram Customer Care",
+    "HealthyOneGram Customer Care",
   ].join("\n");
 
   return sendSupportEmail({
@@ -366,7 +366,7 @@ const sendTicketUpdateEmail = async (ticket) => {
     `Updated At: ${updatedAt}`,
     `Admin Reply: ${safeReply}`,
     "Thanks,",
-    "BuyOneGram Customer Care",
+    "HealthyOneGram Customer Care",
   ].join("\n");
 
   const templatedResult = await sendTemplatedEmail({
@@ -407,7 +407,7 @@ const sendTicketUpdateEmail = async (ticket) => {
       `<strong>Admin Reply:</strong><br/>${escapeHtml(safeReply).replace(/\n/g, "<br/>")}`,
     ],
     highlight: escapeHtml(safeReply),
-    ctaLabel: "Visit BuyOneGram",
+    ctaLabel: "Visit HealthyOneGram",
     ctaUrl: SUPPORT_STORE_URL,
     closingLine: "Thank you for your patience.",
   });

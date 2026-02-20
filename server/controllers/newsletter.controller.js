@@ -48,12 +48,12 @@ const getWelcomeEmailTemplate = (email) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to BuyOneGram Family</title>
+  <title>Welcome to HealthyOneGram Family</title>
 </head>
 <body style="margin:0;padding:0;font-family:Segoe UI,Arial,sans-serif;background:#f9f5f0;">
   <div style="max-width:600px;margin:0 auto;background:#ffffff;">
     <div style="background:linear-gradient(135deg,#c1591c 0%,#e07830 100%);padding:32px 24px;text-align:center;color:#fff;">
-      <h1 style="margin:0;font-size:26px;">Welcome to BuyOneGram</h1>
+      <h1 style="margin:0;font-size:26px;">Welcome to HealthyOneGram</h1>
       <p style="margin:10px 0 0;font-size:15px;">Your healthy shopping journey starts here.</p>
     </div>
 
@@ -61,11 +61,11 @@ const getWelcomeEmailTemplate = (email) => {
       <p>Thank you for subscribing with <strong>${email}</strong>.</p>
       <p>You will receive product updates, special offers, and healthy recipes.</p>
       <p><a href="${siteUrl}/products" style="display:inline-block;background:#c1591c;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;">Explore Products</a></p>
-      <p style="margin-top:18px;">Regards,<br><strong>BuyOneGram Team</strong></p>
+      <p style="margin-top:18px;">Regards,<br><strong>HealthyOneGram Team</strong></p>
     </div>
 
     <div style="background:#2c2c2c;padding:20px 24px;color:#aaa;font-size:12px;">
-      <p style="margin:0;">&copy; ${new Date().getFullYear()} BuyOneGram. All rights reserved.</p>
+      <p style="margin:0;">&copy; ${new Date().getFullYear()} HealthyOneGram. All rights reserved.</p>
     </div>
   </div>
 </body>
@@ -80,8 +80,8 @@ const getWelcomeEmailTemplate = (email) => {
 const sendWelcomeEmail = async (email) => {
   try {
     const siteUrl = getPublicSiteUrl();
-    const subject = "Welcome to the BuyOneGram Family!";
-    const text = `Welcome to BuyOneGram! Thank you for subscribing to our newsletter. You'll now receive updates about exclusive discounts, new products, and healthy recipes. Visit us at ${siteUrl}`;
+    const subject = "Welcome to the HealthyOneGram Family!";
+    const text = `Welcome to HealthyOneGram! Thank you for subscribing to our newsletter. You'll now receive updates about exclusive discounts, new products, and healthy recipes. Visit us at ${siteUrl}`;
 
     const templateResult = await sendTemplatedEmail({
       to: email,
