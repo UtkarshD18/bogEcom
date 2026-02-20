@@ -122,7 +122,12 @@ export default function CartPage() {
                                                     </h3>
                                                 </div>
                                                 <button
-                                                    onClick={() => removeFromCart(productId || data.id)}
+                                                    onClick={() =>
+                                                      removeFromCart(
+                                                        productId || data.id,
+                                                        item?.variant || null,
+                                                      )
+                                                    }
                                                     className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all active:scale-90"
                                                 >
                                                     <MdDeleteOutline size={24} />
@@ -134,14 +139,26 @@ export default function CartPage() {
                                         <div className="flex items-center justify-between mt-auto">
                                             <div className="flex items-center gap-4 bg-gray-50 p-1 rounded-2xl border border-gray-100">
                                                 <button
-                                                    onClick={() => updateQuantity(productId || data.id, Number(data.quantity) - 1)}
+                                                    onClick={() =>
+                                                      updateQuantity(
+                                                        productId || data.id,
+                                                        Number(data.quantity) - 1,
+                                                        item?.variant || null,
+                                                      )
+                                                    }
                                                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
                                                 >
                                                     <MdRemove size={18} />
                                                 </button>
                                                 <span className="text-lg font-black w-6 text-center text-gray-900">{data.quantity}</span>
                                                 <button
-                                                    onClick={() => updateQuantity(productId || data.id, Number(data.quantity) + 1)}
+                                                    onClick={() =>
+                                                      updateQuantity(
+                                                        productId || data.id,
+                                                        Number(data.quantity) + 1,
+                                                        item?.variant || null,
+                                                      )
+                                                    }
                                                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
                                                 >
                                                     <MdAdd size={18} />

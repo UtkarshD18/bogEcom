@@ -96,6 +96,14 @@ export const CartProvider = ({ children }) => {
     return Cookies.get("accessToken") || localStorage.getItem("token");
   };
 
+  const resolveVariantId = (item) => {
+    const rawVariant = item?.variant?._id || item?.variant || item?.variantId;
+    if (rawVariant === undefined || rawVariant === null || rawVariant === "") {
+      return null;
+    }
+    return String(rawVariant);
+  };
+
   // Fetch cart from API or local storage
   const fetchCart = async () => {
     try {
@@ -325,9 +333,9 @@ export const CartProvider = ({ children }) => {
   };
 
   // Update quantity
-  const updateQuantity = async (productId, quantity) => {
+  const updateQuantity = async (productId, quantity, variantId = null) => {
     if (quantity < 1) {
-      return removeFromCart(productId);
+      return removeFromCart(productId, variantId);
     }
 
     try {
@@ -350,7 +358,11 @@ export const CartProvider = ({ children }) => {
         method: "PUT",
         headers,
         credentials: "include",
-        body: JSON.stringify({ productId, quantity }),
+        body: JSON.stringify({
+          productId,
+          quantity,
+          variantId: variantId || undefined,
+        }),
       });
 
       const data = await parseJsonSafely(response);
@@ -369,23 +381,23 @@ export const CartProvider = ({ children }) => {
           toast.error(errorMessage);
           return { success: false, message: errorMessage };
         }
-        updateQuantityLocal(productId, quantity);
+        updateQuantityLocal(productId, quantity, variantId);
       }
     } catch (error) {
       console.error("Error updating cart:", error);
-      updateQuantityLocal(productId, quantity);
+      updateQuantityLocal(productId, quantity, variantId);
     } finally {
       setLoading(false);
     }
   };
 
   // Update quantity locally
-  const updateQuantityLocal = (productId, quantity) => {
+  const updateQuantityLocal = (productId, quantity, variantId = null) => {
     setCartItems((prev) => {
       const newItems = prev.map((item) =>
-        String(
-          item.product?._id || item.product?.id || item.product || item.id,
-        ) === String(productId)
+        String(item.product?._id || item.product?.id || item.product || item.id) ===
+          String(productId) &&
+        String(resolveVariantId(item) || "") === String(variantId || "")
           ? { ...item, quantity }
           : item,
       );
@@ -396,7 +408,17 @@ export const CartProvider = ({ children }) => {
   };
 
   // Remove from cart
-  const removeFromCart = async (productId) => {
+  const removeFromCart = async (productId, variantId = null) => {
+    const resolvedVariantId =
+      variantId ??
+      resolveVariantId(
+        cartItems.find(
+          (item) =>
+            String(item.product?._id || item.product?.id || item.product || item.id) ===
+            String(productId),
+        ),
+      );
+
     try {
       setLoading(true);
       const token = getToken();
@@ -413,7 +435,10 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const response = await fetch(buildApiUrl(`/cart/remove/${productId}`), {
+      const query = resolvedVariantId
+        ? `?variantId=${encodeURIComponent(String(resolvedVariantId))}`
+        : "";
+      const response = await fetch(buildApiUrl(`/cart/remove/${productId}${query}`), {
         method: "DELETE",
         headers,
         credentials: "include",
@@ -427,24 +452,30 @@ export const CartProvider = ({ children }) => {
         setCartTotal(round2(data.data.subtotal || 0));
         // toast.success("Item removed from cart");
       } else {
-        removeFromCartLocal(productId);
+        removeFromCartLocal(productId, resolvedVariantId);
       }
     } catch (error) {
       console.error("Error removing from cart:", error);
-      removeFromCartLocal(productId);
+      removeFromCartLocal(productId, resolvedVariantId);
     } finally {
       setLoading(false);
     }
   };
 
   // Remove locally
-  const removeFromCartLocal = (productId) => {
+  const removeFromCartLocal = (productId, variantId = null) => {
     setCartItems((prev) => {
       const newItems = prev.filter(
-        (item) =>
-          String(
+        (item) => {
+          const itemProductId = String(
             item.product?._id || item.product?.id || item.product || item.id,
-          ) !== String(productId),
+          );
+          const itemVariantId = resolveVariantId(item);
+          const isSameProduct = itemProductId === String(productId);
+          const isSameVariant =
+            String(itemVariantId || "") === String(variantId || "");
+          return !(isSameProduct && isSameVariant);
+        },
       );
       calculateTotals(newItems);
       saveToLocalStorage(newItems);

@@ -2,6 +2,7 @@
 
 import ExclusiveProductCard from "@/components/ExclusiveProductCard";
 import MembershipGuard from "@/components/MembershipGuard";
+import useMembership from "@/hooks/useMembership";
 import { fetchDataFromApi } from "@/utils/api";
 import { useCallback, useEffect, useState } from "react";
 
@@ -10,7 +11,7 @@ const GridLoader = () => (
     {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
       <div
         key={i}
-        className="aspect-[3/4] bg-white/70 border border-gray-100 rounded-3xl animate-pulse"
+        className="aspect-[3/4] rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)] animate-pulse"
       />
     ))}
   </div>
@@ -20,6 +21,7 @@ const ExclusiveProductsContent = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const { isActiveMember } = useMembership({ autoFetch: true });
 
   const loadProducts = useCallback(async () => {
     try {
@@ -51,10 +53,10 @@ const ExclusiveProductsContent = () => {
           <span className="inline-flex rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[var(--glass-text)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
             Members Zone
           </span>
-          <h1 className="mt-3 text-4xl md:text-5xl font-black text-gray-900 tracking-tight">
+          <h1 className="mt-3 text-4xl md:text-5xl font-black text-[var(--glass-text)] tracking-tight">
             Exclusive Products
           </h1>
-          <p className="mt-2 text-gray-600 max-w-2xl">
+          <p className="mt-2 max-w-2xl text-[var(--glass-text)]/80">
             Premium items available only for active members.
           </p>
         </div>
@@ -76,10 +78,10 @@ const ExclusiveProductsContent = () => {
 
         {!loading && !error && products.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-[var(--glass-border)] bg-[var(--glass-bg)] p-10 text-center shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
-            <h2 className="text-xl font-bold text-gray-800">
+            <h2 className="text-xl font-bold text-[var(--glass-text)]">
               No exclusive products available yet
             </h2>
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="mt-2 text-sm text-[var(--glass-text)]/70">
               Check back soon for members-only launches.
             </p>
           </div>
@@ -88,7 +90,11 @@ const ExclusiveProductsContent = () => {
         {!loading && !error && products.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
             {products.map((product) => (
-              <ExclusiveProductCard key={product._id} product={product} />
+              <ExclusiveProductCard
+                key={product._id}
+                product={product}
+                isMember={isActiveMember}
+              />
             ))}
           </div>
         ) : null}

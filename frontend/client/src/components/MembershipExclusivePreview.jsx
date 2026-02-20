@@ -36,7 +36,7 @@ const TEASER_PRODUCTS = [
 
 const CardSkeleton = ({ delayMs = 0 }) => (
   <div
-    className="h-[280px] rounded-3xl border border-white/50 bg-white/60 backdrop-blur-md animate-pulse"
+    className="h-[280px] rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)] animate-pulse"
     style={{ animationDelay: `${delayMs}ms` }}
   />
 );
@@ -128,28 +128,28 @@ const MembershipExclusivePreview = ({ onUnlockExclusive }) => {
   return (
     <section
       ref={sectionRef}
-      className={`relative mb-14 rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-6 shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)] transition-all duration-700 sm:p-8 ${
+      className={`relative mb-14 overflow-hidden rounded-[28px] border border-white/40 bg-white/35 p-6 shadow-[0_40px_120px_rgba(124,58,237,0.18)] backdrop-blur-2xl transition-all duration-700 before:absolute before:inset-0 before:bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.18),transparent_60%)] before:pointer-events-none sm:p-8 ${
         isVisible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
       }`}
     >
-      <div className="absolute -top-12 -right-10 h-40 w-40 rounded-full bg-[image:var(--glass-accent)] opacity-25 blur-3xl" />
-      <div className="absolute -bottom-16 -left-10 h-44 w-44 rounded-full bg-[image:var(--glass-accent)] opacity-20 blur-3xl" />
+      <div className="absolute -top-12 -right-10 h-40 w-40 rounded-full bg-[#e8deff] opacity-25 blur-3xl" />
+      <div className="absolute -bottom-16 -left-10 h-44 w-44 rounded-full bg-[#e8deff] opacity-20 blur-3xl" />
 
       <div className="relative z-10">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-[var(--glass-text)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
+            <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#6d5dfc] via-[#8b5cf6] to-[#ec4899] px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-white shadow-[0_4px_12px_rgba(168,85,247,0.35)]">
               <FaCrown className="text-amber-500" />
               Members-Only Exclusive Products
             </span>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[#5b4fd6] drop-shadow-[0_2px_6px_rgba(124,58,237,0.15)] sm:text-3xl">
               Members-Only Exclusive Products
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--glass-text)]">
+              <span className="inline-flex items-center rounded-full border border-[#e3dbff] bg-[#f9f7ff] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#5b4fd6]">
                 Limited Member Drop
               </span>
-              <span className="inline-flex items-center rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--glass-text)]">
+              <span className="inline-flex items-center rounded-full border border-[#e3dbff] bg-[#f9f7ff] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#5b4fd6]">
                 Prices Reveal After Upgrade
               </span>
             </div>
@@ -172,7 +172,7 @@ const MembershipExclusivePreview = ({ onUnlockExclusive }) => {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {displayProducts.map((product, index) => (
               <ExclusivePreviewCard
                 key={product?._id || `preview-${index}`}
@@ -186,7 +186,7 @@ const MembershipExclusivePreview = ({ onUnlockExclusive }) => {
         )}
 
         <div className="mt-7 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-[var(--glass-text)]/80">
             {isActiveMember
               ? "You are unlocked. Tap any card to open the full exclusive catalog."
               : "Unlock hidden VIP prices, member-first drops, and instant access to private products."}
@@ -195,7 +195,7 @@ const MembershipExclusivePreview = ({ onUnlockExclusive }) => {
           <button
             type="button"
             onClick={handleUnlockCta}
-            className="group relative inline-flex items-center gap-2 rounded-2xl bg-[image:var(--glass-accent)] px-6 py-3 text-sm font-extrabold text-white shadow-[var(--glass-shadow)] ring-2 ring-[var(--glass-border)] transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-[var(--glass-shadow)]"
+            className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#6d5dfc] via-[#8b5cf6] to-[#ec4899] px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_30px_rgba(124,58,237,0.35)] transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_14px_40px_rgba(124,58,237,0.45)] hover:ring-2 hover:ring-purple-300/50 active:scale-[0.98]"
           >
             <span className="absolute inset-0 rounded-2xl bg-gradient-to-r from-white/0 via-white/30 to-white/0 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
             <span className="relative z-10">
