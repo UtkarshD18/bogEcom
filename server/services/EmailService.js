@@ -53,24 +53,53 @@ const sanitizeTemplateData = (data = {}) => {
   return out;
 };
 
+const normalizeEnvString = (value) => {
+  let normalized = String(value || "").trim();
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+  return normalized;
+};
+
+const isGmailHost = (host) => {
+  const normalizedHost = String(host || "").trim().toLowerCase();
+  return (
+    normalizedHost === "smtp.gmail.com" ||
+    normalizedHost.endsWith(".gmail.com")
+  );
+};
+
+const normalizeSmtpPassword = (value, host) => {
+  const normalized = normalizeEnvString(value);
+  if (!normalized) return "";
+  if (!isGmailHost(host)) return normalized;
+
+  // Gmail app passwords are shown in grouped blocks; spaces should be ignored.
+  return normalized.replace(/\s+/g, "");
+};
+
 const getEmailConfig = () => {
-  const host = String(process.env.SMTP_HOST || DEFAULT_SMTP_HOST).trim();
+  const host = normalizeEnvString(process.env.SMTP_HOST || DEFAULT_SMTP_HOST);
   const port = toInt(process.env.SMTP_PORT, DEFAULT_SMTP_PORT);
   const secure = toBool(process.env.SMTP_SECURE, DEFAULT_SMTP_SECURE);
-  const user = String(process.env.SMTP_USER || process.env.EMAIL || "").trim();
-  const pass = String(
+  const user = normalizeEnvString(process.env.SMTP_USER || process.env.EMAIL || "");
+  const pass = normalizeSmtpPassword(
     process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || "",
-  ).trim();
-  const fromName = String(
+    host,
+  );
+  const fromName = normalizeEnvString(
     process.env.EMAIL_FROM_NAME || process.env.SMTP_FROM_NAME || "BuyOneGram",
-  ).trim();
-  const fromAddress = String(
+  );
+  const fromAddress = normalizeEnvString(
     process.env.EMAIL_FROM_ADDRESS ||
       process.env.SMTP_FROM ||
       process.env.EMAIL ||
       user ||
       "",
-  ).trim();
+  );
   const retryCount = Math.max(
     toInt(process.env.EMAIL_RETRY_COUNT, DEFAULT_EMAIL_RETRY_COUNT),
     0,
