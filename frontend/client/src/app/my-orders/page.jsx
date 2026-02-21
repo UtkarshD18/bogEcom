@@ -662,7 +662,7 @@ const Orders = () => {
                                       ₹{orderDisplayShippingCharge.toFixed(2)}
                                     </span>
                                   )}
-                                  <span>FREE</span>
+                                  <span>₹0.00</span>
                                 </span>
                               );
                             })()}

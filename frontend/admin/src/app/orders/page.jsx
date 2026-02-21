@@ -23,7 +23,6 @@ const API_URL = API_BASE_URL;
 const ORDER_TABLE_COLUMNS = [
   "48px",
   "84px",
-  "76px",
   "172px",
   "76px",
   "96px",
@@ -50,19 +49,9 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const [shippingForm, setShippingForm] = useState(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingResponse, setShippingResponse] = useState(null);
-  const [downloadingPo, setDownloadingPo] = useState(false);
   const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const [orderReviews, setOrderReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
-
-  const purchaseOrderId = (() => {
-    const raw = order?.purchaseOrder;
-    if (!raw) return null;
-    if (typeof raw === "string") return raw;
-    if (typeof raw === "object" && raw?._id) return String(raw._id);
-    if (typeof raw?.toString === "function") return String(raw.toString());
-    return null;
-  })();
   const canDownloadInvoice =
     order?.order_status !== "cancelled" &&
     (order?.payment_status === "paid" ||
@@ -140,12 +129,6 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
       throw new Error(data?.message || "Shipping request failed");
     }
     return data;
-  };
-
-  const handleOpenShippingEditor = () => {
-    const payload = buildShipmentPayload();
-    setShippingForm(payload);
-    setShippingEditorOpen(true);
   };
 
   const handleBookShipment = async () => {
@@ -293,52 +276,6 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
       toast.error(err.message || "Failed to generate manifest");
     } finally {
       setShippingLoading(false);
-    }
-  };
-
-  const handleDownloadPurchaseOrder = async () => {
-    try {
-      if (!purchaseOrderId) {
-        toast.error("Purchase order not linked");
-        return;
-      }
-
-      setDownloadingPo(true);
-      const response = await fetch(
-        `${API_URL}/api/purchase-orders/${purchaseOrderId}/pdf`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        let message = "Failed to download purchase order";
-        try {
-          const errorData = await response.json();
-          message = errorData?.message || message;
-        } catch {
-          // Ignore non-JSON response parsing failures.
-        }
-        throw new Error(message);
-      }
-
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = `purchase-order-${purchaseOrderId.slice(-8).toUpperCase()}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(blobUrl);
-      toast.success("Purchase order downloaded");
-    } catch (error) {
-      toast.error(error.message || "Failed to download purchase order");
-    } finally {
-      setDownloadingPo(false);
     }
   };
 
@@ -502,15 +439,6 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 font-bold">
           #{order?._id?.slice(-6) || "------"}
         </td>
-        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 break-words">
-          {purchaseOrderId ? (
-            <span className="text-[12px] font-[600] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
-              PO #{String(purchaseOrderId).slice(-6).toUpperCase()}
-            </span>
-          ) : (
-            <span className="text-gray-400">N/A</span>
-          )}
-        </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
           <div className="flex items-center gap-3 max-w-[170px] min-w-0">
             <div className="rounded-full w-[50px] h-[50px] overflow-hidden bg-gray-200">
@@ -602,7 +530,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
       </tr>
       {expandIndex && (
         <tr className="bg-gray-100">
-          <td colSpan={12} className="p-5">
+          <td colSpan={11} className="p-5">
             <div className="flex flex-wrap gap-4">
               {(order?.products || []).map((product, idx) => (
                 <div
@@ -703,27 +631,6 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
               </div>
             </div>
 
-            {/* Purchase Order Section */}
-            <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="text-gray-800 font-semibold">
-                  Purchase Order
-                </div>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={handleDownloadPurchaseOrder}
-                  disabled={!purchaseOrderId || downloadingPo}
-                >
-                  {downloadingPo ? "Downloading..." : "Download PO PDF"}
-                </Button>
-              </div>
-              <div className="mt-2 text-sm text-gray-700">
-                <span className="font-semibold">PO ID:</span>{" "}
-                {purchaseOrderId ? String(purchaseOrderId) : "Not linked"}
-              </div>
-            </div>
-
             {/* Shipping Section */}
             <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
@@ -732,14 +639,6 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
                   Shipping
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={handleOpenShippingEditor}
-                    disabled={shippingLoading}
-                  >
-                    Book Shipment
-                  </Button>
                   <Button
                     size="small"
                     variant="outlined"
@@ -1145,9 +1044,6 @@ const Orders = () => {
                     <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left border-b-[1px] border-[rgba(0,0,0,0.1)] uppercase tracking-wide"></th>
                     <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Order Id
-                    </th>
-                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
-                      PO
                     </th>
                     <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Customer

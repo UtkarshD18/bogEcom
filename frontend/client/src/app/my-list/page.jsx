@@ -27,28 +27,68 @@ const MyWishlistPage = () => {
       ? item.product
       : item.productData || item;
 
-  const getOldPrice = (product) => product.originalPrice || product.oldPrice || 0;
+  const getDisplayQuantity = (item) => {
+    const parsed = Number(item?.quantity || 1);
+    if (!Number.isFinite(parsed) || parsed < 1) return 1;
+    return Math.floor(parsed);
+  };
+
+  const getDisplayPrice = (item, product) => {
+    const snapshot = Number(item?.priceSnapshot || 0);
+    if (snapshot > 0) return snapshot;
+    return Number(product?.price || 0);
+  };
+
+  const getOldPrice = (item, product, price) => {
+    const snapshot = Number(item?.originalPriceSnapshot || 0);
+    if (snapshot > 0) return snapshot;
+    const fallback = Number(product?.originalPrice || product?.oldPrice || 0);
+    return fallback > 0 ? fallback : price;
+  };
 
   const calcDiscount = (price, oldPrice) => {
     if (!oldPrice || oldPrice <= price) return 0;
     return Math.round(((oldPrice - price) / oldPrice) * 100);
   };
 
-  const handleAddToCart = async (product) => {
+  const handleAddToCart = async (item) => {
     try {
-      await addToCart(product, 1);
+      const product = getProduct(item);
+      const quantity = getDisplayQuantity(item);
+      const variantId = item?.variantId || null;
+      const variantName = String(item?.variantName || "").trim();
+      const price = getDisplayPrice(item, product);
+      const originalPrice = getOldPrice(item, product, price);
+
+      const cartProduct = {
+        ...product,
+        price,
+        originalPrice,
+        variantId,
+        selectedVariant: variantId
+          ? {
+              _id: variantId,
+              name: variantName,
+              price,
+            }
+          : undefined,
+      };
+      await addToCart(cartProduct, quantity);
+      return true;
     } catch (error) {
       setSnackbar({
         open: true,
         message: "Failed to add to cart",
         severity: "error",
       });
+      return false;
     }
   };
 
-  const handleDirectOrder = async (product) => {
+  const handleDirectOrder = async (item) => {
     try {
-      await addToCart(product, 1);
+      const added = await handleAddToCart(item);
+      if (!added) return;
       router.push("/checkout");
     } catch (error) {
       setSnackbar({
@@ -105,8 +145,11 @@ const MyWishlistPage = () => {
                   const product = getProduct(item);
                   const productId = product._id || product.id || item.product;
                   const isRemoving = Boolean(removingItems[String(productId || "")]);
-                  const oldPrice = getOldPrice(product);
-                  const discount = calcDiscount(product.price, oldPrice);
+                  const price = getDisplayPrice(item, product);
+                  const oldPrice = getOldPrice(item, product, price);
+                  const discount = calcDiscount(price, oldPrice);
+                  const quantity = getDisplayQuantity(item);
+                  const variantLabel = String(item?.variantName || "").trim();
                   const imageUrl =
                     product.images?.[0] ||
                     product.image ||
@@ -138,6 +181,12 @@ const MyWishlistPage = () => {
                               {product.name || "Product"}
                             </h3>
                           </Link>
+                          {(variantLabel || quantity > 1) && (
+                            <p className="mt-1 text-xs text-slate-500">
+                              {variantLabel ? `Variant: ${variantLabel}` : "Variant: Standard"}
+                              {quantity > 1 ? ` | Qty: ${quantity}` : ""}
+                            </p>
+                          )}
 
                           <div className="mt-2">
                             <Rating
@@ -150,9 +199,9 @@ const MyWishlistPage = () => {
 
                           <div className="mt-2 flex items-center gap-3 flex-wrap">
                             <span className="text-lg font-semibold text-slate-900">
-                              ₹{product.price || 0}
+                              ₹{price || 0}
                             </span>
-                            {oldPrice > 0 && oldPrice > product.price && (
+                            {oldPrice > 0 && oldPrice > price && (
                               <>
                                 <span className="text-sm text-slate-400 line-through">
                                   ₹{oldPrice}
@@ -166,9 +215,12 @@ const MyWishlistPage = () => {
                         </div>
 
                         <button
-                          onClick={() =>
-                            removeFromWishlist(item?.product?._id || item?.product)
-                          }
+                          onClick={() => {
+                            removeFromWishlist({
+                              product: item?.product?._id || item?.product,
+                              variantId: item?.variantId || null,
+                            });
+                          }}
                           disabled={isRemoving}
                           className="h-9 w-9 rounded-full grid place-items-center text-slate-500 hover:text-red-600 hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                           aria-label="Remove from wishlist"
@@ -179,14 +231,14 @@ const MyWishlistPage = () => {
 
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         <Button
-                          onClick={() => handleAddToCart(product)}
+                          onClick={() => handleAddToCart(item)}
                           variant="outlined"
                           className="!border-slate-300 !text-slate-700 !font-medium !normal-case"
                         >
                           Add to Cart
                         </Button>
                         <Button
-                          onClick={() => handleDirectOrder(product)}
+                          onClick={() => handleDirectOrder(item)}
                           variant="contained"
                           className="!bg-primary hover:brightness-110 !font-medium !normal-case"
                         >
