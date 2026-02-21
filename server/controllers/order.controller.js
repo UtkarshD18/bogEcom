@@ -350,6 +350,27 @@ const validateCouponForOrder = async ({
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
+const resolveInfluencerCommissionBase = (order = {}) => {
+  const taxableSubtotal = Number(
+    order?.subtotal ?? order?.gst?.taxableAmount ?? 0,
+  );
+  if (Number.isFinite(taxableSubtotal) && taxableSubtotal > 0) {
+    return round2(taxableSubtotal);
+  }
+
+  const finalAmount = Number(order?.finalAmount ?? 0);
+  if (Number.isFinite(finalAmount) && finalAmount > 0) {
+    return round2(finalAmount);
+  }
+
+  const totalAmount = Number(order?.totalAmt ?? 0);
+  if (Number.isFinite(totalAmount) && totalAmount > 0) {
+    return round2(totalAmount);
+  }
+
+  return 0;
+};
+
 const getPrimaryStoreUrl = () =>
   String(
     process.env.CLIENT_URL ||
@@ -2618,13 +2639,17 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
 
     await sendOrderConfirmationEmail(savedOrder);
 
-    // Update influencer stats
-    if (influencerData) {
-      await updateInfluencerStats(
+    // Update influencer stats only once per order.
+    if (influencerData && !savedOrder.influencerStatsSynced) {
+      const influencerStatsSynced = await updateInfluencerStats(
         influencerData._id,
         finalOrderAmount,
         influencerCommission,
       );
+      if (influencerStatsSynced) {
+        savedOrder.influencerStatsSynced = true;
+        await savedOrder.save();
+      }
     }
 
     // Sync to Firestore
@@ -2870,34 +2895,36 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         );
       }
 
-      // Update influencer stats if applicable
-      if (order.influencerId) {
+      // Update influencer stats if applicable (idempotent per order).
+      if (order.influencerId && !order.influencerStatsSynced) {
         const effectiveAmount =
           order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
+        const commissionBaseAmount = resolveInfluencerCommissionBase(order);
         let commission = order.influencerCommission || 0;
         if (!commission && order.influencerId) {
           commission = await calculateInfluencerCommission(
             order.influencerId,
-            effectiveAmount,
+            commissionBaseAmount,
           );
           order.influencerCommission = commission;
-          await order.save();
         }
 
-        updateInfluencerStats(
-          order.influencerId,
-          effectiveAmount,
-          commission,
-        ).catch((err) =>
-          logger.error(
-            "handlePhonePeWebhook",
-            "Failed to update influencer stats",
-            {
-              orderId: order._id,
-              error: err.message,
-            },
-          ),
-        );
+        try {
+          const influencerStatsSynced = await updateInfluencerStats(
+            order.influencerId,
+            effectiveAmount,
+            commission,
+          );
+          if (influencerStatsSynced) {
+            order.influencerStatsSynced = true;
+            await order.save();
+          }
+        } catch (err) {
+          logger.error("handlePhonePeWebhook", "Failed to update influencer stats", {
+            orderId: order._id,
+            error: err.message,
+          });
+        }
       }
 
       if (order.user) {
