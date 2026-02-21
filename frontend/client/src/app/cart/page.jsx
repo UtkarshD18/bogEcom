@@ -41,10 +41,47 @@ export default function CartPage() {
         return fallback || item;
     };
 
+    const toNumber = (value, fallback = 0) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+    };
+
+    const resolveVariantData = (item, product) => {
+        const explicitVariant = item?.selectedVariant;
+        if (explicitVariant && typeof explicitVariant === "object") {
+            return explicitVariant;
+        }
+
+        const variantId = item?.variant || item?.variantId || null;
+        if (!variantId) return null;
+
+        const variants = Array.isArray(product?.variants) ? product.variants : [];
+        return (
+            variants.find(
+                (variant) => String(variant?._id || variant?.id) === String(variantId),
+            ) || null
+        );
+    };
+
     // Helper to normalize cart item data
     const getItemData = (item) => {
         const product = resolveProductData(item);
         const productId = resolveProductId(item);
+        const variant = resolveVariantData(item, product);
+        const variantLabel =
+            item?.variantName ||
+            variant?.name ||
+            (variant?.weight
+                ? `${variant.weight}${variant?.unit || product?.unit || ""}`
+                : "");
+        const price = toNumber(
+            item?.price ?? variant?.price ?? product?.price,
+            0,
+        );
+        const originalPrice = toNumber(
+            item?.originalPrice ?? variant?.originalPrice ?? product?.originalPrice,
+            0,
+        );
 
         return {
             id: productId || product?._id || product?.id || item._id || item.id,
@@ -54,13 +91,27 @@ export default function CartPage() {
                 product?.images?.[0] ||
                 item?.image ||
                 "/product_1.png",
-            price: Number(product?.price || item?.price || 0),
+            price,
+            originalPrice,
             brand: product?.brand || item?.brand || "BOG",
             quantity: Number(item?.quantity || 1),
             quantityUnit:
-                product?.quantityUnit || item?.quantityUnit || "Per Unit",
+                variantLabel ||
+                item?.quantityUnit ||
+                product?.quantityUnit ||
+                "Per Unit",
         };
     };
+
+    const cartSavings = round2(
+        cartItems.reduce((sum, item) => {
+            const data = getItemData(item);
+            if (data.originalPrice > data.price) {
+                return sum + (data.originalPrice - data.price) * data.quantity;
+            }
+            return sum;
+        }, 0),
+    );
 
     if (cartItems.length === 0) {
         return (
@@ -99,7 +150,7 @@ export default function CartPage() {
                             const productId = resolveProductId(item);
                             return (
                                 <div
-                                    key={data.id || index}
+                                    key={`${data.id || index}-${item?.variant || item?.variantId || "base"}`}
                                     className="group relative flex flex-col sm:flex-row gap-6 p-6 rounded-[2.5rem] bg-white border border-gray-100 shadow-sm hover:shadow-xl hover:border-primary/20 transition-all duration-500"
                                 >
                                     {/* Image */}
@@ -165,8 +216,14 @@ export default function CartPage() {
                                                 </button>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-xs text-gray-400 font-bold line-through">₹{data.price * 1.5 * data.quantity}</p>
-                                                <p className="text-2xl font-black text-primary tracking-tight">₹{data.price * data.quantity}</p>
+                                                {data.originalPrice > data.price && (
+                                                    <p className="text-xs text-gray-400 font-bold line-through">
+                                                        ₹{round2(data.originalPrice * data.quantity)}
+                                                    </p>
+                                                )}
+                                                <p className="text-2xl font-black text-primary tracking-tight">
+                                                    ₹{round2(data.price * data.quantity)}
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
@@ -205,7 +262,11 @@ export default function CartPage() {
                                         <p className="text-3xl font-black text-white tracking-tight">₹{total}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-primary font-black text-xs">SAVING ₹450</p>
+                                        {cartSavings > 0 && (
+                                            <p className="text-primary font-black text-xs">
+                                                SAVING ₹{round2(cartSavings)}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

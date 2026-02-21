@@ -1,6 +1,7 @@
 "use client";
 
 import { getImageUrl } from "@/utils/imageUtils";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import "swiper/css";
 import { Swiper, SwiperSlide } from "swiper/react";
@@ -14,9 +15,11 @@ import { Swiper, SwiperSlide } from "swiper/react";
  */
 const ProductZoom = ({
   images = ["/product_1.png", "/product_1.png", "/product_1.png"],
+  productId = "",
 }) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const bigSliderRef = useRef(null);
+  const router = useRouter();
 
   // Normalize images to handle Cloudinary and local URLs
   const normalizedImages = images.map((img) => getImageUrl(img));
@@ -26,6 +29,15 @@ const ProductZoom = ({
     if (bigSliderRef.current?.swiper) {
       bigSliderRef.current.swiper.slideTo(index);
     }
+  };
+
+  const openFullImageView = (index) => {
+    if (!productId) return;
+    router.push(
+      `/full-image-view?productId=${encodeURIComponent(
+        productId,
+      )}&index=${Math.max(Number(index || 0), 0)}`,
+    );
   };
 
   return (
@@ -50,7 +62,8 @@ const ProductZoom = ({
                 <img
                   src={img}
                   alt={`Product Image ${index + 1}`}
-                  className="w-full h-auto max-h-[500px] object-contain transition-transform duration-300 hover:scale-105"
+                  className="w-full h-auto max-h-[500px] object-contain transition-transform duration-300 hover:scale-105 cursor-zoom-in"
+                  onClick={() => openFullImageView(index)}
                 />
               </div>
             </SwiperSlide>

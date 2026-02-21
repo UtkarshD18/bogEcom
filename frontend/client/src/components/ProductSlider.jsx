@@ -36,7 +36,10 @@ const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
 
         const response = await fetchDataFromApi(url);
         if (response.success && response.data) {
-          setProducts(response.data);
+          const safeProducts = Array.isArray(response.data)
+            ? response.data.filter((product) => product?.isExclusive !== true)
+            : [];
+          setProducts(safeProducts);
         }
       } catch (error) {
         console.error("Failed to fetch products:", error);

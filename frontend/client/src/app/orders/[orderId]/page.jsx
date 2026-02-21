@@ -49,6 +49,49 @@ const STATUS_STEPS = [
   { key: "delivered", label: "Delivered", icon: MdCheckCircle },
 ];
 
+const ORDER_ID_REGEX = /^[a-f\d]{24}$/i;
+
+const normalizeOrderIdValue = (value) =>
+  String(value || "").trim().toUpperCase();
+
+const resolveOrderRouteId = (record) =>
+  record?._id || record?.id || record?.orderId || null;
+
+const resolveOrderDisplayId = (record) => {
+  const explicitId =
+    record?.displayOrderId ||
+    record?.orderNumber ||
+    record?.order_id ||
+    "";
+  if (String(explicitId || "").trim()) {
+    return String(explicitId).trim().toUpperCase();
+  }
+
+  const routeId = String(resolveOrderRouteId(record) || "").trim();
+  if (!routeId) return "N/A";
+  return `BOG-${routeId.slice(-8).toUpperCase()}`;
+};
+
+const isMatchingOrderIdentifier = (record, identifier) => {
+  const wanted = normalizeOrderIdValue(identifier);
+  if (!wanted) return false;
+
+  const routeId = resolveOrderRouteId(record);
+  const displayId = resolveOrderDisplayId(record);
+  const candidates = [
+    routeId,
+    displayId,
+    record?.displayOrderId,
+    record?.orderNumber,
+    record?.order_id,
+    record?.orderId,
+  ]
+    .map((value) => normalizeOrderIdValue(value))
+    .filter(Boolean);
+
+  return candidates.includes(wanted);
+};
+
 const normalizeStatus = (status) => {
   if (!status) return "pending";
   const value = String(status).trim().toLowerCase().replace(/\s+/g, "_");
@@ -113,6 +156,9 @@ const OrderDetailsPage = () => {
     isRajasthan: isRajasthanDelivery,
   });
 
+  const canonicalOrderId = resolveOrderRouteId(order);
+  const displayOrderId = resolveOrderDisplayId(order);
+
   // Fetch order details
   useEffect(() => {
     const fetchOrder = async () => {
@@ -129,31 +175,75 @@ const OrderDetailsPage = () => {
       }
 
       try {
-        const response = await fetch(`${API_URL}/orders/${orderId}`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include",
-        });
+        const fetchSingleOrder = async () => {
+          const response = await fetch(`${API_URL}/orders/${orderId}`, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: "include",
+          });
+          const data = await response.json();
+          return { response, data };
+        };
 
-        const data = await response.json();
+        let resolvedOrder = null;
 
-        if (response.status === 401) {
-          router.push("/login?redirect=/orders/" + orderId);
-          return;
+        if (ORDER_ID_REGEX.test(String(orderId))) {
+          const { response, data } = await fetchSingleOrder();
+
+          if (response.status === 401) {
+            router.push("/login?redirect=/orders/" + orderId);
+            return;
+          }
+
+          if (response.status === 403) {
+            setError("You are not authorized to view this order");
+            setLoading(false);
+            return;
+          }
+
+          if (data?.success && data?.data) {
+            resolvedOrder = data.data;
+          } else if (response.status >= 400 && response.status < 500) {
+            setError(data?.message || "Failed to fetch order");
+          }
         }
 
-        if (response.status === 403) {
-          setError("You are not authorized to view this order");
-          setLoading(false);
-          return;
+        if (!resolvedOrder) {
+          const listResponse = await fetch(`${API_URL}/orders/my-orders`, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: "include",
+          });
+          const listData = await listResponse.json();
+
+          if (listResponse.status === 401) {
+            router.push("/login?redirect=/orders/" + orderId);
+            return;
+          }
+
+          const orders = Array.isArray(listData?.data) ? listData.data : [];
+          const matchedOrder = orders.find((item) =>
+            isMatchingOrderIdentifier(item, orderId),
+          );
+
+          if (matchedOrder) {
+            resolvedOrder = matchedOrder;
+            const matchedRouteId = resolveOrderRouteId(matchedOrder);
+            if (matchedRouteId && String(matchedRouteId) !== String(orderId)) {
+              router.replace(`/orders/${matchedRouteId}`);
+            }
+          }
         }
 
-        if (data.success) {
-          setOrder(data.data);
+        if (resolvedOrder) {
+          setOrder(resolvedOrder);
+          setError(null);
         } else {
-          setError(data.message || "Failed to fetch order");
+          setError("Failed to fetch order");
         }
       } catch (err) {
         console.error("Error fetching order:", err);
@@ -400,9 +490,10 @@ const OrderDetailsPage = () => {
   };
 
   const handleDownloadInvoice = () => {
+    if (!canonicalOrderId) return;
     downloadFile(
-      `${API_URL}/orders/${order._id}/invoice`,
-      `invoice-${order._id}.pdf`,
+      `${API_URL}/orders/${canonicalOrderId}/invoice`,
+      `invoice-${displayOrderId || canonicalOrderId}.pdf`,
       "invoice",
     );
   };
@@ -696,7 +787,7 @@ const OrderDetailsPage = () => {
                 <p className="text-gray-500 mt-1">
                   Order ID:{" "}
                   <span className="font-mono font-medium">
-                    #{order._id?.slice(-8).toUpperCase()}
+                    {displayOrderId}
                   </span>
                 </p>
                 <p className="text-gray-500 text-sm">

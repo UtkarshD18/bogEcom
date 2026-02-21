@@ -22,6 +22,7 @@ function ProductsPageContent() {
 
     // Get search term from URL
     const urlSearchTerm = searchParams.get("search") || "";
+    const urlCategory = searchParams.get("category") || "";
     const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
 
     // Sync state with URL when URL changes (e.g. from header search)
@@ -33,8 +34,11 @@ function ProductsPageContent() {
         const loadProducts = async () => {
             setLoading(true);
             try {
-                // Construct API URL with search param
-                const query = urlSearchTerm ? `?search=${encodeURIComponent(urlSearchTerm)}` : "";
+                const queryParams = new URLSearchParams();
+                if (urlSearchTerm) queryParams.set("search", urlSearchTerm);
+                if (urlCategory) queryParams.set("category", urlCategory);
+                const queryString = queryParams.toString();
+                const query = queryString ? `?${queryString}` : "";
                 const res = await fetchDataFromApi(`/api/products${query}`);
 
                 // Handle various API response structures (arrays, nested products, nested data)
@@ -48,7 +52,7 @@ function ProductsPageContent() {
             }
         };
         loadProducts();
-    }, [urlSearchTerm]);
+    }, [urlSearchTerm, urlCategory]);
 
     // Handle search input change
     const handleSearchChange = (e) => {
@@ -57,11 +61,11 @@ function ProductsPageContent() {
 
         // Debounce URL update
         const timeoutId = setTimeout(() => {
-            if (value) {
-                router.push(`/products?search=${encodeURIComponent(value)}`);
-            } else {
-                router.push("/products");
-            }
+            const params = new URLSearchParams(searchParams.toString());
+            if (value) params.set("search", value);
+            else params.delete("search");
+            const query = params.toString();
+            router.push(query ? `/products?${query}` : "/products");
         }, 500);
 
         return () => clearTimeout(timeoutId);

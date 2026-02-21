@@ -1138,7 +1138,11 @@ export const generateInvoicePdf = async ({
       .filter(Boolean)
       .join(", ");
     const buyerOrderNumber =
-      order?.orderNumber || order?.order_id || order?.orderId || String(order._id);
+      order?.displayOrderId ||
+      order?.orderNumber ||
+      order?.order_id ||
+      order?.orderId ||
+      (order?._id ? `BOG-${String(order._id).slice(-8).toUpperCase()}` : "-");
     const metaRows = [
       { label: "Invoice No.", value: invoiceNumber },
       { label: "Dated", value: formatDate(invoiceDate) },

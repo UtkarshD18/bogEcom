@@ -293,6 +293,7 @@ const Checkout = () => {
         ),
       )
     : 0;
+  const activeInfluencerCode = String(referralCode || "").trim().toUpperCase();
   const baseBeforeCoupon = round2(
     Math.max(baseAfterMembership - referralDiscount, 0),
   );
@@ -1541,6 +1542,16 @@ const Checkout = () => {
                       </div>
                     )}
 
+                    {referralDiscount > 0 && (
+                      <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
+                        <span className="flex items-center gap-1">
+                          <FiTag /> Influencer{" "}
+                          {activeInfluencerCode ? `(${activeInfluencerCode})` : ""}
+                        </span>
+                        <span>-₹{referralDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+
                     {coinRedeemAmount > 0 && (
                       <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
                         <span className="flex items-center gap-1">
@@ -1612,6 +1623,16 @@ const Checkout = () => {
                     <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
                       <FiTag className="text-primary" /> Apply Coupon
                     </h3>
+                    {referralDiscount > 0 && activeInfluencerCode && (
+                      <div className="mb-3 bg-[var(--flavor-glass)] border border-primary/20 p-3 rounded-xl">
+                        <p className="font-bold text-primary text-sm">
+                          Influencer code auto-applied: {activeInfluencerCode}
+                        </p>
+                        <p className="text-xs text-primary font-semibold mt-1">
+                          Discount on subtotal: ₹{referralDiscount.toFixed(2)}
+                        </p>
+                      </div>
+                    )}
                     {appliedCoupon ? (
                       <div className="bg-[var(--flavor-glass)] border border-primary/20 p-4 rounded-xl flex items-center justify-between">
                         <div>

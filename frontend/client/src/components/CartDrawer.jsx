@@ -70,10 +70,47 @@ const CartDrawer = () => {
         return fallback || item;
     };
 
+    const toNumber = (value, fallback = 0) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+    };
+
+    const resolveVariantData = (item, product) => {
+        const explicitVariant = item?.selectedVariant;
+        if (explicitVariant && typeof explicitVariant === "object") {
+            return explicitVariant;
+        }
+
+        const variantId = item?.variant || item?.variantId || null;
+        if (!variantId) return null;
+
+        const variants = Array.isArray(product?.variants) ? product.variants : [];
+        return (
+            variants.find(
+                (variant) => String(variant?._id || variant?.id) === String(variantId),
+            ) || null
+        );
+    };
+
     // Helper to normalize cart item data
     const getItemData = (item) => {
         const product = resolveProductData(item);
         const productId = resolveProductId(item);
+        const variant = resolveVariantData(item, product);
+        const variantLabel =
+            item?.variantName ||
+            variant?.name ||
+            (variant?.weight
+                ? `${variant.weight}${variant?.unit || product?.unit || ""}`
+                : "");
+        const price = toNumber(
+            item?.price ?? variant?.price ?? product?.price,
+            0,
+        );
+        const originalPrice = toNumber(
+            item?.originalPrice ?? variant?.originalPrice ?? product?.originalPrice,
+            0,
+        );
 
         return {
             id: productId || product?._id || product?.id || item._id || item.id,
@@ -83,11 +120,15 @@ const CartDrawer = () => {
                 product?.images?.[0] ||
                 item?.image ||
                 "/product_1.png",
-            price: Number(product?.price || item?.price || 0),
+            price,
+            originalPrice,
             brand: product?.brand || item?.brand || "BOG",
             quantity: Number(item?.quantity || 1),
             quantityUnit:
-                product?.quantityUnit || item?.quantityUnit || "Per Unit",
+                variantLabel ||
+                item?.quantityUnit ||
+                product?.quantityUnit ||
+                "Per Unit",
         };
     };
 
@@ -154,12 +195,10 @@ const CartDrawer = () => {
 
     const cartSavings = round2(
         cartItems.reduce((sum, item) => {
-            const data = resolveProductData(item);
+            const data = getItemData(item);
             const qty = Number(item?.quantity || 1);
-            const discountedPrice = Number(data?.price || item?.price || 0);
-            const originalPrice = Number(
-                data?.originalPrice || item?.originalPrice || 0,
-            );
+            const discountedPrice = Number(data?.price || 0);
+            const originalPrice = Number(data?.originalPrice || 0);
             if (originalPrice > discountedPrice) {
                 return sum + (originalPrice - discountedPrice) * qty;
             }
@@ -247,7 +286,7 @@ const CartDrawer = () => {
                                     const data = getItemData(item);
                                     const productId = resolveProductId(item);
                                     return (
-                                        <div key={data.id} className="flex gap-4 p-3 rounded-2xl bg-white border border-gray-100 shadow-sm">
+                                        <div key={`${data.id}-${item?.variant || item?.variantId || "base"}`} className="flex gap-4 p-3 rounded-2xl bg-white border border-gray-100 shadow-sm">
                                             <div className="w-20 h-20 shrink-0 bg-white rounded-xl flex items-center justify-center p-2 border border-gray-100">
                                                 <img
                                                     src={getImageUrl(data.image)}
@@ -260,7 +299,10 @@ const CartDrawer = () => {
                                                 <div className="flex items-start justify-between gap-2">
                                                     <div className="min-w-0">
                                                         <h4 className="text-sm font-bold text-gray-900 line-clamp-1">{data.name}</h4>
-                                                        <p className="text-xs text-gray-500">{data.brand}</p>
+                                                        <p className="text-xs text-gray-500">
+                                                            {data.brand}
+                                                            {data.quantityUnit ? ` • ${data.quantityUnit}` : ""}
+                                                        </p>
                                                     </div>
                                                     <button
                                                         onClick={() =>

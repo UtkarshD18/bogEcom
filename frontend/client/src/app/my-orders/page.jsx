@@ -185,6 +185,24 @@ const Orders = () => {
   const hasReviewed = (orderId, productId) =>
     Boolean(reviewedItemMap[getReviewKey(orderId, productId)]);
 
+  const resolveOrderRouteId = (order) =>
+    order?._id || order?.id || order?.orderId || null;
+
+  const resolveDisplayOrderId = (order) => {
+    const explicitId =
+      order?.displayOrderId ||
+      order?.orderNumber ||
+      order?.order_id ||
+      "";
+    if (String(explicitId || "").trim()) {
+      return String(explicitId).trim().toUpperCase();
+    }
+
+    const orderId = String(resolveOrderRouteId(order) || "").trim();
+    if (!orderId) return "N/A";
+    return `BOG-${orderId.slice(-8).toUpperCase()}`;
+  };
+
   // Helper function to get status badge color
   const getStatusColor = (status) => {
     const normalized = normalizeStatus(status);
@@ -439,7 +457,7 @@ const Orders = () => {
                           <div>
                             <p className="text-sm text-gray-600">Order ID</p>
                             <p className="text-lg font-semibold text-gray-900">
-                              #{order._id?.substring(0, 8) || "N/A"}
+                              {resolveDisplayOrderId(order)}
                             </p>
                           </div>
                           <div>
@@ -711,8 +729,11 @@ const Orders = () => {
 
                       {/* View Order Details Link */}
                       <div className="px-6 py-4 bg-white border-t border-gray-200 flex justify-end">
+                        {(() => {
+                          const routeOrderId = resolveOrderRouteId(order);
+                          return (
                         <Link
-                          href={`/orders/${order._id}`}
+                          href={routeOrderId ? `/orders/${routeOrderId}` : "/my-orders"}
                           className="inline-flex items-center px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors"
                         >
                           View Order Details
@@ -730,6 +751,8 @@ const Orders = () => {
                             />
                           </svg>
                         </Link>
+                          );
+                        })()}
                       </div>
                     </div>
                   );

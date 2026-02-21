@@ -56,6 +56,15 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     order?.order_status !== "cancelled" &&
     (order?.payment_status === "paid" ||
       normalizeStatus(order?.order_status) === "accepted");
+  const fallbackOrderId = String(order?._id || order?.id || "")
+    .trim()
+    .slice(-8)
+    .toUpperCase();
+  const orderDisplayId = String(
+    order?.displayOrderId || (fallbackOrderId ? `BOG-${fallbackOrderId}` : "N/A"),
+  )
+    .trim()
+    .toUpperCase();
 
   const buildShipmentPayload = () => {
     const addr = order?.delivery_address || {};
@@ -72,7 +81,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     }));
 
     return {
-      order_number: `#${order?._id?.slice(-6) || "000001"}`,
+      order_number: orderDisplayId !== "N/A" ? orderDisplayId : "BOG-000001",
       payment_type: paymentType,
       order_amount: orderAmount,
       collectable_amount: paymentType === "cod" ? orderAmount : 0,
@@ -84,7 +93,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
                 name: "Order Item",
                 qty: 1,
                 price: orderAmount,
-                sku: `ORD-${order?._id?.slice(-6) || "000001"}`,
+                sku: orderDisplayId !== "N/A" ? orderDisplayId : "BOG-000001",
               },
             ],
       package_weight: 500,
@@ -312,9 +321,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
       const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `invoice-${String(order?._id || "")
-        .slice(-8)
-        .toUpperCase()}.pdf`;
+      a.download = `invoice-${orderDisplayId}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -437,7 +444,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           </Button>
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 font-bold">
-          #{order?._id?.slice(-6) || "------"}
+          {orderDisplayId}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
           <div className="flex items-center gap-3 max-w-[170px] min-w-0">
