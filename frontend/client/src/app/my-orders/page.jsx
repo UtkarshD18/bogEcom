@@ -1,5 +1,4 @@
 "use client";
-import { API_BASE_URL } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import { MyContext } from "@/context/ThemeProvider";
 import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
@@ -23,6 +22,11 @@ import { useRouter } from "next/navigation";
 import { useContext, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_APP_API_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
@@ -439,7 +443,7 @@ const Orders = () => {
                           <div>
                             <p className="text-sm text-gray-600">Order ID</p>
                             <p className="text-lg font-semibold text-gray-900">
-                              #{order._id?.substring(0, 8) || "N/A"}
+                              #{order.displayOrderId || order._id?.substring(0, 8) || "N/A"}
                             </p>
                           </div>
                           <div>

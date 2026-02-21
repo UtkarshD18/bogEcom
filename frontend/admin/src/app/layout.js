@@ -32,7 +32,7 @@ export const metadata = {
     type: "website",
     images: [
       {
-        url: "/logo-og-v2.png",
+        url: "logo-og-v2.png",
         width: 512,
         height: 512,
         alt: "BuyOneGram Admin",
@@ -43,15 +43,15 @@ export const metadata = {
     card: "summary_large_image",
     title: "BuyOneGram Admin Panel",
     description: "Admin dashboard for BuyOneGram Peanut Butter Store",
-    images: ["/logo-og-v2.png"],
+    images: ["logo-og-v2.png"],
   },
   icons: {
     icon: [
-      { url: "/logo.png", type: "image/png", sizes: "32x32" },
-      { url: "/logo.png", type: "image/png", sizes: "192x192" },
+      { url: "logo-og-v2.png", type: "image/png", sizes: "32x32" },
+      { url: "logo-og-v2.png", type: "image/png", sizes: "192x192" },
     ],
-    shortcut: "/logo.png",
-    apple: "/logo.png",
+    shortcut: "logo-og-v2.png",
+    apple: "logo-og-v2.png",
   },
 };
 

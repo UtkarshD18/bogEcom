@@ -20,12 +20,13 @@ const ProductItem = (props) => {
     const context = useContext(MyContext);
     const flavor = context?.flavor || FLAVORS.creamy;
 
-    const productId = id || _id || product?._id || product?.id;
-    const isWishlisted = isInWishlist(productId);
-    const alreadyInCart = isInCart(productId);
+    const productId = id || _id || product?._id || product?.id || "";
+    const isWishlisted = productId ? isInWishlist(productId) : false;
+    const alreadyInCart = productId ? isInCart(productId) : false;
 
     const productData = product || {
-        _id: id || _id || product?.id || 1,
+        _id: productId,
+        id: productId,
         name: name || "Classic Peanut Butter",
         brand: brand || "Buy One Gram",
         price: price || 349,
@@ -54,12 +55,14 @@ const ProductItem = (props) => {
     const handleWishlistClick = async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (!productId) return;
         await toggleWishlist(productData);
     };
 
     const handleAddToCart = async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (!productId) return;
         if (isAddingToCart) return;
 
         if (alreadyInCart) {
@@ -85,7 +88,7 @@ const ProductItem = (props) => {
     };
 
     return (
-        <Link href={`/product/${productId}`} className="group relative block h-full w-full rounded-3xl bg-white p-3 transition-all hover:shadow-xl hover:-translate-y-1 border border-gray-100">
+        <Link href={productId ? `/product/${productId}` : "/products"} className="group relative block h-full w-full rounded-3xl bg-white p-3 transition-all hover:shadow-xl hover:-translate-y-1 border border-gray-100">
 
             {/* Image Container */}
             <div className="relative mb-3 h-40 w-full overflow-hidden rounded-2xl bg-gray-50 flex items-center justify-center">

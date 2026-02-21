@@ -21,10 +21,6 @@ import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 
 const GOOGLE_REDIRECT_ATTEMPT_KEY = "googleAuthRedirectAttempted";
-const GOOGLE_POPUP_CANCEL_CODES = new Set([
-  "auth/popup-closed-by-user",
-  "auth/cancelled-popup-request",
-]);
 
 const getStoredToken = () => {
   if (typeof window === "undefined") return cookies.get("accessToken") || null;
@@ -216,7 +212,7 @@ const LoginForm = () => {
         const payload = JSON.parse(atob(normalizedPart));
         if (payload.exp * 1000 > Date.now()) {
           context?.alertBox("info", "You are already logged in.");
-          router.push("/");
+          router.push(redirectUrl);
           cookies.remove("actionType");
           return;
         }
@@ -314,6 +310,7 @@ const LoginForm = () => {
     } catch (error) {
       const errorCode = error?.code;
       const errorMessage = error?.message;
+      console.error("Google Sign-In Error:", errorCode, errorMessage);
 
       if (errorCode === "auth/unauthorized-domain") {
         const canRetryWithRedirect =
@@ -332,17 +329,17 @@ const LoginForm = () => {
             ? window.location.origin
             : "unknown-origin";
         context?.alertBox("error", `Google sign-in blocked for ${origin}.`);
-      } else if (GOOGLE_POPUP_CANCEL_CODES.has(errorCode)) {
-        // User manually closed/cancelled popup; do not treat as an error.
+      } else if (
+        errorCode === "auth/cancelled-popup-request" ||
+        errorCode === "auth/popup-closed-by-user"
+      ) {
         context?.alertBox("info", "Google Sign-In was cancelled");
       } else if (errorCode === "auth/popup-blocked") {
-        console.warn("Google Sign-In popup blocked:", errorCode, errorMessage);
         context?.alertBox(
           "error",
           "Popup was blocked. Please allow popups for this site.",
         );
       } else {
-        console.error("Google Sign-In Error:", errorCode, errorMessage);
         context?.alertBox("error", `Google sign-in failed: ${errorMessage}`);
       }
     } finally {

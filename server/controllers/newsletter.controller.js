@@ -254,7 +254,7 @@ export const subscribe = async (req, res) => {
       // Also update in Firebase
       await updateFirebaseSubscriber(normalizedEmail, true);
 
-      // Send welcome back email (awaited for reliable logging)
+      // Send welcome back email
       await sendWelcomeEmail(normalizedEmail);
 
       return res.status(200).json({
@@ -275,7 +275,7 @@ export const subscribe = async (req, res) => {
       source: safeSource,
     });
 
-    // Send welcome email to new subscriber (awaited for reliable logging)
+    // Send welcome email to new subscriber
     await sendWelcomeEmail(normalizedEmail);
 
     res.status(201).json({

@@ -216,7 +216,11 @@ const CustomerCarePage = () => {
                       <td className="px-4 py-3 text-sm text-gray-700">{ticket.name}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{ticket.email}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">
-                        {ticket.orderId ? String(ticket.orderId) : "N/A"}
+                        {ticket.orderDisplayId
+                          ? `#${ticket.orderDisplayId}`
+                          : ticket.orderId
+                            ? String(ticket.orderId)
+                            : "N/A"}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <span

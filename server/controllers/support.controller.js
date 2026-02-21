@@ -1,13 +1,16 @@
 import fs from "fs/promises";
 import path from "path";
 import mongoose from "mongoose";
-import { sendEmail, sendTemplatedEmail } from "../config/emailService.js";
+import { sendEmail } from "../config/emailService.js";
 import { supportUploadConfig } from "../middlewares/supportUpload.js";
 import { UPLOAD_ROOT } from "../middlewares/upload.js";
 import OrderModel from "../models/order.model.js";
 import SupportTicketModel from "../models/supportTicket.model.js";
 import UserModel from "../models/user.model.js";
-import { logger } from "../utils/errorHandler.js";
+import {
+  getOrderDisplayId,
+  withOrderPresentation,
+} from "../utils/orderPresentation.js";
 
 const TICKET_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED"];
 const TICKET_STATUS_SET = new Set(TICKET_STATUSES);
@@ -129,8 +132,47 @@ const buildDateRangeFilter = ({ date, dateFrom, dateTo }) => {
   return { filter };
 };
 
+const resolveOrderIdsForFilter = async (value) => {
+  const rawOrderFilter = sanitizeText(value || "", { maxLength: 40 });
+  if (!rawOrderFilter) {
+    return { ids: [] };
+  }
+
+  if (mongoose.Types.ObjectId.isValid(rawOrderFilter)) {
+    return { ids: [rawOrderFilter] };
+  }
+
+  const shortOrderId = rawOrderFilter.replace(/^#/, "").toLowerCase();
+  if (!/^[a-f0-9]{4,12}$/.test(shortOrderId)) {
+    return { error: "Invalid orderId filter." };
+  }
+
+  const matchingOrders = await OrderModel.aggregate([
+    {
+      $addFields: {
+        orderIdString: { $toString: "$_id" },
+      },
+    },
+    {
+      $match: {
+        orderIdString: { $regex: `^${shortOrderId}` },
+      },
+    },
+    { $project: { _id: 1 } },
+    { $limit: 100 },
+  ]);
+
+  return {
+    ids: matchingOrders.map((order) => order._id),
+  };
+};
+
 const buildTicketSummary = (ticket) => {
-  const order = ticket.orderId && typeof ticket.orderId === "object" ? ticket.orderId : null;
+  const order =
+    ticket.orderId && typeof ticket.orderId === "object"
+      ? withOrderPresentation(ticket.orderId)
+      : null;
+  const linkedOrderId = order?._id || ticket.orderId || null;
 
   return {
     id: ticket._id,
@@ -139,8 +181,10 @@ const buildTicketSummary = (ticket) => {
     name: ticket.name,
     email: ticket.email,
     phone: ticket.phone,
-    orderId: order?._id || ticket.orderId || null,
+    orderId: linkedOrderId,
+    orderDisplayId: order?.displayOrderId || getOrderDisplayId(linkedOrderId),
     orderDate: order?.createdAt || null,
+    orderTotal: order?.displayTotal ?? null,
     status: ticket.status,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
@@ -148,36 +192,13 @@ const buildTicketSummary = (ticket) => {
 };
 
 const SUPPORT_STORE_URL =
-  String(process.env.CLIENT_URL || "https://healthyonegram.com").trim() ||
-  "https://healthyonegram.com";
-const SUPPORT_ADMIN_EMAIL = String(
-  process.env.SUPPORT_ADMIN_EMAIL ||
-    process.env.SUPPORT_EMAIL ||
-    process.env.EMAIL_FROM_ADDRESS ||
-    process.env.SMTP_USER ||
-    process.env.EMAIL ||
-    "",
-).trim();
-const ADMIN_PANEL_URL = String(process.env.ADMIN_URL || SUPPORT_STORE_URL)
-  .split(",")[0]
-  .trim()
-  .replace(/\/+$/, "");
+  String(process.env.CLIENT_URL || "https://buyonegram.com").trim() ||
+  "https://buyonegram.com";
 
-const sendSupportEmail = async ({ to, subject, text, html, context = "support" }) => {
-  const result = await sendEmail({
-    to,
-    subject,
-    text,
-    html,
-    context,
-  });
+const sendSupportEmail = async ({ to, subject, text, html }) => {
+  const result = await sendEmail(to, subject, text, html);
   if (!result?.success) {
-    logger.error("support.sendSupportEmail", "Email send failed", {
-      context,
-      to,
-      subject,
-      error: result?.error || "Unknown error",
-    });
+    console.error("sendSupportEmail failed:", result?.error || "Unknown error");
     return false;
   }
   return true;
@@ -236,11 +257,11 @@ const buildSupportEmailLayout = ({
         </div>
         <p style="color:#555555;font-size:16px;line-height:1.6;margin:20px 0 0;">
           ${closingLine}<br/>
-          <strong style="color:#c1591c;">HealthyOneGram Customer Care</strong>
+          <strong style="color:#c1591c;">BuyOneGram Customer Care</strong>
         </p>
       </div>
       <div style="background-color:#2c2c2c;padding:24px;text-align:center;">
-        <p style="color:#aaaaaa;font-size:13px;margin:0 0 8px;">&copy; ${new Date().getFullYear()} HealthyOneGram. All rights reserved.</p>
+        <p style="color:#aaaaaa;font-size:13px;margin:0 0 8px;">&copy; ${new Date().getFullYear()} BuyOneGram. All rights reserved.</p>
         <p style="color:#888888;font-size:12px;margin:0;">This is a service email for your support request.</p>
       </div>
     </div>
@@ -255,12 +276,16 @@ const sendTicketRegistrationEmail = async (ticket) => {
   const safeTicketId = escapeHtml(ticket.ticketId || "");
   const safeStatus = escapeHtml(ticket.status || "OPEN");
   const safeSubject = escapeHtml(ticket.subject || "Support Request");
-  const safeOrderId = ticket.orderId ? escapeHtml(String(ticket.orderId)) : "Not linked";
+  const safeOrderId = ticket.orderId
+    ? escapeHtml(
+        `#${getOrderDisplayId(ticket.orderId) || String(ticket.orderId)}`,
+      )
+    : "Not linked";
   const createdAt = formatTicketDate(ticket.createdAt);
 
   const html = buildSupportEmailLayout({
     title: "Support Ticket Generated Successfully",
-    subtitle: "Your request has been registered with HealthyOneGram Customer Care",
+    subtitle: "Your request has been registered with BuyOneGram Customer Care",
     greeting: `Hello, ${safeName}!`,
     intro:
       "Thank you for contacting us. Your support ticket has been generated successfully and registered with our customer care team.",
@@ -273,7 +298,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
     ],
     highlight:
       "Please keep your Ticket ID for tracking. You will also receive email notifications for every status update on this ticket.",
-    ctaLabel: "Visit HealthyOneGram",
+    ctaLabel: "Visit BuyOneGram",
     ctaUrl: SUPPORT_STORE_URL,
     closingLine: "We are here to help and will get back to you as soon as possible.",
   });
@@ -284,10 +309,10 @@ const sendTicketRegistrationEmail = async (ticket) => {
     `Ticket ID: ${ticket.ticketId}`,
     `Status: ${ticket.status}`,
     `Subject: ${ticket.subject || "Support Request"}`,
-    `Order: ${ticket.orderId ? String(ticket.orderId) : "Not linked"}`,
+    `Order: ${ticket.orderId ? `#${getOrderDisplayId(ticket.orderId) || String(ticket.orderId)}` : "Not linked"}`,
     `Created At: ${createdAt}`,
     "You will receive ticket status updates by email.",
-    "HealthyOneGram Customer Care",
+    "BuyOneGram Customer Care",
   ].join("\n");
 
   return sendSupportEmail({
@@ -295,129 +320,55 @@ const sendTicketRegistrationEmail = async (ticket) => {
     subject: `Support Ticket Generated Successfully - ${ticket.ticketId}`,
     text,
     html,
-    context: "support.ticket.created",
   });
-};
-
-const sendAdminTicketNotificationEmail = async (ticket) => {
-  if (!SUPPORT_ADMIN_EMAIL) return false;
-
-  const createdAt = formatTicketDate(ticket.createdAt);
-  const payload = {
-    ticket_id: ticket.ticketId || "N/A",
-    status: ticket.status || "OPEN",
-    name: ticket.name || "N/A",
-    email: ticket.email || "N/A",
-    phone: ticket.phone || "N/A",
-    subject: ticket.subject || "Support Request",
-    message: ticket.message || "N/A",
-    order_id: ticket.orderId ? String(ticket.orderId) : "Not linked",
-    created_at: createdAt,
-    admin_panel_url: `${ADMIN_PANEL_URL}/support`,
-    year: String(new Date().getFullYear()),
-  };
-
-  const text = [
-    "New support ticket received",
-    `Ticket ID: ${payload.ticket_id}`,
-    `Status: ${payload.status}`,
-    `Name: ${payload.name}`,
-    `Email: ${payload.email}`,
-    `Phone: ${payload.phone}`,
-    `Order: ${payload.order_id}`,
-    `Subject: ${payload.subject}`,
-    `Message: ${payload.message}`,
-  ].join("\n");
-
-  const result = await sendTemplatedEmail({
-    to: SUPPORT_ADMIN_EMAIL,
-    subject: `New support ticket: ${payload.ticket_id}`,
-    templateFile: "contactAdmin.html",
-    templateData: payload,
-    text,
-    context: "support.ticket.admin-notify",
-  });
-
-  if (!result?.success) {
-    logger.error("support.sendAdminTicketNotificationEmail", "Failed to send admin alert", {
-      ticketId: payload.ticket_id,
-      error: result?.error || "Unknown error",
-    });
-    return false;
-  }
-
-  return true;
 };
 
 const sendTicketUpdateEmail = async (ticket) => {
   if (!ticket?.email) return false;
 
-  const customerName = ticket.name || "Customer";
-  const ticketId = ticket.ticketId || "N/A";
-  const status = ticket.status || "OPEN";
+  const escapedName = escapeHtml(ticket.name || "Customer");
+  const escapedTicketId = escapeHtml(ticket.ticketId || "");
+  const escapedStatus = escapeHtml(ticket.status || "OPEN");
   const reply = String(ticket.adminReply || "").trim();
-  const safeReply = reply || "No additional reply was shared yet.";
+  const safeReply = escapeHtml(reply).replace(/\n/g, "<br/>");
   const updatedAt = formatTicketDate(ticket.updatedAt);
 
-  const text = [
-    `Hi ${customerName},`,
-    `Your support request ${ticketId} has been updated.`,
-    `Status: ${status}`,
-    `Updated At: ${updatedAt}`,
-    `Admin Reply: ${safeReply}`,
-    "Thanks,",
-    "HealthyOneGram Customer Care",
-  ].join("\n");
-
-  const templatedResult = await sendTemplatedEmail({
-    to: ticket.email,
-    subject: `Support Ticket Update - ${ticketId}`,
-    templateFile: "adminReply.html",
-    templateData: {
-      customer_name: customerName,
-      ticket_id: ticketId,
-      status,
-      updated_at: updatedAt,
-      admin_reply: safeReply,
-      support_url: `${SUPPORT_STORE_URL}/customer-care`,
-      year: String(new Date().getFullYear()),
-    },
-    text,
-    context: "support.ticket.updated",
-  });
-
-  if (templatedResult?.success) {
-    return true;
-  }
-
-  logger.warn("support.sendTicketUpdateEmail", "Template email failed, falling back to inline HTML", {
-    ticketId,
-    error: templatedResult?.error || "Unknown error",
-  });
-
-  const fallbackHtml = buildSupportEmailLayout({
+  const html = buildSupportEmailLayout({
     title: "Support Ticket Status Update",
     subtitle: "Your customer care ticket has a new status update",
-    greeting: `Hello, ${escapeHtml(customerName)}!`,
-    intro: `Your support request <strong>${escapeHtml(ticketId)}</strong> has been updated by our team.`,
+    greeting: `Hello, ${escapedName}!`,
+    intro: `Your support request <strong>${escapedTicketId}</strong> has been updated by our team.`,
     details: [
-      `<strong>Ticket ID:</strong> ${escapeHtml(ticketId)}`,
-      `<strong>Status:</strong> ${escapeHtml(status)}`,
+      `<strong>Ticket ID:</strong> ${escapedTicketId}`,
+      `<strong>Status:</strong> ${escapedStatus}`,
       `<strong>Updated At:</strong> ${escapeHtml(updatedAt)}`,
-      `<strong>Admin Reply:</strong><br/>${escapeHtml(safeReply).replace(/\n/g, "<br/>")}`,
+      safeReply
+        ? `<strong>Admin Reply:</strong><br/>${safeReply}`
+        : "Our team is still reviewing your request.",
     ],
-    highlight: escapeHtml(safeReply),
-    ctaLabel: "Visit HealthyOneGram",
+    highlight:
+      safeReply ||
+      "No additional reply message was added yet. We will keep you updated on progress.",
+    ctaLabel: "Visit BuyOneGram",
     ctaUrl: SUPPORT_STORE_URL,
     closingLine: "Thank you for your patience.",
   });
 
+  const text = [
+    `Hi ${ticket.name || "Customer"},`,
+    `Your support request ${ticket.ticketId} has been updated.`,
+    `Status: ${ticket.status}`,
+    `Updated At: ${updatedAt}`,
+    reply ? `Admin Reply: ${reply}` : "Our team is reviewing your issue.",
+    "Thanks,",
+    "BuyOneGram Customer Care",
+  ].join("\n");
+
   return sendSupportEmail({
     to: ticket.email,
-    subject: `Support Ticket Update - ${ticketId}`,
+    subject: `Support Ticket Update - ${ticket.ticketId}`,
     text,
-    html: fallbackHtml,
-    context: "support.ticket.updated.fallback",
+    html,
   });
 };
 
@@ -519,45 +470,13 @@ export const createSupportTicket = async (req, res) => {
     });
 
     let emailSent = false;
-    let adminEmailSent = false;
     try {
-      const [userMailResult, adminMailResult] = await Promise.allSettled([
-        sendTicketRegistrationEmail(createdTicket),
-        sendAdminTicketNotificationEmail(createdTicket),
-      ]);
-
-      emailSent =
-        userMailResult.status === "fulfilled" && Boolean(userMailResult.value);
-      adminEmailSent =
-        adminMailResult.status === "fulfilled" &&
-        Boolean(adminMailResult.value);
-
-      if (userMailResult.status === "rejected") {
-        logger.error(
-          "support.createSupportTicket",
-          "User confirmation email failed",
-          {
-            ticketId: createdTicket.ticketId,
-            error: userMailResult.reason?.message || String(userMailResult.reason),
-          },
-        );
-      }
-      if (adminMailResult.status === "rejected") {
-        logger.error(
-          "support.createSupportTicket",
-          "Admin alert email failed",
-          {
-            ticketId: createdTicket.ticketId,
-            error:
-              adminMailResult.reason?.message || String(adminMailResult.reason),
-          },
-        );
-      }
+      emailSent = await sendTicketRegistrationEmail(createdTicket);
     } catch (emailError) {
-      logger.error("support.createSupportTicket", "Ticket email dispatch failed", {
-        ticketId: createdTicket.ticketId,
-        error: emailError?.message || "Unexpected error",
-      });
+      console.error(
+        "sendTicketRegistrationEmail error:",
+        emailError?.message || "Unexpected error",
+      );
     }
 
     return sendSuccess(
@@ -565,10 +484,7 @@ export const createSupportTicket = async (req, res) => {
       "Support ticket created successfully.",
       {
         ticketId: createdTicket.ticketId,
-        emailNotification: {
-          sent: Boolean(emailSent),
-          adminAlertSent: Boolean(adminEmailSent),
-        },
+        emailNotification: { sent: Boolean(emailSent) },
       },
       201,
     );
@@ -635,12 +551,13 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
       query.email = { $regex: escapeRegExp(email), $options: "i" };
     }
 
-    const orderId = sanitizeText(req.query.orderId || "", { maxLength: 40 });
-    if (orderId) {
-      if (!mongoose.Types.ObjectId.isValid(orderId)) {
-        return sendError(res, "Invalid orderId filter.", 400);
+    const orderFilter = sanitizeText(req.query.orderId || "", { maxLength: 40 });
+    if (orderFilter) {
+      const { error, ids } = await resolveOrderIdsForFilter(orderFilter);
+      if (error) {
+        return sendError(res, error, 400);
       }
-      query.orderId = orderId;
+      query.orderId = { $in: ids };
     }
 
     const { error: dateError, filter: createdAtFilter } = buildDateRangeFilter({
@@ -660,7 +577,10 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
     const [tickets, total] = await Promise.all([
       SupportTicketModel.find(query)
         .populate("userId", "_id name email mobile")
-        .populate("orderId", "_id createdAt order_status payment_status totalAmt finalAmount")
+        .populate(
+          "orderId",
+          "_id createdAt order_status payment_status totalAmt finalAmount subtotal discount tax shipping coinRedemption products",
+        )
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -706,6 +626,10 @@ export const getSupportTicketByIdAdmin = async (req, res) => {
 
     if (!ticket) {
       return sendError(res, "Support ticket not found.", 404);
+    }
+
+    if (ticket.orderId && typeof ticket.orderId === "object") {
+      ticket.orderId = withOrderPresentation(ticket.orderId);
     }
 
     return sendSuccess(res, "Support ticket fetched successfully.", { ticket });

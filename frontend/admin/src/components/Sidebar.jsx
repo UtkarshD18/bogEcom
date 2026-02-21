@@ -2,8 +2,9 @@
 import { useAdmin } from "@/context/AdminContext";
 import { fetchUnresolvedSupportCount } from "@/services/supportApi";
 import { Button } from "@mui/material";
+import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { IoIosLogOut } from "react-icons/io";
 import { IoBagCheckOutline } from "react-icons/io5";
@@ -28,8 +29,14 @@ import { TbBrandProducthunt, TbShare, TbUsers } from "react-icons/tb";
 const Sidebar = () => {
   const { logout, admin, token } = useAdmin();
   const pathname = usePathname();
-  const router = useRouter();
   const [openTicketCount, setOpenTicketCount] = useState(0);
+  const adminDisplayName =
+    admin?.name ||
+    admin?.userName ||
+    admin?.email?.split("@")?.[0] ||
+    admin?.userEmail?.split("@")?.[0] ||
+    "Admin";
+  const adminDisplayEmail = admin?.email || admin?.userEmail || "";
 
   useEffect(() => {
     let active = true;
@@ -198,13 +205,13 @@ const Sidebar = () => {
       {/* Logo */}
       <div className="p-4 border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2">
-          <img
-            src="/logo.png"
-            alt="Logo"
-            className="h-10 w-auto"
+          <Image
+            src="/logo-og-v2.png"
+            alt="Healthy One Gram"
             width={140}
             height={40}
-            loading="eager"
+            priority
+            className="h-10 w-auto object-contain"
           />
         </Link>
       </div>
@@ -222,9 +229,9 @@ const Sidebar = () => {
           </p>
         </button>
         <p className="text-sm font-medium text-gray-800 truncate">
-          {admin?.name || "Admin"}
+          {adminDisplayName}
         </p>
-        <p className="text-xs text-gray-500 truncate">{admin?.email || ""}</p>
+        <p className="text-xs text-gray-500 truncate">{adminDisplayEmail}</p>
       </div>
 
       {/* Navigation */}

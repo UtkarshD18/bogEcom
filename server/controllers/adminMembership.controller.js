@@ -7,6 +7,7 @@ import {
   toggleMembershipUserStatus,
   updateMembershipUserPoints,
 } from "../services/membershipUser.service.js";
+import { adjustCoinsByAdmin } from "../services/coin.service.js";
 
 const toPositiveInt = (value, fallback = 0) => {
   const num = Number(value);
@@ -104,24 +105,50 @@ export const addPointsToAdminMembershipUser = async (req, res) => {
   try {
     const membershipUserId = String(req.body?.membershipUserId || "").trim();
     const points = Number(req.body?.points);
+    const updatedBy = String(req.user?._id || req.user || "").trim() || null;
 
     if (!membershipUserId) {
       return sendBadRequest(res, "membershipUserId is required");
     }
-    if (!Number.isFinite(points) || points === 0) {
-      return sendBadRequest(res, "points must be a non-zero number");
+    if (!Number.isFinite(points) || points === 0 || !Number.isInteger(points)) {
+      return sendBadRequest(res, "points must be a non-zero whole number");
     }
 
     const membershipUser = await updateMembershipUserPoints({
       membershipUserId,
       pointsDelta: points,
     });
+    const appliedDelta = Number(membershipUser?.appliedDelta || 0);
+    const rawTargetUser = membershipUser?.user;
+    const targetUserId =
+      (rawTargetUser && rawTargetUser._id && String(rawTargetUser._id).trim()) ||
+      (rawTargetUser && rawTargetUser.id && String(rawTargetUser.id).trim()) ||
+      (rawTargetUser && String(rawTargetUser).trim()) ||
+      null;
+    let coinUpdate = null;
+
+    if (appliedDelta !== 0 && targetUserId) {
+      coinUpdate = await adjustCoinsByAdmin({
+        userId: targetUserId,
+        coinsDelta: appliedDelta,
+        referenceId: `membership-points:${membershipUserId}:${Date.now()}`,
+        meta: {
+          membershipUserId,
+          updatedBy,
+          reason: "admin-membership-points-update",
+        },
+      });
+    }
 
     return res.status(200).json({
       error: false,
       success: true,
-      message: points > 0 ? "Points added successfully" : "Points updated successfully",
-      data: membershipUser,
+      message:
+        appliedDelta > 0 ? "Points added successfully" : "Points updated successfully",
+      data: {
+        ...membershipUser,
+        coinUpdate,
+      },
     });
   } catch (error) {
     console.error("Error updating membership points:", error);

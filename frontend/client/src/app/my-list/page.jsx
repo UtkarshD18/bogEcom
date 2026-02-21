@@ -27,16 +27,65 @@ const MyWishlistPage = () => {
       ? item.product
       : item.productData || item;
 
-  const getOldPrice = (product) => product.originalPrice || product.oldPrice || 0;
+  const getItemQuantity = (item, product) => {
+    const parsed = Number(item?.quantity ?? product?.quantity ?? 1);
+    if (!Number.isFinite(parsed) || parsed < 1) return 1;
+    return Math.min(Math.floor(parsed), 100);
+  };
+
+  const getDisplayPrice = (item, product) => {
+    const parsed = Number(item?.price ?? product?.price ?? 0);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  };
+
+  const getOldPrice = (item, product) => {
+    const parsed = Number(
+      item?.originalPrice ?? product?.originalPrice ?? product?.oldPrice ?? 0,
+    );
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  };
+
+  const buildCartProduct = (item) => {
+    const product = getProduct(item);
+    const displayPrice = getDisplayPrice(item, product);
+    const oldPrice = getOldPrice(item, product);
+    const variantId = String(
+      item?.variant || product?.variantId || product?.selectedVariant?._id || "",
+    ).trim();
+    const variantName = String(
+      item?.variantName || product?.variantName || product?.selectedVariant?.name || "",
+    ).trim();
+
+    return {
+      ...product,
+      price: displayPrice,
+      originalPrice: oldPrice,
+      quantity: getItemQuantity(item, product),
+      variantId: variantId || undefined,
+      selectedVariant: variantId
+        ? {
+            ...((product?.selectedVariant &&
+              typeof product.selectedVariant === "object"
+                ? product.selectedVariant
+                : {})),
+            _id: variantId,
+            name: variantName,
+            price: displayPrice,
+            originalPrice: oldPrice,
+          }
+        : product?.selectedVariant,
+    };
+  };
 
   const calcDiscount = (price, oldPrice) => {
     if (!oldPrice || oldPrice <= price) return 0;
     return Math.round(((oldPrice - price) / oldPrice) * 100);
   };
 
-  const handleAddToCart = async (product) => {
+  const handleAddToCart = async (item) => {
     try {
-      await addToCart(product, 1);
+      const product = buildCartProduct(item);
+      await addToCart(product, product.quantity || 1);
     } catch (error) {
       setSnackbar({
         open: true,
@@ -46,9 +95,10 @@ const MyWishlistPage = () => {
     }
   };
 
-  const handleDirectOrder = async (product) => {
+  const handleDirectOrder = async (item) => {
     try {
-      await addToCart(product, 1);
+      const product = buildCartProduct(item);
+      await addToCart(product, product.quantity || 1);
       router.push("/checkout");
     } catch (error) {
       setSnackbar({
@@ -105,8 +155,16 @@ const MyWishlistPage = () => {
                   const product = getProduct(item);
                   const productId = product._id || product.id || item.product;
                   const isRemoving = Boolean(removingItems[String(productId || "")]);
-                  const oldPrice = getOldPrice(product);
-                  const discount = calcDiscount(product.price, oldPrice);
+                  const displayPrice = getDisplayPrice(item, product);
+                  const oldPrice = getOldPrice(item, product);
+                  const discount = calcDiscount(displayPrice, oldPrice);
+                  const quantity = getItemQuantity(item, product);
+                  const variantName = String(
+                    item?.variantName ||
+                      product?.variantName ||
+                      product?.selectedVariant?.name ||
+                      "",
+                  ).trim();
                   const imageUrl =
                     product.images?.[0] ||
                     product.image ||
@@ -139,6 +197,11 @@ const MyWishlistPage = () => {
                             </h3>
                           </Link>
 
+                          <p className="text-xs text-slate-500 mt-1">
+                            Qty: {quantity}
+                            {variantName ? ` | Size: ${variantName}` : ""}
+                          </p>
+
                           <div className="mt-2">
                             <Rating
                               name={`rating-${productId}`}
@@ -150,9 +213,9 @@ const MyWishlistPage = () => {
 
                           <div className="mt-2 flex items-center gap-3 flex-wrap">
                             <span className="text-lg font-semibold text-slate-900">
-                              ₹{product.price || 0}
+                              ₹{displayPrice}
                             </span>
-                            {oldPrice > 0 && oldPrice > product.price && (
+                            {oldPrice > 0 && oldPrice > displayPrice && (
                               <>
                                 <span className="text-sm text-slate-400 line-through">
                                   ₹{oldPrice}
@@ -179,14 +242,14 @@ const MyWishlistPage = () => {
 
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         <Button
-                          onClick={() => handleAddToCart(product)}
+                          onClick={() => handleAddToCart(item)}
                           variant="outlined"
                           className="!border-slate-300 !text-slate-700 !font-medium !normal-case"
                         >
                           Add to Cart
                         </Button>
                         <Button
-                          onClick={() => handleDirectOrder(product)}
+                          onClick={() => handleDirectOrder(item)}
                           variant="contained"
                           className="!bg-primary hover:brightness-110 !font-medium !normal-case"
                         >

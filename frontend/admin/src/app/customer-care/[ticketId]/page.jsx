@@ -176,7 +176,9 @@ const CustomerCareDetailPage = () => {
               <div className="space-y-2 text-sm text-gray-700">
                 <p>
                   <span className="font-semibold">Order ID:</span>{" "}
-                  {String(normalizedOrder._id || "")}
+                  {normalizedOrder.displayOrderId
+                    ? `#${normalizedOrder.displayOrderId}`
+                    : String(normalizedOrder._id || "")}
                 </p>
                 <p>
                   <span className="font-semibold">Order Status:</span>{" "}
@@ -189,7 +191,10 @@ const CustomerCareDetailPage = () => {
                 <p>
                   <span className="font-semibold">Total:</span> ₹
                   {Number(
-                    normalizedOrder.finalAmount || normalizedOrder.totalAmt || 0,
+                    normalizedOrder.displayTotal ??
+                      normalizedOrder.finalAmount ??
+                      normalizedOrder.totalAmt ??
+                      0,
                   ).toLocaleString("en-IN", {
                     minimumFractionDigits: 2,
                   })}

@@ -19,6 +19,14 @@ const formatDate = (value) => {
   return date.toLocaleDateString();
 };
 
+const formatInr = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+
 const typeStyles = {
   earn: "bg-emerald-100 text-emerald-700",
   bonus: "bg-blue-100 text-blue-700",
@@ -41,10 +49,19 @@ const CoinHistoryPage = () => {
     setError("");
 
     try {
-      const [summaryRes, txRes] = await Promise.all([
-        fetchDataFromApi("/api/user/coins-summary"),
-        fetchDataFromApi(`/api/user/coin-transactions?page=${page}&limit=20`),
+      let [summaryRes, txRes] = await Promise.all([
+        fetchDataFromApi("/api/coins/summary"),
+        fetchDataFromApi(`/api/coins/transactions?page=${page}&limit=20`),
       ]);
+
+      if (!summaryRes?.success || !txRes?.success) {
+        const [legacySummaryRes, legacyTxRes] = await Promise.all([
+          fetchDataFromApi("/api/user/coins-summary"),
+          fetchDataFromApi(`/api/user/coin-transactions?page=${page}&limit=20`),
+        ]);
+        summaryRes = summaryRes?.success ? summaryRes : legacySummaryRes;
+        txRes = txRes?.success ? txRes : legacyTxRes;
+      }
 
       if (!summaryRes?.success || !txRes?.success) {
         throw new Error("Unable to load coin data");
@@ -112,7 +129,7 @@ const CoinHistoryPage = () => {
               <div className="rounded-xl bg-white p-3 border border-gray-100">
                 <p className="text-xs text-gray-500">Value</p>
                 <p className="text-lg font-bold text-gray-900">
-                  ?{Number(summary?.rupee_value || 0).toFixed(2)}
+                  {formatInr(summary?.rupee_value || 0)}
                 </p>
               </div>
               <div className="rounded-xl bg-white p-3 border border-gray-100">
@@ -124,7 +141,7 @@ const CoinHistoryPage = () => {
               <div className="rounded-xl bg-white p-3 border border-gray-100">
                 <p className="text-xs text-gray-500">Redeem Rate</p>
                 <p className="text-lg font-bold text-gray-900">
-                  ?{Number(summary?.settings?.redeemRate || 0).toFixed(2)}
+                  {formatInr(summary?.settings?.redeemRate || 0)}
                 </p>
               </div>
             </div>

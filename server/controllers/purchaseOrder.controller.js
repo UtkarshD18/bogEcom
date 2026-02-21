@@ -576,11 +576,6 @@ export const createPurchaseOrder = async (req, res) => {
     } = req.body || {};
 
     const normalizedItems = await validateAndNormalizeItems(items || products || []);
-    const normalizedProductIds = extractPurchaseOrderProductIds(normalizedItems);
-    await ensureExclusiveAccessForProducts({
-      productIds: normalizedProductIds,
-      userId,
-    });
 
     const deliveryInfo = await resolveDeliveryInfo({
       userId,
@@ -677,13 +672,6 @@ export const getPurchaseOrderById = async (req, res) => {
         }
       }
     }
-
-    const purchaseOrderProductIds = extractPurchaseOrderProductIds(po.items);
-    await ensureExclusiveAccessForProducts({
-      productIds: purchaseOrderProductIds,
-      userId,
-      isAdmin,
-    });
 
     const normalizedPo = normalizePurchaseOrderTotals(po);
 
@@ -956,13 +944,6 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
         });
       }
     }
-
-    const purchaseOrderProductIds = extractPurchaseOrderProductIds(po.items);
-    await ensureExclusiveAccessForProducts({
-      productIds: purchaseOrderProductIds,
-      userId,
-      isAdmin,
-    });
 
     const computedPoTotals = computePurchaseOrderTotals({
       items: po.items || [],

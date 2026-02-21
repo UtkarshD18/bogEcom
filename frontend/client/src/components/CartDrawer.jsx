@@ -70,24 +70,68 @@ const CartDrawer = () => {
         return fallback || item;
     };
 
+    const resolveVariantId = (item) => {
+        const rawVariant = item?.variant?._id || item?.variant || item?.variantId;
+        if (rawVariant === undefined || rawVariant === null || rawVariant === "") {
+            return null;
+        }
+        return String(rawVariant);
+    };
+
     // Helper to normalize cart item data
     const getItemData = (item) => {
         const product = resolveProductData(item);
         const productId = resolveProductId(item);
+        const variantId = resolveVariantId(item);
+        const matchedVariant =
+            variantId && Array.isArray(product?.variants)
+                ? product.variants.find((variant) => String(variant?._id) === String(variantId))
+                : null;
+
+        const displayPrice = Number(
+            item?.price ?? matchedVariant?.price ?? product?.price ?? 0,
+        );
+        const displayOriginalPrice = Number(
+            item?.originalPrice ??
+            matchedVariant?.originalPrice ??
+            product?.originalPrice ??
+            displayPrice,
+        );
+        const variantLabel =
+            (typeof item?.variantName === "string" && item.variantName.trim()) ||
+            matchedVariant?.name ||
+            "";
+        const variantStock = Number(
+            matchedVariant?.stock_quantity ?? matchedVariant?.stock ?? Number.NaN,
+        );
+        const variantReserved = Number(matchedVariant?.reserved_quantity ?? 0);
+        const productStock = Number(
+            product?.stock_quantity ?? product?.stock ?? Number.NaN,
+        );
+        const productReserved = Number(product?.reserved_quantity ?? 0);
+        const maxQuantity = Number.isFinite(variantStock)
+            ? Math.max(variantStock - variantReserved, 0)
+            : Number.isFinite(productStock)
+                ? Math.max(productStock - productReserved, 0)
+                : Infinity;
 
         return {
-            id: productId || product?._id || product?.id || item._id || item.id,
+            productId: productId || product?._id || product?.id || item._id || item.id,
+            id: `${productId || product?._id || product?.id || item._id || item.id}-${variantId || "base"}`,
             name: product?.name || item?.name || item?.title || "Product",
             image:
                 product?.thumbnail ||
                 product?.images?.[0] ||
                 item?.image ||
                 "/product_1.png",
-            price: Number(product?.price || item?.price || 0),
+            price: displayPrice,
+            originalPrice: displayOriginalPrice,
             brand: product?.brand || item?.brand || "BOG",
             quantity: Number(item?.quantity || 1),
+            variantLabel,
+            maxQuantity,
             quantityUnit:
-                product?.quantityUnit || item?.quantityUnit || "Per Unit",
+                variantLabel || product?.quantityUnit || item?.quantityUnit || "Per Unit",
         };
     };
 
@@ -154,12 +198,10 @@ const CartDrawer = () => {
 
     const cartSavings = round2(
         cartItems.reduce((sum, item) => {
-            const data = resolveProductData(item);
+            const line = getItemData(item);
             const qty = Number(item?.quantity || 1);
-            const discountedPrice = Number(data?.price || item?.price || 0);
-            const originalPrice = Number(
-                data?.originalPrice || item?.originalPrice || 0,
-            );
+            const discountedPrice = Number(line?.price || 0);
+            const originalPrice = Number(line?.originalPrice || 0);
             if (originalPrice > discountedPrice) {
                 return sum + (originalPrice - discountedPrice) * qty;
             }
@@ -245,9 +287,9 @@ const CartDrawer = () => {
                                 </p>
                                 {cartItems.map((item) => {
                                     const data = getItemData(item);
-                                    const productId = resolveProductId(item);
+                                    const variantId = resolveVariantId(item);
                                     return (
-                                        <div key={data.id} className="flex gap-4 p-3 rounded-2xl bg-white border border-gray-100 shadow-sm">
+                                        <div key={`${data.id}-${String(item?._id || item?.id || "line")}`} className="flex gap-4 p-3 rounded-2xl bg-white border border-gray-100 shadow-sm">
                                             <div className="w-20 h-20 shrink-0 bg-white rounded-xl flex items-center justify-center p-2 border border-gray-100">
                                                 <img
                                                     src={getImageUrl(data.image)}
@@ -265,8 +307,8 @@ const CartDrawer = () => {
                                                     <button
                                                         onClick={() =>
                                                             removeFromCart(
-                                                                productId || data.id,
-                                                                item?.variant || null,
+                                                                data.productId,
+                                                                variantId,
                                                             )
                                                         }
                                                         className="p-1.5 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90"
@@ -281,9 +323,9 @@ const CartDrawer = () => {
                                                         <button
                                                             onClick={() =>
                                                                 updateQuantity(
-                                                                    productId || data.id,
+                                                                    data.productId,
                                                                     Number(data.quantity) - 1,
-                                                                    item?.variant || null,
+                                                                    variantId,
                                                                 )
                                                             }
                                                             className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-red-500 active:scale-90 transition-all"
@@ -294,18 +336,27 @@ const CartDrawer = () => {
                                                         <button
                                                             onClick={() =>
                                                                 updateQuantity(
-                                                                    productId || data.id,
+                                                                    data.productId,
                                                                     Number(data.quantity) + 1,
-                                                                    item?.variant || null,
+                                                                    variantId,
                                                                 )
                                                             }
-                                                            disabled={Number(data.quantity) >= (item.product?.stock || item.productData?.stock || item.stock || Infinity)}
+                                                            disabled={Number(data.quantity) >= Number(data.maxQuantity || Infinity)}
                                                             className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                                                         >
                                                             <MdAdd size={14} />
                                                         </button>
                                                     </div>
-                                                    <span className="text-sm font-bold text-primary">₹{round2(data.price * data.quantity)}</span>
+                                                    <div className="text-right">
+                                                        {data.originalPrice > data.price && (
+                                                            <p className="text-[10px] text-gray-400 line-through">
+                                                                ₹{round2(data.originalPrice * data.quantity)}
+                                                            </p>
+                                                        )}
+                                                        <span className="text-sm font-bold text-primary">
+                                                            ₹{round2(data.price * data.quantity)}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -420,13 +471,8 @@ const CartDrawer = () => {
                                     </div>
                                     <div className="flex justify-between text-sm">
                                         <span className="text-gray-500">Shipping</span>
-                                        <span className="font-bold text-primary flex items-center gap-2">
-                                            {displayShippingCharge > 0 && (
-                                                <span className="line-through text-gray-500">
-                                                    &#8377;{displayShippingCharge.toFixed(2)}
-                                                </span>
-                                            )}
-                                            <span>FREE</span>
+                                        <span className={isFreeShipping ? "font-bold text-primary" : "font-bold text-gray-900"}>
+                                            {isFreeShipping ? "FREE" : `₹${shippingCost}`}
                                         </span>
                                     </div>
                                     {cartSavings > 0 && (

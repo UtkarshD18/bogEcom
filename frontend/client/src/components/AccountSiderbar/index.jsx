@@ -17,7 +17,6 @@ const AccountSidebar = () => {
   const pathname = usePathname();
   const fileInputRef = useRef(null);
   const API_URL = (
-    API_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_API_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
     "http://localhost:8000"
@@ -175,9 +174,6 @@ const AccountSidebar = () => {
         const name = data.data?.name || "User";
         const email = data.data?.email || "";
         const avatar = data.data?.avatar || "";
-        const expiry = data.data?.membershipExpiry
-          ? new Date(data.data.membershipExpiry)
-          : null;
         setUserName(name);
         setUserEmail(email);
         setIsMember(

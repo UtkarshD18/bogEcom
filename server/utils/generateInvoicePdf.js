@@ -3,6 +3,7 @@ import fsPromises from "fs/promises";
 import path from "path";
 import PDFDocument from "pdfkit";
 import { fileURLToPath } from "url";
+import { getOrderDisplayId } from "./orderPresentation.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -819,8 +820,13 @@ export const generateInvoicePdf = async ({
     const destination = [consigneeAddress?.city, consigneeAddress?.state]
       .filter(Boolean)
       .join(", ");
+    const canonicalDisplayOrderId = getOrderDisplayId(order);
     const buyerOrderNumber =
-      order?.orderNumber || order?.order_id || order?.orderId || String(order._id);
+      (canonicalDisplayOrderId && `#${canonicalDisplayOrderId}`) ||
+      order?.orderNumber ||
+      order?.order_id ||
+      order?.orderId ||
+      String(order._id);
     const metaRows = [
       { label: "Invoice No.", value: invoiceNumber },
       { label: "Dated", value: formatDate(invoiceDate) },

@@ -5,8 +5,9 @@ import {
   MenuItem,
   TextField,
 } from "@mui/material";
+import { MyContext } from "@/context/ThemeContext";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FiClock, FiMail, FiMapPin, FiPhone, FiSend, FiX } from "react-icons/fi";
 import { IoChatboxOutline } from "react-icons/io5";
@@ -52,6 +53,9 @@ const createFileId = (file) =>
 const formatFileSize = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 
 const Contact = () => {
+  const appContext = useContext(MyContext);
+  const isLoggedIn = Boolean(appContext?.isLogin);
+
   const [formData, setFormData] = useState(defaultFormState);
   const [fieldErrors, setFieldErrors] = useState({});
   const [uploadErrors, setUploadErrors] = useState({ images: "", videos: "" });
@@ -71,6 +75,17 @@ const Contact = () => {
     let isActive = true;
 
     const loadOrders = async () => {
+      if (!isLoggedIn) {
+        if (isActive) {
+          setOrders([]);
+          setOrdersLoading(false);
+          setFormData((prev) =>
+            prev.orderId ? { ...prev, orderId: "" } : prev,
+          );
+        }
+        return;
+      }
+
       setOrdersLoading(true);
       try {
         const orderOptions = await fetchSupportOrderOptions();
@@ -93,7 +108,7 @@ const Contact = () => {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [isLoggedIn]);
 
   useEffect(
     () => () => {
@@ -572,7 +587,7 @@ const Contact = () => {
                   <MenuItem value="">No order selected</MenuItem>
                   {orders.map((order) => (
                     <MenuItem key={order.id} value={order.id}>
-                      #{String(order.id || "").slice(-8).toUpperCase()} -{" "}
+                      #{order.displayId || String(order.id || "").slice(0, 8).toUpperCase()} -{" "}
                       {order.createdAt
                         ? new Date(order.createdAt).toLocaleDateString("en-IN", {
                             year: "numeric",
