@@ -8,9 +8,61 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SERVER_ROOT = path.resolve(__dirname, "..");
 const INVOICE_DIR = path.join(SERVER_ROOT, "invoices");
+const SHOULD_FORCE_REGENERATE = String(process.env.INVOICE_FORCE_REGENERATE || "false").toLowerCase() === "true";
 
 const DEFAULT_HSN = process.env.INVOICE_DEFAULT_HSN || "2106";
 const DEFAULT_TAX_RATE = Number(process.env.INVOICE_DEFAULT_GST_RATE || 5);
+const normalizeHsnSixDigit = (value) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length >= 6) return digits.slice(0, 6);
+  if (digits.length > 0) return digits.padEnd(6, "0");
+  return "";
+};
+const DEFAULT_HSN_6 = normalizeHsnSixDigit(DEFAULT_HSN) || "210600";
+const GST_STATE_CODE_BY_NAME = Object.freeze({
+  "jammu & kashmir": "01",
+  "jammu and kashmir": "01",
+  "himachal pradesh": "02",
+  punjab: "03",
+  chandigarh: "04",
+  uttarakhand: "05",
+  haryana: "06",
+  delhi: "07",
+  rajasthan: "08",
+  "uttar pradesh": "09",
+  bihar: "10",
+  sikkim: "11",
+  "arunachal pradesh": "12",
+  nagaland: "13",
+  manipur: "14",
+  mizoram: "15",
+  tripura: "16",
+  meghalaya: "17",
+  assam: "18",
+  "west bengal": "19",
+  jharkhand: "20",
+  odisha: "21",
+  chhattisgarh: "22",
+  "madhya pradesh": "23",
+  gujarat: "24",
+  "daman & diu": "25",
+  "daman and diu": "25",
+  "dadra & nagar haveli": "26",
+  "dadra and nagar haveli": "26",
+  maharashtra: "27",
+  karnataka: "29",
+  goa: "30",
+  lakshadweep: "31",
+  kerala: "32",
+  "tamil nadu": "33",
+  puducherry: "34",
+  pondicherry: "34",
+  "andaman & nicobar islands": "35",
+  "andaman and nicobar islands": "35",
+  telangana: "36",
+  "andhra pradesh": "37",
+  "other territory": "98",
+});
 
 const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
@@ -22,6 +74,17 @@ const normalizeState = (value) =>
 const normalizeStateCode = (value) => {
   const cleaned = String(value || "").replace(/\D/g, "");
   return cleaned ? cleaned.padStart(2, "0") : "";
+};
+
+const resolveStateCode = (stateCode, stateName) => {
+  const directCode = normalizeStateCode(stateCode);
+  if (directCode) return directCode;
+
+  const normalizedName = normalizeState(stateName)
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ");
+
+  return GST_STATE_CODE_BY_NAME[normalizedName] || "";
 };
 
 const ensureInvoiceDirectory = async () => {
@@ -78,6 +141,101 @@ const formatDate = (value) => {
 
 const formatAmount = (amount, currencySymbol) =>
   `${currencySymbol}${roundMoney(amount).toFixed(2)}`;
+
+const formatPlainAmount = (amount) => roundMoney(amount).toFixed(2);
+const formatQuantity = (value) => Number(value || 0).toFixed(4);
+
+const NUMBER_WORDS_ONES = [
+  "",
+  "One",
+  "Two",
+  "Three",
+  "Four",
+  "Five",
+  "Six",
+  "Seven",
+  "Eight",
+  "Nine",
+  "Ten",
+  "Eleven",
+  "Twelve",
+  "Thirteen",
+  "Fourteen",
+  "Fifteen",
+  "Sixteen",
+  "Seventeen",
+  "Eighteen",
+  "Nineteen",
+];
+const NUMBER_WORDS_TENS = [
+  "",
+  "",
+  "Twenty",
+  "Thirty",
+  "Forty",
+  "Fifty",
+  "Sixty",
+  "Seventy",
+  "Eighty",
+  "Ninety",
+];
+
+const twoDigitWords = (num) => {
+  const safe = Math.max(0, Math.floor(Number(num || 0)));
+  if (safe < 20) return NUMBER_WORDS_ONES[safe];
+  const tens = Math.floor(safe / 10);
+  const ones = safe % 10;
+  return `${NUMBER_WORDS_TENS[tens]}${ones ? ` ${NUMBER_WORDS_ONES[ones]}` : ""}`.trim();
+};
+
+const numberToWordsIndian = (num) => {
+  const safe = Math.max(0, Math.floor(Number(num || 0)));
+  if (safe === 0) return "Zero";
+
+  const parts = [];
+  let remaining = safe;
+
+  const crore = Math.floor(remaining / 10000000);
+  if (crore > 0) {
+    parts.push(`${twoDigitWords(crore)} Crore`);
+    remaining %= 10000000;
+  }
+
+  const lakh = Math.floor(remaining / 100000);
+  if (lakh > 0) {
+    parts.push(`${twoDigitWords(lakh)} Lakh`);
+    remaining %= 100000;
+  }
+
+  const thousand = Math.floor(remaining / 1000);
+  if (thousand > 0) {
+    parts.push(`${twoDigitWords(thousand)} Thousand`);
+    remaining %= 1000;
+  }
+
+  const hundred = Math.floor(remaining / 100);
+  if (hundred > 0) {
+    parts.push(`${NUMBER_WORDS_ONES[hundred]} Hundred`);
+    remaining %= 100;
+  }
+
+  if (remaining > 0) {
+    parts.push(twoDigitWords(remaining));
+  }
+
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+};
+
+const amountToWordsINR = (amount) => {
+  const safe = roundMoney(Math.max(0, Number(amount || 0)));
+  const rupees = Math.floor(safe);
+  const paise = Math.round((safe - rupees) * 100);
+  const rupeeWords = numberToWordsIndian(rupees);
+  if (paise > 0) {
+    return `INR ${rupeeWords} and ${numberToWordsIndian(paise)} Paise Only`;
+  }
+  return `INR ${rupeeWords} Only`;
+};
 
 const allocateByWeight = (total, weights) => {
   const safeTotal = roundMoney(total);
@@ -229,17 +387,17 @@ const drawMetadataRow = (doc, labelLeft, valueLeft, labelRight, valueRight, y) =
 
 const drawTableHeader = (doc, x, y, tableWidth) => {
   const widths = {
-    sl: 18,
-    description: 180,
-    hsn: 45,
-    qty: 35,
-    gross: 55,
-    discount: 45,
-    taxable: 55,
-    gst: 55,
-    amount: 47,
+    sl: 22,
+    description: 213,
+    hsn: 58,
+    qty: 65,
+    rate: 65,
+    per: 45,
+    amount: 67,
   };
 
+  const computedTableWidth = Object.values(widths).reduce((sum, width) => sum + width, 0);
+  const effectiveWidth = tableWidth || computedTableWidth;
   const cols = {};
   let cursor = x;
   Object.entries(widths).forEach(([key, width]) => {
@@ -247,8 +405,8 @@ const drawTableHeader = (doc, x, y, tableWidth) => {
     cursor += width;
   });
 
-  const headerHeight = 20;
-  doc.rect(x, y, tableWidth, headerHeight).fillAndStroke("#f3f4f6", "#111827");
+  const headerHeight = 22;
+  doc.rect(x, y, effectiveWidth, headerHeight).fillAndStroke("#f5f5f5", "#111827");
   Object.values(cols)
     .slice(1)
     .forEach((colX) => {
@@ -256,24 +414,29 @@ const drawTableHeader = (doc, x, y, tableWidth) => {
     });
 
   doc.fillColor("#111827").font("Helvetica-Bold").fontSize(8);
-  doc.text("Sl", cols.sl + 2, y + 6, { width: widths.sl - 4 });
-  doc.text("Description of Goods", cols.description + 2, y + 4, {
+  doc.text("Sl", cols.sl + 2, y + 7, { width: widths.sl - 4 });
+  doc.text("Description of Goods", cols.description + 2, y + 7, {
     width: widths.description - 4,
   });
-  doc.text("HSN", cols.hsn + 2, y + 6, { width: widths.hsn - 4 });
-  doc.text("Qty", cols.qty + 2, y + 6, { width: widths.qty - 4 });
-  doc.text("Gross", cols.gross + 2, y + 6, { width: widths.gross - 4 });
-  doc.text("Discount", cols.discount + 2, y + 4, { width: widths.discount - 4 });
-  doc.text("Taxable", cols.taxable + 2, y + 4, { width: widths.taxable - 4 });
-  doc.text("GST", cols.gst + 2, y + 6, { width: widths.gst - 4 });
-  doc.text("Amount", cols.amount + 2, y + 6, { width: widths.amount - 4 });
-  doc.fillColor("black");
+  doc.text("HSN/SAC", cols.hsn + 2, y + 7, { width: widths.hsn - 4 });
+  doc.text("Quantity", cols.qty + 2, y + 7, { width: widths.qty - 4 });
+  doc.text("Rate", cols.rate + 2, y + 7, { width: widths.rate - 4 });
+  doc.text("per", cols.per + 2, y + 7, { width: widths.per - 4 });
+  doc.text("Amount", cols.amount + 2, y + 7, { width: widths.amount - 4, align: "right" });
+  doc.fillColor("#111827");
 
-  return { y: y + headerHeight, cols, widths, headerHeight };
+  return {
+    y: y + headerHeight,
+    cols,
+    widths,
+    headerHeight,
+    tableWidth: effectiveWidth,
+  };
 };
 
-const drawTableRow = (doc, item, cols, widths, y, currencySymbol, index) => {
-  const rowHeight = 24;
+const drawTableRow = (doc, item, cols, widths, y, index) => {
+  const hasDetail = Boolean(item?.detail);
+  const rowHeight = hasDetail ? 28 : 20;
   const tableWidth = Object.values(widths).reduce((sum, width) => sum + width, 0);
 
   doc.rect(cols.sl, y, tableWidth, rowHeight).stroke("#111827");
@@ -285,41 +448,33 @@ const drawTableRow = (doc, item, cols, widths, y, currencySymbol, index) => {
 
   doc.font("Helvetica").fontSize(8).fillColor("#111827");
   doc.text(String(index + 1), cols.sl + 2, y + 6, { width: widths.sl - 4 });
-  doc.text(item.description, cols.description + 2, y + 4, {
+  doc.text(item.description || "Product", cols.description + 2, y + 4, {
     width: widths.description - 6,
   });
-  if (item.variantName) {
-    doc.fontSize(7).fillColor("#6b7280");
-    doc.text(item.variantName, cols.description + 2, y + 13, {
+  if (hasDetail) {
+    doc.font("Helvetica").fontSize(7).fillColor("#4b5563");
+    doc.text(item.detail, cols.description + 2, y + 13, {
       width: widths.description - 6,
     });
-    doc.fontSize(8).fillColor("#111827");
+    doc.fillColor("#111827");
   }
-  doc.text(item.hsn, cols.hsn + 2, y + 6, { width: widths.hsn - 4 });
+  doc.font("Helvetica").fontSize(8);
+  doc.text(item.hsn || DEFAULT_HSN_6, cols.hsn + 2, y + 6, { width: widths.hsn - 4 });
   doc.text(
-    `${item.quantity}${item.unitLabel ? ` ${item.unitLabel}` : ""}`,
+    `${formatQuantity(item.quantityValue)} ${item.quantityUnit || "Nos"}`,
     cols.qty + 2,
     y + 6,
-    { width: widths.qty - 4 },
+    { width: widths.qty - 4, align: "right" },
   );
-  doc.text(formatAmount(item.gross, currencySymbol), cols.gross + 2, y + 6, {
-    width: widths.gross - 4,
+  doc.text(formatPlainAmount(item.rate), cols.rate + 2, y + 6, {
+    width: widths.rate - 4,
+    align: "right",
   });
-  doc.text(formatAmount(item.discount, currencySymbol), cols.discount + 2, y + 6, {
-    width: widths.discount - 4,
+  doc.text(item.perLabel || "Nos", cols.per + 2, y + 6, {
+    width: widths.per - 4,
+    align: "center",
   });
-  doc.text(formatAmount(item.taxable, currencySymbol), cols.taxable + 2, y + 6, {
-    width: widths.taxable - 4,
-  });
-
-  const gstLabel = item.isInterState
-    ? `I:${formatAmount(item.igst, currencySymbol)}`
-    : `C:${formatAmount(item.cgst, currencySymbol)} S:${formatAmount(
-        item.sgst,
-        currencySymbol,
-      )}`;
-  doc.text(gstLabel, cols.gst + 2, y + 6, { width: widths.gst - 4 });
-  doc.text(formatAmount(item.total, currencySymbol), cols.amount + 2, y + 6, {
+  doc.text(formatPlainAmount(item.amount), cols.amount + 2, y + 6, {
     width: widths.amount - 4,
     align: "right",
   });
@@ -333,22 +488,20 @@ const drawSummaryRow = (
   value,
   x,
   y,
-  currencySymbol,
-  bold = false,
-  labelWidth = 120,
-  valueWidth = 70,
+  {
+    bold = false,
+    labelWidth = 160,
+    valueWidth = 85,
+    valuePrefix = "",
+  } = {},
 ) => {
-  doc
-    .font(bold ? "Helvetica-Bold" : "Helvetica")
-    .fontSize(9)
-    .text(label, x, y, { width: labelWidth });
-  doc
-    .font(bold ? "Helvetica-Bold" : "Helvetica")
-    .fontSize(9)
-    .text(formatAmount(value, currencySymbol), x + labelWidth + 4, y, {
-      width: valueWidth,
-      align: "right",
-    });
+  const fontName = bold ? "Helvetica-Bold" : "Helvetica";
+  const valueText = typeof value === "string" ? value : `${valuePrefix}${formatPlainAmount(value)}`;
+  doc.font(fontName).fontSize(9).text(label, x, y, { width: labelWidth });
+  doc.font(fontName).fontSize(9).text(valueText, x + labelWidth + 4, y, {
+    width: valueWidth,
+    align: "right",
+  });
   return y + 14;
 };
 
@@ -376,19 +529,27 @@ const drawKeyValueTable = (doc, x, y, width, height, rows) => {
   });
 };
 
-const drawHsnSummaryTable = (doc, x, y, width, rows, currencySymbol) => {
+const drawHsnSummaryTable = (doc, x, y, width, rows, isInterState = false) => {
   if (!rows || rows.length === 0) return y;
-  const headerHeight = 18;
-  const rowHeight = 16;
-  const columns = {
-    hsn: 70,
-    taxable: 90,
-    rate: 50,
-    igst: 70,
-    cgst: 70,
-    sgst: 70,
-    totalTax: 85,
-  };
+  const headerHeight = 16;
+  const rowHeight = 14;
+  const columns = isInterState
+    ? {
+        hsn: 100,
+        taxable: 130,
+        rate: 80,
+        igst: 110,
+        totalTax: 115,
+      }
+    : {
+        hsn: 90,
+        taxable: 105,
+        cgstRate: 60,
+        cgst: 80,
+        sgstRate: 60,
+        sgst: 80,
+        totalTax: 60,
+      };
 
   const cols = {};
   let cursor = x;
@@ -404,15 +565,18 @@ const drawHsnSummaryTable = (doc, x, y, width, rows, currencySymbol) => {
       doc.moveTo(colX, y).lineTo(colX, y + headerHeight).stroke("#111827");
     });
   doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827");
-  doc.text("HSN/SAC", cols.hsn + 2, y + 5, { width: columns.hsn - 4 });
-  doc.text("Taxable", cols.taxable + 2, y + 5, { width: columns.taxable - 4 });
-  doc.text("Rate", cols.rate + 2, y + 5, { width: columns.rate - 4 });
-  doc.text("IGST", cols.igst + 2, y + 5, { width: columns.igst - 4 });
-  doc.text("CGST", cols.cgst + 2, y + 5, { width: columns.cgst - 4 });
-  doc.text("SGST", cols.sgst + 2, y + 5, { width: columns.sgst - 4 });
-  doc.text("Total Tax", cols.totalTax + 2, y + 5, {
-    width: columns.totalTax - 4,
-  });
+  doc.text("HSN/SAC", cols.hsn + 2, y + 4, { width: columns.hsn - 4 });
+  doc.text("Taxable Value", cols.taxable + 2, y + 4, { width: columns.taxable - 4 });
+  if (isInterState) {
+    doc.text("IGST Rate", cols.rate + 2, y + 4, { width: columns.rate - 4 });
+    doc.text("IGST Amount", cols.igst + 2, y + 4, { width: columns.igst - 4 });
+  } else {
+    doc.text("CGST Rate", cols.cgstRate + 2, y + 4, { width: columns.cgstRate - 4 });
+    doc.text("CGST Amount", cols.cgst + 2, y + 4, { width: columns.cgst - 4 });
+    doc.text("SGST Rate", cols.sgstRate + 2, y + 4, { width: columns.sgstRate - 4 });
+    doc.text("SGST Amount", cols.sgst + 2, y + 4, { width: columns.sgst - 4 });
+  }
+  doc.text("Tax Amount", cols.totalTax + 2, y + 4, { width: columns.totalTax - 4 });
 
   let currentY = y + headerHeight;
   rows.forEach((row) => {
@@ -423,27 +587,44 @@ const drawHsnSummaryTable = (doc, x, y, width, rows, currencySymbol) => {
         doc.moveTo(colX, currentY).lineTo(colX, currentY + rowHeight).stroke("#111827");
       });
     doc.font("Helvetica").fontSize(8).fillColor("#111827");
-    doc.text(String(row.hsn), cols.hsn + 2, currentY + 4, { width: columns.hsn - 4 });
-    doc.text(formatAmount(row.taxable, currencySymbol), cols.taxable + 2, currentY + 4, {
+    doc.text(String(row.hsn), cols.hsn + 2, currentY + 3, { width: columns.hsn - 4 });
+    doc.text(formatPlainAmount(row.taxable), cols.taxable + 2, currentY + 3, {
       width: columns.taxable - 4,
+      align: "right",
     });
-    doc.text(`${Number(row.taxRate || 0).toFixed(2)}%`, cols.rate + 2, currentY + 4, {
-      width: columns.rate - 4,
-    });
-    doc.text(formatAmount(row.igst, currencySymbol), cols.igst + 2, currentY + 4, {
-      width: columns.igst - 4,
-    });
-    doc.text(formatAmount(row.cgst, currencySymbol), cols.cgst + 2, currentY + 4, {
-      width: columns.cgst - 4,
-    });
-    doc.text(formatAmount(row.sgst, currencySymbol), cols.sgst + 2, currentY + 4, {
-      width: columns.sgst - 4,
-    });
+    if (isInterState) {
+      doc.text(`${Number(row.taxRate || 0).toFixed(2)}%`, cols.rate + 2, currentY + 3, {
+        width: columns.rate - 4,
+        align: "right",
+      });
+      doc.text(formatPlainAmount(row.igst), cols.igst + 2, currentY + 3, {
+        width: columns.igst - 4,
+        align: "right",
+      });
+    } else {
+      const halfRate = Number(row.taxRate || 0) / 2;
+      doc.text(`${halfRate.toFixed(2)}%`, cols.cgstRate + 2, currentY + 3, {
+        width: columns.cgstRate - 4,
+        align: "right",
+      });
+      doc.text(formatPlainAmount(row.cgst), cols.cgst + 2, currentY + 3, {
+        width: columns.cgst - 4,
+        align: "right",
+      });
+      doc.text(`${halfRate.toFixed(2)}%`, cols.sgstRate + 2, currentY + 3, {
+        width: columns.sgstRate - 4,
+        align: "right",
+      });
+      doc.text(formatPlainAmount(row.sgst), cols.sgst + 2, currentY + 3, {
+        width: columns.sgst - 4,
+        align: "right",
+      });
+    }
     doc.text(
-      formatAmount(row.igst + row.cgst + row.sgst, currencySymbol),
+      formatPlainAmount(row.igst + row.cgst + row.sgst),
       cols.totalTax + 2,
-      currentY + 4,
-      { width: columns.totalTax - 4 },
+      currentY + 3,
+      { width: columns.totalTax - 4, align: "right" },
     );
     currentY += rowHeight;
   });
@@ -467,12 +648,79 @@ const resolveSellerDetails = (sellerDetails = {}) => {
     gstin: sellerDetails.gstin || process.env.INVOICE_SELLER_GSTIN || "",
     address: sellerDetails.address || fallbackAddress || "Address not configured",
     state: sellerDetails.state || process.env.INVOICE_SELLER_STATE || "",
+    cin: sellerDetails.cin || process.env.INVOICE_SELLER_CIN || "",
+    msme: sellerDetails.msme || process.env.INVOICE_SELLER_MSME || "",
+    fssai: sellerDetails.fssai || process.env.INVOICE_SELLER_FSSAI || "",
     phone: sellerDetails.phone || process.env.INVOICE_SELLER_PHONE || "",
     email: sellerDetails.email || process.env.INVOICE_SELLER_EMAIL || "",
     currencySymbol: sellerDetails.currencySymbol || process.env.INVOICE_CURRENCY_SYMBOL || "Rs. ",
     placeOfSupplyStateCode:
       sellerDetails.placeOfSupplyStateCode || process.env.INVOICE_SELLER_STATE_CODE || "",
+    bankName: sellerDetails.bankName || process.env.INVOICE_BANK_NAME || "",
+    bankAccount: sellerDetails.bankAccount || process.env.INVOICE_BANK_ACCOUNT || "",
+    bankBranch: sellerDetails.bankBranch || process.env.INVOICE_BANK_BRANCH || "",
+    bankIfsc: sellerDetails.bankIfsc || process.env.INVOICE_BANK_IFSC || "",
+    declaration:
+      sellerDetails.declaration ||
+      process.env.INVOICE_DECLARATION ||
+      "We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.",
+    terms:
+      sellerDetails.terms ||
+      process.env.INVOICE_TERMS ||
+      "1. Kindly verify parcel condition at delivery. || 2. Please report transit damage within 24 hours with supporting photos. || 3. Subject to payment terms agreed with buyer.",
+    jurisdictionLine:
+      sellerDetails.jurisdictionLine ||
+      process.env.INVOICE_JURISDICTION_LINE ||
+      "SUBJECT TO JAIPUR JURISDICTION",
   };
+};
+
+const drawPartyBlock = (doc, { title, lines = [], x, y, width, height }) => {
+  const textX = x + 6;
+  const textWidth = width - 12;
+  const topY = y + 4;
+  const contentBottomY = y + height - 4;
+
+  doc.font("Helvetica-Bold").fontSize(9).text(title, textX, topY, {
+    width: textWidth,
+    lineBreak: false,
+  });
+
+  let cursorY = y + 17;
+  lines.forEach((line) => {
+    const content = String(line || "").trim();
+    if (!content || cursorY >= contentBottomY) return;
+
+    const lineHeight = doc.heightOfString(content, {
+      width: textWidth,
+      align: "left",
+    });
+
+    if (cursorY + lineHeight > contentBottomY) {
+      const remaining = contentBottomY - cursorY;
+      if (remaining > 8) {
+        let truncated = content;
+        while (
+          truncated.length > 0 &&
+          doc.heightOfString(`${truncated}...`, { width: textWidth }) > remaining
+        ) {
+          truncated = truncated.slice(0, -1);
+        }
+        if (truncated.length > 0) {
+          doc.font("Helvetica").fontSize(8).text(`${truncated}...`, textX, cursorY, {
+            width: textWidth,
+          });
+        }
+      }
+      cursorY = contentBottomY;
+      return;
+    }
+
+    doc.font("Helvetica").fontSize(8).text(content, textX, cursorY, {
+      width: textWidth,
+    });
+    cursorY += lineHeight + 1;
+  });
 };
 
 const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
@@ -481,9 +729,13 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
   const consigneeAddress = resolveConsigneeAddress(order);
   const sellerState = normalizeState(seller.state);
   const buyerState = normalizeState(buyerAddress?.state);
-  const sellerStateCode = normalizeStateCode(seller.placeOfSupplyStateCode);
-  const buyerStateCode = normalizeStateCode(
+  const sellerStateCode = resolveStateCode(
+    seller.placeOfSupplyStateCode || seller.stateCode,
+    seller.state,
+  );
+  const buyerStateCode = resolveStateCode(
     buyerAddress?.stateCode || buyerAddress?.state_code || "",
+    buyerAddress?.state,
   );
   const isInterState = sellerStateCode && buyerStateCode
     ? sellerStateCode !== buyerStateCode
@@ -508,8 +760,10 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
   const shippingTotal = roundMoney(Number(order?.shipping || 0));
 
   // totalAmt is authoritative (includes GST + shipping).
+  const finalAmount = roundMoney(Number(order?.finalAmount || 0));
+  const totalAmount = roundMoney(Number(order?.totalAmt || 0));
   const storedGrandTotal = roundMoney(
-    Number(order?.totalAmt || order?.finalAmount || 0),
+    finalAmount > 0 ? finalAmount : totalAmount,
   );
   const grandTotal =
     storedGrandTotal > 0
@@ -543,40 +797,66 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
   const taxAlloc = allocateByWeight(taxTotal, weights);
 
   const lineItems = products.map((item, index) => {
+    const quantityUnits = Math.max(Number(item?.quantity || 1), 1);
     const gross = roundMoney(
       item?.subTotal ||
-        Number(item?.price || 0) * Number(item?.quantity || 0),
+        Number(item?.price || 0) * quantityUnits,
     );
     const discount = discountAlloc[index] || 0;
     const grossAfterDiscount = roundMoney(Math.max(gross - discount, 0));
     const lineTax = taxAlloc[index] || 0;
     const meta = getProductMeta(productMetaById, item?.productId);
     const lineTaxRate = Number(meta?.taxRate || gstRate || 0);
-    const hsn = String(meta?.hsn || DEFAULT_HSN);
-    const unitLabel = meta?.unit || "Nos";
+    const hsn = normalizeHsnSixDigit(
+      meta?.hsn || item?.hsnCode || item?.hsn || item?.productHsn || DEFAULT_HSN_6,
+    ) || DEFAULT_HSN_6;
+    const weightInGrams = Number(meta?.weight || item?.weight || item?.netWeight || 0);
+    const quantityUnit = weightInGrams > 0 ? "KG" : String(meta?.unit || "Nos").toUpperCase();
+    const quantityValue =
+      weightInGrams > 0
+        ? roundMoney((quantityUnits * weightInGrams) / 1000)
+        : roundMoney(quantityUnits);
+    const perLabel = quantityUnit;
+    const rateBase = quantityValue > 0 ? quantityValue : quantityUnits;
     const rate = roundMoney(
-      Number(item?.price || 0) || (Number(item?.quantity || 0) ? gross / Number(item.quantity) : gross),
+      rateBase > 0
+        ? gross / rateBase
+        : Number(item?.price || 0),
     );
 
     const igst = isInterState ? lineTax : 0;
     const cgst = isInterState ? 0 : roundMoney(lineTax / 2);
     const sgst = isInterState ? 0 : roundMoney(lineTax - cgst);
+    const taxableAmount = roundMoney(Math.max(grossAfterDiscount - lineTax, 0));
+
+    const lineDetails = [];
+    if (item?.variantName) lineDetails.push(String(item.variantName).trim());
+    if (weightInGrams > 0) {
+      const packWeight =
+        weightInGrams >= 1000
+          ? `${roundMoney(weightInGrams / 1000)} kg`
+          : `${roundMoney(weightInGrams)} g`;
+      lineDetails.push(`(${quantityUnits} pack x ${packWeight})`);
+    }
 
     return {
       description: item?.productTitle || "Product",
-      variantName: item?.variantName || "",
+      detail: lineDetails.join(" ").trim(),
       hsn,
-      quantity: Number(item?.quantity || 1),
+      quantityUnits,
+      quantityValue,
+      quantityUnit,
       rate,
-      unitLabel,
+      perLabel,
       gross,
       discount,
-      taxable: roundMoney(Math.max(grossAfterDiscount - lineTax, 0)),
+      taxable: taxableAmount,
       taxRate: lineTaxRate,
       igst,
       cgst,
       sgst,
       total: grossAfterDiscount,
+      amount: taxableAmount,
       isInterState,
     };
   });
@@ -590,7 +870,7 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
 
   const hsnSummaryMap = {};
   lineItems.forEach((item) => {
-    const key = item.hsn || DEFAULT_HSN;
+    const key = normalizeHsnSixDigit(item.hsn || DEFAULT_HSN_6) || DEFAULT_HSN_6;
     if (!hsnSummaryMap[key]) {
       hsnSummaryMap[key] = {
         hsn: key,
@@ -610,6 +890,36 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
   });
   const hsnSummary = Object.values(hsnSummaryMap);
 
+  const placeOfSupply =
+    buyerAddress?.state &&
+    String(buyerAddress.state).trim()
+      ? `${buyerAddress.state}${buyerStateCode ? ` (${buyerStateCode})` : ""}`
+      : "N/A";
+
+  const goodsAmount = roundMoney(
+    lineItems.reduce((sum, item) => sum + Number(item?.amount || 0), 0),
+  );
+  const taxAmount = roundMoney(taxBreakup.igst + taxBreakup.cgst + taxBreakup.sgst);
+  const amountBeforeRound = roundMoney(
+    goodsAmount + taxAmount + shippingTotal,
+  );
+  let roundOff = roundMoney(grandTotal - amountBeforeRound);
+  if (Math.abs(roundOff) < 0.01) roundOff = 0;
+  const roundedGrandTotal = roundMoney(amountBeforeRound + roundOff);
+
+  const hasOnlyKg = lineItems.length > 0 && lineItems.every((item) => item.quantityUnit === "KG");
+  const totalKg = roundMoney(
+    lineItems
+      .filter((item) => item.quantityUnit === "KG")
+      .reduce((sum, item) => sum + Number(item.quantityValue || 0), 0),
+  );
+  const totalUnits = roundMoney(
+    lineItems.reduce((sum, item) => sum + Number(item.quantityUnits || 0), 0),
+  );
+  const totalQuantityLabel = hasOnlyKg
+    ? `${formatQuantity(totalKg)} KG`
+    : `${formatQuantity(totalUnits)} Nos`;
+
   return {
     seller,
     buyerAddress,
@@ -623,14 +933,22 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
       "Guest Customer",
     orderDate: order?.createdAt,
     invoiceDate: new Date(),
-    placeOfSupply: buyerAddress?.state || "N/A",
+    placeOfSupply,
     lineItems,
     summary: {
       grossSubtotal,
       totalDiscount,
       taxableTotal,
+      goodsAmount,
+      taxAmount,
+      amountBeforeRound,
+      roundOff,
       shippingTotal,
-      grandTotal,
+      grandTotal: roundedGrandTotal,
+      totalQuantityLabel,
+      amountInWords: amountToWordsINR(roundedGrandTotal),
+      taxAmountInWords: amountToWordsINR(taxAmount),
+      gstRate,
     },
     taxBreakup,
     hsnSummary,
@@ -667,7 +985,7 @@ export const generateInvoicePdf = async ({
   const relativePath = getInvoiceRelativePath(order._id);
   const invoiceNumber = buildInvoiceNumber(order);
 
-  if (!forceRegenerate && (await fileExists(absolutePath))) {
+  if (!forceRegenerate && !SHOULD_FORCE_REGENERATE && (await fileExists(absolutePath))) {
     return {
       invoiceNumber,
       invoicePath: relativePath,
@@ -703,6 +1021,7 @@ export const generateInvoicePdf = async ({
       billingName,
       orderDate,
       invoiceDate,
+      placeOfSupply,
       hsnSummary,
     } = invoiceData;
     const { lineItems, summary, taxBreakup } = invoiceData;
@@ -711,21 +1030,21 @@ export const generateInvoicePdf = async ({
 
     doc.rect(margin, margin, contentWidth, pageHeight - margin * 2).stroke("#111827");
 
-    doc.font("Helvetica-Bold").fontSize(12).text("Tax Invoice", margin, y, {
-      width: contentWidth,
-      align: "center",
-    });
-    doc.font("Helvetica").fontSize(9).text("(ORIGINAL FOR RECIPIENT)", margin, y, {
-      width: contentWidth,
-      align: "right",
-    });
+    doc.font("Helvetica-Bold").fontSize(12).text("Tax Invoice", margin + 4, y);
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .text("(ORIGINAL FOR RECIPIENT)", margin + 74, y + 2, {
+        width: contentWidth - 76,
+        align: "left",
+      });
     y += 18;
 
     const leftWidth = Math.round(contentWidth * 0.62);
     const rightWidth = contentWidth - leftWidth;
-    const sellerHeight = 100;
-    const consigneeHeight = 85;
-    const buyerHeight = 85;
+    const sellerHeight = 124;
+    const consigneeHeight = 86;
+    const buyerHeight = 86;
     const rightHeight = sellerHeight + consigneeHeight + buyerHeight;
     const leftX = margin;
     const rightX = margin + leftWidth;
@@ -756,65 +1075,64 @@ export const generateInvoicePdf = async ({
       .map((line) => line.trim())
       .filter(Boolean);
     let sellerInfoY = y + 22;
-    sellerAddressLines.forEach((line) => {
+    const maxSellerInfoY = y + sellerHeight - 10;
+    const appendSellerLine = (line) => {
+      const content = String(line || "").trim();
+      if (!content || sellerInfoY > maxSellerInfoY) return;
       doc
         .font("Helvetica")
         .fontSize(8)
-        .text(line, sellerTextX, sellerInfoY, {
+        .text(content, sellerTextX, sellerInfoY, {
           width: leftWidth - (sellerTextX - leftX) - 8,
         });
       sellerInfoY += 11;
-    });
+    };
 
-    if (seller.gstin) {
-      doc.text(`GSTIN/UIN: ${seller.gstin}`, sellerTextX, sellerInfoY);
-      sellerInfoY += 11;
-    }
-    if (seller.state) {
-      doc.text(
-        `State Name: ${seller.state}${sellerStateCode ? `, Code: ${sellerStateCode}` : ""}`,
-        sellerTextX,
-        sellerInfoY,
-      );
-      sellerInfoY += 11;
-    }
-    if (seller.phone) {
-      doc.text(`Contact: ${seller.phone}`, sellerTextX, sellerInfoY);
-      sellerInfoY += 11;
-    }
-    if (seller.email) {
-      doc.text(`E-Mail: ${seller.email}`, sellerTextX, sellerInfoY);
-    }
+    sellerAddressLines.forEach((line) => appendSellerLine(line));
+    appendSellerLine(seller.gstin ? `GSTIN/UIN: ${seller.gstin}` : "");
+    appendSellerLine(
+      seller.state
+        ? `State Name: ${seller.state}${sellerStateCode ? `, Code: ${sellerStateCode}` : ""}`
+        : "",
+    );
+    appendSellerLine(seller.cin ? `CIN: ${seller.cin}` : "");
+    appendSellerLine(seller.msme ? `MSME/UDYAM: ${seller.msme}` : "");
+    appendSellerLine(seller.fssai ? `FSSAI: ${seller.fssai}` : "");
+    appendSellerLine(seller.phone ? `Contact: ${seller.phone}` : "");
+    appendSellerLine(seller.email ? `E-Mail: ${seller.email}` : "");
 
     const consigneeStateCode =
-      normalizeStateCode(consigneeAddress?.stateCode || "") || buyerStateCode;
-    doc.font("Helvetica-Bold").fontSize(9).text("Consignee (Ship to)", leftX + 6, y + sellerHeight + 4);
-    let consigneeY = y + sellerHeight + 18;
+      resolveStateCode(
+        consigneeAddress?.stateCode || consigneeAddress?.state_code || "",
+        consigneeAddress?.state,
+      ) || buyerStateCode;
     const consigneeLines = formatPartyLines(consigneeAddress, consigneeStateCode);
-    consigneeLines.forEach((line) => {
-      doc.font("Helvetica").fontSize(8).text(line, leftX + 6, consigneeY, {
-        width: leftWidth - 12,
-      });
-      consigneeY += 11;
+    drawPartyBlock(doc, {
+      title: "Consignee (Ship to)",
+      lines: consigneeLines,
+      x: leftX,
+      y: y + sellerHeight,
+      width: leftWidth,
+      height: consigneeHeight,
     });
 
     const buyerDetails = {
       ...buyerAddress,
       name: billingName || buyerAddress?.name,
     };
-    doc.font("Helvetica-Bold").fontSize(9).text("Buyer (Bill to)", leftX + 6, y + sellerHeight + consigneeHeight + 4);
-    let buyerY = y + sellerHeight + consigneeHeight + 18;
     const buyerLines = formatPartyLines(buyerDetails, buyerStateCode);
-    buyerLines.forEach((line) => {
-      doc.font("Helvetica").fontSize(8).text(line, leftX + 6, buyerY, {
-        width: leftWidth - 12,
-      });
-      buyerY += 11;
-    });
+    const buyerBlockLines = [...buyerLines];
     if (buyerGstNumber) {
-      doc.font("Helvetica").fontSize(8).text(`GSTIN: ${buyerGstNumber}`, leftX + 6, buyerY);
-      buyerY += 11;
+      buyerBlockLines.push(`GSTIN: ${buyerGstNumber}`);
     }
+    drawPartyBlock(doc, {
+      title: "Buyer (Bill to)",
+      lines: buyerBlockLines,
+      x: leftX,
+      y: y + sellerHeight + consigneeHeight,
+      width: leftWidth,
+      height: buyerHeight,
+    });
 
     const destination = [consigneeAddress?.city, consigneeAddress?.state]
       .filter(Boolean)
@@ -824,7 +1142,7 @@ export const generateInvoicePdf = async ({
     const metaRows = [
       { label: "Invoice No.", value: invoiceNumber },
       { label: "Dated", value: formatDate(invoiceDate) },
-      { label: "Delivery Note", value: order?.deliveryNote || "-" },
+      { label: "Customer Remarks", value: String(order?.notes || "").trim() || "-" },
       {
         label: "Mode/Terms of Payment",
         value: String(order?.payment_status || order?.paymentMethod || "-").toUpperCase(),
@@ -833,7 +1151,7 @@ export const generateInvoicePdf = async ({
       { label: "Dated", value: formatDate(orderDate) },
       { label: "Dispatch Doc No.", value: order?.awb_number || "-" },
       {
-        label: "Delivery Note Date",
+        label: "Shipment Date",
         value: order?.shipment_created_at
           ? formatDate(order.shipment_created_at)
           : "-",
@@ -843,6 +1161,7 @@ export const generateInvoicePdf = async ({
         value: order?.shipping_provider || order?.courier_name || "-",
       },
       { label: "Destination", value: destination || "-" },
+      { label: "Place of Supply", value: placeOfSupply || "-" },
       { label: "Terms of Delivery", value: order?.termsOfDelivery || "-" },
     ];
     drawKeyValueTable(doc, rightX, y, rightWidth, rightHeight, metaRows);
@@ -854,7 +1173,8 @@ export const generateInvoicePdf = async ({
     let widths = header.widths;
 
     for (let i = 0; i < lineItems.length; i += 1) {
-      if (y + 24 > pageHeight - margin - 160) {
+      const projectedRowHeight = lineItems[i]?.detail ? 28 : 20;
+      if (y + projectedRowHeight > pageHeight - margin - 205) {
         doc.addPage();
         doc.rect(margin, margin, contentWidth, pageHeight - margin * 2).stroke("#111827");
         y = margin + 6;
@@ -863,45 +1183,209 @@ export const generateInvoicePdf = async ({
         cols = header.cols;
         widths = header.widths;
       }
-      y = drawTableRow(doc, lineItems[i], cols, widths, y, currencySymbol, i);
+      y = drawTableRow(doc, lineItems[i], cols, widths, y, i);
     }
 
-    y += 10;
-    const summaryX = margin + contentWidth - 200;
-    y = drawSummaryRow(doc, "Gross Total", summary.grossSubtotal, summaryX, y, currencySymbol);
-    y = drawSummaryRow(doc, "Discount", summary.totalDiscount, summaryX, y, currencySymbol);
-    y = drawSummaryRow(doc, "Taxable Value", summary.taxableTotal, summaryX, y, currencySymbol);
-    y = drawSummaryRow(doc, "IGST", taxBreakup.igst, summaryX, y, currencySymbol);
-    y = drawSummaryRow(doc, "CGST", taxBreakup.cgst, summaryX, y, currencySymbol);
-    y = drawSummaryRow(doc, "SGST", taxBreakup.sgst, summaryX, y, currencySymbol);
+    const drawLedgerRow = (
+      label,
+      value,
+      { bold = false, showQty = false, showCurrency = false } = {},
+    ) => {
+      const rowHeight = 16;
+      const tableWidth = Object.values(widths).reduce((sum, width) => sum + width, 0);
+      doc.rect(cols.sl, y, tableWidth, rowHeight).stroke("#111827");
+      Object.values(cols)
+        .slice(1)
+        .forEach((colX) => {
+          doc.moveTo(colX, y).lineTo(colX, y + rowHeight).stroke("#111827");
+        });
+
+      const valueText =
+        typeof value === "string"
+          ? value
+          : showCurrency
+            ? formatAmount(value, currencySymbol).replace(/\s+/g, " ").trim()
+            : formatPlainAmount(value);
+      const fontName = bold ? "Helvetica-Bold" : "Helvetica";
+
+      doc.font(fontName).fontSize(8).fillColor("#111827");
+      doc.text(label, cols.description + 2, y + 4, {
+        width: cols.amount - cols.description - 4,
+      });
+      if (showQty && summary.totalQuantityLabel) {
+        doc.text(summary.totalQuantityLabel, cols.qty + 2, y + 4, {
+          width: widths.qty - 4,
+          align: "right",
+        });
+      }
+      doc.text(valueText, cols.amount + 2, y + 4, {
+        width: widths.amount - 4,
+        align: "right",
+      });
+      y += rowHeight;
+    };
+
     if (Number(summary.shippingTotal || 0) > 0) {
-      y = drawSummaryRow(doc, "Shipping", summary.shippingTotal, summaryX, y, currencySymbol);
+      drawLedgerRow("Shipping Charges", summary.shippingTotal);
     }
-    y = drawSummaryRow(doc, "Grand Total", summary.grandTotal, summaryX, y, currencySymbol, true);
 
+    const gstRateText = Number(summary.gstRate || DEFAULT_TAX_RATE).toFixed(2);
+    if (Number(taxBreakup.igst || 0) > 0) {
+      drawLedgerRow(`OUTPUT IGST@${gstRateText}%`, taxBreakup.igst);
+    } else {
+      const splitRate = (Number(summary.gstRate || DEFAULT_TAX_RATE) / 2).toFixed(2);
+      drawLedgerRow(`OUTPUT CGST@${splitRate}%`, taxBreakup.cgst);
+      drawLedgerRow(`OUTPUT SGST@${splitRate}%`, taxBreakup.sgst);
+    }
+
+    drawLedgerRow("Roundoff", summary.roundOff);
+    drawLedgerRow("Total", summary.grandTotal, {
+      bold: true,
+      showQty: true,
+      showCurrency: true,
+    });
+
+    const amountWordsHeight = 20;
+    doc.rect(margin, y, contentWidth, amountWordsHeight).stroke("#111827");
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(8)
+      .text("Amount Chargeable (in words)", margin + 4, y + 5, { width: 160 });
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .text(summary.amountInWords, margin + 166, y + 5, {
+        width: contentWidth - 170,
+      });
+    y += amountWordsHeight + 4;
+
+    const footerHeight = 112;
+    const reservedFooterTail = footerHeight + 34;
     if (hsnSummary?.length) {
-      const hsnTableHeight = (hsnSummary.length + 1) * 16 + 18;
-      if (y + hsnTableHeight > pageHeight - margin - 40) {
+      const hsnTableHeight = (hsnSummary.length + 1) * 14 + 16;
+      if (y + hsnTableHeight + reservedFooterTail > pageHeight - margin) {
         doc.addPage();
         doc.rect(margin, margin, contentWidth, pageHeight - margin * 2).stroke("#111827");
         y = margin + 6;
       }
-      doc.font("Helvetica-Bold").fontSize(9).text("HSN/SAC Summary", margin, y);
-      y += 12;
-      y = drawHsnSummaryTable(doc, margin, y, contentWidth, hsnSummary, currencySymbol);
+      y = drawHsnSummaryTable(
+        doc,
+        margin,
+        y,
+        contentWidth,
+        hsnSummary,
+        Number(taxBreakup.igst || 0) > 0,
+      );
     }
 
+    y += 6;
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .fillColor("#111827")
+      .text(`Tax Amount (in words): ${summary.taxAmountInWords}`, margin + 2, y, {
+        width: contentWidth - 4,
+      });
+    y += 16;
+
+    const termsLines = String(seller.terms || "")
+      .split("||")
+      .map((line) => String(line || "").trim())
+      .filter(Boolean);
+    if (y + footerHeight + 22 > pageHeight - margin) {
+      doc.addPage();
+      doc.rect(margin, margin, contentWidth, pageHeight - margin * 2).stroke("#111827");
+      y = margin + 6;
+    }
+
+    const footerLeftWidth = Math.round(contentWidth * 0.64);
+    const footerRightWidth = contentWidth - footerLeftWidth;
+    const footerRightX = margin + footerLeftWidth;
+
+    doc.rect(margin, y, contentWidth, footerHeight).stroke("#111827");
+    doc.moveTo(footerRightX, y).lineTo(footerRightX, y + footerHeight).stroke("#111827");
+
+    let declarationY = y + 6;
+    doc.font("Helvetica-Bold").fontSize(8).text("Declaration", margin + 4, declarationY, {
+      width: footerLeftWidth - 8,
+    });
+    declarationY += 12;
+    doc.font("Helvetica").fontSize(7).text(seller.declaration, margin + 4, declarationY, {
+      width: footerLeftWidth - 8,
+    });
+    declarationY = doc.y + 4;
+
+    doc.font("Helvetica-Bold").fontSize(8).text("Terms & Condition", margin + 4, declarationY, {
+      width: footerLeftWidth - 8,
+    });
+    declarationY += 11;
+    termsLines.forEach((term, index) => {
+      if (declarationY > y + footerHeight - 14) return;
+      const prefixed = /^\d+\./.test(term) ? term : `${index + 1}. ${term}`;
+      doc.font("Helvetica").fontSize(7).text(prefixed, margin + 4, declarationY, {
+        width: footerLeftWidth - 8,
+      });
+      declarationY = doc.y + 2;
+    });
+
+    let bankY = y + 6;
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(8)
+      .text("Company's Bank Details", footerRightX + 4, bankY, {
+        width: footerRightWidth - 8,
+      });
+    bankY += 12;
+
+    const bankRows = [
+      ["Bank Name", seller.bankName],
+      ["A/c No.", seller.bankAccount],
+      ["Branch", seller.bankBranch],
+      ["IFS Code", seller.bankIfsc],
+    ].filter(([, value]) => String(value || "").trim());
+
+    if (bankRows.length === 0) {
+      doc.font("Helvetica").fontSize(7).text("Bank details not configured", footerRightX + 4, bankY, {
+        width: footerRightWidth - 8,
+      });
+    } else {
+      bankRows.forEach(([label, value]) => {
+        doc.font("Helvetica-Bold").fontSize(7).text(`${label}:`, footerRightX + 4, bankY, {
+          width: 52,
+        });
+        doc.font("Helvetica").fontSize(7).text(String(value || ""), footerRightX + 58, bankY, {
+          width: footerRightWidth - 62,
+        });
+        bankY += 11;
+      });
+    }
+
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(8)
+      .text(`for ${String(seller.name || "").toUpperCase()}`, footerRightX + 4, y + footerHeight - 28, {
+        width: footerRightWidth - 8,
+        align: "right",
+      });
+    doc.font("Helvetica").fontSize(8).text("Authorised Signatory", footerRightX + 4, y + footerHeight - 14, {
+      width: footerRightWidth - 8,
+      align: "right",
+    });
+
+    y += footerHeight + 4;
+    doc.font("Helvetica-Bold").fontSize(8).text(seller.jurisdictionLine, margin, y, {
+      width: contentWidth,
+      align: "center",
+    });
     y += 10;
     doc
       .font("Helvetica")
       .fontSize(8)
       .fillColor("#374151")
-      .text(
-        "This is a computer generated invoice and does not require a signature.",
-        margin,
-        y,
-        { width: contentWidth, align: "center" },
-      );
+      .text("This is a Computer Generated Invoice", margin, y, {
+        width: contentWidth,
+        align: "center",
+      });
 
     doc.end();
   });
