@@ -3,6 +3,7 @@ import {
   bulkUpdateProducts,
   createProduct,
   deleteProduct,
+  getExclusiveProducts,
   getFeaturedProducts,
   getProductById,
   getProducts,
@@ -43,6 +44,9 @@ router.get("/exclusive", auth, requireActiveMembership, getExclusiveProducts);
 
 // Get related products
 router.get("/:id/related", optionalAuth, attachMembershipStatus, getRelatedProducts);
+
+// Get single product by ID or slug
+router.get("/:id", optionalAuth, attachMembershipStatus, getProductById);
 
 // ==================== ADMIN ROUTES ====================
 
