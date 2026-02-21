@@ -8,6 +8,10 @@ import OrderModel from "../models/order.model.js";
 import SupportTicketModel from "../models/supportTicket.model.js";
 import UserModel from "../models/user.model.js";
 import { logger } from "../utils/errorHandler.js";
+import {
+  getOrderDisplayId,
+  withOrderPresentation,
+} from "../utils/orderPresentation.js";
 
 const TICKET_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED"];
 const TICKET_STATUS_SET = new Set(TICKET_STATUSES);
@@ -129,8 +133,47 @@ const buildDateRangeFilter = ({ date, dateFrom, dateTo }) => {
   return { filter };
 };
 
+const resolveOrderIdsForFilter = async (value) => {
+  const rawOrderFilter = sanitizeText(value || "", { maxLength: 40 });
+  if (!rawOrderFilter) {
+    return { ids: [] };
+  }
+
+  if (mongoose.Types.ObjectId.isValid(rawOrderFilter)) {
+    return { ids: [rawOrderFilter] };
+  }
+
+  const shortOrderId = rawOrderFilter.replace(/^#/, "").toLowerCase();
+  if (!/^[a-f0-9]{4,12}$/.test(shortOrderId)) {
+    return { error: "Invalid orderId filter." };
+  }
+
+  const matchingOrders = await OrderModel.aggregate([
+    {
+      $addFields: {
+        orderIdString: { $toString: "$_id" },
+      },
+    },
+    {
+      $match: {
+        orderIdString: { $regex: `^${shortOrderId}` },
+      },
+    },
+    { $project: { _id: 1 } },
+    { $limit: 100 },
+  ]);
+
+  return {
+    ids: matchingOrders.map((order) => order._id),
+  };
+};
+
 const buildTicketSummary = (ticket) => {
-  const order = ticket.orderId && typeof ticket.orderId === "object" ? ticket.orderId : null;
+  const order =
+    ticket.orderId && typeof ticket.orderId === "object"
+      ? withOrderPresentation(ticket.orderId)
+      : null;
+  const linkedOrderId = order?._id || ticket.orderId || null;
 
   return {
     id: ticket._id,
@@ -139,8 +182,10 @@ const buildTicketSummary = (ticket) => {
     name: ticket.name,
     email: ticket.email,
     phone: ticket.phone,
-    orderId: order?._id || ticket.orderId || null,
+    orderId: linkedOrderId,
+    orderDisplayId: order?.displayOrderId || getOrderDisplayId(linkedOrderId),
     orderDate: order?.createdAt || null,
+    orderTotal: order?.displayTotal ?? null,
     status: ticket.status,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
@@ -635,12 +680,13 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
       query.email = { $regex: escapeRegExp(email), $options: "i" };
     }
 
-    const orderId = sanitizeText(req.query.orderId || "", { maxLength: 40 });
-    if (orderId) {
-      if (!mongoose.Types.ObjectId.isValid(orderId)) {
-        return sendError(res, "Invalid orderId filter.", 400);
+    const orderFilter = sanitizeText(req.query.orderId || "", { maxLength: 40 });
+    if (orderFilter) {
+      const { error, ids } = await resolveOrderIdsForFilter(orderFilter);
+      if (error) {
+        return sendError(res, error, 400);
       }
-      query.orderId = orderId;
+      query.orderId = { $in: ids };
     }
 
     const { error: dateError, filter: createdAtFilter } = buildDateRangeFilter({
@@ -660,7 +706,10 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
     const [tickets, total] = await Promise.all([
       SupportTicketModel.find(query)
         .populate("userId", "_id name email mobile")
-        .populate("orderId", "_id createdAt order_status payment_status totalAmt finalAmount")
+        .populate(
+          "orderId",
+          "_id createdAt order_status payment_status totalAmt finalAmount subtotal discount tax shipping coinRedemption products",
+        )
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -706,6 +755,10 @@ export const getSupportTicketByIdAdmin = async (req, res) => {
 
     if (!ticket) {
       return sendError(res, "Support ticket not found.", 404);
+    }
+
+    if (ticket.orderId && typeof ticket.orderId === "object") {
+      ticket.orderId = withOrderPresentation(ticket.orderId);
     }
 
     return sendSuccess(res, "Support ticket fetched successfully.", { ticket });

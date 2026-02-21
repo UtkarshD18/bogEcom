@@ -2678,7 +2678,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
           finalAmount: finalOrderAmount,
         },
         discountsApplied: {
-          influencer: Boolean(pricing.influencerCode),
+          influencer: Boolean(influencerData?.code),
           coupon: !!normalizedCouponCode,
           affiliate: !!savedOrder.affiliateCode,
         },
