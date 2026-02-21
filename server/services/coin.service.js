@@ -563,6 +563,86 @@ export const awardCoinsToUser = async ({
   };
 };
 
+export const adjustCoinsByAdmin = async ({
+  userId,
+  coinsDelta = 0,
+  referenceId = null,
+  meta = {},
+}) => {
+  const safeUserId = toObjectId(userId);
+  const rawDelta = Number(coinsDelta);
+  const normalizedDelta =
+    rawDelta > 0
+      ? floorInt(rawDelta)
+      : rawDelta < 0
+        ? -floorInt(Math.abs(rawDelta))
+        : 0;
+
+  if (!safeUserId || normalizedDelta === 0) {
+    return {
+      coinsChanged: 0,
+      direction: "none",
+      remainingBalance: 0,
+    };
+  }
+
+  await ensureCoinLedgerState(safeUserId);
+  const noteMeta = {
+    ...meta,
+    reason: meta?.reason || "admin-manual-coin-adjustment",
+  };
+
+  if (normalizedDelta > 0) {
+    const settings = await getCoinSettings();
+    const safeReferenceId =
+      String(referenceId || "").trim() || `admin-credit:${safeUserId}:${Date.now()}`;
+    const existingCredit = await CoinTransactionModel.findOne({
+      user: safeUserId,
+      type: "bonus",
+      source: "admin",
+      referenceId: safeReferenceId,
+    }).lean();
+
+    if (!existingCredit) {
+      await CoinTransactionModel.create({
+        user: safeUserId,
+        coins: normalizedDelta,
+        remainingCoins: normalizedDelta,
+        type: "bonus",
+        source: "admin",
+        referenceId: safeReferenceId,
+        expiryDate: getCoinExpiryDate(settings.expiryDays),
+        meta: noteMeta,
+      });
+    }
+
+    const remainingBalance = await syncUserCoinBalanceFromLedger(safeUserId);
+    return {
+      coinsChanged: normalizedDelta,
+      direction: "credit",
+      remainingBalance: floorInt(remainingBalance),
+    };
+  }
+
+  const coinsToConsume = Math.abs(normalizedDelta);
+  const safeReferenceId =
+    String(referenceId || "").trim() || `admin-debit:${safeUserId}:${Date.now()}`;
+  const consumeResult = await consumeCoinsFIFO({
+    userId: safeUserId,
+    coinsRequired: coinsToConsume,
+    source: "admin",
+    referenceId: safeReferenceId,
+    meta: noteMeta,
+    allowPartial: true,
+  });
+
+  return {
+    coinsChanged: -floorInt(consumeResult?.coinsUsed || 0),
+    direction: "debit",
+    remainingBalance: floorInt(consumeResult?.user?.coinBalance || 0),
+  };
+};
+
 export const redeemCoins = async ({
   userId,
   requestedCoins = 0,
@@ -748,6 +828,7 @@ export const updateCoinSettings = async ({ data, updatedBy }) => {
 };
 
 export default {
+  adjustCoinsByAdmin,
   applyRedemptionToUser,
   awardCoinsToUser,
   calculateRedemption,

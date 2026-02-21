@@ -77,13 +77,13 @@ export const getCart = async (req, res) => {
       cart = await CartModel.findOne({ user: userId }).populate({
         path: "items.product",
         select:
-          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus variants isExclusive",
+          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus hasVariants variants isExclusive",
       });
     } else if (sessionId) {
       cart = await CartModel.findOne({ sessionId }).populate({
         path: "items.product",
         select:
-          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus variants isExclusive",
+          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus hasVariants variants isExclusive",
       });
     }
 
@@ -95,7 +95,8 @@ export const getCart = async (req, res) => {
       });
     }
 
-    // Filter out unavailable products and update prices
+    // Filter out unavailable products and refresh current prices.
+    // Important: keep variant cart lines on the selected variant price, not base product price.
     const validItems = [];
     for (const item of cart.items) {
       if (
@@ -103,10 +104,44 @@ export const getCart = async (req, res) => {
         item.product.isActive &&
         (hasExclusiveAccess || item.product.isExclusive !== true)
       ) {
-        // Update price if changed
-        if (item.price !== item.product.price) {
-          item.price = item.product.price;
-          item.originalPrice = item.product.originalPrice;
+        let nextPrice = Number(item.product.price ?? 0);
+        let nextOriginalPrice = Number(item.product.originalPrice ?? 0);
+        let nextVariantName = String(item.variantName || "").trim();
+
+        const selectedVariantId = normalizeVariantId(item.variant);
+        if (
+          selectedVariantId &&
+          item.product.hasVariants &&
+          Array.isArray(item.product.variants)
+        ) {
+          const variant = item.product.variants.id
+            ? item.product.variants.id(selectedVariantId)
+            : item.product.variants.find(
+                (v) => String(v?._id) === String(selectedVariantId),
+              );
+
+          // Variant was removed/invalid, so this cart line is no longer valid.
+          if (!variant) {
+            continue;
+          }
+
+          nextPrice = Number(variant.price ?? item.product.price ?? 0);
+          nextOriginalPrice = Number(
+            variant.originalPrice ?? item.product.originalPrice ?? nextPrice,
+          );
+          if (variant.name) {
+            nextVariantName = String(variant.name).trim().slice(0, 120);
+          }
+        }
+
+        if (Number(item.price ?? 0) !== nextPrice) {
+          item.price = nextPrice;
+        }
+        if (Number(item.originalPrice ?? 0) !== nextOriginalPrice) {
+          item.originalPrice = nextOriginalPrice;
+        }
+        if (String(item.variantName || "").trim() !== nextVariantName) {
+          item.variantName = nextVariantName;
         }
         validItems.push(item);
       }
@@ -292,7 +327,7 @@ export const addToCart = async (req, res) => {
     await cart.populate({
       path: "items.product",
       select:
-        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus variants isExclusive",
+        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus hasVariants variants isExclusive",
     });
 
     res.status(200).json({
@@ -454,7 +489,7 @@ export const updateCartItem = async (req, res) => {
     await cart.populate({
       path: "items.product",
       select:
-        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus variants isExclusive",
+        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus hasVariants variants isExclusive",
     });
 
     res.status(200).json({
@@ -522,7 +557,8 @@ export const removeFromCart = async (req, res) => {
     // Populate product data before returning
     await cart.populate({
       path: "items.product",
-      select: "name brand price originalPrice images thumbnail stock demandStatus",
+      select:
+        "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus hasVariants variants isExclusive",
     });
 
     res.status(200).json({
