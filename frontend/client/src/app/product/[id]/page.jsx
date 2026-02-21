@@ -58,6 +58,17 @@ const ProductDetailPage = () => {
         0,
       )
     : null;
+  const defaultVariant =
+    product?.hasVariants && Array.isArray(product?.variants)
+      ? product.variants.find((variant) => variant?.isDefault) ||
+        product.variants[0] ||
+        null
+      : null;
+  const displaySku =
+    selectedVariant?.sku ||
+    defaultVariant?.sku ||
+    product?.sku ||
+    "";
 
   const availableQty =
     activeStock !== null
@@ -333,7 +344,7 @@ const ProductDetailPage = () => {
                   {discount}% OFF
                 </span>
               )}
-              <ProductZoom images={images} />
+              <ProductZoom images={images} productId={productId} />
             </div>
 
             {/* Product Info */}
@@ -627,9 +638,9 @@ const ProductDetailPage = () => {
 
               {/* SKU & Category */}
               <div className="mt-6 text-sm text-gray-500">
-                {product.sku && (
+                {displaySku && (
                   <p>
-                    <span className="font-medium">SKU:</span> {product.sku}
+                    <span className="font-medium">SKU:</span> {displaySku}
                   </p>
                 )}
                 {product.category && (

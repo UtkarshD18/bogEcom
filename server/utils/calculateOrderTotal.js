@@ -6,6 +6,22 @@ const toSafeNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const resolveOrderDisplayId = (order = {}) => {
+  const explicitId =
+    order?.displayOrderId ||
+    order?.orderNumber ||
+    order?.order_id ||
+    order?.orderId ||
+    "";
+  if (String(explicitId || "").trim()) {
+    return String(explicitId).trim().toUpperCase();
+  }
+
+  const mongoId = String(order?._id || "").trim();
+  if (!mongoId) return "N/A";
+  return `BOG-${mongoId.slice(-8).toUpperCase()}`;
+};
+
 const calcItemsGross = (order = {}) => {
   const products = Array.isArray(order?.products) ? order.products : [];
   return round2(
@@ -93,6 +109,7 @@ export const normalizeOrderForResponse = (order) => {
   return {
     ...base,
     pricing,
+    displayOrderId: resolveOrderDisplayId(base),
     // Keep legacy consumers stable while normalizing values.
     subtotal: pricing.subtotal,
     tax: pricing.tax,

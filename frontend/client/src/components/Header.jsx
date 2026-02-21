@@ -285,14 +285,16 @@ const Header = () => {
     if (!isLoggedIn) return;
 
     const refresh = () => fetchCoinSummary();
-    const poll = window.setInterval(refresh, 45000);
+    const poll = window.setInterval(refresh, 10000);
     window.addEventListener("focus", refresh);
     window.addEventListener("coinBalanceRefresh", refresh);
+    document.addEventListener("visibilitychange", refresh);
 
     return () => {
       window.clearInterval(poll);
       window.removeEventListener("focus", refresh);
       window.removeEventListener("coinBalanceRefresh", refresh);
+      document.removeEventListener("visibilitychange", refresh);
     };
   }, [isLoggedIn, fetchCoinSummary]);
 

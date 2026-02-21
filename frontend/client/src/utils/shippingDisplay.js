@@ -1,15 +1,14 @@
 import { round2 } from "@/utils/gst";
 
 export const DEFAULT_SHIPPING_DISPLAY_MARKUP_PERCENT = 30;
+export const RAJASTHAN_DISPLAY_SHIPPING = 36;
+export const OTHER_STATES_DISPLAY_SHIPPING = 68;
 
 const toPositiveNumber = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
   return numeric;
 };
-
-const withMarkup = (baseCharge, markupPercent) =>
-  round2(baseCharge * (1 + markupPercent / 100));
 
 /**
  * DISPLAY-ONLY shipping amount for cart/checkout strike-through UI.
@@ -19,27 +18,25 @@ export const getDisplayShippingCharge = ({
   isRajasthan = false,
   metrics = {},
 } = {}) => {
-  const markupPercent = toPositiveNumber(
-    metrics?.markupPercent ?? DEFAULT_SHIPPING_DISPLAY_MARKUP_PERCENT,
+  const configuredRajasthan = toPositiveNumber(
+    metrics?.rajasthanDisplayCharge,
+  );
+  const configuredOtherStates = toPositiveNumber(
+    metrics?.otherStatesDisplayCharge,
   );
 
-  const localFromApi = toPositiveNumber(metrics?.maxLocalDisplayCharge);
-  const indiaFromApi = toPositiveNumber(metrics?.maxIndiaDisplayCharge);
+  if (configuredRajasthan > 0 || configuredOtherStates > 0) {
+    return round2(
+      isRajasthan
+        ? configuredRajasthan || RAJASTHAN_DISPLAY_SHIPPING
+        : configuredOtherStates || OTHER_STATES_DISPLAY_SHIPPING,
+    );
+  }
 
-  const localFromBase = withMarkup(
-    toPositiveNumber(metrics?.maxLocalBaseCharge),
-    markupPercent,
+  // Fixed storefront display rates requested by business.
+  return round2(
+    isRajasthan ? RAJASTHAN_DISPLAY_SHIPPING : OTHER_STATES_DISPLAY_SHIPPING,
   );
-  const indiaFromBase = withMarkup(
-    toPositiveNumber(metrics?.maxIndiaBaseCharge),
-    markupPercent,
-  );
-
-  const localDisplayCharge = localFromApi || localFromBase;
-  const indiaDisplayCharge = indiaFromApi || indiaFromBase;
-  const selected = isRajasthan ? localDisplayCharge : indiaDisplayCharge;
-
-  return round2(Math.max(selected, 0));
 };
 
 /**

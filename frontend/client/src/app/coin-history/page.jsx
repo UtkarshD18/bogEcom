@@ -3,7 +3,7 @@
 import { fetchDataFromApi } from "@/utils/api";
 import cookies from "js-cookie";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const getStoredAuthToken = () => {
   const cookieToken = cookies.get("accessToken");
@@ -36,7 +36,7 @@ const CoinHistoryPage = () => {
   });
   const [error, setError] = useState("");
 
-  const loadData = async (page = 1) => {
+  const loadData = useCallback(async (page = 1) => {
     setLoading(true);
     setError("");
 
@@ -61,7 +61,7 @@ const CoinHistoryPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!getStoredAuthToken()) {
@@ -70,7 +70,22 @@ const CoinHistoryPage = () => {
       return;
     }
     loadData(1);
-  }, []);
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!getStoredAuthToken()) return;
+
+    const refresh = () => loadData(1);
+    const poll = window.setInterval(refresh, 10000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("coinBalanceRefresh", refresh);
+
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("coinBalanceRefresh", refresh);
+    };
+  }, [loadData]);
 
   if (loading) {
     return (
@@ -112,7 +127,7 @@ const CoinHistoryPage = () => {
               <div className="rounded-xl bg-white p-3 border border-gray-100">
                 <p className="text-xs text-gray-500">Value</p>
                 <p className="text-lg font-bold text-gray-900">
-                  ?{Number(summary?.rupee_value || 0).toFixed(2)}
+                  ₹{Number(summary?.rupee_value || 0).toFixed(2)}
                 </p>
               </div>
               <div className="rounded-xl bg-white p-3 border border-gray-100">
@@ -124,7 +139,7 @@ const CoinHistoryPage = () => {
               <div className="rounded-xl bg-white p-3 border border-gray-100">
                 <p className="text-xs text-gray-500">Redeem Rate</p>
                 <p className="text-lg font-bold text-gray-900">
-                  ?{Number(summary?.settings?.redeemRate || 0).toFixed(2)}
+                  ₹{Number(summary?.settings?.redeemRate || 0).toFixed(2)}
                 </p>
               </div>
             </div>

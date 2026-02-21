@@ -41,15 +41,27 @@ export const ReferralProvider = ({ children }) => {
       if (typeof window === "undefined") return;
 
       const urlParams = new URLSearchParams(window.location.search);
-      const refCode = urlParams.get("ref");
+      const refCode =
+        urlParams.get("ref") ||
+        urlParams.get("affiliate") ||
+        urlParams.get("referral") ||
+        urlParams.get("influencer") ||
+        urlParams.get("code");
+      const source = urlParams.get("ref")
+        ? "link"
+        : urlParams.get("affiliate") || urlParams.get("influencer")
+          ? "influencer"
+          : "referral";
 
       if (refCode) {
         // New referral code from URL - validate and store (session only)
-        await validateAndStoreReferral(refCode.toUpperCase(), "link");
+        await validateAndStoreReferral(refCode.toUpperCase(), source);
 
         // Clean URL (remove ref param) without reload
         const newUrl = new URL(window.location.href);
-        newUrl.searchParams.delete("ref");
+        ["ref", "affiliate", "referral", "influencer", "code"].forEach(
+          (key) => newUrl.searchParams.delete(key),
+        );
         window.history.replaceState({}, "", newUrl.toString());
       } else {
         // Load referral only for this browser session
