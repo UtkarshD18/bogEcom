@@ -212,7 +212,7 @@ const LoginForm = () => {
         const payload = JSON.parse(atob(normalizedPart));
         if (payload.exp * 1000 > Date.now()) {
           context?.alertBox("info", "You are already logged in.");
-          router.push("/");
+          router.push(redirectUrl);
           cookies.remove("actionType");
           return;
         }

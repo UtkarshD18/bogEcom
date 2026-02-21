@@ -70,7 +70,7 @@ export default function MembershipMembersTable({
               <TableCell>Start Date</TableCell>
               <TableCell>Expiry Date</TableCell>
               <TableCell>Days Remaining</TableCell>
-              <TableCell>Points</TableCell>
+              <TableCell>Coins</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -192,7 +192,7 @@ export default function MembershipMembersTable({
             closeMenu();
           }}
         >
-          Add/Subtract Points
+          Add/Subtract Coins
         </MenuItem>
         <MenuItem
           onClick={() => {

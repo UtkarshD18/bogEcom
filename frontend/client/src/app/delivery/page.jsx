@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function DeliveryPage() {
   return (
     <>
@@ -26,7 +28,7 @@ export default function DeliveryPage() {
             </div>
             <div className="bg-white rounded-lg shadow p-6 text-center">
               <div className="text-3xl font-bold text-orange-600 mb-2">₹0</div>
-              <p className="text-gray-600 text-sm">Over ₹500</p>
+              <p className="text-gray-600 text-sm">On All Orders</p>
             </div>
             <div className="bg-white rounded-lg shadow p-6 text-center">
               <div className="text-3xl font-bold text-orange-600 mb-2">
@@ -97,23 +99,14 @@ export default function DeliveryPage() {
               Shipping Charges
             </h2>
             <div className="space-y-4">
-              <div className="flex items-start gap-4 pb-4 border-b">
+              <div className="flex items-start gap-4">
                 <div className="text-3xl">✓</div>
                 <div>
                   <h3 className="text-lg font-semibold text-gray-800">
                     Free Shipping
                   </h3>
-                  <p className="text-gray-600">For all orders over ₹500</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-4">
-                <div className="text-3xl">📦</div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800">
-                    Standard Shipping
-                  </h3>
                   <p className="text-gray-600">
-                    Applied to orders below ₹500 (₹40-100 based on location)
+                    Shipping charges are free on every order.
                   </p>
                 </div>
               </div>
@@ -184,7 +177,12 @@ export default function DeliveryPage() {
                 📧 support@healthyonegram.com
               </a>
               <span className="text-gray-600">or</span>
-              <p className="text-gray-700">Chat with us on our website</p>
+              <Link
+                href="/contact"
+                className="inline-block bg-orange-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-orange-700 transition"
+              >
+                Contact Us
+              </Link>
             </div>
           </section>
         </div>

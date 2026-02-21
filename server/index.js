@@ -358,6 +358,82 @@ app.use((err, req, res, next) => {
   });
 });
 
+const DEFAULT_PORT = 8000;
+const MAX_PORT_RETRIES = 10;
+
+const getRequestedPort = () => {
+  const parsedPort = Number.parseInt(process.env.PORT, 10);
+  if (Number.isInteger(parsedPort) && parsedPort > 0) {
+    return parsedPort;
+  }
+  return DEFAULT_PORT;
+};
+
+const parseBooleanEnv = (value) =>
+  /^(1|true|yes|on)$/i.test(String(value || "").trim());
+
+const isPortFallbackEnabled = (isProduction) =>
+  !isProduction && parseBooleanEnv(process.env.ALLOW_PORT_FALLBACK);
+
+const wrapAddressInUseError = (error, port) => {
+  if (error?.code !== "EADDRINUSE") {
+    return error;
+  }
+
+  const wrappedError = new Error(
+    `[startup] Port ${port} is already in use. Stop the process using this port, or set ALLOW_PORT_FALLBACK=true to auto-try the next available port in development.`,
+  );
+  wrappedError.code = error.code;
+  wrappedError.cause = error;
+  return wrappedError;
+};
+
+const listenWithPortPolicy = ({
+  serverInstance,
+  startPort,
+  allowPortFallback,
+}) =>
+  new Promise((resolve, reject) => {
+    let attempts = 0;
+    let currentPort = startPort;
+
+    const tryListen = () => {
+      attempts += 1;
+
+      const onError = (error) => {
+        serverInstance.off("listening", onListening);
+
+        const canRetry =
+          allowPortFallback &&
+          error?.code === "EADDRINUSE" &&
+          attempts <= MAX_PORT_RETRIES;
+
+        if (canRetry) {
+          const blockedPort = currentPort;
+          currentPort += 1;
+          console.warn(
+            `[startup] Port ${blockedPort} is in use. Retrying on ${currentPort}...`,
+          );
+          tryListen();
+          return;
+        }
+
+        reject(wrapAddressInUseError(error, currentPort));
+      };
+
+      const onListening = () => {
+        serverInstance.off("error", onError);
+        resolve(currentPort);
+      };
+
+      serverInstance.once("error", onError);
+      serverInstance.once("listening", onListening);
+      serverInstance.listen(currentPort);
+    };
+
+    tryListen();
+  });
+
 connectDb().then(async () => {
   await initializeSettings();
 
@@ -379,17 +455,29 @@ connectDb().then(async () => {
 
   startLocationLogRetentionJob();
 
-  const PORT = process.env.PORT || 8080;
+  const requestedPort = getRequestedPort();
 
   initSocket(server, {
     origins: allowedOrigins,
     jwtSecret: accessTokenSecret,
   });
 
-  server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log("API service started");
+  const allowPortFallback = isPortFallbackEnabled(isProductionEnv);
+
+  if (allowPortFallback) {
+    console.warn(
+      "[startup] ALLOW_PORT_FALLBACK=true. Server will retry on the next port if the requested one is busy.",
+    );
+  }
+
+  const boundPort = await listenWithPortPolicy({
+    serverInstance: server,
+    startPort: requestedPort,
+    allowPortFallback,
   });
+  process.env.PORT = String(boundPort);
+  console.log(`Server is running on port ${boundPort}`);
+  console.log("API service started");
 
   try {
     startExpressbeesPolling();

@@ -33,9 +33,9 @@ const buildApiUrl = (path) => {
 const defaultSettings = {
   // Shipping settings
   shippingSettings: {
-    freeShippingThreshold: 500,
-    standardShippingCost: 50,
-    expressShippingCost: 100,
+    freeShippingThreshold: 0,
+    standardShippingCost: 0,
+    expressShippingCost: 0,
     freeShippingEnabled: true,
     estimatedDelivery: {
       standard: "5-7 business days",

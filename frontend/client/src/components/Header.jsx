@@ -198,7 +198,10 @@ const Header = () => {
 
     setCoinLoading(true);
     try {
-      const response = await fetchDataFromApi("/api/user/coins-summary");
+      let response = await fetchDataFromApi("/api/coins/summary");
+      if (!response?.success) {
+        response = await fetchDataFromApi("/api/user/coins-summary");
+      }
       if (response?.success && response?.data) {
         setCoinSummary({
           ...DEFAULT_COIN_SUMMARY,

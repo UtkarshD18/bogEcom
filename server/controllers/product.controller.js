@@ -29,6 +29,9 @@ const toBoolean = (value) => {
   return Boolean(value);
 };
 
+// Defensive filter for older data where isExclusive may be stored inconsistently.
+const EXCLUSIVE_EXCLUDE_FILTER = { $nin: [true, "true", 1, "1"] };
+
 /**
  * Product Controller
  *
@@ -62,16 +65,24 @@ export const getProducts = async (req, res) => {
       inStock,
       lowStock,
       exclude,
+      includeExclusive,
+      excludeExclusive,
     } = req.query;
 
-    const canViewExclusive = req?.userIsAdmin === true;
+    const canViewExclusive = await canRequestViewExclusive(req);
 
     // Build filter object
     const filter = { isActive: true };
-    // Exclusive products are never part of normal storefront listings.
-    // Only admins can include them in this endpoint for dashboard management.
-    if (!canViewExclusive) {
-      filter.isExclusive = { $ne: true };
+    const isAdminRequest = req?.userIsAdmin === true;
+    const wantsExclusive = toBoolean(includeExclusive);
+    const forceExcludeExclusive = toBoolean(excludeExclusive);
+
+    const shouldExcludeExclusive =
+      forceExcludeExclusive ||
+      (!isAdminRequest && (!wantsExclusive || !canViewExclusive));
+
+    if (shouldExcludeExclusive) {
+      filter.isExclusive = EXCLUSIVE_EXCLUDE_FILTER;
     }
     const exprFilters = [];
 
@@ -393,13 +404,22 @@ export const getProductById = async (req, res) => {
  */
 export const getFeaturedProducts = async (req, res) => {
   try {
-    const { limit = 10 } = req.query;
-    const canViewExclusive = req?.userIsAdmin === true;
+    const { limit = 10, includeExclusive, excludeExclusive } = req.query;
+    const canViewExclusive = await canRequestViewExclusive(req);
+    const isAdminRequest = req?.userIsAdmin === true;
+    const wantsExclusive = toBoolean(includeExclusive);
+    const forceExcludeExclusive = toBoolean(excludeExclusive);
+
+    const shouldExcludeExclusive =
+      forceExcludeExclusive ||
+      (!isAdminRequest && (!wantsExclusive || !canViewExclusive));
 
     const filter = {
       isActive: true,
       isFeatured: true,
-      ...(canViewExclusive ? {} : { isExclusive: { $ne: true } }),
+      ...(shouldExcludeExclusive
+        ? { isExclusive: EXCLUSIVE_EXCLUDE_FILTER }
+        : {}),
     };
 
     const products = await ProductModel.find(filter)
@@ -501,11 +521,21 @@ export const getExclusiveProducts = async (req, res) => {
 export const getRelatedProducts = async (req, res) => {
   try {
     const { id } = req.params;
-    const { limit = 5 } = req.query;
+    const { limit = 5, includeExclusive, excludeExclusive } = req.query;
     const canViewExclusive = await canRequestViewExclusive(req);
+    const isAdminRequest = req?.userIsAdmin === true;
+    const wantsExclusive = toBoolean(includeExclusive);
+    const forceExcludeExclusive = toBoolean(excludeExclusive);
+    const shouldExcludeExclusive =
+      forceExcludeExclusive ||
+      (!isAdminRequest && (!wantsExclusive || !canViewExclusive));
 
     const product = await ProductModel.findById(id);
-    if (!product || (product.isExclusive && !canViewExclusive)) {
+    if (
+      !product ||
+      (product.isExclusive && !canViewExclusive) ||
+      (product.isExclusive && shouldExcludeExclusive)
+    ) {
       return res.status(404).json({
         error: true,
         success: false,
@@ -517,7 +547,9 @@ export const getRelatedProducts = async (req, res) => {
       _id: { $ne: id },
       category: product.category,
       isActive: true,
-      ...(canViewExclusive ? {} : { isExclusive: { $ne: true } }),
+      ...(shouldExcludeExclusive
+        ? { isExclusive: EXCLUSIVE_EXCLUDE_FILTER }
+        : {}),
     };
 
     const relatedProducts = await ProductModel.find(relatedFilter)

@@ -1,5 +1,5 @@
 "use client";
-import { API_BASE_URL } from "@/utils/api";
+import { API_BASE_URL, getStoredAccessToken } from "@/utils/api";
 
 import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
 import {
@@ -43,6 +43,72 @@ const API_BASE_URL = (
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
+const SOCKET_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.slice(0, -4)
+  : API_BASE_URL;
+
+const persistAccessToken = (token) => {
+  if (!token) return;
+  cookies.set("accessToken", token, { expires: 7 });
+  if (typeof window !== "undefined") {
+    localStorage.setItem("accessToken", token);
+    localStorage.setItem("token", token);
+  }
+};
+
+const getAuthToken = () => {
+  const token = getStoredAccessToken();
+  if (token) {
+    persistAccessToken(token);
+  }
+  return token;
+};
+
+const fetchWithAuthRetry = async ({ url, token, init = {} }) => {
+  const withAuthHeaders = (accessToken) => ({
+    ...(init.headers || {}),
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  });
+
+  const sendRequest = (accessToken) =>
+    fetch(url, {
+      ...init,
+      headers: withAuthHeaders(accessToken),
+      credentials: "include",
+    });
+
+  let response = await sendRequest(token);
+
+  if (response.status !== 401) {
+    return response;
+  }
+
+  try {
+    const refreshResponse = await fetch(`${API_URL}/user/refresh-token`, {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (!refreshResponse.ok) {
+      return response;
+    }
+
+    const refreshData = await refreshResponse.json().catch(() => null);
+    const refreshedToken =
+      refreshData?.data?.accessToken || getStoredAccessToken();
+
+    if (!refreshedToken) {
+      return response;
+    }
+
+    persistAccessToken(refreshedToken);
+    response = await sendRequest(refreshedToken);
+  } catch (refreshError) {
+    console.error("Order details token refresh failed:", refreshError);
+  }
+
+  return response;
+};
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: MdAccessTime },
@@ -127,22 +193,27 @@ const OrderDetailsPage = () => {
         return;
       }
 
-      const token = cookies.get("accessToken");
+      const token = getAuthToken();
       if (!token) {
         router.push("/login?redirect=/orders/" + orderId);
         return;
       }
 
       try {
-        const response = await fetch(`${API_URL}/orders/${orderId}`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
+        const response = await fetchWithAuthRetry({
+          url: `${API_URL}/orders/${orderId}`,
+          token,
+          init: {
+            method: "GET",
           },
-          credentials: "include",
         });
 
-        const data = await response.json();
+        let data = null;
+        try {
+          data = await response.json();
+        } catch {
+          data = {};
+        }
 
         if (response.status === 401) {
           router.push("/login?redirect=/orders/" + orderId);
@@ -173,10 +244,10 @@ const OrderDetailsPage = () => {
 
   useEffect(() => {
     if (!orderId) return;
-    const token = cookies.get("accessToken");
+    const token = getAuthToken();
     if (!token) return;
 
-    const socket = io(API_URL, {
+    const socket = io(SOCKET_URL, {
       withCredentials: true,
       transports: ["websocket"],
     });
@@ -209,23 +280,22 @@ const OrderDetailsPage = () => {
   useEffect(() => {
     const fetchMyOrderReviews = async () => {
       if (!orderId) return;
-      const token = cookies.get("accessToken");
+      const token = getAuthToken();
       if (!token) return;
 
       try {
-        const response = await fetch(
-          `${API_URL}/reviews/my?orderId=${orderId}`,
-          {
+        const response = await fetchWithAuthRetry({
+          url: `${API_URL}/reviews/my?orderId=${orderId}`,
+          token,
+          init: {
             method: "GET",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
             },
-            credentials: "include",
           },
-        );
+        });
 
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (!response.ok || !data?.success) {
           setOrderReviews({});
           return;
@@ -378,10 +448,10 @@ const OrderDetailsPage = () => {
   const downloadFile = async (url, filename, key) => {
     try {
       setDownloading((prev) => ({ ...prev, [key]: true }));
-      const token = cookies.get("accessToken");
-      const response = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: "include",
+      const token = getAuthToken();
+      const response = await fetchWithAuthRetry({
+        url,
+        token,
       });
 
       if (!response.ok) {
@@ -631,7 +701,7 @@ const OrderDetailsPage = () => {
       return;
     }
 
-    const token = cookies.get("accessToken");
+    const token = getAuthToken();
     if (!token) {
       toast.error("Please login again");
       return;
@@ -701,7 +771,9 @@ const OrderDetailsPage = () => {
                 <p className="text-gray-500 mt-1">
                   Order ID:{" "}
                   <span className="font-mono font-medium">
-                    #{order._id?.slice(-8).toUpperCase()}
+                    #
+                    {order.displayOrderId ||
+                      order._id?.substring(0, 8)?.toUpperCase()}
                   </span>
                 </p>
                 <p className="text-gray-500 text-sm">

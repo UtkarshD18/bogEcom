@@ -12,7 +12,6 @@ import CouponModel from "../models/coupon.model.js";
 import InvoiceModel from "../models/invoice.model.js";
 import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
-import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
 import { sendTemplatedEmail } from "../config/emailService.js";
@@ -66,12 +65,14 @@ import {
 } from "./influencer.controller.js";
 import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
 import { sendOrderUpdateNotification } from "./notification.controller.js";
+import { autoBookOrderShipment } from "./shipping.controller.js";
 import {
   confirmInventory,
   releaseInventory,
   reserveInventory,
   restoreInventory,
 } from "../services/inventory.service.js";
+import { withOrderPresentation } from "../utils/orderPresentation.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -350,146 +351,25 @@ const validateCouponForOrder = async ({
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
-const getPrimaryStoreUrl = () =>
-  String(
-    process.env.CLIENT_URL ||
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      "https://healthyonegram.com",
-  )
-    .split(",")[0]
-    .trim()
-    .replace(/\/+$/, "");
-
-const formatInr = (value) => `Rs. ${round2(value).toFixed(2)}`;
-
-const stringifyOrderItemsForEmail = (order) => {
-  const items = Array.isArray(order?.products) ? order.products : [];
-  if (items.length === 0) return "No items found for this order.";
-
-  return items
-    .map((item, index) => {
-      const name = String(item?.productTitle || item?.name || "Item").trim();
-      const quantity = Math.max(Number(item?.quantity || 0), 0);
-      const lineTotal = round2(
-        Number(item?.subTotal || item?.subTotalAmt || item?.price * quantity || 0),
-      );
-      return `${index + 1}. ${name} x ${quantity} = ${formatInr(lineTotal)}`;
-    })
-    .join("\n");
-};
-
-const sendOrderConfirmationEmail = async (order) => {
-  try {
-    const recipientEmail = String(
-      order?.billingDetails?.email ||
-        order?.guestDetails?.email ||
-        "",
-    )
-      .trim()
-      .toLowerCase();
-
-    if (!recipientEmail) {
-      return false;
-    }
-
-    const customerName =
-      String(
-        order?.billingDetails?.fullName ||
-          order?.guestDetails?.fullName ||
-          "Customer",
-      ).trim() || "Customer";
-
-    const originalSubtotal = round2(
-      Number(
-        order?.originalPrice ||
-          (Number(order?.subtotal || 0) + Number(order?.discount || 0)) ||
-          0,
-      ),
-    );
-    const discount = round2(
-      Number(order?.discount || order?.discountAmount || 0) +
-        Number(order?.coinRedemption?.amount || 0),
-    );
-    const taxableAmount = round2(Number(order?.subtotal || 0));
-    const taxAmount = round2(Number(order?.tax || 0));
-    const shippingAmount = round2(Number(order?.shipping || 0));
-    const finalAmount = round2(Number(order?.finalAmount || order?.totalAmt || 0));
-
-    const text = [
-      `Order ${order?._id} created successfully.`,
-      `Status: ${order?.order_status || "pending"}`,
-      `Payment: ${order?.payment_status || "pending"}`,
-      `Final Amount: ${formatInr(finalAmount)}`,
-    ].join("\n");
-
-    const result = await sendTemplatedEmail({
-      to: recipientEmail,
-      subject: `Order Confirmation - ${order?._id}`,
-      templateFile: "orderConfirmation.html",
-      templateData: {
-        customer_name: customerName,
-        order_id: String(order?._id || ""),
-        order_date: new Date(order?.createdAt || Date.now()).toLocaleString(
-          "en-IN",
-          {
-            year: "numeric",
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          },
-        ),
-        order_status: String(order?.order_status || "pending"),
-        payment_status: String(order?.payment_status || "pending"),
-        items_text: stringifyOrderItemsForEmail(order),
-        subtotal: formatInr(originalSubtotal),
-        discount: formatInr(discount),
-        taxable_amount: formatInr(taxableAmount),
-        tax_amount: formatInr(taxAmount),
-        shipping_amount: formatInr(shippingAmount),
-        final_amount: formatInr(finalAmount),
-        site_url: getPrimaryStoreUrl(),
-        support_email: String(
-          process.env.SUPPORT_EMAIL ||
-            process.env.EMAIL_FROM_ADDRESS ||
-            process.env.SMTP_USER ||
-            process.env.EMAIL ||
-            "support@healthyonegram.com",
-        ).trim(),
-        year: String(new Date().getFullYear()),
-      },
-      text,
-      context: "order.confirmation",
-    });
-
-    if (!result?.success) {
-      logger.warn("sendOrderConfirmationEmail", "Email send failed", {
-        orderId: order?._id,
-        recipientEmail,
-        error: result?.error || "Unknown error",
-      });
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    logger.error("sendOrderConfirmationEmail", "Unexpected email error", {
-      orderId: order?._id,
-      error: error?.message || String(error),
-    });
-    return false;
+const resolveInfluencerCommissionBase = (order = {}) => {
+  const taxableSubtotal = Number(
+    order?.subtotal ?? order?.gst?.taxableAmount ?? 0,
+  );
+  if (Number.isFinite(taxableSubtotal) && taxableSubtotal > 0) {
+    return round2(taxableSubtotal);
   }
-};
 
-const CHECKOUT_GST_RATE = 5;
-const DEFAULT_PRODUCT_WEIGHT_GRAMS = 500;
+  const finalAmount = Number(order?.finalAmount ?? 0);
+  if (Number.isFinite(finalAmount) && finalAmount > 0) {
+    return round2(finalAmount);
+  }
 
-const toObjectIdOrNull = (value) => {
-  if (!value) return null;
-  const candidate =
-    value && typeof value === "object" && value._id ? value._id : value;
-  const asString = String(candidate || "").trim();
-  return mongoose.Types.ObjectId.isValid(asString) ? candidate : null;
+  const totalAmount = Number(order?.totalAmt ?? 0);
+  if (Number.isFinite(totalAmount) && totalAmount > 0) {
+    return round2(totalAmount);
+  }
+
+  return 0;
 };
 
 const decodePhonePeWebhookEnvelope = (body = {}) => {
@@ -699,42 +579,6 @@ const normalizeOrderProducts = ({ products, dbProductMap }) => {
       subTotal,
     };
   });
-};
-
-const authorizePurchaseOrderForCheckout = async ({
-  purchaseOrderId,
-  userId,
-  checkoutContact,
-}) => {
-  if (!purchaseOrderId) return null;
-
-  const purchaseOrder =
-    await PurchaseOrderModel.findById(purchaseOrderId).lean();
-  if (!purchaseOrder) {
-    throw new AppError("NOT_FOUND", {
-      field: "purchaseOrderId",
-      message: "Purchase order not found",
-    });
-  }
-
-  if (purchaseOrder.userId) {
-    if (!userId || String(purchaseOrder.userId) !== String(userId)) {
-      throw new AppError("FORBIDDEN");
-    }
-  } else {
-    const checkoutEmail = String(checkoutContact?.contact?.email || "")
-      .trim()
-      .toLowerCase();
-    const poEmail = String(purchaseOrder?.guestDetails?.email || "")
-      .trim()
-      .toLowerCase();
-
-    if (!checkoutEmail || !poEmail || checkoutEmail !== poEmail) {
-      throw new AppError("FORBIDDEN");
-    }
-  }
-
-  return purchaseOrder;
 };
 
 logger.info(
@@ -1271,7 +1115,6 @@ export const getAllOrders = asyncHandler(async (req, res) => {
         .populate("user", "name email avatar mobile")
         .populate("delivery_address")
         .populate("influencerId", "code name")
-        .populate("purchaseOrder", "_id status total createdAt")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -1289,7 +1132,7 @@ export const getAllOrders = asyncHandler(async (req, res) => {
     return sendSuccess(
       res,
       {
-        orders: normalizedOrders,
+        orders: orders.map(withOrderPresentation),
         pagination: {
           total,
           page,
@@ -1469,7 +1312,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
           pendingOrders,
           pendingPayments,
         },
-        recentOrders,
+        recentOrders: recentOrders.map(withOrderPresentation),
       },
       "Dashboard data retrieved successfully",
     );
@@ -1538,7 +1381,7 @@ export const getOrderById = asyncHandler(async (req, res) => {
 
     return sendSuccess(
       res,
-      normalizeOrderForResponse(order),
+      withOrderPresentation(order),
       "Order retrieved successfully",
     );
   } catch (error) {
@@ -1620,6 +1463,20 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
       newStatus: order.order_status,
     });
 
+    if (transition.updated) {
+      autoBookOrderShipment({
+        orderDoc: order,
+        source: "ADMIN_STATUS_UPDATE",
+      }).catch((err) =>
+        logger.warn("updateOrderStatus", "Auto shipment booking skipped/failed", {
+          orderId: id,
+          status: order.order_status,
+          paymentStatus: order.payment_status,
+          error: err.message,
+        }),
+      );
+    }
+
     // Send notification to user if order has user associated
     if (order.user) {
       sendOrderUpdateNotification(order, order.order_status).catch((err) =>
@@ -1649,7 +1506,11 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
 
     emitOrderStatusUpdate(order, "ADMIN");
 
-    return sendSuccess(res, order, "Order status updated successfully");
+    return sendSuccess(
+      res,
+      withOrderPresentation(order),
+      "Order status updated successfully",
+    );
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -1690,7 +1551,11 @@ export const getUserOrders = asyncHandler(async (req, res) => {
       userId,
     });
 
-    return sendSuccess(res, normalizedOrders, "Orders retrieved successfully");
+    return sendSuccess(
+      res,
+      orders.map(withOrderPresentation),
+      "Orders retrieved successfully",
+    );
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -1750,7 +1615,7 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
 
     return sendSuccess(
       res,
-      normalizeOrderForResponse(order),
+      withOrderPresentation(order),
       "Order retrieved successfully",
     );
   } catch (error) {
@@ -1885,7 +1750,6 @@ export const createOrder = asyncHandler(async (req, res) => {
       affiliateSource,
       guestDetails,
       coinRedeem,
-      purchaseOrderId,
       paymentType,
     } = req.validatedData;
     const userId = req.user || null;
@@ -2017,11 +1881,16 @@ export const createOrder = asyncHandler(async (req, res) => {
     );
     const payableAmount = Math.max(computedFinalAmount, 1);
 
-    const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
-      purchaseOrderId,
-      userId,
-      checkoutContact,
-    });
+    // Calculate influencer commission based on final amount
+    let influencerCommission = 0;
+    if (influencerData?._id) {
+      influencerCommission = await calculateInfluencerCommission(
+        influencerData._id,
+        taxData.taxableAmount,
+      );
+    }
+
+    const totalDiscount = round2(totalDiscountBeforeCoins);
 
     // Create order in database
     const order = new OrderModel({
@@ -2069,12 +1938,11 @@ export const createOrder = asyncHandler(async (req, res) => {
       },
       notes: notes || "",
       influencerId: influencerData?._id || null,
-      influencerCode: pricing.influencerCode || null,
+      influencerCode: influencerData?.code || null,
       influencerDiscount,
       influencerCommission,
-      affiliateCode: affiliateCode || pricing.influencerCode || null,
+      affiliateCode: affiliateCode || influencerData?.code || null,
       affiliateSource: affiliateSource || (influencerData ? "referral" : null),
-      purchaseOrder: checkoutPurchaseOrder?._id || null,
     });
 
     try {
@@ -2170,12 +2038,6 @@ export const createOrder = asyncHandler(async (req, res) => {
       logger.warn("createOrder", "Location log creation failed", {
         orderId: order?._id,
         error: logErr?.message || String(logErr),
-      });
-    }
-
-    if (checkoutPurchaseOrder?._id) {
-      await PurchaseOrderModel.findByIdAndUpdate(checkoutPurchaseOrder._id, {
-        $set: { status: "approved" },
       });
     }
 
@@ -2424,7 +2286,6 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       notes,
       guestDetails,
       coinRedeem,
-      purchaseOrderId,
       paymentType,
     } = req.validatedData;
 
@@ -2610,11 +2471,16 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       membershipDiscount + influencerDiscount + couponDiscount,
     );
 
-    const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
-      purchaseOrderId,
-      userId,
-      checkoutContact,
-    });
+    // Calculate influencer commission
+    if (influencerData) {
+      influencerCommission = await calculateInfluencerCommission(
+        influencerData._id,
+        taxData.taxableAmount,
+      );
+      logger.info("saveOrderForLater", "Influencer commission calculated", {
+        commission: influencerCommission,
+      });
+    }
 
     // Create saved order
     const savedOrder = new OrderModel({
@@ -2665,10 +2531,8 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         coinsUsed: Number(redemption.coinsUsed || 0),
         amount: Number(redemption.redeemAmount || 0),
       },
-      affiliateCode: affiliateCode || pricing.influencerCode || null,
-      affiliateSource:
-        affiliateSource || (pricing.influencerCode ? "referral" : null),
-      purchaseOrder: checkoutPurchaseOrder?._id || null,
+      affiliateCode: affiliateCode || influencerData?.code || null,
+      affiliateSource: affiliateSource || (influencerData ? "referral" : null),
       isSavedOrder: true,
       notes: notes || "Order saved - awaiting payment gateway activation",
     });
@@ -2769,25 +2633,21 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       });
     }
 
-    if (checkoutPurchaseOrder?._id) {
-      await PurchaseOrderModel.findByIdAndUpdate(checkoutPurchaseOrder._id, {
-        $set: { status: "approved" },
-      });
-    }
-
     logger.info("saveOrderForLater", "Order saved for later", {
       orderId: savedOrder._id,
     });
 
-    await sendOrderConfirmationEmail(savedOrder);
-
-    // Update influencer stats
-    if (influencerData) {
-      await updateInfluencerStats(
+    // Update influencer stats only once per order.
+    if (influencerData && !savedOrder.influencerStatsSynced) {
+      const influencerStatsSynced = await updateInfluencerStats(
         influencerData._id,
         finalOrderAmount,
         influencerCommission,
       );
+      if (influencerStatsSynced) {
+        savedOrder.influencerStatsSynced = true;
+        await savedOrder.save();
+      }
     }
 
     // Sync to Firestore
@@ -2994,6 +2854,18 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     }
 
     if (!wasPaid && order.payment_status === "paid") {
+      autoBookOrderShipment({
+        orderDoc: order,
+        source: "PHONEPE_WEBHOOK",
+      }).catch((err) =>
+        logger.warn("handlePhonePeWebhook", "Auto shipment booking skipped/failed", {
+          orderId: order._id,
+          status: order.order_status,
+          paymentStatus: order.payment_status,
+          error: err.message,
+        }),
+      );
+
       // Deduct redeemed coins only after payment is successful.
       if (order.user && Number(order.coinRedemption?.coinsUsed || 0) > 0) {
         try {
@@ -3033,34 +2905,36 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         );
       }
 
-      // Update influencer stats if applicable
-      if (order.influencerId) {
+      // Update influencer stats if applicable (idempotent per order).
+      if (order.influencerId && !order.influencerStatsSynced) {
         const effectiveAmount =
           order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
+        const commissionBaseAmount = resolveInfluencerCommissionBase(order);
         let commission = order.influencerCommission || 0;
         if (!commission && order.influencerId) {
           commission = await calculateInfluencerCommission(
             order.influencerId,
-            effectiveAmount,
+            commissionBaseAmount,
           );
           order.influencerCommission = commission;
-          await order.save();
         }
 
-        updateInfluencerStats(
-          order.influencerId,
-          effectiveAmount,
-          commission,
-        ).catch((err) =>
-          logger.error(
-            "handlePhonePeWebhook",
-            "Failed to update influencer stats",
-            {
-              orderId: order._id,
-              error: err.message,
-            },
-          ),
-        );
+        try {
+          const influencerStatsSynced = await updateInfluencerStats(
+            order.influencerId,
+            effectiveAmount,
+            commission,
+          );
+          if (influencerStatsSynced) {
+            order.influencerStatsSynced = true;
+            await order.save();
+          }
+        } catch (err) {
+          logger.error("handlePhonePeWebhook", "Failed to update influencer stats", {
+            orderId: order._id,
+            error: err.message,
+          });
+        }
       }
 
       if (order.user) {

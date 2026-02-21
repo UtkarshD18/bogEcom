@@ -30,6 +30,13 @@ const Sidebar = () => {
   const { logout, admin, token } = useAdmin();
   const pathname = usePathname();
   const [openTicketCount, setOpenTicketCount] = useState(0);
+  const adminDisplayName =
+    admin?.name ||
+    admin?.userName ||
+    admin?.email?.split("@")?.[0] ||
+    admin?.userEmail?.split("@")?.[0] ||
+    "Admin";
+  const adminDisplayEmail = admin?.email || admin?.userEmail || "";
 
   useEffect(() => {
     let active = true;
@@ -199,12 +206,12 @@ const Sidebar = () => {
       <div className="p-4 border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2">
           <Image
-            src="/logo.png"
-            alt="Logo"
+            src="/logo-og-v2.png"
+            alt="Healthy One Gram"
             width={140}
             height={40}
-            className="h-10 w-auto"
             priority
+            className="h-10 w-auto object-contain"
           />
         </Link>
       </div>
@@ -222,9 +229,9 @@ const Sidebar = () => {
           </p>
         </button>
         <p className="text-sm font-medium text-gray-800 truncate">
-          {admin?.name || "Admin"}
+          {adminDisplayName}
         </p>
-        <p className="text-xs text-gray-500 truncate">{admin?.email || ""}</p>
+        <p className="text-xs text-gray-500 truncate">{adminDisplayEmail}</p>
       </div>
 
       {/* Navigation */}

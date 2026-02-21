@@ -41,26 +41,66 @@ export default function CartPage() {
         return fallback || item;
     };
 
+    const resolveVariantId = (item) => {
+        const rawVariant = item?.variant?._id || item?.variant || item?.variantId;
+        if (rawVariant === undefined || rawVariant === null || rawVariant === "") {
+            return null;
+        }
+        return String(rawVariant);
+    };
+
     // Helper to normalize cart item data
     const getItemData = (item) => {
         const product = resolveProductData(item);
         const productId = resolveProductId(item);
+        const variantId = resolveVariantId(item);
+        const matchedVariant =
+            variantId && Array.isArray(product?.variants)
+                ? product.variants.find((variant) => String(variant?._id) === String(variantId))
+                : null;
+        const displayPrice = Number(
+            item?.price ?? matchedVariant?.price ?? product?.price ?? 0,
+        );
+        const displayOriginalPrice = Number(
+            item?.originalPrice ??
+            matchedVariant?.originalPrice ??
+            product?.originalPrice ??
+            displayPrice,
+        );
+        const variantLabel =
+            (typeof item?.variantName === "string" && item.variantName.trim()) ||
+            matchedVariant?.name ||
+            "";
 
         return {
-            id: productId || product?._id || product?.id || item._id || item.id,
+            productId: productId || product?._id || product?.id || item._id || item.id,
+            id: `${productId || product?._id || product?.id || item._id || item.id}-${variantId || "base"}`,
             name: product?.name || item?.name || item?.title || "Product",
             image:
                 product?.thumbnail ||
                 product?.images?.[0] ||
                 item?.image ||
                 "/product_1.png",
-            price: Number(product?.price || item?.price || 0),
+            price: displayPrice,
+            originalPrice: displayOriginalPrice,
             brand: product?.brand || item?.brand || "BOG",
             quantity: Number(item?.quantity || 1),
+            variantLabel,
             quantityUnit:
-                product?.quantityUnit || item?.quantityUnit || "Per Unit",
+                variantLabel || product?.quantityUnit || item?.quantityUnit || "Per Unit",
         };
     };
+
+    const totalSavings = round2(
+        (cartItems || []).reduce((sum, item) => {
+            const data = getItemData(item);
+            const perUnitSaving = Math.max(
+                Number(data.originalPrice || 0) - Number(data.price || 0),
+                0,
+            );
+            return sum + perUnitSaving * Math.max(Number(data.quantity || 0), 0);
+        }, 0),
+    );
 
     if (cartItems.length === 0) {
         return (
@@ -69,7 +109,7 @@ export default function CartPage() {
                     <MdShoppingBag size={48} className="text-gray-300" />
                 </div>
                 <h1 className="text-2xl font-black text-gray-900 mb-2">Your cart is empty</h1>
-                <p className="text-gray-500 mb-8 max-w-xs">Looks like you haven't added any peanut butter goodness yet!</p>
+                <p className="text-gray-500 mb-8 max-w-xs">Looks like you haven&apos;t added any peanut butter goodness yet!</p>
                 <Link
                     href="/products"
                     className="px-8 py-4 bg-primary text-white font-black rounded-2xl shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95"
@@ -96,10 +136,10 @@ export default function CartPage() {
                             return pid && pd?.name;
                         }).map((item, index) => {
                             const data = getItemData(item);
-                            const productId = resolveProductId(item);
+                            const variantId = resolveVariantId(item);
                             return (
                                 <div
-                                    key={data.id || index}
+                                    key={`${data.id}-${String(item?._id || item?.id || index)}`}
                                     className="group relative flex flex-col sm:flex-row gap-6 p-6 rounded-[2.5rem] bg-white border border-gray-100 shadow-sm hover:shadow-xl hover:border-primary/20 transition-all duration-500"
                                 >
                                     {/* Image */}
@@ -124,8 +164,8 @@ export default function CartPage() {
                                                 <button
                                                     onClick={() =>
                                                       removeFromCart(
-                                                        productId || data.id,
-                                                        item?.variant || null,
+                                                        data.productId,
+                                                        variantId,
                                                       )
                                                     }
                                                     className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all active:scale-90"
@@ -133,7 +173,9 @@ export default function CartPage() {
                                                     <MdDeleteOutline size={24} />
                                                 </button>
                                             </div>
-                                            <p className="text-sm text-gray-400 font-medium">Quantity Basis: {data.quantityUnit}</p>
+                                            <p className="text-sm text-gray-400 font-medium">
+                                                Quantity Basis: {data.quantityUnit}
+                                            </p>
                                         </div>
 
                                         <div className="flex items-center justify-between mt-auto">
@@ -141,9 +183,9 @@ export default function CartPage() {
                                                 <button
                                                     onClick={() =>
                                                       updateQuantity(
-                                                        productId || data.id,
+                                                        data.productId,
                                                         Number(data.quantity) - 1,
-                                                        item?.variant || null,
+                                                        variantId,
                                                       )
                                                     }
                                                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
@@ -154,9 +196,9 @@ export default function CartPage() {
                                                 <button
                                                     onClick={() =>
                                                       updateQuantity(
-                                                        productId || data.id,
+                                                        data.productId,
                                                         Number(data.quantity) + 1,
-                                                        item?.variant || null,
+                                                        variantId,
                                                       )
                                                     }
                                                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
@@ -165,8 +207,14 @@ export default function CartPage() {
                                                 </button>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-xs text-gray-400 font-bold line-through">₹{data.price * 1.5 * data.quantity}</p>
-                                                <p className="text-2xl font-black text-primary tracking-tight">₹{data.price * data.quantity}</p>
+                                                {data.originalPrice > data.price && (
+                                                    <p className="text-xs text-gray-400 font-bold line-through">
+                                                        ₹{round2(data.originalPrice * data.quantity)}
+                                                    </p>
+                                                )}
+                                                <p className="text-2xl font-black text-primary tracking-tight">
+                                                    ₹{round2(data.price * data.quantity)}
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
@@ -205,7 +253,12 @@ export default function CartPage() {
                                         <p className="text-3xl font-black text-white tracking-tight">₹{total}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-primary font-black text-xs">SAVING ₹450</p>
+                                        <p className="text-primary font-black text-xs">
+                                            SAVING ₹{totalSavings.toLocaleString("en-IN", {
+                                                minimumFractionDigits: 0,
+                                                maximumFractionDigits: 2,
+                                            })}
+                                        </p>
                                     </div>
                                 </div>
                             </div>

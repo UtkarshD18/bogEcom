@@ -44,9 +44,9 @@ const SettingsPage = () => {
 
   // Settings State
   const [shippingSettings, setShippingSettings] = useState({
-    freeShippingThreshold: 500,
-    standardShippingCost: 50,
-    expressShippingCost: 100,
+    freeShippingThreshold: 0,
+    standardShippingCost: 0,
+    expressShippingCost: 0,
     freeShippingEnabled: true,
     estimatedDelivery: {
       standard: "5-7 business days",
@@ -128,7 +128,13 @@ const SettingsPage = () => {
         data.data.forEach((setting) => {
           switch (setting.key) {
             case "shippingSettings":
-              setShippingSettings(setting.value);
+              setShippingSettings({
+                ...(setting.value || {}),
+                freeShippingEnabled: true,
+                freeShippingThreshold: 0,
+                standardShippingCost: 0,
+                expressShippingCost: 0,
+              });
               break;
             case "orderSettings":
               setOrderSettings(setting.value);
@@ -229,7 +235,13 @@ const SettingsPage = () => {
     setSaving(true);
     try {
       const results = await Promise.all([
-        saveSetting("shippingSettings", shippingSettings),
+        saveSetting("shippingSettings", {
+          ...shippingSettings,
+          freeShippingEnabled: true,
+          freeShippingThreshold: 0,
+          standardShippingCost: 0,
+          expressShippingCost: 0,
+        }),
         saveSetting("orderSettings", orderSettings),
         saveSetting("discountSettings", discountSettings),
         saveSetting("storeInfo", storeInfo),
@@ -324,78 +336,10 @@ const SettingsPage = () => {
         <Divider className="mb-4" />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormControlLabel
-            control={
-              <Switch
-                checked={shippingSettings.freeShippingEnabled}
-                onChange={(e) =>
-                  setShippingSettings({
-                    ...shippingSettings,
-                    freeShippingEnabled: e.target.checked,
-                  })
-                }
-                color="warning"
-              />
-            }
-            label="Enable Free Shipping (above threshold)"
-          />
-
-          <TextField
-            label="Free Shipping Threshold"
-            type="number"
-            value={shippingSettings.freeShippingThreshold}
-            onChange={(e) =>
-              setShippingSettings({
-                ...shippingSettings,
-                freeShippingThreshold: Number(e.target.value),
-              })
-            }
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">₹</InputAdornment>
-              ),
-            }}
-            size="small"
-            fullWidth
-          />
-
-          <TextField
-            label="Standard Shipping Cost"
-            type="number"
-            value={shippingSettings.standardShippingCost}
-            onChange={(e) =>
-              setShippingSettings({
-                ...shippingSettings,
-                standardShippingCost: Number(e.target.value),
-              })
-            }
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">₹</InputAdornment>
-              ),
-            }}
-            size="small"
-            fullWidth
-          />
-
-          <TextField
-            label="Express Shipping Cost"
-            type="number"
-            value={shippingSettings.expressShippingCost}
-            onChange={(e) =>
-              setShippingSettings({
-                ...shippingSettings,
-                expressShippingCost: Number(e.target.value),
-              })
-            }
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">₹</InputAdornment>
-              ),
-            }}
-            size="small"
-            fullWidth
-          />
+          <Alert severity="success" className="md:col-span-2">
+            Shipping is free on all customer orders. Shipping threshold and
+            shipping charge controls are disabled.
+          </Alert>
 
           <TextField
             label="Standard Delivery Time"

@@ -24,13 +24,71 @@ const normalizeQuantity = (value) => {
   return Math.floor(parsed);
 };
 
+const normalizePrice = (value, fallback = 0) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return Number(fallback) > 0 ? Number(fallback) : 0;
+  }
+  return Math.round((parsed + Number.EPSILON) * 100) / 100;
+};
+
+const buildWishlistItemPayload = ({
+  product,
+  quantity,
+  variantId,
+  variantName = "",
+}) => {
+  const safeQuantity = normalizeQuantity(quantity ?? 1);
+  if (!Number.isInteger(safeQuantity) || safeQuantity < 1 || safeQuantity > MAX_MOVE_TO_CART_QTY) {
+    return {
+      error: `Quantity must be an integer between 1 and ${MAX_MOVE_TO_CART_QTY}`,
+    };
+  }
+
+  const requestedVariantId = String(variantId || "").trim();
+  const requestedVariantName = String(variantName || "").trim();
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+
+  let selectedVariant = null;
+  if (requestedVariantId) {
+    if (!isValidObjectId(requestedVariantId)) {
+      return { error: "Valid variant ID is required" };
+    }
+
+    selectedVariant =
+      variants.find((variant) => String(variant?._id || "") === requestedVariantId) || null;
+    if (!selectedVariant) {
+      return { error: "Selected variant not found for this product" };
+    }
+  }
+
+  const effectivePrice = normalizePrice(
+    selectedVariant?.price ?? product?.price ?? 0,
+    0,
+  );
+  const effectiveOriginalPrice = normalizePrice(
+    selectedVariant?.originalPrice ?? product?.originalPrice ?? 0,
+    0,
+  );
+
+  return {
+    quantity: safeQuantity,
+    variant: selectedVariant?._id || null,
+    variantName: selectedVariant?.name
+      ? String(selectedVariant.name)
+      : requestedVariantName,
+    price: effectivePrice,
+    originalPrice: effectiveOriginalPrice,
+  };
+};
+
 const canUserAccessExclusiveProducts = async (userId) => {
   if (!userId) return false;
   return checkExclusiveAccess(userId);
 };
 
 const WISHLIST_PRODUCT_SELECT =
-  "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive";
+  "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive hasVariants variants._id variants.name variants.price variants.originalPrice variants.isDefault";
 
 const formatWishlistItems = (items = []) =>
   (items || []).map((item) => {
@@ -39,12 +97,88 @@ const formatWishlistItems = (items = []) =>
     const productDoc =
       rawItem?.product && typeof rawItem.product === "object" ? rawItem.product : null;
     const productId = String(productDoc?._id || rawItem?.product || "");
+    const variants = Array.isArray(productDoc?.variants) ? productDoc.variants : [];
+    const defaultVariant =
+      variants.find((variant) => variant?.isDefault) || variants[0] || null;
+    const quantity = normalizeQuantity(rawItem?.quantity ?? rawItem?.productData?.quantity ?? 1);
+    const safeQuantity =
+      Number.isInteger(quantity) && quantity > 0 && quantity <= MAX_MOVE_TO_CART_QTY
+        ? quantity
+        : 1;
+    const requestedVariantId =
+      rawItem?.variant != null
+        ? String(rawItem.variant)
+        : String(
+            rawItem?.productData?.variantId ||
+              rawItem?.productData?.selectedVariant?._id ||
+              "",
+          );
+    const matchedVariant =
+      requestedVariantId &&
+      variants.find((variant) => String(variant?._id || "") === requestedVariantId);
+    const resolvedVariant = matchedVariant || (!requestedVariantId ? defaultVariant : null);
+    const variantId = requestedVariantId || String(resolvedVariant?._id || "");
+    const variantName = String(
+      rawItem?.variantName ||
+        rawItem?.productData?.variantName ||
+        rawItem?.productData?.selectedVariant?.name ||
+        resolvedVariant?.name ||
+        "",
+    ).trim();
+    const effectivePrice = normalizePrice(
+      rawItem?.price,
+      resolvedVariant?.price ?? productDoc?.price ?? rawItem?.productData?.price ?? 0,
+    );
+    const effectiveOriginalPrice = normalizePrice(
+      rawItem?.originalPrice,
+      resolvedVariant?.originalPrice ??
+      productDoc?.originalPrice ??
+        rawItem?.productData?.originalPrice ??
+        rawItem?.productData?.oldPrice ??
+        0,
+    );
+    const rawProductData = productDoc || rawItem?.productData || null;
+    let productData = rawProductData;
+
+    if (rawProductData && typeof rawProductData === "object") {
+      const cloned =
+        typeof rawProductData?.toObject === "function"
+          ? rawProductData.toObject()
+          : { ...rawProductData };
+
+      cloned.price = effectivePrice;
+      cloned.originalPrice = effectiveOriginalPrice;
+      cloned.quantity = safeQuantity;
+
+      if (variantId) {
+        cloned.variantId = variantId;
+        cloned.variantName = variantName;
+        const selectedVariant =
+          cloned?.selectedVariant && typeof cloned.selectedVariant === "object"
+            ? cloned.selectedVariant
+            : {};
+        cloned.selectedVariant = {
+          ...selectedVariant,
+          _id: variantId,
+          name: variantName || selectedVariant?.name || "",
+          price: effectivePrice,
+          originalPrice: effectiveOriginalPrice,
+        };
+      }
+
+      productData = cloned;
+    }
 
     return {
       _id: rawItem?._id,
       product: productId,
-      productData: productDoc || rawItem?.productData || null,
+      productData,
       addedAt: rawItem?.addedAt,
+      quantity: safeQuantity,
+      variant: variantId || null,
+      variantName,
+      price: effectivePrice,
+      originalPrice: effectiveOriginalPrice,
     };
   });
 
@@ -118,6 +252,9 @@ export const addToWishlist = async (req, res) => {
   try {
     const userId = req.user;
     const productId = String(req.body?.productId || "").trim();
+    const requestedQuantity = normalizeQuantity(req.body?.quantity ?? 1);
+    const requestedVariantId = String(req.body?.variantId || "").trim();
+    const requestedVariantName = String(req.body?.variantName || "").trim();
 
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
@@ -173,9 +310,24 @@ export const addToWishlist = async (req, res) => {
       });
     }
 
+    const wishlistItemPayload = buildWishlistItemPayload({
+      product,
+      quantity: requestedQuantity,
+      variantId: requestedVariantId,
+      variantName: requestedVariantName,
+    });
+    if (wishlistItemPayload?.error) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: wishlistItemPayload.error,
+      });
+    }
+
     // Add to wishlist
     wishlist.items.push({
       product: productId,
+      ...wishlistItemPayload,
     });
 
     await wishlist.save();
@@ -280,6 +432,9 @@ export const toggleWishlist = async (req, res) => {
   try {
     const userId = req.user;
     const productId = String(req.body?.productId || "").trim();
+    const requestedQuantity = normalizeQuantity(req.body?.quantity ?? 1);
+    const requestedVariantId = String(req.body?.variantId || "").trim();
+    const requestedVariantName = String(req.body?.variantName || "").trim();
 
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
@@ -290,7 +445,9 @@ export const toggleWishlist = async (req, res) => {
     }
 
     const product = await ProductModel.findById(productId)
-      .select("_id isActive isExclusive")
+      .select(
+        "_id isActive isExclusive price originalPrice variants._id variants.name variants.price variants.originalPrice",
+      )
       .lean();
     if (!product || !product.isActive) {
       return res.status(404).json({
@@ -311,47 +468,101 @@ export const toggleWishlist = async (req, res) => {
       }
     }
 
-    let wishlist = await WishlistModel.findOne({ user: userId });
-    if (!wishlist) {
-      wishlist = new WishlistModel({ user: userId, items: [] });
+    const existingWishlist = await WishlistModel.findOne({ user: userId }).select(
+      "items.product",
+    );
+    const isCurrentlyWishlisted = Boolean(
+      existingWishlist?.items?.some(
+        (item) => item.product && String(item.product) === productId,
+      ),
+    );
+
+    if (isCurrentlyWishlisted) {
+      await WishlistModel.updateOne(
+        { user: userId },
+        { $pull: { items: { product: productId } } },
+      );
+    } else {
+      const wishlistItemPayload = buildWishlistItemPayload({
+        product,
+        quantity: requestedQuantity,
+        variantId: requestedVariantId,
+        variantName: requestedVariantName,
+      });
+      if (wishlistItemPayload?.error) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: wishlistItemPayload.error,
+        });
+      }
+
+      try {
+        await WishlistModel.updateOne(
+          { user: userId, "items.product": { $ne: productId } },
+          {
+            $setOnInsert: { user: userId },
+            $push: { items: { product: productId, ...wishlistItemPayload } },
+          },
+          { upsert: true },
+        );
+      } catch (updateError) {
+        // Concurrent requests can race on the unique user index during upsert.
+        // In that case, proceed by reading the latest persisted wishlist.
+        if (updateError?.code !== 11000) {
+          throw updateError;
+        }
+      }
     }
 
-    // Filter out any items with null/missing product references
-    wishlist.items = wishlist.items.filter((item) => item.product);
+    const hasExclusiveAccess = await canUserAccessExclusiveProducts(userId);
+    let wishlist = await WishlistModel.findOne({ user: userId }).populate({
+      path: "items.product",
+      select: WISHLIST_PRODUCT_SELECT,
+    });
 
-    const existingIndex = wishlist.items.findIndex(
+    if (!wishlist) {
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Wishlist updated",
+        data: {
+          items: [],
+          isWishlisted: false,
+          itemCount: 0,
+        },
+      });
+    }
+
+    const validItems = wishlist.items.filter(
+      (item) =>
+        item.product &&
+        item.product.isActive &&
+        (hasExclusiveAccess || item.product.isExclusive !== true),
+    );
+
+    if (validItems.length !== wishlist.items.length) {
+      wishlist.items = validItems;
+      await wishlist.save();
+    }
+
+    const formattedItems = formatWishlistItems(wishlist.items);
+    const isWishlisted = formattedItems.some(
       (item) => String(item.product) === productId,
     );
 
-    let isWishlisted;
-    if (existingIndex >= 0) {
-      // Remove from wishlist
-      wishlist.items.splice(existingIndex, 1);
-      isWishlisted = false;
-    } else {
-      // Add to wishlist
-      wishlist.items.push({ product: productId });
-      isWishlisted = true;
-    }
-
-    await wishlist.save();
-    await wishlist.populate({
-      path: "items.product",
-      select:
-        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive",
-    });
-
-    res.status(200).json({
+    return res.status(200).json({
       error: false,
       success: true,
       message: isWishlisted ? "Added to wishlist" : "Removed from wishlist",
       data: {
-        items: wishlist.items,
+        items: formattedItems,
         isWishlisted,
-        itemCount: wishlist.itemCount,
+        itemCount: formattedItems.length,
       },
     });
   } catch (error) {
+    console.error("Error toggling wishlist:", error);
     res.status(500).json({
       error: true,
       success: false,

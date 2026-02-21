@@ -1,13 +1,15 @@
 "use client";
 
-import { API_BASE_URL } from "@/utils/api";
-import { parseJsonSafely, getResponseErrorMessage } from "@/utils/safeJsonFetch";
-import Cookies from "js-cookie";
+import {
+  deleteData,
+  fetchDataFromApi,
+  getStoredAccessToken,
+  postData,
+} from "@/utils/api";
 import { createContext, useContext, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 
 const WishlistContext = createContext();
-const API_URL = API_BASE_URL;
 
 export const WishlistProvider = ({ children }) => {
   const [wishlistItems, setWishlistItems] = useState([]);
@@ -22,19 +24,81 @@ export const WishlistProvider = ({ children }) => {
 
   const getToken = () => {
     if (typeof window === "undefined") return null;
-    return Cookies.get("accessToken") || localStorage.getItem("token");
+    return getStoredAccessToken();
   };
 
   const resolveProductId = (item) =>
     String(
       item?.product?._id ||
+        item?.product?.id ||
         item?.product ||
         item?.productData?._id ||
+        item?.productData?.id ||
         item?.id ||
         item?._id ||
         item ||
         "",
     );
+
+  const readWishlistItems = (payload) =>
+    payload?.data?.items || payload?.items || [];
+
+  const readWishlistCount = (payload, items) => {
+    const count = payload?.data?.itemCount ?? payload?.itemCount;
+    return Number.isFinite(Number(count)) ? Number(count) : items.length;
+  };
+
+  const normalizeQuantity = (value, fallback = 1) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    const next = Math.floor(parsed);
+    if (next < 1) return fallback;
+    return Math.min(next, 100);
+  };
+
+  const normalizePrice = (value, fallback = 0) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return Number.isFinite(Number(fallback)) ? Number(fallback) : 0;
+    }
+    return Math.round((parsed + Number.EPSILON) * 100) / 100;
+  };
+
+  const toWishlistPayload = (input) => {
+    const raw = input && typeof input === "object" ? input : {};
+    const selectedVariant =
+      raw?.selectedVariant && typeof raw.selectedVariant === "object"
+        ? raw.selectedVariant
+        : null;
+
+    const productId = resolveProductId(input);
+    const quantity = normalizeQuantity(raw?.quantity ?? raw?.wishlistQuantity ?? 1);
+    const variantId = String(
+      raw?.variantId || raw?.variant || selectedVariant?._id || "",
+    ).trim();
+    const variantName = String(raw?.variantName || selectedVariant?.name || "").trim();
+
+    const price = normalizePrice(
+      raw?.price,
+      selectedVariant?.price ?? raw?.productData?.price ?? 0,
+    );
+    const originalPrice = normalizePrice(
+      raw?.originalPrice ?? raw?.oldPrice,
+      selectedVariant?.originalPrice ??
+        raw?.productData?.originalPrice ??
+        raw?.productData?.oldPrice ??
+        0,
+    );
+
+    return {
+      productId,
+      quantity,
+      variantId: variantId || null,
+      variantName,
+      price,
+      originalPrice,
+    };
+  };
 
   const saveLocal = (items) => {
     if (typeof window === "undefined") return;
@@ -69,24 +133,16 @@ export const WishlistProvider = ({ children }) => {
         return;
       }
 
-      const res = await fetch(`${API_URL}/api/wishlist`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: "include",
-      });
-
-      const data = await parseJsonSafely(res);
-
-      if (!res.ok) {
+      const data = await fetchDataFromApi("/api/wishlist");
+      if (data?.error === true || !data?.success) {
         setWishlistItems([]);
         setWishlistCount(0);
         return;
       }
 
-      setWishlistItems(data?.data?.items || []);
-      setWishlistCount(data?.data?.itemCount || 0);
+      const items = readWishlistItems(data);
+      setWishlistItems(items);
+      setWishlistCount(readWishlistCount(data, items));
     } catch (err) {
       console.error(err);
       if (!getToken()) {
@@ -106,8 +162,14 @@ export const WishlistProvider = ({ children }) => {
   // =============================
 
   const addToWishlist = async (product) => {
-    const productId = resolveProductId(product);
+    const payload = toWishlistPayload(product);
+    const productId = payload.productId;
     const token = getToken();
+
+    if (!productId) {
+      toast.error("Invalid product");
+      return false;
+    }
 
     // ---------- GUEST ----------
     if (!token) {
@@ -117,14 +179,45 @@ export const WishlistProvider = ({ children }) => {
 
       if (exists) {
         toast.error("Already in wishlist");
-        return;
+        return false;
       }
+
+      const productData = product && typeof product === "object" ? product : {};
+      const selectedVariant =
+        payload.variantId
+          ? {
+              ...((productData?.selectedVariant &&
+                typeof productData.selectedVariant === "object"
+                  ? productData.selectedVariant
+                  : {})),
+              _id: payload.variantId,
+              name:
+                payload.variantName ||
+                productData?.selectedVariant?.name ||
+                "",
+              price: payload.price,
+              originalPrice: payload.originalPrice,
+            }
+          : productData?.selectedVariant;
 
       const newItems = [
         ...wishlistItems,
         {
           product: productId,
-          productData: product,
+          productData: {
+            ...productData,
+            price: payload.price,
+            originalPrice: payload.originalPrice,
+            quantity: payload.quantity,
+            variantId: payload.variantId || undefined,
+            variantName: payload.variantName || undefined,
+            selectedVariant,
+          },
+          quantity: payload.quantity,
+          variant: payload.variantId,
+          variantName: payload.variantName,
+          price: payload.price,
+          originalPrice: payload.originalPrice,
           addedAt: new Date().toISOString(),
         },
       ];
@@ -133,36 +226,33 @@ export const WishlistProvider = ({ children }) => {
       setWishlistCount(newItems.length);
       saveLocal(newItems);
       toast.success("Added to wishlist");
-      return;
+      return true;
     }
 
     // ---------- AUTH USER ----------
     try {
-      const res = await fetch(`${API_URL}/api/wishlist/add`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: "include",
-        body: JSON.stringify({ productId }),
+      const data = await postData("/api/wishlist/add", {
+        productId,
+        quantity: payload.quantity,
+        variantId: payload.variantId || undefined,
+        variantName: payload.variantName || undefined,
+        price: payload.price,
+        originalPrice: payload.originalPrice,
       });
-
-      const data = await parseJsonSafely(res);
-
-      if (!res.ok) {
-        toast.error(
-          getResponseErrorMessage(data, "Failed to add to wishlist")
-        );
-        return;
+      if (data?.error === true || !data?.success) {
+        toast.error(data?.message || "Failed to add to wishlist");
+        return false;
       }
 
-      setWishlistItems(data?.data?.items || []);
-      setWishlistCount(data?.data?.itemCount || 0);
+      const items = readWishlistItems(data);
+      setWishlistItems(items);
+      setWishlistCount(readWishlistCount(data, items));
       toast.success("Added to wishlist");
+      return true;
     } catch (err) {
       console.error(err);
       toast.error("Failed to add to wishlist");
+      return false;
     }
   };
 
@@ -176,7 +266,7 @@ export const WishlistProvider = ({ children }) => {
 
     if (!productId) {
       toast.error("Invalid product");
-      return;
+      return false;
     }
 
     // ---------- GUEST ----------
@@ -188,39 +278,27 @@ export const WishlistProvider = ({ children }) => {
       setWishlistCount(next.length);
       saveLocal(next);
       toast.success("Removed from wishlist");
-      return;
+      return true;
     }
 
     setRemovingItems((prev) => ({ ...prev, [productId]: true }));
 
     try {
-      const res = await fetch(
-        `${API_URL}/api/wishlist/remove/${productId}`,
-        {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include",
-        }
-      );
-
-      const data = await parseJsonSafely(res);
-
-      if (!res.ok) {
-        toast.error(
-          getResponseErrorMessage(data, "Failed to remove item")
-        );
-        return;
+      const data = await deleteData(`/api/wishlist/remove/${productId}`);
+      if (data?.error === true || !data?.success) {
+        toast.error(data?.message || "Failed to remove item");
+        return false;
       }
 
-      setWishlistItems(data?.data?.items || []);
-      setWishlistCount(data?.data?.itemCount || 0);
+      const items = readWishlistItems(data);
+      setWishlistItems(items);
+      setWishlistCount(readWishlistCount(data, items));
       toast.success("Removed from wishlist");
+      return true;
     } catch (err) {
       console.error(err);
       toast.error("Failed to remove item");
+      return false;
     } finally {
       setRemovingItems((prev) => {
         const next = { ...prev };
@@ -239,28 +317,71 @@ export const WishlistProvider = ({ children }) => {
       (item) => resolveProductId(item) === String(productId)
     );
 
-  const toggleWishlist = (product) => {
-    const id = resolveProductId(product);
-    if (isInWishlist(id)) {
-      return removeFromWishlist(id);
+  const toggleWishlist = async (product) => {
+    const payload = toWishlistPayload(product);
+    const id = payload.productId;
+    const token = getToken();
+    const isCurrentlyWishlisted = isInWishlist(id);
+
+    if (!id) {
+      toast.error("Invalid product");
+      return false;
     }
-    return addToWishlist(product);
+
+    if (!token) {
+      if (isCurrentlyWishlisted) {
+        return removeFromWishlist(id);
+      }
+      return addToWishlist(product);
+    }
+
+    try {
+      const data = await postData("/api/wishlist/toggle", {
+        productId: id,
+        quantity: payload.quantity,
+        variantId: payload.variantId || undefined,
+        variantName: payload.variantName || undefined,
+        price: payload.price,
+        originalPrice: payload.originalPrice,
+      });
+      if (data?.error === true || !data?.success) {
+        // Fallback path keeps UX working even if toggle endpoint fails once.
+        return isCurrentlyWishlisted
+          ? removeFromWishlist(id)
+          : addToWishlist(product);
+      }
+
+      const items = readWishlistItems(data);
+      setWishlistItems(items);
+      setWishlistCount(readWishlistCount(data, items));
+
+      const isWishlisted = Boolean(
+        data?.data?.isWishlisted ??
+          items.some((item) => resolveProductId(item) === id),
+      );
+
+      toast.success(isWishlisted ? "Added to wishlist" : "Removed from wishlist");
+      return isWishlisted;
+    } catch (err) {
+      console.error(err);
+      return isCurrentlyWishlisted
+        ? removeFromWishlist(id)
+        : addToWishlist(product);
+    }
   };
 
   const clearWishlist = async () => {
     const token = getToken();
 
     if (token) {
-      await fetch(`${API_URL}/api/wishlist/clear`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-      });
+      await deleteData("/api/wishlist/clear");
     }
 
     setWishlistItems([]);
     setWishlistCount(0);
-    localStorage.removeItem("wishlist");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("wishlist");
+    }
   };
 
   useEffect(() => {

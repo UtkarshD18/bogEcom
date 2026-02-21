@@ -443,7 +443,7 @@ const Orders = () => {
                           <div>
                             <p className="text-sm text-gray-600">Order ID</p>
                             <p className="text-lg font-semibold text-gray-900">
-                              #{order._id?.substring(0, 8) || "N/A"}
+                              #{order.displayOrderId || order._id?.substring(0, 8) || "N/A"}
                             </p>
                           </div>
                           <div>

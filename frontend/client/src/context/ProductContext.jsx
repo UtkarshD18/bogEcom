@@ -12,6 +12,14 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const ProductContext = createContext();
 
+const sanitizePublicProducts = (items) =>
+  Array.isArray(items)
+    ? items.filter((product) => {
+        const flag = product?.isExclusive;
+        return !(flag === true || String(flag).trim().toLowerCase() === "true");
+      })
+    : [];
+
 export const ProductProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -26,10 +34,14 @@ export const ProductProvider = ({ children }) => {
   const fetchProducts = async (params = {}) => {
     try {
       setLoading(true);
-      const queryString = new URLSearchParams(params).toString();
+      const mergedParams = {
+        excludeExclusive: "true",
+        ...params,
+      };
+      const queryString = new URLSearchParams(mergedParams).toString();
       const response = await fetchDataFromApi(`/api/products?${queryString}`);
       if (response?.error !== true) {
-        setProducts(response?.data || []);
+        setProducts(sanitizePublicProducts(response?.data || []));
       }
       return response;
     } catch (err) {
@@ -69,9 +81,11 @@ export const ProductProvider = ({ children }) => {
   // Fetch featured products
   const fetchFeaturedProducts = async () => {
     try {
-      const response = await fetchDataFromApi("/api/products?featured=true");
+      const response = await fetchDataFromApi(
+        "/api/products?featured=true&excludeExclusive=true",
+      );
       if (response?.error !== true) {
-        setFeaturedProducts(response?.data || []);
+        setFeaturedProducts(sanitizePublicProducts(response?.data || []));
       }
       return response;
     } catch (err) {
@@ -126,9 +140,9 @@ export const ProductProvider = ({ children }) => {
   const fetchProductsByCategory = async (categoryId) => {
     try {
       const response = await fetchDataFromApi(
-        `/api/products?category=${categoryId}`,
+        `/api/products?category=${categoryId}&excludeExclusive=true`,
       );
-      return response?.data || [];
+      return sanitizePublicProducts(response?.data || []);
     } catch (err) {
       console.error("Error fetching products by category:", err);
       return [];
@@ -139,9 +153,9 @@ export const ProductProvider = ({ children }) => {
   const searchProducts = async (query) => {
     try {
       const response = await fetchDataFromApi(
-        `/api/products?search=${encodeURIComponent(query)}`,
+        `/api/products?search=${encodeURIComponent(query)}&excludeExclusive=true`,
       );
-      return response?.data || [];
+      return sanitizePublicProducts(response?.data || []);
     } catch (err) {
       console.error("Error searching products:", err);
       return [];

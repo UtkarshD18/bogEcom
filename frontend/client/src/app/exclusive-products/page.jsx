@@ -2,16 +2,16 @@
 
 import ExclusiveProductCard from "@/components/ExclusiveProductCard";
 import MembershipGuard from "@/components/MembershipGuard";
-import useMembership from "@/hooks/useMembership";
 import { fetchDataFromApi } from "@/utils/api";
-import { useCallback, useEffect, useState } from "react";
+import { resolveMembershipTheme } from "@/utils/membershipTheme";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const GridLoader = () => (
   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
     {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
       <div
         key={i}
-        className="aspect-[3/4] rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)] animate-pulse"
+        className="aspect-[3/4] bg-white/70 border border-gray-100 rounded-3xl animate-pulse"
       />
     ))}
   </div>
@@ -21,7 +21,19 @@ const ExclusiveProductsContent = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const { isActiveMember } = useMembership({ autoFetch: true });
+  const [themeStyle, setThemeStyle] = useState("mint");
+  const theme = useMemo(() => resolveMembershipTheme(themeStyle), [themeStyle]);
+
+  const loadMembershipTheme = useCallback(async () => {
+    try {
+      const response = await fetchDataFromApi("/api/membership/page/public");
+      if (response?.success) {
+        setThemeStyle(response?.data?.theme?.style || "mint");
+      }
+    } catch {
+      setThemeStyle("mint");
+    }
+  }, []);
 
   const loadProducts = useCallback(async () => {
     try {
@@ -43,20 +55,37 @@ const ExclusiveProductsContent = () => {
   }, []);
 
   useEffect(() => {
+    loadMembershipTheme();
+  }, [loadMembershipTheme]);
+
+  useEffect(() => {
     loadProducts();
   }, [loadProducts]);
 
   return (
-    <section className="min-h-screen pb-16 pt-10">
-      <div className="container mx-auto px-4">
+    <section className={`relative min-h-screen overflow-hidden pb-16 pt-10 bg-gradient-to-br ${theme.bg}`}>
+      <div className="pointer-events-none absolute inset-0">
+        <div
+          className={`absolute top-20 right-10 h-64 w-64 rounded-full blur-3xl ${theme.glowA}`}
+        />
+        <div
+          className={`absolute bottom-10 left-8 h-72 w-72 rounded-full blur-3xl ${theme.glowB}`}
+        />
+      </div>
+
+      <div className="relative container mx-auto px-4">
         <div className="mb-10">
-          <span className="inline-flex rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[var(--glass-text)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
+          <span
+            className={`inline-flex px-3 py-1 rounded-full border ${theme.border} ${theme.glass} text-xs font-bold uppercase tracking-wider ${theme.text}`}
+          >
             Members Zone
           </span>
-          <h1 className="mt-3 text-4xl md:text-5xl font-black text-[var(--glass-text)] tracking-tight">
+          <h1
+            className={`mt-3 bg-gradient-to-r ${theme.accent} bg-clip-text text-4xl md:text-5xl font-black text-transparent tracking-tight`}
+          >
             Exclusive Products
           </h1>
-          <p className="mt-2 max-w-2xl text-[var(--glass-text)]/80">
+          <p className="mt-2 text-gray-600 max-w-2xl">
             Premium items available only for active members.
           </p>
         </div>
@@ -77,11 +106,11 @@ const ExclusiveProductsContent = () => {
         ) : null}
 
         {!loading && !error && products.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-[var(--glass-border)] bg-[var(--glass-bg)] p-10 text-center shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
-            <h2 className="text-xl font-bold text-[var(--glass-text)]">
+          <div className={`rounded-3xl border border-dashed ${theme.border} p-10 text-center bg-white/70`}>
+            <h2 className={`text-xl font-bold ${theme.text}`}>
               No exclusive products available yet
             </h2>
-            <p className="mt-2 text-sm text-[var(--glass-text)]/70">
+            <p className="mt-2 text-sm text-gray-500">
               Check back soon for members-only launches.
             </p>
           </div>
@@ -90,11 +119,7 @@ const ExclusiveProductsContent = () => {
         {!loading && !error && products.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
             {products.map((product) => (
-              <ExclusiveProductCard
-                key={product._id}
-                product={product}
-                isMember={isActiveMember}
-              />
+              <ExclusiveProductCard key={product._id} product={product} />
             ))}
           </div>
         ) : null}

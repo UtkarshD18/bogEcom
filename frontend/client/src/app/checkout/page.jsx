@@ -46,6 +46,7 @@ import { MdHome, MdInfo, MdLocationOn, MdWork } from "react-icons/md";
 
 const API_URL = API_BASE_URL;
 const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
+const OBJECT_ID_REGEX = /^[a-f\d]{24}$/i;
 
 const buildAuthHeaders = (extraHeaders = {}) => {
   const token = getStoredAccessToken();
@@ -82,6 +83,35 @@ const Checkout = () => {
   // Get settings from context
   const { highTrafficNotice, taxSettings, maintenanceMode } = useSettings();
 
+  const resolveVariantId = (item) => {
+    const rawVariant =
+      item?.variant?._id || item?.variant || item?.variantId || null;
+    if (rawVariant === undefined || rawVariant === null || rawVariant === "") {
+      return null;
+    }
+    return String(rawVariant);
+  };
+
+  const resolveProductId = (item) => {
+    const product =
+      typeof item?.product === "object" && item?.product
+        ? item.product
+        : item?.productData || item;
+    const rawProductId =
+      product?._id || product?.id || item?._id || item?.id || null;
+    if (!rawProductId) return null;
+    return String(rawProductId);
+  };
+
+  const getCartLineKey = (item, index) => {
+    const productId = resolveProductId(item) || "unknown";
+    const variantId = resolveVariantId(item) || "base";
+    const lineId = item?._id || item?.id || "";
+    return lineId
+      ? `line-${String(lineId)}`
+      : `line-${String(productId)}-${String(variantId)}-${index}`;
+  };
+
   // Helper to normalize cart item data (handles both API and localStorage structures)
   const getItemData = (item) => {
     // Check if item.product is an object (API) or ID (localStorage fallback)
@@ -91,6 +121,10 @@ const Checkout = () => {
         ? item.product
         : item.productData || item;
 
+    const productId = resolveProductId(item);
+    const variantId = resolveVariantId(item);
+    const variantName =
+      item?.variantName || item?.variant?.name || item?.selectedVariant?.name || "";
     const availableQuantity =
       typeof product?.available_quantity === "number"
         ? product.available_quantity
@@ -100,7 +134,10 @@ const Checkout = () => {
             0,
           );
     return {
-      id: product?._id || product?.id || item._id || item.id,
+      id: `${productId || "unknown"}-${variantId || "base"}`,
+      productId,
+      variantId,
+      variantName,
       name: product?.name || item.name || item.title || "Product",
       image:
         product?.thumbnail ||
@@ -825,9 +862,14 @@ const Checkout = () => {
   const buildOrderProductsPayload = () =>
     (cartItems || []).map((item) => {
       const data = getItemData(item);
+      if (!OBJECT_ID_REGEX.test(String(data.productId || ""))) {
+        throw new Error("Cart contains an invalid product. Please remove it and try again.");
+      }
       return {
-        productId: data.id,
+        productId: data.productId,
         productTitle: data.name,
+        variantId: data.variantId || undefined,
+        variantName: data.variantName || undefined,
         quantity: data.quantity,
         price: data.price,
         image: data.image,
@@ -853,29 +895,6 @@ const Checkout = () => {
       };
     }
     return {};
-  };
-
-  const createPurchaseOrderDraft = async ({ token, deliveryAddressId }) => {
-    const poPayload = {
-      products: buildOrderProductsPayload(),
-      delivery_address: deliveryAddressId || null,
-      guestDetails: buildGuestDetailsPayload(),
-      paymentType: "prepaid",
-    };
-
-    const poResponse = await fetch(`${API_URL}/api/purchase-orders`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      body: JSON.stringify(poPayload),
-    });
-    const poData = await poResponse.json();
-    if (poData.success) {
-      return poData?.data?.purchaseOrder?._id || null;
-    }
-    return null;
   };
 
   // Handle Pay Now click - PhonePe redirect flow
@@ -927,16 +946,6 @@ const Checkout = () => {
       const currentAffiliate = getStoredAffiliateData();
       const originalAmount = round2(subtotal + tax + payableShipping);
 
-      let purchaseOrderId = null;
-      try {
-        purchaseOrderId = await createPurchaseOrderDraft({
-          token,
-          deliveryAddressId: isValidObjectId ? selectedAddress : null,
-        });
-      } catch (error) {
-        // Do not block checkout if PO generation fails.
-      }
-
       const orderData = {
         products: buildOrderProductsPayload(),
         totalAmt: total,
@@ -960,7 +969,6 @@ const Checkout = () => {
         },
         paymentType: "prepaid",
         guestDetails: buildGuestDetailsPayload(),
-        purchaseOrderId,
         shippingAddress: selectedAddrObj
           ? {
               name: selectedAddrObj.name,
@@ -1065,16 +1073,6 @@ const Checkout = () => {
       // Find the full address object for order details
       const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
 
-      let purchaseOrderId = null;
-      try {
-        purchaseOrderId = await createPurchaseOrderDraft({
-          token,
-          deliveryAddressId: isValidObjectId ? selectedAddress : null,
-        });
-      } catch (error) {
-        // Do not block save-order flow if PO generation fails.
-      }
-
       const orderData = {
         products: buildOrderProductsPayload(),
         totalAmt: total,
@@ -1115,7 +1113,6 @@ const Checkout = () => {
           coins: 0,
         },
         paymentType: "prepaid",
-        purchaseOrderId,
         notes: orderNote,
       };
 
@@ -1502,7 +1499,7 @@ const Checkout = () => {
                     const data = getItemData(item);
                     return (
                       <div
-                        key={data.id || index}
+                        key={getCartLineKey(item, index)}
                         className="flex gap-4 p-4 rounded-3xl bg-white border border-gray-50 items-center"
                       >
                         <div className="w-20 h-20 rounded-2xl bg-gray-50 flex items-center justify-center p-2 shrink-0">
@@ -1574,6 +1571,19 @@ const Checkout = () => {
                         ₹{cartBaseSubtotal.toFixed(2)}
                       </span>
                     </div>
+
+                    {referralCode && (
+                      <div className="flex justify-between text-cyan-300 font-bold uppercase tracking-widest text-xs">
+                        <span className="flex items-center gap-1">
+                          <HiOutlineFire /> Influencer ({referralCode})
+                        </span>
+                        <span>
+                          {referralDiscount > 0
+                            ? `-₹${referralDiscount.toFixed(2)}`
+                            : "APPLIED"}
+                        </span>
+                      </div>
+                    )}
 
                     {couponDiscount > 0 && (
                       <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
@@ -1650,6 +1660,19 @@ const Checkout = () => {
 
                 {/* Coupon & Extras */}
                 <div className="bg-white/60 backdrop-blur-xl rounded-[2rem] p-6 border border-white/50 shadow-xl shadow-gray-200/50 space-y-6">
+                  {referralCode && (
+                    <div className="bg-cyan-50 border border-cyan-200 p-4 rounded-xl">
+                      <p className="font-bold text-cyan-800 text-sm flex items-center gap-2">
+                        <HiOutlineFire /> Influencer code: {referralCode}
+                      </p>
+                      <p className="text-xs text-cyan-700 mt-1">
+                        {referralDiscount > 0
+                          ? `Referral discount applied: ₹${referralDiscount.toFixed(2)}`
+                          : "Code is active and will apply on eligible subtotal."}
+                      </p>
+                    </div>
+                  )}
+
                   {/* Coupon Input */}
                   <div>
                     <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
