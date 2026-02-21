@@ -315,7 +315,7 @@ const Influencers = () => {
   };
 
   const handleDelete = async (influencerId) => {
-    if (!confirm("Are you sure you want to delete this influencer?"))
+    if (!confirm("Are you sure you want to delete/deactivate this influencer?"))
       return;
 
     try {
@@ -354,54 +354,21 @@ const Influencers = () => {
     }
   };
 
-  const normalizeBaseUrl = (raw) => {
-    const value = String(raw || "").trim().replace(/^["']|["']$/g, "");
-    if (!value) return "";
-    const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-    return withProtocol.replace(/\/+$/, "");
-  };
-
-  const getFallbackReferralUrl = (codeValue) => {
-    const code = String(codeValue || "").trim().toUpperCase();
-    if (!code) return "";
-
-    const configuredBase =
-      normalizeBaseUrl(process.env.NEXT_PUBLIC_CLIENT_URL) ||
-      normalizeBaseUrl(process.env.NEXT_PUBLIC_SITE_URL);
-
-    if (configuredBase) return `${configuredBase}/?ref=${code}`;
-
-    if (typeof window !== "undefined") {
-      const { protocol, hostname, port } = window.location;
-      const mappedPort = port === "3001" ? "3000" : port;
-      const host = mappedPort ? `${hostname}:${mappedPort}` : hostname;
-      return `${protocol}//${host}/?ref=${code}`;
+  // Copy referral URL from backend (no manual URL construction)
+  const copyReferralUrl = (influencer) => {
+    // Use referralUrl from backend if available, otherwise find from influencers list
+    let url = influencer?.referralUrl;
+    if (!url && typeof influencer === "string") {
+      // If passed a code string, find the influencer object
+      const found = influencers.find((i) => i.code === influencer);
+      url = found?.referralUrl;
     }
-
-    return `https://healthyonegram.com/?ref=${code}`;
-  };
-
-  // Copy referral URL from backend and keep a safe fallback by code
-  const copyReferralUrl = async (influencer) => {
-    let source = influencer;
-    if (typeof influencer === "string") {
-      source = influencers.find((item) => item.code === influencer) || {
-        code: influencer,
-      };
-    }
-
-    const url = String(source?.referralUrl || "").trim() || getFallbackReferralUrl(source?.code);
     if (!url) {
       toast.error("Referral URL not available");
       return;
     }
-
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success("Referral URL copied to clipboard!");
-    } catch (error) {
-      toast.error("Failed to copy referral URL");
-    }
+    navigator.clipboard.writeText(url);
+    toast.success("Referral URL copied to clipboard!");
   };
 
   const formatDate = (dateString) => {

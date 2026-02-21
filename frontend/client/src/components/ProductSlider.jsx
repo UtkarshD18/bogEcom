@@ -11,14 +11,6 @@ import ProductItem from "./ProductItem";
 import "swiper/css";
 import "swiper/css/navigation";
 
-const sanitizePublicProducts = (items) =>
-  Array.isArray(items)
-    ? items.filter((product) => {
-        const flag = product?.isExclusive;
-        return !(flag === true || String(flag).trim().toLowerCase() === "true");
-      })
-    : [];
-
 const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,13 +31,12 @@ const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
         if (categorySlug) params.push(`category=${categorySlug}`);
         if (isFeatured) params.push("isFeatured=true");
         params.push(`limit=${limit}`);
-        params.push("excludeExclusive=true");
 
         url += params.join("&");
 
         const response = await fetchDataFromApi(url);
         if (response.success && response.data) {
-          setProducts(sanitizePublicProducts(response.data));
+          setProducts(response.data);
         }
       } catch (error) {
         console.error("Failed to fetch products:", error);

@@ -11,31 +11,6 @@ const wishlistItemSchema = new mongoose.Schema({
     ref: "Product",
     required: true,
   },
-  quantity: {
-    type: Number,
-    default: 1,
-    min: 1,
-    max: 100,
-  },
-  variant: {
-    type: mongoose.Schema.Types.ObjectId,
-    default: null,
-  },
-  variantName: {
-    type: String,
-    default: "",
-    trim: true,
-  },
-  price: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  originalPrice: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
   addedAt: {
     type: Date,
     default: Date.now,

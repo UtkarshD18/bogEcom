@@ -72,7 +72,6 @@ const ProductDetailPage = () => {
           )
         : 0;
   const maxQty = availableQty > 0 ? availableQty : 1;
-  const selectedVariantId = selectedVariant?._id || null;
   const productRating = Number(product?.adminStarRating ?? product?.rating ?? 0);
   const customerReviewCount = customerReviews.length;
 
@@ -120,7 +119,7 @@ const ProductDetailPage = () => {
         // Fetch related products by category
         if (response.data.category) {
           const relatedResponse = await fetchDataFromApi(
-            `/api/products?category=${response.data.category._id || response.data.category}&limit=5&exclude=${id}&excludeExclusive=true`,
+            `/api/products?category=${response.data.category._id || response.data.category}&limit=5&exclude=${id}`,
           );
           if (relatedResponse?.error !== true) {
             setRelatedProducts(
@@ -157,10 +156,10 @@ const ProductDetailPage = () => {
 
       const productId = product._id || product.id;
 
-      // Check if already in cart (variant-aware for size/weight products)
-      if (isInCart(productId, selectedVariantId)) {
+      // Check if already in cart
+      if (isInCart(productId)) {
         // Remove from cart
-        await removeFromCart(productId, selectedVariantId);
+        await removeFromCart(productId, selectedVariant?._id || null);
         setSnackbar({
           open: true,
           message: "Removed from cart!",
@@ -212,32 +211,7 @@ const ProductDetailPage = () => {
       if (!product) return;
       const productId = product._id || product.id;
       const wasWishlisted = productId ? isInWishlist(productId) : false;
-      const wishlistProduct = selectedVariant
-        ? {
-            ...product,
-            price: selectedVariant.price,
-            originalPrice:
-              selectedVariant.originalPrice || product.originalPrice || 0,
-            selectedVariant: {
-              _id: selectedVariant._id,
-              name: selectedVariant.name,
-              sku: selectedVariant.sku,
-              price: selectedVariant.price,
-              originalPrice:
-                selectedVariant.originalPrice || product.originalPrice || 0,
-              weight: selectedVariant.weight,
-              unit: selectedVariant.unit,
-            },
-            variantId: selectedVariant._id,
-            variantName: selectedVariant.name || "",
-            quantity,
-          }
-        : {
-            ...product,
-            quantity,
-          };
-
-      await toggleWishlist(wishlistProduct);
+      await toggleWishlist(product);
 
       setSnackbar({
         open: true,
@@ -315,11 +289,7 @@ const ProductDetailPage = () => {
   const images =
     product.images || (product.image ? [product.image] : ["/product_1.png"]);
   const productId = product?._id || product?.id;
-  const isCurrentVariantInCart = productId
-    ? isInCart(productId, selectedVariantId)
-    : false;
   const isWishlisted = productId ? isInWishlist(productId) : false;
-  const activeSku = selectedVariant?.sku || product?.sku || "";
 
   return (
     <section className="py-4 sm:py-10 min-h-screen bg-[radial-gradient(circle_at_top_left,var(--flavor-glass),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.12),_transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef9f2_100%)]">
@@ -363,7 +333,7 @@ const ProductDetailPage = () => {
                   {discount}% OFF
                 </span>
               )}
-              <ProductZoom images={images} productId={productId} />
+              <ProductZoom images={images} />
             </div>
 
             {/* Product Info */}
@@ -528,7 +498,7 @@ const ProductDetailPage = () => {
 
               {/* Quantity & Add to Cart */}
               <div className="flex flex-wrap items-center gap-4 mb-6">
-                {!isCurrentVariantInCart && (
+                {!isInCart(product._id || product.id) && (
                   <div className="flex items-center gap-3">
                     <span className="text-gray-700 font-medium">Qty:</span>
                     <div className="flex flex-col">
@@ -555,13 +525,13 @@ const ProductDetailPage = () => {
                   size="large"
                   startIcon={<IoMdCart />}
                   onClick={handleAddToCart}
-                  disabled={!isCurrentVariantInCart && availableQty === 0}
+                  disabled={!isInCart(product._id || product.id) && availableQty === 0}
                   sx={{
-                    backgroundColor: isCurrentVariantInCart
+                    backgroundColor: isInCart(product._id || product.id)
                       ? "#dc2626"
                       : "var(--primary)",
                     "&:hover": {
-                      backgroundColor: isCurrentVariantInCart
+                      backgroundColor: isInCart(product._id || product.id)
                         ? "#b91c1c"
                         : "var(--flavor-hover)",
                     },
@@ -570,12 +540,12 @@ const ProductDetailPage = () => {
                     fontWeight: "bold",
                     textTransform: "none",
                     fontSize: "16px",
-                    boxShadow: isCurrentVariantInCart
+                    boxShadow: isInCart(product._id || product.id)
                       ? "0 16px 30px -20px rgba(220,38,38,0.85)"
                       : "0 16px 30px -20px rgba(var(--flavor-badge),0.85)",
                   }}
                 >
-                  {isCurrentVariantInCart
+                  {isInCart(product._id || product.id)
                     ? "Remove from Cart"
                     : "Add to Cart"}
                 </Button>
@@ -619,7 +589,7 @@ const ProductDetailPage = () => {
                     <p className="font-semibold text-gray-800 text-sm">
                       Free Delivery
                     </p>
-                    <p className="text-xs text-gray-500">On all orders</p>
+                    <p className="text-xs text-gray-500">Orders above ₹499</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -657,9 +627,9 @@ const ProductDetailPage = () => {
 
               {/* SKU & Category */}
               <div className="mt-6 text-sm text-gray-500">
-                {activeSku && (
+                {product.sku && (
                   <p>
-                    <span className="font-medium">SKU:</span> {activeSku}
+                    <span className="font-medium">SKU:</span> {product.sku}
                   </p>
                 )}
                 {product.category && (

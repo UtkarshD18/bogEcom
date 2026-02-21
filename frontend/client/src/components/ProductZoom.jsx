@@ -1,8 +1,7 @@
 "use client";
 
 import { getImageUrl } from "@/utils/imageUtils";
-import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import "swiper/css";
 import { Swiper, SwiperSlide } from "swiper/react";
 
@@ -15,28 +14,18 @@ import { Swiper, SwiperSlide } from "swiper/react";
  */
 const ProductZoom = ({
   images = ["/product_1.png", "/product_1.png", "/product_1.png"],
-  productId,
 }) => {
-  const router = useRouter();
   const [activeIndex, setActiveIndex] = useState(0);
   const bigSliderRef = useRef(null);
 
   // Normalize images to handle Cloudinary and local URLs
-  const normalizedImages = useMemo(
-    () => images.map((img) => getImageUrl(img)),
-    [images],
-  );
+  const normalizedImages = images.map((img) => getImageUrl(img));
 
   const goToSlide = (index) => {
     setActiveIndex(index);
     if (bigSliderRef.current?.swiper) {
       bigSliderRef.current.swiper.slideTo(index);
     }
-  };
-
-  const openFullImageView = (index) => {
-    if (!productId) return;
-    router.push(`/product/${productId}/full-image-view?index=${index}`);
   };
 
   return (
@@ -58,18 +47,11 @@ const ProductZoom = ({
           {normalizedImages.map((img, index) => (
             <SwiperSlide key={index}>
               <div className="flex justify-center items-center aspect-square">
-                <button
-                  type="button"
-                  className="w-full h-full flex justify-center items-center"
-                  onClick={() => openFullImageView(index)}
-                  aria-label={`Open full image view for image ${index + 1}`}
-                >
-                  <img
-                    src={img}
-                    alt={`Product Image ${index + 1}`}
-                    className="w-full h-auto max-h-[500px] object-contain transition-transform duration-300 hover:scale-105 cursor-zoom-in"
-                  />
-                </button>
+                <img
+                  src={img}
+                  alt={`Product Image ${index + 1}`}
+                  className="w-full h-auto max-h-[500px] object-contain transition-transform duration-300 hover:scale-105"
+                />
               </div>
             </SwiperSlide>
           ))}

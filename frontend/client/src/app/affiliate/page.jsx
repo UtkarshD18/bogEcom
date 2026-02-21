@@ -467,7 +467,7 @@ const AffiliatePortalPage = () => {
                       {data.recentOrders.map((order) => (
                         <tr key={order._id} className="border-b">
                           <td className="px-3 py-2 font-medium text-gray-800">
-                            #{order.displayOrderId || String(order._id || "").slice(0, 8).toUpperCase()}
+                            #{order._id.slice(-6).toUpperCase()}
                           </td>
                           <td className="px-3 py-2 text-gray-600">
                             {order.createdAt
@@ -478,7 +478,7 @@ const AffiliatePortalPage = () => {
                             {order.order_status || order.payment_status}
                           </td>
                           <td className="px-3 py-2 text-gray-700">
-                            ₹{Number(order.displayTotal ?? order.finalAmount ?? order.totalAmt ?? 0).toFixed(0)}
+                            ₹{Number(order.finalAmount || order.totalAmt || 0).toFixed(0)}
                           </td>
                           <td className="px-3 py-2 text-gray-700">
                             ₹{Number(order.influencerCommission || 0).toFixed(0)}

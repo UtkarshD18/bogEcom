@@ -6,14 +6,6 @@ import Link from "next/link";
 import { useContext, useEffect, useState } from "react";
 import ProductItem from "./ProductItem";
 
-const sanitizePublicProducts = (items) =>
-  Array.isArray(items)
-    ? items.filter((product) => {
-        const flag = product?.isExclusive;
-        return !(flag === true || String(flag).trim().toLowerCase() === "true");
-      })
-    : [];
-
 /**
  * ProductRow Component
  * A grid-based product display section
@@ -56,13 +48,12 @@ const ProductRow = ({
         if (isNewArrivals) params.push("sortBy=createdAt&order=desc");
         if (isBestSeller) params.push("sortBy=soldCount&order=desc");
         params.push(`limit=${limit}`);
-        params.push("excludeExclusive=true");
 
         url += params.join("&");
 
         const response = await fetchDataFromApi(url);
         if (response.success && response.data) {
-          setProducts(sanitizePublicProducts(response.data));
+          setProducts(response.data);
         }
       } catch (error) {
         console.error("Failed to fetch products:", error);

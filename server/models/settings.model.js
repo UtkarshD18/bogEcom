@@ -100,16 +100,16 @@ settingsSchema.statics.defaultSettings = [
   {
     key: "shippingSettings",
     value: {
-      freeShippingThreshold: 0,
-      standardShippingCost: 0,
-      expressShippingCost: 0,
+      freeShippingThreshold: 500,
+      standardShippingCost: 50,
+      expressShippingCost: 100,
       freeShippingEnabled: true,
       estimatedDelivery: {
         standard: "5-7 business days",
         express: "2-3 business days",
       },
     },
-    description: "Shipping configuration (free on all customer orders)",
+    description: "Shipping charges and free shipping threshold",
     category: "checkout",
   },
   // ========== TAX SETTINGS ==========

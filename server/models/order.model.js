@@ -352,13 +352,6 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
-    // Internal guard to prevent duplicate influencer stats increments
-    influencerStatsSynced: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-
     // Whether commission has been paid out
     commissionPaid: {
       type: Boolean,

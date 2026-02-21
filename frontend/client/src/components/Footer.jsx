@@ -10,7 +10,7 @@ import { BiSupport } from "react-icons/bi";
 import { BsWallet2 } from "react-icons/bs";
 import { FaFacebook, FaInstagram, FaLinkedin } from "react-icons/fa";
 import { FaXTwitter } from "react-icons/fa6";
-import { IoLocationSharp } from "react-icons/io5";
+import { IoChatboxOutline, IoLocationSharp } from "react-icons/io5";
 import { LiaGiftSolid, LiaShippingFastSolid } from "react-icons/lia";
 
 const API_URL = API_BASE_URL;
@@ -238,6 +238,27 @@ const Footer = () => {
               </span>
             </Link>
 
+            {/* WhatsApp Card */}
+            <Link
+              href="https://wa.me/918619641968?text=Hello%20Healthy%20One%20Gram,%20I%20need%20help%20with..."
+              target="_blank"
+              className="group flex items-center gap-4 p-3.5 rounded-2xl transition-all duration-300 hover:-translate-y-1 active:-translate-y-0.5 active:bg-white/[0.08]"
+              style={{
+                background: "rgba(255, 255, 255, 0.04)",
+                border: "1px solid rgba(255, 255, 255, 0.06)",
+              }}
+            >
+              <IoChatboxOutline
+                className="text-[28px] transition-transform group-hover:scale-110 group-active:scale-110"
+                style={{ color: "var(--primary)" }}
+              />
+              <span className="text-[13px] font-bold text-gray-300 leading-tight">
+                Online Chat <br />
+                <span className="font-normal text-gray-500 group-hover:text-primary group-active:text-primary transition-colors">
+                  Chat on WhatsApp
+                </span>
+              </span>
+            </Link>
           </motion.div>
 
           {/* 2. PRODUCTS */}

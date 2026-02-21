@@ -23,29 +23,6 @@ const debugWarn = (...args) => {
   }
 };
 
-const deriveAdminDisplayName = (rawAdmin = {}) => {
-  const explicitName = String(
-    rawAdmin?.name || rawAdmin?.userName || rawAdmin?.fullName || "",
-  ).trim();
-  if (explicitName) return explicitName;
-
-  const email = String(rawAdmin?.email || rawAdmin?.userEmail || "")
-    .trim()
-    .toLowerCase();
-  if (!email) return "Admin";
-  const [localPart] = email.split("@");
-  return localPart || "Admin";
-};
-
-const normalizeAdminPayload = (rawAdmin = {}) => ({
-  ...rawAdmin,
-  _id: rawAdmin?._id || rawAdmin?.userId || rawAdmin?.id || null,
-  id: rawAdmin?.id || rawAdmin?._id || rawAdmin?.userId || null,
-  name: deriveAdminDisplayName(rawAdmin),
-  email: String(rawAdmin?.email || rawAdmin?.userEmail || "").trim(),
-  role: rawAdmin?.role || "Admin",
-});
-
 export const AdminProvider = ({ children }) => {
   const [admin, setAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -73,7 +50,7 @@ export const AdminProvider = ({ children }) => {
 
       if (storedToken && storedAdmin) {
         try {
-          const adminData = normalizeAdminPayload(JSON.parse(storedAdmin));
+          const adminData = JSON.parse(storedAdmin);
 
           // ALWAYS set token and admin from localStorage
           // Don't wait for verification - token should be immediately available
@@ -142,10 +119,9 @@ export const AdminProvider = ({ children }) => {
 
       if (response.error === false) {
         const { data } = response;
-        const normalizedAdmin = normalizeAdminPayload(data);
 
         // Check if user is an admin
-        if (normalizedAdmin.role !== "Admin") {
+        if (data.role !== "Admin") {
           return {
             error: true,
             message: "Access denied. Admin privileges required.",
@@ -173,9 +149,9 @@ export const AdminProvider = ({ children }) => {
         }
 
         localStorage.setItem("adminToken", accessToken);
-        localStorage.setItem("adminUser", JSON.stringify(normalizedAdmin));
+        localStorage.setItem("adminUser", JSON.stringify(data));
 
-        setAdmin(normalizedAdmin);
+        setAdmin(data);
         setToken(accessToken);
 
         return { error: false, message: "Login successful" };

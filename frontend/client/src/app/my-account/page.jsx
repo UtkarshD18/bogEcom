@@ -3,6 +3,7 @@
 import { API_BASE_URL, getStoredAccessToken } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import AuthenticationMethods from "@/components/AuthenticationMethods";
+import MemberBadge from "@/components/MemberBadge";
 import { Button } from "@mui/material";
 import TextField from "@mui/material/TextField";
 import cookies from "js-cookie";
@@ -20,6 +21,7 @@ const MyAccount = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [isMember, setIsMember] = useState(false);
 
   const formatPhone = (value) => {
     const digits = String(value || "").replace(/\D/g, "");

@@ -168,13 +168,8 @@ export default function MembershipMembersPage() {
 
   const handlePointsApply = async () => {
     const parsed = Number(pointsValue);
-    if (
-      !pointsTarget?._id ||
-      !Number.isFinite(parsed) ||
-      parsed === 0 ||
-      !Number.isInteger(parsed)
-    ) {
-      toast.error("Enter a valid non-zero whole number");
+    if (!pointsTarget?._id || !Number.isFinite(parsed) || parsed === 0) {
+      toast.error("Enter a valid non-zero points value");
       return;
     }
 
@@ -188,10 +183,10 @@ export default function MembershipMembersPage() {
         token,
       );
       if (!response?.success) {
-        toast.error(response?.message || "Failed to update coins");
+        toast.error(response?.message || "Failed to update points");
         return;
       }
-      toast.success("Coins updated");
+      toast.success("Points updated");
       setPointsDialogOpen(false);
       setPointsTarget(null);
       setPointsValue("");
@@ -206,7 +201,7 @@ export default function MembershipMembersPage() {
           <h1 className="text-2xl font-bold">Membership Members</h1>
         </div>
         <p className="text-blue-100">
-          Manage all users who purchased membership, extension, and coins.
+          Manage all users who purchased membership, extension, and points.
         </p>
       </div>
 
@@ -318,18 +313,17 @@ export default function MembershipMembersPage() {
           setPointsValue("");
         }}
       >
-        <DialogTitle>Add / Subtract Coins</DialogTitle>
+        <DialogTitle>Add / Subtract Points</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             margin="dense"
-            label="Coins (+/-)"
+            label="Points (+/-)"
             type="number"
             fullWidth
             value={pointsValue}
             onChange={(event) => setPointsValue(event.target.value)}
-            inputProps={{ step: 1 }}
-            helperText="Use negative value to subtract coins."
+            helperText="Use negative value to subtract points."
           />
         </DialogContent>
         <DialogActions>

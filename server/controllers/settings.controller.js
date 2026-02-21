@@ -60,15 +60,6 @@ export const getPublicSettings = async (req, res) => {
       settingsObject[setting.key] = setting.value;
     });
 
-    // Enforce free-shipping business rule for customer storefront.
-    settingsObject.shippingSettings = {
-      ...(settingsObject.shippingSettings || {}),
-      freeShippingEnabled: true,
-      freeShippingThreshold: 0,
-      standardShippingCost: 0,
-      expressShippingCost: 0,
-    };
-
     // Enforce fixed GST settings (admin cannot disable GST)
     settingsObject.taxSettings = FIXED_TAX_SETTINGS;
 
@@ -168,17 +159,6 @@ export const updateSetting = async (req, res) => {
     // Enforce fixed GST settings (ignore admin-provided values)
     if (key === "taxSettings") {
       req.body.value = FIXED_TAX_SETTINGS;
-    }
-
-    // Enforce free-shipping business rule (ignore paid-shipping values).
-    if (key === "shippingSettings") {
-      req.body.value = {
-        ...(req.body.value || {}),
-        freeShippingEnabled: true,
-        freeShippingThreshold: 0,
-        standardShippingCost: 0,
-        expressShippingCost: 0,
-      };
     }
 
     if (req.body.value === undefined) {

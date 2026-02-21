@@ -127,14 +127,13 @@ export default function AdminDashboard() {
                 {stats.recentOrders.map((order) => (
                   <tr key={order._id} className="hover:bg-gray-50">
                     <td className="p-2 border text-xs">
-                      {order.displayOrderId || order._id?.substring(0, 8) || "N/A"}
+                      {order._id?.substring(0, 8) || "N/A"}
                     </td>
                     <td className="p-2 border">
                       {order.user?.name || "Unknown"}
                     </td>
                     <td className="p-2 border font-semibold">
-                      ₹
-                      {Number(order.displayTotal ?? order.totalAmt ?? 0).toLocaleString()}
+                      ₹{order.totalAmt?.toLocaleString() || 0}
                     </td>
                     <td className="p-2 border">
                       <span

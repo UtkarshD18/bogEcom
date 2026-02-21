@@ -14,14 +14,12 @@ const debugLog = (...args) => {
 const INVALID_FCM_TOKEN_CODES = new Set([
   "messaging/registration-token-not-registered",
   "messaging/invalid-registration-token",
-  "messaging/mismatched-credential",
-  "messaging/invalid-argument",
 ]);
 
 const getFrontendBaseUrl = () => {
   const raw = process.env.CLIENT_URL || process.env.ADMIN_URL || "";
   const first = String(raw).split(",")[0].trim();
-  return first.replace(/\/+$/, "") || "https://healthyonegram.com";
+  return first.replace(/\/+$/, "");
 };
 
 /**

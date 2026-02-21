@@ -107,7 +107,7 @@ export default function MembershipMemberDrawer({
                   {isExpiringSoon && <FiAlertTriangle className="text-amber-500" />}
                 </p>
                 <p>
-                  <span className="text-gray-500">Coins:</span>{" "}
+                  <span className="text-gray-500">Points:</span>{" "}
                   <span className="font-medium text-gray-900">
                     {Number(member.pointsBalance || 0)}
                   </span>
@@ -140,25 +140,18 @@ export default function MembershipMemberDrawer({
 
                 <div className="flex gap-2">
                   <TextField
-                    label="Coins (+/-)"
+                    label="Points (+/-)"
                     size="small"
                     fullWidth
                     value={pointsDelta}
                     onChange={(event) => setPointsDelta(event.target.value)}
-                    inputProps={{ step: 1 }}
                   />
                   <Button
                     variant="outlined"
                     disabled={loading || !String(pointsDelta).trim()}
                     onClick={() => {
                       const parsed = Number(pointsDelta);
-                      if (
-                        !Number.isFinite(parsed) ||
-                        parsed === 0 ||
-                        !Number.isInteger(parsed)
-                      ) {
-                        return;
-                      }
+                      if (!Number.isFinite(parsed) || parsed === 0) return;
                       onPointsUpdate?.(member, parsed);
                       setPointsDelta("");
                     }}

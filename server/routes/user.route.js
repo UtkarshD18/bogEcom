@@ -1,6 +1,7 @@
 import { Router } from "express";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import authOptional from "../middlewares/authOptional.js";
 import { handleUploadError, uploadSingle } from "../middlewares/upload.js";
 
 import {

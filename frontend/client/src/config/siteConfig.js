@@ -192,7 +192,7 @@ export const promoBanners = [
   {
     id: 1,
     title: "Free Shipping",
-    subtitle: "On every order",
+    subtitle: "On orders above ₹500",
     icon: "shipping",
     isActive: true,
   },
@@ -245,9 +245,9 @@ export const currencyConfig = {
 
 // ========== SHIPPING CONFIG ==========
 export const shippingConfig = {
-  freeShippingThreshold: 0,
-  standardShippingCost: 0,
-  expressShippingCost: 0,
+  freeShippingThreshold: 500,
+  standardShippingCost: 40,
+  expressShippingCost: 80,
   estimatedDelivery: {
     standard: "5-7 business days",
     express: "2-3 business days",

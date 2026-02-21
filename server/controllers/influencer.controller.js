@@ -1,12 +1,10 @@
 import jwt from "jsonwebtoken";
-import mongoose from "mongoose";
 import InfluencerModel from "../models/influencer.model.js";
 import OrderModel from "../models/order.model.js";
 import { getInfluencerRefreshTokenSecret } from "../config/authSecrets.js";
 import generateInfluencerToken from "../utils/generateInfluencerToken.js";
 import generateInfluencerRefreshToken from "../utils/generateInfluencerRefreshToken.js";
 import { matchesStoredToken, normalizeTokenString } from "../utils/tokenHash.js";
-import { withOrderPresentation } from "../utils/orderPresentation.js";
 
 /**
  * Influencer Controller
@@ -105,7 +103,6 @@ const buildInfluencerPortalPayload = async (influencer) => {
       "_id createdAt finalAmount totalAmt order_status payment_status influencerCommission commissionPaid",
     )
     .lean();
-  const presentedRecentOrders = recentOrders.map(withOrderPresentation);
 
   // Monthly summary (last 12 entries)
   const monthlyStats = await OrderModel.aggregate([
@@ -151,7 +148,7 @@ const buildInfluencerPortalPayload = async (influencer) => {
         (influencer.totalCommissionEarned || 0) -
         (influencer.totalCommissionPaid || 0),
     },
-    recentOrders: presentedRecentOrders,
+    recentOrders,
     monthlyStats,
   };
 };
@@ -512,7 +509,7 @@ export const getAllInfluencers = async (req, res) => {
         .sort(sortOptions)
         .skip(skip)
         .limit(Number(limit))
-        .lean({ virtuals: true }),
+        .lean(),
       InfluencerModel.countDocuments(filter),
     ]);
 
@@ -723,30 +720,27 @@ export const deleteInfluencer = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Invalid influencer id",
-      });
-    }
+    // Check if influencer has orders
+    const orderCount = await OrderModel.countDocuments({ influencerId: id });
 
-    const influencer = await InfluencerModel.findById(id).select("_id");
-    if (!influencer) {
-      return res.status(404).json({
-        error: true,
-        success: false,
-        message: "Influencer not found",
+    if (orderCount > 0) {
+      // Soft delete - just deactivate
+      await InfluencerModel.findByIdAndUpdate(id, { isActive: false });
+
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Influencer deactivated (has associated orders)",
       });
     }
 
     await InfluencerModel.findByIdAndDelete(id);
 
-    return res.status(200).json({
-        error: false,
-        success: true,
-        message: "Influencer deleted successfully",
-      });
+    res.status(200).json({
+      error: false,
+      success: true,
+      message: "Influencer deleted successfully",
+    });
   } catch (error) {
     console.error("Error deleting influencer:", error);
     res.status(500).json({
@@ -811,7 +805,6 @@ export const getInfluencerStats = async (req, res) => {
         "_id createdAt finalAmount influencerCommission order_status commissionPaid",
       )
       .lean();
-    const presentedRecentOrders = recentOrders.map(withOrderPresentation);
 
     // Get monthly breakdown
     const monthlyStats = await OrderModel.aggregate([
@@ -855,7 +848,7 @@ export const getInfluencerStats = async (req, res) => {
           ...stats,
           pendingCommission: stats.totalCommission - stats.paidCommission,
         },
-        recentOrders: presentedRecentOrders,
+        recentOrders,
         monthlyStats,
       },
     });
@@ -923,19 +916,17 @@ export const updateInfluencerStats = async (
   orderAmount,
   commission,
 ) => {
-  if (!influencerId) return false;
+  if (!influencerId) return;
 
   try {
-    const updatedInfluencer = await InfluencerModel.findByIdAndUpdate(influencerId, {
+    await InfluencerModel.findByIdAndUpdate(influencerId, {
       $inc: {
         totalOrders: 1,
         totalRevenue: orderAmount,
         totalCommissionEarned: commission,
       },
     });
-    return Boolean(updatedInfluencer);
   } catch (error) {
     console.error("Error updating influencer stats:", error);
-    return false;
   }
 };

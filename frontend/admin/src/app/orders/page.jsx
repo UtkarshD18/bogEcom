@@ -1,8 +1,13 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData, putData } from "@/utils/api";
+import { API_BASE_URL, deleteData, getData, putData } from "@/utils/api";
 import {
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  TextField,
 } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Pagination from "@mui/material/Pagination";
@@ -18,6 +23,7 @@ const API_URL = API_BASE_URL;
 const ORDER_TABLE_COLUMNS = [
   "48px",
   "84px",
+  "76px",
   "172px",
   "76px",
   "96px",
@@ -28,20 +34,6 @@ const ORDER_TABLE_COLUMNS = [
   "168px",
   "96px",
 ];
-
-const getDisplayOrderId = (order) => {
-  if (order?.displayOrderId) return String(order.displayOrderId);
-  return String(order?._id || "")
-    .slice(0, 8)
-    .toUpperCase();
-};
-
-const getDisplayOrderTotal = (order) => {
-  const amount = Number(
-    order?.displayTotal ?? order?.finalAmount ?? order?.totalAmt ?? 0,
-  );
-  return Number.isFinite(amount) ? amount : 0;
-};
 
 const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const normalizeStatus = (status) => {
@@ -54,15 +46,84 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     normalizeStatus(order?.order_status) || "pending",
   );
   const [updating, setUpdating] = useState(false);
+  const [shippingEditorOpen, setShippingEditorOpen] = useState(false);
+  const [shippingForm, setShippingForm] = useState(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingResponse, setShippingResponse] = useState(null);
+  const [downloadingPo, setDownloadingPo] = useState(false);
   const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const [orderReviews, setOrderReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  const purchaseOrderId = (() => {
+    const raw = order?.purchaseOrder;
+    if (!raw) return null;
+    if (typeof raw === "string") return raw;
+    if (typeof raw === "object" && raw?._id) return String(raw._id);
+    if (typeof raw?.toString === "function") return String(raw.toString());
+    return null;
+  })();
   const canDownloadInvoice =
     order?.order_status !== "cancelled" &&
     (order?.payment_status === "paid" ||
       normalizeStatus(order?.order_status) === "accepted");
+
+  const buildShipmentPayload = () => {
+    const addr = order?.delivery_address || {};
+    const paymentType = order?.payment_status === "paid" ? "prepaid" : "cod";
+    const orderAmount = Number(order?.finalAmount || order?.totalAmt || 0);
+    const orderItems = (order?.products || []).map((product, index) => ({
+      name: product?.productTitle || `Item ${index + 1}`,
+      qty: Math.max(Number(product?.quantity || 1), 1),
+      price: Math.max(Number(product?.price || 0), 0),
+      sku:
+        product?.productId ||
+        product?.variantId ||
+        `SKU-${String(index + 1).padStart(3, "0")}`,
+    }));
+
+    return {
+      order_number: `#${order?._id?.slice(-6) || "000001"}`,
+      payment_type: paymentType,
+      order_amount: orderAmount,
+      collectable_amount: paymentType === "cod" ? orderAmount : 0,
+      order_items:
+        orderItems.length > 0
+          ? orderItems
+          : [
+              {
+                name: "Order Item",
+                qty: 1,
+                price: orderAmount,
+                sku: `ORD-${order?._id?.slice(-6) || "000001"}`,
+              },
+            ],
+      package_weight: 500,
+      package_length: 10,
+      package_breadth: 10,
+      package_height: 10,
+      request_auto_pickup: "no",
+      consignee: {
+        name: addr.name || "Customer",
+        address: addr.address_line1 || addr.address_line || "",
+        address_2: addr.address_line2 || "",
+        city: addr.city || "",
+        state: addr.state || "",
+        pincode: addr.pincode || "",
+        phone: String(addr.mobile || ""),
+      },
+      pickup: {
+        warehouse_name: "",
+        name: "",
+        address: "",
+        address_2: "",
+        city: "",
+        state: "",
+        pincode: "",
+        phone: "",
+      },
+    };
+  };
 
   const shippingRequest = async (path, method = "POST", body = null) => {
     const response = await fetch(`${API_URL}${path}`, {
@@ -79,6 +140,89 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
       throw new Error(data?.message || "Shipping request failed");
     }
     return data;
+  };
+
+  const handleOpenShippingEditor = () => {
+    const payload = buildShipmentPayload();
+    setShippingForm(payload);
+    setShippingEditorOpen(true);
+  };
+
+  const handleBookShipment = async () => {
+    try {
+      if (!shippingForm) {
+        toast.error("Shipment details missing");
+        return;
+      }
+      setShippingLoading(true);
+      const response = await shippingRequest(
+        "/api/shipping/xpressbees/book",
+        "POST",
+        { orderId: order?._id, shipment: shippingForm },
+      );
+      setShippingResponse(response);
+      toast.success("Shipment booked");
+      setShippingEditorOpen(false);
+      if (onStatusUpdate) onStatusUpdate();
+    } catch (err) {
+      toast.error(err.message || "Failed to book shipment");
+    } finally {
+      setShippingLoading(false);
+    }
+  };
+
+  const updateShippingField = (field, value) => {
+    setShippingForm((prev) => {
+      const base = prev || buildShipmentPayload();
+      const next = {
+        ...base,
+        [field]: value,
+      };
+
+      const normalizedPaymentType = String(
+        field === "payment_type" ? value : next.payment_type,
+      ).toLowerCase();
+
+      if (field === "payment_type" || field === "order_amount") {
+        const amountValue = Number(
+          field === "order_amount" ? value : next.order_amount,
+        );
+        next.collectable_amount =
+          normalizedPaymentType === "cod"
+            ? Number.isFinite(amountValue)
+              ? amountValue
+              : 0
+            : 0;
+      }
+
+      return next;
+    });
+  };
+
+  const updateConsigneeField = (field, value) => {
+    setShippingForm((prev) => {
+      const base = prev || buildShipmentPayload();
+      return {
+        ...base,
+        consignee: {
+          ...(base?.consignee || {}),
+          [field]: value,
+        },
+      };
+    });
+  };
+
+  const updatePickupField = (field, value) => {
+    setShippingForm((prev) => {
+      const base = prev || buildShipmentPayload();
+      return {
+        ...base,
+        pickup: {
+          ...(base?.pickup || {}),
+          [field]: value,
+        },
+      };
+    });
   };
 
   const handleTrackShipment = async () => {
@@ -149,6 +293,52 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
       toast.error(err.message || "Failed to generate manifest");
     } finally {
       setShippingLoading(false);
+    }
+  };
+
+  const handleDownloadPurchaseOrder = async () => {
+    try {
+      if (!purchaseOrderId) {
+        toast.error("Purchase order not linked");
+        return;
+      }
+
+      setDownloadingPo(true);
+      const response = await fetch(
+        `${API_URL}/api/purchase-orders/${purchaseOrderId}/pdf`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        let message = "Failed to download purchase order";
+        try {
+          const errorData = await response.json();
+          message = errorData?.message || message;
+        } catch {
+          // Ignore non-JSON response parsing failures.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `purchase-order-${purchaseOrderId.slice(-8).toUpperCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      toast.success("Purchase order downloaded");
+    } catch (error) {
+      toast.error(error.message || "Failed to download purchase order");
+    } finally {
+      setDownloadingPo(false);
     }
   };
 
@@ -310,7 +500,16 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           </Button>
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 font-bold">
-          #{getDisplayOrderId(order) || "------"}
+          #{order?._id?.slice(-6) || "------"}
+        </td>
+        <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 break-words">
+          {purchaseOrderId ? (
+            <span className="text-[12px] font-[600] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
+              PO #{String(purchaseOrderId).slice(-6).toUpperCase()}
+            </span>
+          ) : (
+            <span className="text-gray-400">N/A</span>
+          )}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
           <div className="flex items-center gap-3 max-w-[170px] min-w-0">
@@ -353,11 +552,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           {order?.delivery_address?.pincode || "N/A"}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
-          ₹
-          {getDisplayOrderTotal(order).toLocaleString("en-IN", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
+          ₹{order?.finalAmount || order?.totalAmt || "0"}
         </td>
         <td className="text-[14px] text-gray-600 px-4 py-2 text-primary font-bold break-all">
           {order?.user?._id?.slice(-6) || "------"}
@@ -508,6 +703,27 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
               </div>
             </div>
 
+            {/* Purchase Order Section */}
+            <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="text-gray-800 font-semibold">
+                  Purchase Order
+                </div>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleDownloadPurchaseOrder}
+                  disabled={!purchaseOrderId || downloadingPo}
+                >
+                  {downloadingPo ? "Downloading..." : "Download PO PDF"}
+                </Button>
+              </div>
+              <div className="mt-2 text-sm text-gray-700">
+                <span className="font-semibold">PO ID:</span>{" "}
+                {purchaseOrderId ? String(purchaseOrderId) : "Not linked"}
+              </div>
+            </div>
+
             {/* Shipping Section */}
             <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
@@ -516,6 +732,14 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
                   Shipping
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={handleOpenShippingEditor}
+                    disabled={shippingLoading}
+                  >
+                    Book Shipment
+                  </Button>
                   <Button
                     size="small"
                     variant="outlined"
@@ -572,6 +796,217 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
         </tr>
       )}
 
+      <Dialog
+        open={shippingEditorOpen}
+        onClose={() => setShippingEditorOpen(false)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Book Xpressbees Shipment</DialogTitle>
+        <DialogContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+            <TextField
+              label="Order Number"
+              value={shippingForm?.order_number || ""}
+              onChange={(e) =>
+                updateShippingField("order_number", e.target.value)
+              }
+              fullWidth
+            />
+            <Select
+              value={shippingForm?.payment_type || "cod"}
+              onChange={(e) =>
+                updateShippingField("payment_type", e.target.value)
+              }
+              size="small"
+            >
+              <MenuItem value="cod">COD</MenuItem>
+              <MenuItem value="prepaid">Prepaid</MenuItem>
+              <MenuItem value="reverse">Reverse</MenuItem>
+            </Select>
+            <TextField
+              label="Order Amount"
+              value={shippingForm?.order_amount || ""}
+              onChange={(e) =>
+                updateShippingField("order_amount", e.target.value)
+              }
+              fullWidth
+            />
+            <TextField
+              label="Collectable Amount"
+              value={shippingForm?.collectable_amount || ""}
+              onChange={(e) =>
+                updateShippingField("collectable_amount", e.target.value)
+              }
+              fullWidth
+            />
+            <Select
+              value={shippingForm?.request_auto_pickup || "no"}
+              onChange={(e) =>
+                updateShippingField("request_auto_pickup", e.target.value)
+              }
+              size="small"
+            >
+              <MenuItem value="yes">Auto Pickup: Yes</MenuItem>
+              <MenuItem value="no">Auto Pickup: No</MenuItem>
+            </Select>
+            <TextField
+              label="Package Weight (g)"
+              value={shippingForm?.package_weight || ""}
+              onChange={(e) =>
+                updateShippingField("package_weight", e.target.value)
+              }
+              fullWidth
+            />
+            <TextField
+              label="Length (cm)"
+              value={shippingForm?.package_length || ""}
+              onChange={(e) =>
+                updateShippingField("package_length", e.target.value)
+              }
+              fullWidth
+            />
+            <TextField
+              label="Breadth (cm)"
+              value={shippingForm?.package_breadth || ""}
+              onChange={(e) =>
+                updateShippingField("package_breadth", e.target.value)
+              }
+              fullWidth
+            />
+            <TextField
+              label="Height (cm)"
+              value={shippingForm?.package_height || ""}
+              onChange={(e) =>
+                updateShippingField("package_height", e.target.value)
+              }
+              fullWidth
+            />
+          </div>
+
+          <div className="mt-6">
+            <p className="text-sm font-semibold text-gray-700 mb-2">
+              Consignee
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <TextField
+                label="Name"
+                value={shippingForm?.consignee?.name || ""}
+                onChange={(e) => updateConsigneeField("name", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Phone"
+                value={shippingForm?.consignee?.phone || ""}
+                onChange={(e) => updateConsigneeField("phone", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Address Line 1"
+                value={shippingForm?.consignee?.address || ""}
+                onChange={(e) =>
+                  updateConsigneeField("address", e.target.value)
+                }
+                fullWidth
+              />
+              <TextField
+                label="Address Line 2"
+                value={shippingForm?.consignee?.address_2 || ""}
+                onChange={(e) =>
+                  updateConsigneeField("address_2", e.target.value)
+                }
+                fullWidth
+              />
+              <TextField
+                label="City"
+                value={shippingForm?.consignee?.city || ""}
+                onChange={(e) => updateConsigneeField("city", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="State"
+                value={shippingForm?.consignee?.state || ""}
+                onChange={(e) => updateConsigneeField("state", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pincode"
+                value={shippingForm?.consignee?.pincode || ""}
+                onChange={(e) =>
+                  updateConsigneeField("pincode", e.target.value)
+                }
+                fullWidth
+              />
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <p className="text-sm font-semibold text-gray-700 mb-2">Pickup</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <TextField
+                label="Warehouse Name"
+                value={shippingForm?.pickup?.warehouse_name || ""}
+                onChange={(e) =>
+                  updatePickupField("warehouse_name", e.target.value)
+                }
+                fullWidth
+              />
+              <TextField
+                label="Pickup Contact Name"
+                value={shippingForm?.pickup?.name || ""}
+                onChange={(e) => updatePickupField("name", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup Phone"
+                value={shippingForm?.pickup?.phone || ""}
+                onChange={(e) => updatePickupField("phone", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup Address Line 1"
+                value={shippingForm?.pickup?.address || ""}
+                onChange={(e) => updatePickupField("address", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup Address Line 2"
+                value={shippingForm?.pickup?.address_2 || ""}
+                onChange={(e) => updatePickupField("address_2", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup City"
+                value={shippingForm?.pickup?.city || ""}
+                onChange={(e) => updatePickupField("city", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup State"
+                value={shippingForm?.pickup?.state || ""}
+                onChange={(e) => updatePickupField("state", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Pickup Pincode"
+                value={shippingForm?.pickup?.pincode || ""}
+                onChange={(e) => updatePickupField("pincode", e.target.value)}
+                fullWidth
+              />
+            </div>
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShippingEditorOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleBookShipment}
+            disabled={shippingLoading}
+            variant="contained"
+          >
+            Submit
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };
@@ -710,6 +1145,9 @@ const Orders = () => {
                     <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left border-b-[1px] border-[rgba(0,0,0,0.1)] uppercase tracking-wide"></th>
                     <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Order Id
+                    </th>
+                    <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
+                      PO
                     </th>
                     <th className="text-[13px] text-gray-700 font-[700] px-4 py-3 text-left uppercase tracking-wide">
                       Customer

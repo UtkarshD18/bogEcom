@@ -3,7 +3,7 @@
 import ProductItem from "@/components/ProductItem";
 import { fetchDataFromApi } from "@/utils/api";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { FiSearch } from "react-icons/fi";
 
 const ProductsGridSkeleton = () => (
@@ -19,23 +19,10 @@ function ProductsPageContent() {
     const [loading, setLoading] = useState(true);
     const searchParams = useSearchParams();
     const router = useRouter();
-    const searchDebounceRef = useRef(null);
 
     // Get search term from URL
     const urlSearchTerm = searchParams.get("search") || "";
-    const urlCategory = searchParams.get("category") || "";
     const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
-    const hasCategoryFilter = Boolean(urlCategory);
-    const activeCategoryLabel = useMemo(() => {
-        if (!urlCategory) return "";
-        if (/^[0-9a-fA-F]{24}$/.test(urlCategory)) {
-            return "selected category";
-        }
-        return urlCategory
-            .replace(/[-_]+/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-    }, [urlCategory]);
 
     // Sync state with URL when URL changes (e.g. from header search)
     useEffect(() => {
@@ -46,19 +33,9 @@ function ProductsPageContent() {
         const loadProducts = async () => {
             setLoading(true);
             try {
-                const params = new URLSearchParams();
-                if (urlSearchTerm.trim()) {
-                    params.set("search", urlSearchTerm.trim());
-                }
-                if (urlCategory.trim()) {
-                    params.set("category", urlCategory.trim());
-                }
-                // Regular catalog should never mix members-only products.
-                params.set("excludeExclusive", "true");
-                const query = params.toString();
-                const res = await fetchDataFromApi(
-                    `/api/products${query ? `?${query}` : ""}`,
-                );
+                // Construct API URL with search param
+                const query = urlSearchTerm ? `?search=${encodeURIComponent(urlSearchTerm)}` : "";
+                const res = await fetchDataFromApi(`/api/products${query}`);
 
                 // Handle various API response structures (arrays, nested products, nested data)
                 const productsData = Array.isArray(res) ? res : (res?.products || res?.data || res?.items || []);
@@ -71,38 +48,23 @@ function ProductsPageContent() {
             }
         };
         loadProducts();
-    }, [urlSearchTerm, urlCategory]);
-
-    useEffect(() => {
-        return () => {
-            if (searchDebounceRef.current) {
-                clearTimeout(searchDebounceRef.current);
-            }
-        };
-    }, []);
+    }, [urlSearchTerm]);
 
     // Handle search input change
     const handleSearchChange = (e) => {
         const value = e.target.value;
         setSearchTerm(value);
 
-        if (searchDebounceRef.current) {
-            clearTimeout(searchDebounceRef.current);
-        }
-
-        searchDebounceRef.current = setTimeout(() => {
-            const params = new URLSearchParams(searchParams.toString());
-            const trimmed = value.trim();
-
-            if (trimmed) {
-                params.set("search", trimmed);
+        // Debounce URL update
+        const timeoutId = setTimeout(() => {
+            if (value) {
+                router.push(`/products?search=${encodeURIComponent(value)}`);
             } else {
-                params.delete("search");
+                router.push("/products");
             }
+        }, 500);
 
-            const queryString = params.toString();
-            router.push(`/products${queryString ? `?${queryString}` : ""}`);
-        }, 350);
+        return () => clearTimeout(timeoutId);
     };
 
     return (
@@ -114,11 +76,7 @@ function ProductsPageContent() {
                         <h1 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tight mb-2">
                             Our <span className="text-primary">Products</span>
                         </h1>
-                        <p className="text-gray-500 font-medium">
-                            {hasCategoryFilter
-                                ? `Showing products for ${activeCategoryLabel}`
-                                : "Explore our premium peanut butter collections"}
-                        </p>
+                        <p className="text-gray-500 font-medium">Explore our premium peanut butter collections</p>
                     </div>
 
                     <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
@@ -149,11 +107,7 @@ function ProductsPageContent() {
                     <div className="text-center py-20 bg-white/30 backdrop-blur-xl rounded-[40px] border border-dashed border-gray-200">
                         <div className="text-6xl mb-4">🥜</div>
                         <h3 className="text-xl font-bold text-gray-900 mb-2">No products found</h3>
-                        <p className="text-gray-500">
-                            {hasCategoryFilter
-                                ? "No products found in this category."
-                                : "Try adjusting your search"}
-                        </p>
+                        <p className="text-gray-500">Try adjusting your search</p>
                     </div>
                 )}
             </div>

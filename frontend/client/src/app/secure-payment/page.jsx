@@ -107,7 +107,7 @@ const SecurePayment = () => {
                 Powered by PhonePe
               </h2>
               <p className="text-gray-600 mb-4">
-                We&apos;ve partnered with PhonePe, India&apos;s leading payment platform
+                We've partnered with PhonePe, India's leading payment platform
                 trusted by millions of businesses. Your transactions are
                 processed securely with bank-grade security protocols.
               </p>
@@ -195,6 +195,13 @@ const SecurePayment = () => {
               className="inline-block px-8 py-3 bg-primary text-white font-semibold rounded-lg hover:brightness-110 transition-colors"
             >
               Contact Support
+            </Link>
+            <Link
+              href="https://wa.me/918619641968"
+              target="_blank"
+              className="inline-block px-8 py-3 bg-primary text-white font-semibold rounded-lg hover:brightness-110 transition-colors"
+            >
+              Chat on WhatsApp
             </Link>
           </div>
         </div>

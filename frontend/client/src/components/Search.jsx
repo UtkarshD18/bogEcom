@@ -5,14 +5,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IoSearchOutline } from "react-icons/io5";
 
-const sanitizePublicProducts = (items) =>
-  Array.isArray(items)
-    ? items.filter((product) => {
-        const flag = product?.isExclusive;
-        return !(flag === true || String(flag).trim().toLowerCase() === "true");
-      })
-    : [];
-
 const Search = ({
   placeholder = "Search for products...",
   width = "100%",
@@ -40,13 +32,12 @@ const Search = ({
     try {
       console.log("[Search] Searching for:", term);
       const response = await fetchDataFromApi(
-        `/api/products?search=${encodeURIComponent(term)}&limit=8&excludeExclusive=true`,
+        `/api/products?search=${encodeURIComponent(term)}&limit=8`,
       );
       console.log("[Search] Response:", response);
       if (response?.error !== true && response?.data) {
-        const sanitized = sanitizePublicProducts(response.data);
-        console.log("[Search] Found", sanitized.length, "results");
-        setSuggestions(sanitized);
+        console.log("[Search] Found", response.data.length, "results");
+        setSuggestions(response.data);
         setShowDropdown(true);
       } else {
         console.log("[Search] No results or error:", response?.message);

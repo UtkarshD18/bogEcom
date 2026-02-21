@@ -11,7 +11,8 @@ import {
 } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { FaEdit, FaHome, FaPlus, FaStar, FaTrash } from "react-icons/fa";
 
@@ -207,24 +208,6 @@ export default function MembershipPage() {
     }
     setHomeContentLoading(false);
   }, [token, handleAdminAuthFailure]);
-
-  const fetchHomeContent = useCallback(async () => {
-    setHomeContentLoading(true);
-    const res = await getData("/api/membership/home-content/admin", token);
-    if (res.success && res.data) {
-      setHomeContent({
-        ...DEFAULT_HOME_CONTENT,
-        ...res.data,
-        benefits: res.data.benefits?.length
-          ? res.data.benefits
-          : DEFAULT_HOME_CONTENT.benefits,
-        checkItems: res.data.checkItems?.length
-          ? res.data.checkItems
-          : DEFAULT_HOME_CONTENT.checkItems,
-      });
-    }
-    setHomeContentLoading(false);
-  }, [token]);
 
   const fetchStats = useCallback(async () => {
     const res = await getData("/api/membership/admin/stats", token);

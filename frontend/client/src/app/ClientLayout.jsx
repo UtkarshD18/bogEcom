@@ -34,15 +34,11 @@ const MaintenanceScreen = ({ storeName }) => {
   );
 };
 
-const ClientShell = ({ children, isAffiliateRoute, isFullImageViewRoute }) => {
+const ClientShell = ({ children, isAffiliateRoute }) => {
   const { maintenanceMode, storeInfo } = useSettings();
 
   if (maintenanceMode && !isAffiliateRoute) {
     return <MaintenanceScreen storeName={storeInfo?.name} />;
-  }
-
-  if (isFullImageViewRoute) {
-    return <main className="min-h-screen bg-black">{children}</main>;
   }
 
   if (isAffiliateRoute) {
@@ -67,7 +63,6 @@ const ClientShell = ({ children, isAffiliateRoute, isFullImageViewRoute }) => {
 export default function ClientLayout({ children }) {
   const pathname = usePathname();
   const isAffiliateRoute = pathname?.startsWith("/affiliate");
-  const isFullImageViewRoute = pathname?.includes("/full-image-view");
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") {
@@ -75,17 +70,6 @@ export default function ClientLayout({ children }) {
       console.log = () => { };
       console.warn = () => { };
     }
-  }, []);
-
-  useEffect(() => {
-    const TEN_MINUTES_MS = 10 * 60 * 1000;
-    const intervalId = setInterval(() => {
-      if (typeof window !== "undefined") {
-        window.location.reload();
-      }
-    }, TEN_MINUTES_MS);
-
-    return () => clearInterval(intervalId);
   }, []);
 
   return (
@@ -107,10 +91,7 @@ export default function ClientLayout({ children }) {
             <CartProvider>
               <WishlistProvider>
                 <ErrorBoundary>
-                  <ClientShell
-                    isAffiliateRoute={isAffiliateRoute}
-                    isFullImageViewRoute={isFullImageViewRoute}
-                  >
+                  <ClientShell isAffiliateRoute={isAffiliateRoute}>
                     {children}
                   </ClientShell>
                 </ErrorBoundary>

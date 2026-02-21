@@ -471,16 +471,11 @@ export const updateMembershipUserPoints = async ({
     throw new Error("Membership user not found");
   }
 
-  const previousBalance = Number(membershipUser.pointsBalance || 0);
-  const nextBalance = Math.max(previousBalance + delta, 0);
-  const appliedDelta = nextBalance - previousBalance;
+  const nextBalance = Math.max(Number(membershipUser.pointsBalance || 0) + delta, 0);
   membershipUser.pointsBalance = nextBalance;
   await membershipUser.save();
 
-  return {
-    ...toPublicMembershipUser(membershipUser),
-    appliedDelta,
-  };
+  return toPublicMembershipUser(membershipUser);
 };
 
 export const toggleMembershipUserStatus = async ({

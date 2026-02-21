@@ -5,7 +5,6 @@ import UserModel from "../models/user.model.js";
 const getEffectiveAmountExpression = {
   $cond: [{ $gt: ["$finalAmount", 0] }, "$finalAmount", "$totalAmt"],
 };
-const DELIVERED_ORDER_FILTER = { order_status: "delivered" };
 
 /**
  * Statistics Controller
@@ -21,7 +20,6 @@ const DELIVERED_ORDER_FILTER = { order_status: "delivered" };
 export const getDashboardStats = async (req, res) => {
   try {
     const { period = "month" } = req.query; // month, quarter, year, allTime
-    const countableOrderFilter = DELIVERED_ORDER_FILTER;
 
     // Calculate date range based on period
     let startDate = new Date();
@@ -55,9 +53,9 @@ export const getDashboardStats = async (req, res) => {
       ordersInPeriod,
       lowStockAggregation,
     ] = await Promise.all([
-      OrderModel.countDocuments(countableOrderFilter),
+      OrderModel.countDocuments(),
       OrderModel.aggregate([
-        { $match: countableOrderFilter },
+        { $match: { order_status: { $ne: "cancelled" } } },
         { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
           $group: {
@@ -69,7 +67,7 @@ export const getDashboardStats = async (req, res) => {
       UserModel.countDocuments(),
       ProductModel.countDocuments(),
       OrderModel.aggregate([
-        { $match: countableOrderFilter },
+        { $match: { order_status: { $ne: "cancelled" } } },
         { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
           $group: {
@@ -78,10 +76,7 @@ export const getDashboardStats = async (req, res) => {
           },
         },
       ]),
-      OrderModel.countDocuments({
-        ...countableOrderFilter,
-        createdAt: { $gte: startDate },
-      }),
+      OrderModel.countDocuments({ createdAt: { $gte: startDate } }),
       ProductModel.aggregate([
         {
           $addFields: {
@@ -160,7 +155,7 @@ export const getDashboardStats = async (req, res) => {
 
     // Monthly sales aggregation for dashboard graph
     const monthlySales = await OrderModel.aggregate([
-      { $match: countableOrderFilter },
+      { $match: { order_status: { $ne: "cancelled" } } },
       { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
       {
         $group: {

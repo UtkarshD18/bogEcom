@@ -3,6 +3,7 @@
 import { useCart } from "@/context/CartContext";
 import { MyContext } from "@/context/ThemeProvider";
 import { useWishlist } from "@/context/WishlistContext";
+import useMembership from "@/hooks/useMembership";
 import { fetchDataFromApi, postData } from "@/utils/api";
 import cookies from "js-cookie";
 import Image from "next/image";
@@ -198,10 +199,7 @@ const Header = () => {
 
     setCoinLoading(true);
     try {
-      let response = await fetchDataFromApi("/api/coins/summary");
-      if (!response?.success) {
-        response = await fetchDataFromApi("/api/user/coins-summary");
-      }
+      const response = await fetchDataFromApi("/api/user/coins-summary");
       if (response?.success && response?.data) {
         setCoinSummary({
           ...DEFAULT_COIN_SUMMARY,

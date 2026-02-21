@@ -40,6 +40,34 @@ const buildApiUrl = (path) => {
   return `${API_URL}${apiPath}`;
 };
 
+const normalizeCartItems = (rawItems) => {
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const quantity = Number(item.quantity);
+      return {
+        ...item,
+        quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+      };
+    });
+};
+
+const parseStoredCart = (savedCart) => {
+  const parsed = JSON.parse(savedCart);
+
+  if (Array.isArray(parsed)) {
+    return normalizeCartItems(parsed);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    return normalizeCartItems(parsed.items);
+  }
+
+  return [];
+};
+
 // Generate or get session ID for guest carts
 const getSessionId = () => {
   if (typeof window === "undefined") return null;
@@ -258,26 +286,8 @@ export const CartProvider = ({ children }) => {
 
   // Add to cart locally (fallback)
   const addToCartLocal = (product, quantity = 1) => {
-    const incomingVariantId = resolveVariantId(product);
-    const variantStock = Number(
-      product?.selectedVariant?.stock_quantity ??
-        product?.selectedVariant?.stock ??
-        NaN,
-    );
-    const variantReserved = Number(
-      product?.selectedVariant?.reserved_quantity ?? 0,
-    );
-    const productStock = Number(
-      product?.stock_quantity ?? product?.stock ?? Number.NaN,
-    );
-    const productReserved = Number(product?.reserved_quantity ?? 0);
-
-    // Check stock if available in product or selected variant.
-    const stock = Number.isFinite(variantStock)
-      ? Math.max(variantStock - variantReserved, 0)
-      : Number.isFinite(productStock)
-        ? Math.max(productStock - productReserved, 0)
-        : Infinity;
+    // Check stock if available in product object
+    const stock = product.stock !== undefined ? product.stock : Infinity;
 
     // If we're adding NEW item, check if quantum <= stock
     // If we're updating existing, check if (existing + quantity) <= stock
@@ -286,11 +296,7 @@ export const CartProvider = ({ children }) => {
       const itemId =
         item.product?._id || item.product?.id || item.product || item.id;
       const productId = product._id || product.id;
-      const itemVariantId = resolveVariantId(item);
-      return (
-        String(itemId) === String(productId) &&
-        String(itemVariantId || "") === String(incomingVariantId || "")
-      );
+      return String(itemId) === String(productId);
     });
 
     let newItems;
@@ -315,8 +321,6 @@ export const CartProvider = ({ children }) => {
           productData: product,
           _id: product._id || product.id,
           quantity,
-          variant: incomingVariantId || null,
-          variantName: product?.selectedVariant?.name || "",
           price: product.price,
           originalPrice: product.originalPrice || product.oldPrice,
         },
@@ -329,7 +333,7 @@ export const CartProvider = ({ children }) => {
   };
 
   // Update quantity
-  const updateQuantity = async (productId, quantity, variantId = undefined) => {
+  const updateQuantity = async (productId, quantity, variantId = null) => {
     if (quantity < 1) {
       return removeFromCart(productId, variantId);
     }
@@ -388,7 +392,7 @@ export const CartProvider = ({ children }) => {
   };
 
   // Update quantity locally
-  const updateQuantityLocal = (productId, quantity, variantId = undefined) => {
+  const updateQuantityLocal = (productId, quantity, variantId = null) => {
     setCartItems((prev) => {
       const newItems = prev.map((item) =>
         String(item.product?._id || item.product?.id || item.product || item.id) ===
@@ -404,21 +408,16 @@ export const CartProvider = ({ children }) => {
   };
 
   // Remove from cart
-  const removeFromCart = async (productId, variantId = undefined) => {
+  const removeFromCart = async (productId, variantId = null) => {
     const resolvedVariantId =
-      variantId === undefined
-        ? resolveVariantId(
-            cartItems.find(
-              (item) =>
-                String(
-                  item.product?._id ||
-                    item.product?.id ||
-                    item.product ||
-                    item.id,
-                ) === String(productId),
-            ),
-          )
-        : variantId;
+      variantId ??
+      resolveVariantId(
+        cartItems.find(
+          (item) =>
+            String(item.product?._id || item.product?.id || item.product || item.id) ===
+            String(productId),
+        ),
+      );
 
     try {
       setLoading(true);
@@ -436,7 +435,10 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const response = await fetch(buildApiUrl(`/cart/remove/${productId}`), {
+      const query = resolvedVariantId
+        ? `?variantId=${encodeURIComponent(String(resolvedVariantId))}`
+        : "";
+      const response = await fetch(buildApiUrl(`/cart/remove/${productId}${query}`), {
         method: "DELETE",
         headers,
         credentials: "include",
@@ -461,7 +463,7 @@ export const CartProvider = ({ children }) => {
   };
 
   // Remove locally
-  const removeFromCartLocal = (productId, variantId = undefined) => {
+  const removeFromCartLocal = (productId, variantId = null) => {
     setCartItems((prev) => {
       const newItems = prev.filter(
         (item) => {
@@ -518,40 +520,24 @@ export const CartProvider = ({ children }) => {
   };
 
   // Check if product is in cart
-  const isInCart = (productId, variantId = null) => {
+  const isInCart = (productId) => {
     return cartItems.some(
-      (item) => {
-        const itemProductId = String(
+      (item) =>
+        String(
           item.product?._id || item.product?.id || item.product || item.id,
-        );
-        if (itemProductId !== String(productId)) {
-          return false;
-        }
-        if (variantId === null || variantId === undefined || variantId === "") {
-          return true;
-        }
-        return String(resolveVariantId(item) || "") === String(variantId);
-      },
+        ) === String(productId),
     );
   };
 
   // Get item quantity in cart
-  const getItemQuantity = (productId, variantId = null) => {
-    return cartItems.reduce((count, item) => {
-      const itemProductId = String(
-        item.product?._id || item.product?.id || item.product || item.id,
-      );
-      if (itemProductId !== String(productId)) {
-        return count;
-      }
-      if (variantId !== null && variantId !== undefined && variantId !== "") {
-        const itemVariantId = String(resolveVariantId(item) || "");
-        if (itemVariantId !== String(variantId)) {
-          return count;
-        }
-      }
-      return count + Number(item?.quantity || 0);
-    }, 0);
+  const getItemQuantity = (productId) => {
+    const item = cartItems.find(
+      (item) =>
+        String(
+          item.product?._id || item.product?.id || item.product || item.id,
+        ) === String(productId),
+    );
+    return item?.quantity || 0;
   };
 
   // Initialize cart on mount
