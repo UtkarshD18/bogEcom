@@ -5,6 +5,7 @@ import { API_BASE_URL } from "@/utils/api";
 import MemberGate from "@/components/MemberGate";
 import MembershipExclusivePreview from "@/components/MembershipExclusivePreview";
 import { useTheme } from "@/context/theme-provider";
+import { resolveMembershipTheme } from "@/utils/membershipTheme";
 import { parseJsonSafely } from "@/utils/safeJsonFetch";
 import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
@@ -370,9 +371,8 @@ export default function MembershipPage() {
   }, [pageContent?.theme?.style, setTheme]);
 
   const theme = useMemo(() => {
-    const key = resolvePresetThemeKey(pageContent?.theme?.style);
-    return THEME_PRESETS[key] || THEME_PRESETS.mint;
-  }, [pageContent]);
+    return resolveMembershipTheme(pageContent?.theme?.style);
+  }, [pageContent?.theme?.style]);
 
   const handleSubscribe = () => {
     if (!isLoggedIn) {
@@ -514,7 +514,10 @@ export default function MembershipPage() {
           )}
         </header>
 
-        <MembershipExclusivePreview onUnlockExclusive={handlePreviewUnlockCta} />
+        <MembershipExclusivePreview
+          onUnlockExclusive={handlePreviewUnlockCta}
+          theme={theme}
+        />
 
         <MemberGate
           isMember={user?.isMember}
