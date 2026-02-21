@@ -979,7 +979,7 @@ const OrderDetailsPage = () => {
                         ₹{displayShippingCharge.toFixed(2)}
                       </span>
                     )}
-                    <span>FREE</span>
+                    <span>₹0.00</span>
                   </span>
                 ) : (
                   <span className="text-gray-500">--</span>

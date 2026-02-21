@@ -129,24 +129,12 @@ export const getShippingDisplayMetrics = async () => {
   const cached = getCached(DISPLAY_METRICS_CACHE_KEY);
   if (cached) return cached;
 
-  const rateChart = await resolveDisplayRateChart();
-  const rajasthanCandidates = resolveRajasthanLocalCandidate(rateChart);
-
-  const maxLocalBaseCharge = round2(
-    Math.max(
-      0,
-      ...rajasthanCandidates.map((candidate) => getMaxConfiguredCharge(candidate)),
-    ),
-  );
-  const maxIndiaBaseCharge = round2(getMaxConfiguredCharge(rateChart));
-  const markupMultiplier = 1 + DISPLAY_MARKUP_PERCENT / 100;
-
   const metrics = {
     markupPercent: DISPLAY_MARKUP_PERCENT,
-    maxLocalBaseCharge,
-    maxIndiaBaseCharge,
-    maxLocalDisplayCharge: round2(maxLocalBaseCharge * markupMultiplier),
-    maxIndiaDisplayCharge: round2(maxIndiaBaseCharge * markupMultiplier),
+    maxLocalBaseCharge: 0,
+    maxIndiaBaseCharge: 0,
+    maxLocalDisplayCharge: 0,
+    maxIndiaDisplayCharge: 0,
   };
 
   setCached(DISPLAY_METRICS_CACHE_KEY, metrics);

@@ -426,7 +426,7 @@ const CartDrawer = () => {
                                                     &#8377;{displayShippingCharge.toFixed(2)}
                                                 </span>
                                             )}
-                                            <span>FREE</span>
+                                            <span>&#8377;0.00</span>
                                         </span>
                                     </div>
                                     {cartSavings > 0 && (
