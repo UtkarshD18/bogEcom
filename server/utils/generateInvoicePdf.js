@@ -1,13 +1,24 @@
 import fs from "fs";
 import fsPromises from "fs/promises";
+import os from "os";
 import path from "path";
 import PDFDocument from "pdfkit";
 import { fileURLToPath } from "url";
+import { UPLOAD_ROOT } from "../middlewares/upload.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SERVER_ROOT = path.resolve(__dirname, "..");
-const INVOICE_DIR = path.join(SERVER_ROOT, "invoices");
+const configuredInvoiceDir = String(process.env.INVOICE_DIR || "").trim();
+const defaultInvoiceDir =
+  process.env.NODE_ENV === "production"
+    ? path.join(UPLOAD_ROOT, "invoices")
+    : path.join(SERVER_ROOT, "invoices");
+const INVOICE_DIR = configuredInvoiceDir
+  ? path.resolve(configuredInvoiceDir)
+  : defaultInvoiceDir;
+const FALLBACK_INVOICE_DIR = path.join(os.tmpdir(), "bog-invoices");
+let ACTIVE_INVOICE_DIR = INVOICE_DIR;
 const SHOULD_FORCE_REGENERATE = String(process.env.INVOICE_FORCE_REGENERATE || "false").toLowerCase() === "true";
 
 const DEFAULT_HSN = process.env.INVOICE_DEFAULT_HSN || "2106";
@@ -97,8 +108,36 @@ const resolveStateCode = (stateCode, stateName) => {
   return GST_STATE_CODE_BY_NAME[normalizedName] || "";
 };
 
+const toPdfSafeText = (value) => {
+  if (value === null || value === undefined) return "";
+
+  const normalized = String(value).replace(/\r\n/g, "\n");
+  return normalized
+    .split("\n")
+    .map((line) => line.replace(/[^\x09\x20-\x7E]/g, " "))
+    .join("\n");
+};
+
+const patchPdfDocTextEncoding = (doc) => {
+  const originalText = doc.text.bind(doc);
+  doc.text = (text, ...args) => originalText(toPdfSafeText(text), ...args);
+
+  const originalHeightOfString = doc.heightOfString.bind(doc);
+  doc.heightOfString = (text, ...args) =>
+    originalHeightOfString(toPdfSafeText(text), ...args);
+
+  const originalWidthOfString = doc.widthOfString.bind(doc);
+  doc.widthOfString = (text, ...args) =>
+    originalWidthOfString(toPdfSafeText(text), ...args);
+};
+
 const ensureInvoiceDirectory = async () => {
-  await fsPromises.mkdir(INVOICE_DIR, { recursive: true });
+  try {
+    await fsPromises.mkdir(ACTIVE_INVOICE_DIR, { recursive: true });
+  } catch {
+    ACTIVE_INVOICE_DIR = FALLBACK_INVOICE_DIR;
+    await fsPromises.mkdir(ACTIVE_INVOICE_DIR, { recursive: true });
+  }
 };
 
 const fileExists = async (filePath) => {
@@ -962,15 +1001,58 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
 export const getInvoiceFileName = (orderId) => `invoice_${orderId}.pdf`;
 
 export const getInvoiceRelativePath = (orderId) =>
-  path.posix.join("invoices", getInvoiceFileName(orderId));
+  path.posix.join("uploads", "invoices", getInvoiceFileName(orderId));
 
 export const getInvoiceAbsolutePath = (orderId) =>
-  path.join(INVOICE_DIR, getInvoiceFileName(orderId));
+  path.join(ACTIVE_INVOICE_DIR, getInvoiceFileName(orderId));
 
 export const getAbsolutePathFromStoredInvoicePath = (invoicePath) => {
   if (!invoicePath) return null;
-  if (path.isAbsolute(invoicePath)) return invoicePath;
-  return path.join(SERVER_ROOT, invoicePath);
+  const normalizedPath = String(invoicePath).trim().replace(/\\/g, "/");
+  if (!normalizedPath) return null;
+
+  const candidates = [];
+
+  const pushCandidate = (candidatePath) => {
+    const resolved = String(candidatePath || "").trim();
+    if (!resolved) return;
+    if (!candidates.includes(resolved)) {
+      candidates.push(resolved);
+    }
+  };
+
+  if (/^[a-zA-Z]:\//.test(normalizedPath) || path.isAbsolute(normalizedPath)) {
+    pushCandidate(normalizedPath);
+  }
+
+  if (/^\/?uploads\//i.test(normalizedPath)) {
+    const uploadRelative = normalizedPath.replace(/^\/?uploads\/?/i, "");
+    pushCandidate(path.join(UPLOAD_ROOT, uploadRelative));
+  }
+
+  if (/^\/?invoices\//i.test(normalizedPath)) {
+    const invoiceRelative = normalizedPath.replace(/^\/?invoices\/?/i, "");
+    // Legacy location used by older releases.
+    pushCandidate(path.join(SERVER_ROOT, "invoices", invoiceRelative));
+    // Current runtime location.
+    pushCandidate(path.join(ACTIVE_INVOICE_DIR, invoiceRelative));
+    // Explicit upload-root location fallback.
+    pushCandidate(path.join(UPLOAD_ROOT, "invoices", invoiceRelative));
+  }
+
+  pushCandidate(path.join(SERVER_ROOT, normalizedPath));
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // ignore invalid candidate and continue
+    }
+  }
+
+  return candidates[0] || null;
 };
 
 export const generateInvoicePdf = async ({
@@ -1003,6 +1085,7 @@ export const generateInvoicePdf = async ({
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 40 });
     const stream = fs.createWriteStream(absolutePath);
+    patchPdfDocTextEncoding(doc);
 
     stream.on("finish", resolve);
     stream.on("error", reject);
