@@ -5,7 +5,9 @@
  */
 
 import fsPromises from "fs/promises";
+import path from "path";
 import mongoose from "mongoose";
+import { fileURLToPath } from "url";
 import AddressModel from "../models/address.model.js";
 import CategoryModel from "../models/category.model.js";
 import CouponModel from "../models/coupon.model.js";
@@ -20,7 +22,6 @@ import {
   applyRedemptionToUser,
   awardCoinsToUser,
 } from "../services/coin.service.js";
-import { applyMembershipDiscount } from "../services/membership.service.js";
 import {
   createPhonePePayment,
   getPhonePeStatus,
@@ -380,6 +381,85 @@ const getPrimaryStoreUrl = () =>
     .split(",")[0]
     .trim()
     .replace(/\/+$/, "");
+
+const CONTROLLER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const TEST_INVOICE_EXPORT_DIR = path.resolve(
+  CONTROLLER_DIR,
+  "../invoices/local-test-invoices",
+);
+
+const sanitizeFileComponent = (value, fallback = "test_invoice") => {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || fallback;
+};
+
+const normalizePathForResponse = (absolutePath) => {
+  if (!absolutePath) return "";
+  const relative = path.relative(process.cwd(), absolutePath);
+  if (!relative || relative.startsWith("..")) {
+    return absolutePath.replace(/\\/g, "/");
+  }
+  return relative.replace(/\\/g, "/");
+};
+
+const persistInvoiceSnapshotToDisk = async ({
+  filenameSeed,
+  payload,
+  invoicePath = "",
+  context = "persistInvoiceSnapshotToDisk",
+}) => {
+  const safeName = sanitizeFileComponent(
+    filenameSeed,
+    `test_invoice_${Date.now()}`,
+  );
+  const jsonAbsolutePath = path.join(TEST_INVOICE_EXPORT_DIR, `${safeName}.json`);
+
+  try {
+    await fsPromises.mkdir(TEST_INVOICE_EXPORT_DIR, { recursive: true });
+    await fsPromises.writeFile(
+      jsonAbsolutePath,
+      JSON.stringify(payload, null, 2),
+      "utf8",
+    );
+
+    let pdfAbsolutePath = "";
+    const sourcePdfPath = invoicePath
+      ? getAbsolutePathFromStoredInvoicePath(invoicePath)
+      : null;
+    if (sourcePdfPath) {
+      const pdfExt = path.extname(sourcePdfPath) || ".pdf";
+      pdfAbsolutePath = path.join(TEST_INVOICE_EXPORT_DIR, `${safeName}${pdfExt}`);
+      const sourceResolved = path.resolve(sourcePdfPath);
+      const destinationResolved = path.resolve(pdfAbsolutePath);
+      if (sourceResolved !== destinationResolved) {
+        await fsPromises.copyFile(sourceResolved, destinationResolved);
+      }
+    }
+
+    return {
+      ok: true,
+      folder: normalizePathForResponse(TEST_INVOICE_EXPORT_DIR),
+      jsonPath: normalizePathForResponse(jsonAbsolutePath),
+      pdfPath: normalizePathForResponse(pdfAbsolutePath),
+    };
+  } catch (error) {
+    logger.error(context, "Failed to persist invoice snapshot on disk", {
+      error: error?.message || String(error),
+      folder: TEST_INVOICE_EXPORT_DIR,
+      invoicePath,
+    });
+    return {
+      ok: false,
+      folder: normalizePathForResponse(TEST_INVOICE_EXPORT_DIR),
+      jsonPath: normalizePathForResponse(jsonAbsolutePath),
+      pdfPath: "",
+      error: error?.message || "Failed to persist invoice snapshot",
+    };
+  }
+};
 
 const formatInr = (value) => `Rs. ${round2(value).toFixed(2)}`;
 
@@ -906,12 +986,9 @@ const calculateCheckoutPricing = async ({
   );
   const baseSubtotal = round2(baseSplit.taxableAmount || 0);
 
-  const membershipResult = userId
-    ? await applyMembershipDiscount(baseSubtotal, userId)
-    : { membership: null, discount: 0, netSubtotal: baseSubtotal };
-  const membershipDiscount = round2(membershipResult.discount || 0);
+  const membershipDiscount = 0;
 
-  let workingTaxableAmount = round2(membershipResult.netSubtotal || baseSubtotal);
+  let workingTaxableAmount = baseSubtotal;
 
   let influencerDiscount = 0;
   let influencerData = null;
@@ -1024,7 +1101,7 @@ const calculateCheckoutPricing = async ({
     influencerCode:
       influencerData?.code || (influencerDiscount > 0 ? influencerCode : null),
     influencerCommission,
-    membershipPlan: membershipResult.membership || null,
+    membershipPlan: null,
     taxData: {
       ...taxData,
       taxableAmount,
@@ -2984,59 +3061,122 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       throw new AppError("FORBIDDEN");
     }
 
-    const { userId } = req.body;
+    const body = req.body || {};
+    const effectiveUserId = String(body.userId || req.user || "").trim();
+    const influencerCode = String(body.influencerCode || "")
+      .trim()
+      .toUpperCase();
+    const shippingSuppressed = true;
 
-    if (!userId) {
+    if (!effectiveUserId) {
       throw new AppError("MISSING_FIELD", { field: "userId" });
     }
 
-    validateMongoId(userId, "userId");
+    validateMongoId(effectiveUserId, "userId");
 
-    logger.debug("createTestOrder", "Creating test order", { userId });
+    logger.debug("createTestOrder", "Creating test order", {
+      userId: effectiveUserId,
+      influencerCode: influencerCode || null,
+      shippingSuppressed,
+    });
 
     // Verify user exists
-    const user = await UserModel.findById(userId);
+    const user = await UserModel.findById(effectiveUserId).select(
+      "_id name email mobile",
+    );
     if (!user) {
-      logger.warn("createTestOrder", "User not found", { userId });
+      logger.warn("createTestOrder", "User not found", { userId: effectiveUserId });
       throw new AppError("USER_NOT_FOUND");
     }
 
-    // Get some products
-    const products = await ProductModel.find().limit(3);
-    if (products.length === 0) {
-      logger.warn("createTestOrder", "No products found in database");
-      throw new AppError("PRODUCT_NOT_FOUND", {
-        message: "No products available",
+    let normalizedProducts = [];
+    const requestedProducts = Array.isArray(body.products) ? body.products : [];
+    if (requestedProducts.length > 0) {
+      validateProductsArray(requestedProducts, "products");
+      const normalizedResult = await fetchAndNormalizeOrderProducts(
+        requestedProducts,
+        "createTestOrder",
+      );
+      normalizedProducts = normalizedResult.normalizedProducts;
+    } else {
+      const products = await ProductModel.find().limit(3);
+      if (products.length === 0) {
+        logger.warn("createTestOrder", "No products found in database");
+        throw new AppError("PRODUCT_NOT_FOUND", {
+          message: "No products available",
+        });
+      }
+      normalizedProducts = products.map((product) => {
+        const quantity = Math.floor(Math.random() * 2) + 1;
+        const price = round2(Number(product.price || 0));
+        return {
+          productId: String(product._id),
+          productTitle: product.name,
+          variantId: null,
+          variantName: "",
+          quantity,
+          price,
+          image: product.images?.[0] || product.thumbnail || "",
+          subTotal: round2(price * quantity),
+        };
       });
     }
 
-    // Create order items
-    const orderProducts = products.map((product) => {
-      const quantity = Math.floor(Math.random() * 3) + 1;
-      const price = round2(Number(product.price || 0));
-      return {
-        productId: product._id.toString(),
-        productTitle: product.name,
-        quantity,
-        price,
-        image: product.image,
-        subTotal: round2(price * quantity),
-      };
+    const selectedAddress = String(body.address || "").trim();
+    const selectedPincode = shippingSuppressed
+      ? ""
+      : String(body.pincode || "").trim();
+    const selectedState = String(body.state || "").trim();
+    const checkoutContact = {
+      addressId: null,
+      pincode: selectedPincode,
+      state: selectedState,
+      contact: {
+        fullName: String(user.name || "Demo User"),
+        email: String(user.email || "").trim().toLowerCase(),
+        phone: String(user.mobile || body.phone || "").trim(),
+        address: selectedAddress || "Demo test order (shipping suppressed)",
+        pincode: selectedPincode,
+        state: selectedState,
+        gst: String(body.gstNumber || "").trim().toUpperCase(),
+      },
+    };
+
+    const pricing = await calculateCheckoutPricing({
+      normalizedProducts,
+      userId: effectiveUserId,
+      couponCode: null,
+      influencerCode: influencerCode || null,
+      checkoutContact,
+      coinRedeem: { coins: 0 },
+      paymentType: "prepaid",
+      logContext: "createTestOrder",
     });
 
-    const totalAmount = round2(
-      orderProducts.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
-    );
+    if (pricing.errorMessage) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: pricing.errorMessage,
+      });
+    }
 
-    // Create test order
+    const shippingCharge = shippingSuppressed
+      ? 0
+      : round2(Number(pricing.shippingCharge || 0));
+    const taxableAmount = round2(Number(pricing.taxableAmount || 0));
+    const gstAmount = round2(Number(pricing.gstAmount || 0));
+    const finalAmount = round2(taxableAmount + gstAmount + shippingCharge);
+
+    // Create test order (paid + accepted), but shipping-suppressed.
     const testOrder = new OrderModel({
-      user: userId,
-      products: orderProducts,
-      totalAmt: totalAmount,
-      subtotal: totalAmount,
-      tax: 0,
-      shipping: 0,
-      finalAmount: totalAmount,
+      user: effectiveUserId,
+      products: normalizedProducts,
+      totalAmt: finalAmount,
+      subtotal: taxableAmount,
+      tax: gstAmount,
+      shipping: shippingCharge,
+      finalAmount,
       paymentMethod: "TEST",
       payment_status: "paid",
       order_status: ORDER_STATUS.ACCEPTED,
@@ -3045,30 +3185,172 @@ export const createTestOrder = asyncHandler(async (req, res) => {
         { status: ORDER_STATUS.ACCEPTED, source: "TEST_CREATE", timestamp: new Date() },
       ],
       paymentId: `TEST_${Date.now()}`,
+      originalPrice: round2(Number(pricing.originalAmount || finalAmount)),
+      couponCode: pricing.normalizedCouponCode || null,
+      discountAmount: round2(Number(pricing.couponDiscount || 0)),
+      discount: round2(Number(pricing.totalDiscount || 0)),
+      membershipDiscount: round2(Number(pricing.membershipDiscount || 0)),
+      influencerId: pricing.influencerData?._id || null,
+      influencerCode: pricing.influencerCode || null,
+      influencerDiscount: round2(Number(pricing.influencerDiscount || 0)),
+      influencerCommission: round2(Number(pricing.influencerCommission || 0)),
+      commissionPaid: false,
+      influencerStatsSynced: false,
+      affiliateCode: pricing.influencerCode || null,
+      affiliateSource: pricing.influencerCode ? "referral" : "demo",
+      gst: {
+        rate: Number(pricing.taxData?.rate ?? CHECKOUT_GST_RATE),
+        state: pricing.taxData?.state || selectedState || "",
+        taxableAmount,
+        cgst: Number(pricing.taxData?.cgst || 0),
+        sgst: Number(pricing.taxData?.sgst || 0),
+        igst: Number(pricing.taxData?.igst || 0),
+      },
+      gstNumber: checkoutContact.contact.gst || "",
+      billingDetails: {
+        fullName: checkoutContact.contact.fullName,
+        email: checkoutContact.contact.email,
+        phone: checkoutContact.contact.phone,
+        address: checkoutContact.contact.address,
+        pincode: checkoutContact.contact.pincode,
+        state: checkoutContact.contact.state,
+      },
+      isSavedOrder: true,
+      isDemoOrder: true,
+      notes:
+        String(body.notes || "").trim() ||
+        "Demo influencer test order (shipping suppressed)",
     });
 
     await testOrder.save();
 
+    let influencerStatsSynced = false;
+    if (testOrder.influencerId && !testOrder.influencerStatsSynced) {
+      const effectiveAmount =
+        testOrder.finalAmount > 0 ? testOrder.finalAmount : testOrder.totalAmt;
+      const commissionBaseAmount = resolveInfluencerCommissionBase(testOrder);
+      let commission = testOrder.influencerCommission || 0;
+      if (!commission) {
+        commission = await calculateInfluencerCommission(
+          testOrder.influencerId,
+          commissionBaseAmount,
+        );
+        testOrder.influencerCommission = commission;
+      }
+
+      influencerStatsSynced = await updateInfluencerStats(
+        testOrder.influencerId,
+        effectiveAmount,
+        commission,
+      );
+
+      if (influencerStatsSynced) {
+        testOrder.influencerStatsSynced = true;
+        await testOrder.save();
+      }
+    }
+
+    let invoiceSummary = {
+      generated: false,
+      invoiceNumber: null,
+      invoicePath: "",
+      reason: null,
+    };
     if (isInvoiceEligible(testOrder)) {
-      ensureOrderInvoice(testOrder).catch((err) =>
+      const invoiceResult = await ensureOrderInvoice(testOrder);
+      if (!invoiceResult.ok) {
         logger.error("createTestOrder", "Failed to generate invoice", {
           orderId: testOrder._id,
-          error: err.message,
-        }),
-      );
+          reason: invoiceResult.reason,
+          error: invoiceResult.error?.message || null,
+        });
+        return res.status(500).json({
+          error: true,
+          success: false,
+          message: invoiceResult.reason || "Failed to generate test invoice",
+        });
+      }
+      invoiceSummary = {
+        generated: Boolean(invoiceResult.generated),
+        invoiceNumber: testOrder.invoiceNumber || null,
+        invoicePath: testOrder.invoicePath || "",
+        reason: null,
+      };
+    } else {
+      invoiceSummary.reason = getInvoiceEligibilityMessage(testOrder);
     }
+
+    const clientInvoice = {
+      invoiceNumber: testOrder.invoiceNumber || null,
+      invoicePath: testOrder.invoicePath || "",
+      totals: {
+        originalSubtotal: round2(Number(pricing.subtotal || 0)),
+        subtotal: taxableAmount,
+        influencerDiscount: round2(Number(pricing.influencerDiscount || 0)),
+        couponDiscount: round2(Number(pricing.couponDiscount || 0)),
+        gst: gstAmount,
+        shipping: shippingCharge,
+        total: finalAmount,
+      },
+      items: normalizedProducts.map((item) => ({
+        productId: item.productId || null,
+        name: item.productTitle || "Product",
+        quantity: Math.max(Number(item.quantity || 0), 0),
+        unitPrice: round2(Number(item.price || 0)),
+        lineTotal: round2(Number(item.subTotal || 0)),
+      })),
+    };
+
+    const localDiskInvoice = await persistInvoiceSnapshotToDisk({
+      filenameSeed:
+        testOrder.invoiceNumber || testOrder._id || `test_invoice_${Date.now()}`,
+      invoicePath: testOrder.invoicePath || "",
+      context: "createTestOrder",
+      payload: {
+        source: "demo_influencer_order",
+        savedAt: new Date().toISOString(),
+        shippingSuppressed: true,
+        xpressbeesPosted: false,
+        orderId: String(testOrder._id || ""),
+        invoice: invoiceSummary,
+        influencer: {
+          code: testOrder.influencerCode || null,
+          discount: round2(Number(testOrder.influencerDiscount || 0)),
+          commission: round2(Number(testOrder.influencerCommission || 0)),
+          statsSynced: influencerStatsSynced,
+        },
+        clientInvoice,
+      },
+    });
 
     logger.info("createTestOrder", "Test order created", {
       orderId: testOrder._id,
+      influencerCode: testOrder.influencerCode || null,
+      influencerCommission: testOrder.influencerCommission || 0,
+      influencerStatsSynced,
+      shippingSuppressed,
+      invoiceNumber: testOrder.invoiceNumber || null,
+      localInvoiceJsonPath: localDiskInvoice?.jsonPath || null,
     });
 
     return sendSuccess(
       res,
       {
         orderId: testOrder._id,
-        order: testOrder,
+        shippingSuppressed: true,
+        xpressbeesPosted: false,
+        order: normalizeOrderForResponse(testOrder),
+        influencer: {
+          code: testOrder.influencerCode || null,
+          discount: round2(Number(testOrder.influencerDiscount || 0)),
+          commission: round2(Number(testOrder.influencerCommission || 0)),
+          statsSynced: influencerStatsSynced,
+        },
+        invoice: invoiceSummary,
+        clientInvoice,
+        localDiskInvoice,
       },
-      "Test order created successfully",
+      "Demo test order created successfully",
       201,
     );
   } catch (error) {
@@ -3079,4 +3361,59 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     const dbError = handleDatabaseError(error, "createTestOrder");
     return sendError(res, dbError);
   }
+});
+
+/**
+ * Persist client test invoice snapshot (from localStorage) to server disk.
+ * @route POST /api/orders/test/save-invoice
+ * @access Development only
+ */
+export const saveClientTestInvoiceToDisk = asyncHandler(async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    throw new AppError("FORBIDDEN");
+  }
+
+  const payloadCandidate = req.body?.invoice || req.body || null;
+  if (!payloadCandidate || typeof payloadCandidate !== "object") {
+    throw new AppError("MISSING_FIELD", { field: "invoice" });
+  }
+
+  const invoiceRecord = {
+    ...payloadCandidate,
+    savedAt: new Date().toISOString(),
+  };
+
+  const invoicePath = String(invoiceRecord.invoicePath || "").trim();
+  const filenameSeed =
+    invoiceRecord.invoiceId ||
+    invoiceRecord.invoiceNumber ||
+    invoiceRecord.orderId ||
+    `client_invoice_${Date.now()}`;
+
+  const localDiskInvoice = await persistInvoiceSnapshotToDisk({
+    filenameSeed,
+    invoicePath,
+    context: "saveClientTestInvoiceToDisk",
+    payload: {
+      source: "client_local_storage_invoice",
+      actorUserId: req.user ? String(req.user) : null,
+      invoice: invoiceRecord,
+    },
+  });
+
+  if (!localDiskInvoice.ok) {
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: localDiskInvoice.error || "Failed to save invoice on disk",
+      data: { localDiskInvoice },
+    });
+  }
+
+  return sendSuccess(
+    res,
+    { localDiskInvoice },
+    "Invoice snapshot saved to local disk",
+    201,
+  );
 });

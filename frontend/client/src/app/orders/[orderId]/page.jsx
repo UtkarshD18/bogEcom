@@ -38,6 +38,9 @@ import { io } from "socket.io-client";
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
+const SOCKET_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.slice(0, -4)
+  : API_BASE_URL;
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: MdAccessTime },
@@ -50,6 +53,15 @@ const STATUS_STEPS = [
 ];
 
 const ORDER_ID_REGEX = /^[a-f\d]{24}$/i;
+const getAuthToken = () => {
+  if (typeof window === "undefined") return cookies.get("accessToken") || "";
+  return (
+    cookies.get("accessToken") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("token") ||
+    ""
+  );
+};
 
 const normalizeOrderIdValue = (value) =>
   String(value || "").trim().toUpperCase();
@@ -168,23 +180,38 @@ const OrderDetailsPage = () => {
         return;
       }
 
-      const token = cookies.get("accessToken");
+      const token = getAuthToken();
       if (!token) {
         router.push("/login?redirect=/orders/" + orderId);
         return;
       }
 
       try {
-        const fetchSingleOrder = async () => {
-          const response = await fetch(`${API_URL}/orders/${orderId}`, {
+        const requestOrderByUrl = async (url) => {
+          const response = await fetch(url, {
             method: "GET",
             headers: {
               Authorization: `Bearer ${token}`,
             },
             credentials: "include",
           });
-          const data = await response.json();
+          let data = null;
+          try {
+            data = await response.json();
+          } catch {
+            data = null;
+          }
           return { response, data };
+        };
+
+        const fetchSingleOrder = async () => {
+          const userScoped = await requestOrderByUrl(
+            `${API_URL}/orders/user/order/${orderId}`,
+          );
+          if (userScoped?.response?.status !== 404) {
+            return userScoped;
+          }
+          return requestOrderByUrl(`${API_URL}/orders/${orderId}`);
         };
 
         let resolvedOrder = null;
@@ -258,10 +285,10 @@ const OrderDetailsPage = () => {
 
   useEffect(() => {
     if (!orderId) return;
-    const token = cookies.get("accessToken");
+    const token = getAuthToken();
     if (!token) return;
 
-    const socket = io(API_URL, {
+    const socket = io(SOCKET_URL, {
       withCredentials: true,
       transports: ["websocket"],
     });
@@ -294,7 +321,7 @@ const OrderDetailsPage = () => {
   useEffect(() => {
     const fetchMyOrderReviews = async () => {
       if (!orderId) return;
-      const token = cookies.get("accessToken");
+      const token = getAuthToken();
       if (!token) return;
 
       try {
@@ -463,7 +490,7 @@ const OrderDetailsPage = () => {
   const downloadFile = async (url, filename, key) => {
     try {
       setDownloading((prev) => ({ ...prev, [key]: true }));
-      const token = cookies.get("accessToken");
+      const token = getAuthToken();
       const response = await fetch(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         credentials: "include",
@@ -717,7 +744,7 @@ const OrderDetailsPage = () => {
       return;
     }
 
-    const token = cookies.get("accessToken");
+    const token = getAuthToken();
     if (!token) {
       toast.error("Please login again");
       return;

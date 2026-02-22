@@ -25,6 +25,25 @@ const typeStyles = {
   redeem: "bg-amber-100 text-amber-700",
   expire: "bg-red-100 text-red-700",
 };
+const DEFAULT_COIN_SUMMARY = {
+  total_coins: 0,
+  usable_coins: 0,
+  rupee_value: 0,
+  expiring_soon: 0,
+  settings: {
+    redeemRate: 0,
+    maxRedeemPercentage: 0,
+  },
+};
+
+const normalizeCoinSummary = (summary) => ({
+  ...DEFAULT_COIN_SUMMARY,
+  ...(summary || {}),
+  settings: {
+    ...DEFAULT_COIN_SUMMARY.settings,
+    ...(summary?.settings || {}),
+  },
+});
 
 const CoinHistoryPage = () => {
   const [loading, setLoading] = useState(true);
@@ -41,16 +60,25 @@ const CoinHistoryPage = () => {
     setError("");
 
     try {
-      const [summaryRes, txRes] = await Promise.all([
+      const [summaryPrimary, txPrimary] = await Promise.all([
         fetchDataFromApi("/api/user/coins-summary"),
         fetchDataFromApi(`/api/user/coin-transactions?page=${page}&limit=20`),
       ]);
+
+      const summaryRes =
+        summaryPrimary?.success && summaryPrimary?.data
+          ? summaryPrimary
+          : await fetchDataFromApi("/api/coins/summary");
+      const txRes =
+        txPrimary?.success && txPrimary?.data
+          ? txPrimary
+          : await fetchDataFromApi(`/api/coins/transactions?page=${page}&limit=20`);
 
       if (!summaryRes?.success || !txRes?.success) {
         throw new Error("Unable to load coin data");
       }
 
-      setSummary(summaryRes.data || null);
+      setSummary(normalizeCoinSummary(summaryRes.data || null));
       setTransactions(txRes?.data?.transactions || []);
       setPagination({
         page: txRes?.data?.pagination?.page || page,

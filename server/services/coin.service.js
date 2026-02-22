@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import CoinSettingsModel from "../models/coinSettings.model.js";
 import CoinTransactionModel from "../models/coinTransaction.model.js";
+import MembershipUserModel from "../models/membershipUser.model.js";
 import UserModel from "../models/user.model.js";
 
 const round2 = (value) =>
@@ -104,6 +105,64 @@ const syncLegacyBalanceToLedger = async (userId) => {
     userBalance,
     ledgerBalance: ledgerBalance + Math.max(diff, 0),
   };
+};
+
+const bootstrapMembershipPointsToLedger = async (userId) => {
+  const safeUserId = toObjectId(userId);
+  if (!safeUserId) return { syncedDiff: 0 };
+
+  const membershipUser = await MembershipUserModel.findOne({ user: safeUserId })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .select("_id pointsBalance")
+    .lean();
+  const pointsBalance = floorInt(membershipUser?.pointsBalance);
+  if (pointsBalance <= 0) {
+    return { syncedDiff: 0 };
+  }
+
+  const now = new Date();
+  const [usableRow] = await CoinTransactionModel.aggregate([
+    {
+      $match: {
+        user: toMongoObjectId(safeUserId),
+        type: { $in: ["earn", "bonus"] },
+        remainingCoins: { $gt: 0 },
+        $or: [{ expiryDate: null }, { expiryDate: { $gt: now } }],
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        usableCoins: { $sum: "$remainingCoins" },
+      },
+    },
+  ]);
+
+  const usableFromLedger = floorInt(usableRow?.usableCoins || 0);
+  const syncDiff = Math.max(pointsBalance - usableFromLedger, 0);
+  if (syncDiff <= 0) {
+    return { syncedDiff: 0 };
+  }
+
+  await CoinTransactionModel.create({
+    user: safeUserId,
+    coins: syncDiff,
+    remainingCoins: syncDiff,
+    type: "bonus",
+    source: "membership",
+    referenceId: `membership-points-sync:${
+      membershipUser?._id || safeUserId
+    }:${pointsBalance}`,
+    expiryDate: null,
+    meta: {
+      note: "Membership points bootstrap sync",
+      membershipUserId: membershipUser?._id || null,
+      pointsBalance,
+      usableFromLedger,
+    },
+  });
+
+  return { syncedDiff: syncDiff };
 };
 
 const expireCoinsForUser = async (userId, now = new Date()) => {
@@ -233,6 +292,7 @@ const ensureCoinLedgerState = async (userId) => {
   if (!safeUserId) return { usableCoins: 0 };
 
   await syncLegacyBalanceToLedger(safeUserId);
+  await bootstrapMembershipPointsToLedger(safeUserId);
   await expireCoinsForUser(safeUserId, new Date());
   const usableCoins = await syncUserCoinBalanceFromLedger(safeUserId);
   return { usableCoins };
