@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@mui/material";
-import { MdClose, MdPayment, MdSave } from "react-icons/md";
+import { MdBugReport, MdClose, MdPayment, MdSave } from "react-icons/md";
 
 /**
  * Payment Unavailable Modal
@@ -13,7 +13,10 @@ const PaymentUnavailableModal = ({
   isOpen,
   onClose,
   onSaveOrder,
+  onCreateDemoOrder,
   isSaving = false,
+  isCreatingDemoOrder = false,
+  showDemoOrderAction = false,
   orderTotal = 0,
 }) => {
   if (!isOpen) return null;
@@ -102,6 +105,44 @@ const PaymentUnavailableModal = ({
                 </span>
               )}
             </Button>
+
+            {showDemoOrderAction && typeof onCreateDemoOrder === "function" && (
+              <Button
+                onClick={onCreateDemoOrder}
+                disabled={isCreatingDemoOrder}
+                fullWidth
+                variant="outlined"
+                sx={{
+                  borderColor: "#f59e0b",
+                  color: "#b45309",
+                  padding: "14px 24px",
+                  borderRadius: "12px",
+                  fontWeight: 600,
+                  fontSize: "15px",
+                  textTransform: "none",
+                  "&:hover": {
+                    borderColor: "#d97706",
+                    backgroundColor: "#fff7ed",
+                  },
+                  "&:disabled": {
+                    borderColor: "#fde68a",
+                    color: "#92400e",
+                  },
+                }}
+              >
+                {isCreatingDemoOrder ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin">⏳</span>
+                    Creating Demo Influencer Order...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <MdBugReport size={20} />
+                    Demo Influencer Order (No Shipping)
+                  </span>
+                )}
+              </Button>
+            )}
 
             <Button
               onClick={onClose}

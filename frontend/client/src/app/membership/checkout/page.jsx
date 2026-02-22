@@ -5,7 +5,9 @@ import cookies from "js-cookie";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const API_URL = API_BASE_URL;
+const API_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.slice(0, -4)
+  : API_BASE_URL;
 const PENDING_PAYMENT_KEY = "membershipPaymentPending";
 
 const getStoredAuthToken = () => {
@@ -33,6 +35,27 @@ const DEFAULT_COIN_SUMMARY = {
     redeemRate: 0,
     maxRedeemPercentage: 0,
   },
+};
+const normalizeCoinSummary = (summary) => ({
+  ...DEFAULT_COIN_SUMMARY,
+  ...(summary || {}),
+  settings: {
+    ...DEFAULT_COIN_SUMMARY.settings,
+    ...(summary?.settings || {}),
+  },
+});
+
+const parseCoinSummaryResponse = async (response) => {
+  if (!response?.ok) return null;
+  try {
+    const payload = await response.json();
+    if (payload?.success && payload?.data) {
+      return payload.data;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 };
 
 export default function MembershipCheckoutPage() {
@@ -77,14 +100,11 @@ export default function MembershipCheckoutPage() {
       ensureAccessTokenCookie(token);
 
       try {
-        const [statusRes, planRes, coinsRes] = await Promise.all([
+        const [statusRes, planRes] = await Promise.all([
           fetch(`${API_URL}/api/membership/status`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
           fetch(`${API_URL}/api/membership/active`),
-          fetch(`${API_URL}/api/user/coins-summary`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
         ]);
 
         if (statusRes.status === 401) {
@@ -109,17 +129,20 @@ export default function MembershipCheckoutPage() {
           setError("No membership plan available");
         }
 
-        if (coinsRes.ok) {
-          const coinsData = await coinsRes.json();
-          if (coinsData?.success && coinsData?.data) {
-            setCoinSummary({
-              ...DEFAULT_COIN_SUMMARY,
-              ...coinsData.data,
-              settings: {
-                ...DEFAULT_COIN_SUMMARY.settings,
-                ...(coinsData.data.settings || {}),
-              },
-            });
+        const coinHeaders = { Authorization: `Bearer ${token}` };
+        const coinsResPrimary = await fetch(`${API_URL}/api/user/coins-summary`, {
+          headers: coinHeaders,
+        });
+        const coinsPrimary = await parseCoinSummaryResponse(coinsResPrimary);
+        if (coinsPrimary) {
+          setCoinSummary(normalizeCoinSummary(coinsPrimary));
+        } else {
+          const coinsResFallback = await fetch(`${API_URL}/api/coins/summary`, {
+            headers: coinHeaders,
+          });
+          const coinsFallback = await parseCoinSummaryResponse(coinsResFallback);
+          if (coinsFallback) {
+            setCoinSummary(normalizeCoinSummary(coinsFallback));
           }
         }
       } catch {

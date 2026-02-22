@@ -98,6 +98,14 @@ const DEFAULT_COIN_SUMMARY = {
     expiryDays: 0,
   },
 };
+const normalizeCoinSummary = (summary) => ({
+  ...DEFAULT_COIN_SUMMARY,
+  ...(summary || {}),
+  settings: {
+    ...DEFAULT_COIN_SUMMARY.settings,
+    ...(summary?.settings || {}),
+  },
+});
 
 const Header = () => {
   const pathname = usePathname();
@@ -199,16 +207,15 @@ const Header = () => {
 
     setCoinLoading(true);
     try {
-      const response = await fetchDataFromApi("/api/user/coins-summary");
-      if (response?.success && response?.data) {
-        setCoinSummary({
-          ...DEFAULT_COIN_SUMMARY,
-          ...response.data,
-          settings: {
-            ...DEFAULT_COIN_SUMMARY.settings,
-            ...(response.data.settings || {}),
-          },
-        });
+      const primaryResponse = await fetchDataFromApi("/api/user/coins-summary");
+      if (primaryResponse?.success && primaryResponse?.data) {
+        setCoinSummary(normalizeCoinSummary(primaryResponse.data));
+        return;
+      }
+
+      const fallbackResponse = await fetchDataFromApi("/api/coins/summary");
+      if (fallbackResponse?.success && fallbackResponse?.data) {
+        setCoinSummary(normalizeCoinSummary(fallbackResponse.data));
       }
     } catch (error) {
       // Keep header resilient if coin service is unavailable.

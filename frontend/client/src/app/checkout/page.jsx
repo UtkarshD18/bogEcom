@@ -15,11 +15,7 @@ import {
   setAffiliateFromCoupon,
 } from "@/utils/affiliateTracking";
 import { calculateOrderTotals } from "@/utils/calculateOrderTotals.mjs";
-import {
-  calculatePercentageDiscount,
-  getGstRatePercentFromSettings,
-  round2,
-} from "@/utils/gst";
+import { round2 } from "@/utils/gst";
 import { getDisplayTaxBreakup } from "@/utils/shippingDisplay";
 import {
   Alert,
@@ -44,8 +40,12 @@ import { HiOutlineFire } from "react-icons/hi";
 import { IoCartOutline } from "react-icons/io5";
 import { MdHome, MdInfo, MdLocationOn, MdWork } from "react-icons/md";
 
-const API_URL = API_BASE_URL;
+const API_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.slice(0, -4)
+  : API_BASE_URL;
 const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
+const TEST_INVOICE_STORAGE_KEY = "bog_test_invoices";
+const CHECKOUT_GST_RATE_PERCENT = 5;
 
 const buildAuthHeaders = (extraHeaders = {}) => {
   const token = getStoredAccessToken();
@@ -77,10 +77,11 @@ const Checkout = () => {
     referralData,
     calculateDiscount: calculateReferralDiscount,
     applyReferralCode,
+    clearReferral,
   } = useReferral();
 
   // Get settings from context
-  const { highTrafficNotice, taxSettings, maintenanceMode } = useSettings();
+  const { highTrafficNotice, maintenanceMode } = useSettings();
 
   // Helper to normalize cart item data (handles both API and localStorage structures)
   const getItemData = (item) => {
@@ -120,6 +121,7 @@ const Checkout = () => {
   const [isPayButtonDisabled, setIsPayButtonDisabled] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [isCreatingDemoOrder, setIsCreatingDemoOrder] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -134,7 +136,6 @@ const Checkout = () => {
 
   // Affiliate State
   const [affiliateData, setAffiliateData] = useState(null);
-  const [membershipStatus, setMembershipStatus] = useState(null);
   const [coinSettings, setCoinSettings] = useState({
     coinsPerRupee: 0.05,
     redeemRate: 0.1,
@@ -223,9 +224,8 @@ const Checkout = () => {
     return match || "";
   };
 
-  // Prices are GST-inclusive throughout the storefront.
-  // GST rate comes from settings (defaults to 5% if missing).
-  const gstRatePercent = getGstRatePercentFromSettings(taxSettings);
+  // Keep client checkout GST aligned with backend pricing calculation.
+  const gstRatePercent = CHECKOUT_GST_RATE_PERCENT;
 
   // Derive the delivery state for GST display (CGST+SGST vs IGST)
   const checkoutStateForPreview = isGuestCheckout
@@ -263,26 +263,18 @@ const Checkout = () => {
   // GST-exclusive base subtotal (used for all trade discounts)
   const cartBaseSubtotal = preDiscountTotals.subtotal;
 
-  // Step 2: Membership discount on GST-exclusive base (trade discount)
-  const membershipDiscountPercentage =
-    membershipStatus?.isMember && !membershipStatus?.isExpired
-      ? Number(
-          membershipStatus?.membershipPlan?.discountPercentage ??
-            membershipStatus?.membershipPlan?.discountPercent ??
-            0,
-        )
-      : 0;
-  const membershipDiscount = calculatePercentageDiscount(
-    cartBaseSubtotal,
-    membershipDiscountPercentage,
-  );
-  const baseAfterMembership = round2(
-    Math.max(cartBaseSubtotal - membershipDiscount, 0),
-  );
+  // Step 2: Membership pricing is handled by membership checkout only.
+  // Regular product checkout must not auto-discount member accounts.
+  const baseAfterMembership = cartBaseSubtotal;
 
   // Step 3: Referral/Influencer discount on GST-exclusive base (trade discount)
   // Note: Backend will recalculate for security — this is for display only.
-  const referralDiscount = referralCode
+  const activeInfluencerCode = String(
+    referralData?.code || referralCode || "",
+  )
+    .trim()
+    .toUpperCase();
+  const referralDiscount = activeInfluencerCode
     ? round2(
         Math.min(
           Math.max(
@@ -293,15 +285,12 @@ const Checkout = () => {
         ),
       )
     : 0;
-  const activeInfluencerCode = String(referralCode || "").trim().toUpperCase();
   const baseBeforeCoupon = round2(
     Math.max(baseAfterMembership - referralDiscount, 0),
   );
 
   // Step 4 + 5: coupon + GST are resolved by shared calculateOrderTotals().
-  const tradeDiscountBeforeCoupon = round2(
-    membershipDiscount + referralDiscount,
-  );
+  const tradeDiscountBeforeCoupon = round2(referralDiscount);
   const checkoutTotalsInput = {
     items: checkoutItems,
     couponCode: appliedCoupon?.code || "",
@@ -322,6 +311,7 @@ const Checkout = () => {
   const subtotal = totalsBeforeCoin.discountedSubtotal; // GST-exclusive after coupon
   const tax = totalsBeforeCoin.tax; // GST on discounted base
   const payableShipping = 0;
+  const hasSubtotalReduction = cartBaseSubtotal - subtotal > 0.009;
 
   const productCostAfterCoupon = round2(subtotal + tax); // GST-inclusive after coupon (no shipping)
 
@@ -426,16 +416,7 @@ const Checkout = () => {
   useEffect(() => {
     const fetchDynamicCheckoutSettings = async () => {
       try {
-        const [coinSettingsRes, membershipRes] = await Promise.all([
-          fetch(`${API_URL}/api/coins/settings/public`),
-          authToken
-            ? fetch(`${API_URL}/api/membership/status`, {
-                headers: {
-                  Authorization: `Bearer ${authToken}`,
-                },
-              })
-            : Promise.resolve(null),
-        ]);
+        const coinSettingsRes = await fetch(`${API_URL}/api/coins/settings/public`);
 
         if (coinSettingsRes?.ok) {
           const coinSettingsData = await coinSettingsRes.json();
@@ -453,27 +434,43 @@ const Checkout = () => {
           }
         }
 
-        if (membershipRes?.ok) {
-          const membershipData = await membershipRes.json();
-          if (membershipData?.success) {
-            setMembershipStatus(membershipData.data || null);
-          }
-        } else {
-          setMembershipStatus(null);
-        }
-
         if (authToken) {
+          let resolvedCoinBalance = 0;
           const coinBalanceRes = await fetch(`${API_URL}/api/coins/me`, {
             headers: {
               Authorization: `Bearer ${authToken}`,
             },
+            credentials: "include",
           });
           if (coinBalanceRes.ok) {
             const coinBalanceData = await coinBalanceRes.json();
             if (coinBalanceData?.success) {
-              setCoinBalance(Number(coinBalanceData?.data?.coinBalance || 0));
+              resolvedCoinBalance = Number(
+                coinBalanceData?.data?.coinBalance || 0,
+              );
             }
           }
+
+          if (!(resolvedCoinBalance > 0)) {
+            const coinSummaryRes = await fetch(`${API_URL}/api/user/coins-summary`, {
+              headers: {
+                Authorization: `Bearer ${authToken}`,
+              },
+              credentials: "include",
+            });
+            if (coinSummaryRes.ok) {
+              const coinSummaryData = await coinSummaryRes.json();
+              if (coinSummaryData?.success) {
+                resolvedCoinBalance = Number(
+                  coinSummaryData?.data?.usable_coins ??
+                    coinSummaryData?.data?.total_coins ??
+                    0,
+                );
+              }
+            }
+          }
+
+          setCoinBalance(Math.max(Number(resolvedCoinBalance || 0), 0));
         } else {
           setCoinBalance(0);
         }
@@ -760,7 +757,7 @@ const Checkout = () => {
           // Backend validates coupon against the GST-exclusive base amount
           // (after membership/referral, before coupon/shipping).
           orderAmount: baseBeforeCoupon,
-          influencerCode: referralCode || null,
+          influencerCode: activeInfluencerCode || null,
         }),
       });
 
@@ -785,7 +782,13 @@ const Checkout = () => {
           });
         }
       } else {
-        const shouldTryReferral = response.status === 404;
+        const validationMessage = String(data?.message || "").toLowerCase();
+        const looksLikeUnknownCoupon =
+          response.status === 404 ||
+          /invalid coupon|coupon code is invalid|coupon not found|coupon does not exist/.test(
+            validationMessage,
+          );
+        const shouldTryReferral = looksLikeUnknownCoupon;
         if (shouldTryReferral && applyReferralCode) {
           const referralResult = await applyReferralCode(
             couponCode.trim(),
@@ -856,6 +859,133 @@ const Checkout = () => {
       };
     }
     return {};
+  };
+
+  const persistTestInvoice = ({ orderPayload, responseData, mode }) => {
+    if (typeof window === "undefined") return;
+    try {
+      const apiInvoice = responseData?.clientInvoice || null;
+      const lineItems = Array.isArray(apiInvoice?.items)
+        ? apiInvoice.items.map((item) => ({
+            productId: item.productId || "",
+            name: item.name || item.productTitle || "Product",
+            quantity: Number(item.quantity || 0),
+            unitPrice: round2(item.unitPrice ?? item.price ?? 0),
+            lineTotal: round2(item.lineTotal ?? item.subTotal ?? 0),
+          }))
+        : buildOrderProductsPayload().map((item) => ({
+            productId: item.productId || "",
+            name: item.productTitle || "Product",
+            quantity: Number(item.quantity || 0),
+            unitPrice: round2(item.price || 0),
+            lineTotal: round2(item.subTotal || 0),
+          }));
+      const apiTotals = apiInvoice?.totals || {};
+      const invoiceRecord = {
+        invoiceId:
+          apiInvoice?.invoiceNumber ||
+          responseData?.invoice?.invoiceNumber ||
+          `TEST-${Date.now()}`,
+        mode: mode || "checkout",
+        createdAt: new Date().toISOString(),
+        orderId:
+          responseData?.orderId ||
+          responseData?._id ||
+          responseData?.order?._id ||
+          null,
+        merchantTransactionId: responseData?.merchantTransactionId || null,
+        influencerCode:
+          responseData?.influencer?.code ||
+          responseData?.order?.influencerCode ||
+          activeInfluencerCode ||
+          null,
+        influencerCommission: round2(
+          responseData?.influencer?.commission ??
+            responseData?.order?.influencerCommission ??
+            0,
+        ),
+        couponCode:
+          responseData?.order?.couponCode || appliedCoupon?.code || null,
+        invoiceNumber:
+          responseData?.invoice?.invoiceNumber || apiInvoice?.invoiceNumber || null,
+        invoicePath:
+          responseData?.invoice?.invoicePath || apiInvoice?.invoicePath || "",
+        shippingSuppressed: Boolean(responseData?.shippingSuppressed),
+        localDiskInvoice: responseData?.localDiskInvoice || null,
+        totals: {
+          originalSubtotal: round2(
+            apiTotals.originalSubtotal ?? cartBaseSubtotal,
+          ),
+          subtotal: round2(apiTotals.subtotal ?? subtotal),
+          influencerDiscount: round2(
+            apiTotals.influencerDiscount ?? referralDiscount,
+          ),
+          couponDiscount: round2(apiTotals.couponDiscount ?? couponDiscount),
+          gst: round2(apiTotals.gst ?? tax),
+          shipping: round2(apiTotals.shipping ?? payableShipping),
+          total: round2(apiTotals.total ?? total),
+        },
+        items: lineItems,
+        payloadSnapshot: {
+          totalAmt: round2(orderPayload?.totalAmt || total),
+          finalAmount: round2(orderPayload?.finalAmount || total),
+        },
+      };
+
+      const existingInvoices = (() => {
+        try {
+          const parsed = JSON.parse(
+            localStorage.getItem(TEST_INVOICE_STORAGE_KEY) || "[]",
+          );
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      })();
+
+      const nextInvoices = [invoiceRecord, ...existingInvoices].slice(0, 30);
+      localStorage.setItem(TEST_INVOICE_STORAGE_KEY, JSON.stringify(nextInvoices));
+      localStorage.setItem("bog_last_test_invoice", JSON.stringify(invoiceRecord));
+
+      const token = getStoredAccessToken();
+      fetch(`${API_URL}/api/orders/test/save-invoice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: "include",
+        body: JSON.stringify({ invoice: invoiceRecord }),
+      })
+        .then(async (response) => {
+          if (!response.ok) return;
+          const saved = await response.json().catch(() => null);
+          const diskInvoice = saved?.data?.localDiskInvoice || null;
+          if (!diskInvoice) return;
+
+          const updatedInvoice = {
+            ...invoiceRecord,
+            localDiskInvoice: diskInvoice,
+          };
+          const updatedInvoices = [updatedInvoice, ...existingInvoices].slice(
+            0,
+            30,
+          );
+          localStorage.setItem(
+            TEST_INVOICE_STORAGE_KEY,
+            JSON.stringify(updatedInvoices),
+          );
+          localStorage.setItem(
+            "bog_last_test_invoice",
+            JSON.stringify(updatedInvoice),
+          );
+        })
+        .catch(() => {
+          // Disk-sync is best-effort.
+        });
+    } catch (_error) {
+      // Invoice persistence is best-effort; checkout flow should never fail on this.
+    }
   };
 
   const createPurchaseOrderDraft = async ({ token, deliveryAddressId }) => {
@@ -954,7 +1084,7 @@ const Checkout = () => {
         couponCode: appliedCoupon?.code || null,
         discountAmount: couponDiscount,
         // Influencer/Referral tracking
-        influencerCode: referralCode || null,
+        influencerCode: activeInfluencerCode || null,
         // Legacy affiliate tracking
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
@@ -1000,6 +1130,12 @@ const Checkout = () => {
       if (!data.success) {
         throw new Error(data.message || "Payment initialization failed");
       }
+
+      persistTestInvoice({
+        orderPayload: orderData,
+        responseData: data?.data || null,
+        mode: "payment-init",
+      });
 
       const paymentUrl = data?.data?.paymentUrl;
       if (!paymentUrl) {
@@ -1110,7 +1246,7 @@ const Checkout = () => {
         discountAmount: couponDiscount,
         finalAmount: total,
         // Influencer/Referral tracking - backend recalculates for security
-        influencerCode: referralCode || null,
+        influencerCode: activeInfluencerCode || null,
         // Legacy affiliate tracking
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
@@ -1134,6 +1270,12 @@ const Checkout = () => {
       const data = await response.json();
 
       if (data.success) {
+        persistTestInvoice({
+          orderPayload: orderData,
+          responseData: data?.data || null,
+          mode: "save-for-later",
+        });
+
         setShowPaymentModal(false);
         if (clearCart) clearCart();
 
@@ -1161,6 +1303,106 @@ const Checkout = () => {
       });
     } finally {
       setIsSavingOrder(false);
+    }
+  };
+
+  const handleCreateDemoInfluencerOrder = async () => {
+    if (isCreatingDemoOrder) return;
+
+    if (!authToken) {
+      setSnackbar({
+        open: true,
+        message: "Please login to create a demo test order.",
+        severity: "error",
+      });
+      return;
+    }
+
+    if (!activeInfluencerCode) {
+      setSnackbar({
+        open: true,
+        message: "Apply an influencer code first to run this demo test.",
+        severity: "error",
+      });
+      return;
+    }
+
+    setIsCreatingDemoOrder(true);
+    try {
+      const insufficientItems = (cartItems || [])
+        .map((item) => getItemData(item))
+        .filter((data) => data.quantity > data.availableQuantity);
+      if (insufficientItems.length > 0) {
+        const first = insufficientItems[0];
+        throw new Error(
+          `Only ${first.availableQuantity} left for ${first.name}. Update your cart to continue.`,
+        );
+      }
+
+      const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
+      const demoPayload = {
+        products: buildOrderProductsPayload(),
+        influencerCode: activeInfluencerCode,
+        state: selectedAddrObj?.state || guestDetails.state || "",
+        pincode: selectedAddrObj?.pincode || guestDetails.pincode || "",
+        address:
+          selectedAddrObj?.address_line1 ||
+          guestDetails.address ||
+          "Demo test order address",
+        phone: selectedAddrObj?.mobile || guestDetails.phone || "",
+        gstNumber: gstSavedValue || gstNumber || "",
+        notes: orderNote || "Demo influencer order from checkout",
+      };
+
+      const response = await fetch(`${API_URL}/api/orders/test/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify(demoPayload),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "Failed to create demo test order");
+      }
+
+      persistTestInvoice({
+        orderPayload: demoPayload,
+        responseData: data?.data || null,
+        mode: "demo-influencer",
+      });
+
+      setShowPaymentModal(false);
+      if (clearCart) clearCart();
+
+      const orderId = data?.data?.orderId || data?.data?.order?._id || "";
+      const commission = round2(
+        Number(data?.data?.influencer?.commission || 0),
+      ).toFixed(2);
+      setSnackbar({
+        open: true,
+        message: `Demo influencer order created. Commission ₹${commission} synced and invoice saved locally.`,
+        severity: "success",
+      });
+
+      if (orderId) {
+        setTimeout(() => {
+          router.push(`/orders/${orderId}`);
+        }, 1200);
+      }
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message:
+          error.message ||
+          "Failed to create demo order. Please try again.",
+        severity: "error",
+      });
+    } finally {
+      setIsCreatingDemoOrder(false);
     }
   };
 
@@ -1573,9 +1815,7 @@ const Checkout = () => {
                   <div className="space-y-4 mb-8">
                     <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
                       <span>Subtotal</span>
-                      <span className="text-white">
-                        ₹{cartBaseSubtotal.toFixed(2)}
-                      </span>
+                      <span className="text-white">₹{cartBaseSubtotal.toFixed(2)}</span>
                     </div>
 
                     {couponDiscount > 0 && (
@@ -1587,13 +1827,20 @@ const Checkout = () => {
                       </div>
                     )}
 
-                    {referralDiscount > 0 && (
+                    {activeInfluencerCode && (
                       <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
                         <span className="flex items-center gap-1">
                           <FiTag /> Influencer{" "}
-                          {activeInfluencerCode ? `(${activeInfluencerCode})` : ""}
+                          ({activeInfluencerCode})
                         </span>
                         <span>-₹{referralDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {hasSubtotalReduction && (
+                      <div className="flex justify-between text-gray-300 font-bold uppercase tracking-widest text-xs">
+                        <span>Discounted Subtotal</span>
+                        <span className="text-white">₹{subtotal.toFixed(2)}</span>
                       </div>
                     )}
 
@@ -1619,7 +1866,7 @@ const Checkout = () => {
                               &#8377;{displayShippingCharge.toFixed(2)}
                             </span>
                           )}
-                          <span>&#8377;0.00</span>
+                          <span>FREE</span>
                         </span>
                       ) : (
                         <span className="text-gray-500">--</span>
@@ -1668,14 +1915,31 @@ const Checkout = () => {
                     <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
                       <FiTag className="text-primary" /> Apply Coupon
                     </h3>
-                    {referralDiscount > 0 && activeInfluencerCode && (
+                    {activeInfluencerCode && (
                       <div className="mb-3 bg-[var(--flavor-glass)] border border-primary/20 p-3 rounded-xl">
-                        <p className="font-bold text-primary text-sm">
-                          Influencer code auto-applied: {activeInfluencerCode}
-                        </p>
-                        <p className="text-xs text-primary font-semibold mt-1">
-                          Discount on subtotal: ₹{referralDiscount.toFixed(2)}
-                        </p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-primary text-sm">
+                              Influencer code auto-applied: {activeInfluencerCode}
+                            </p>
+                            <p className="text-xs text-primary font-semibold mt-1">
+                              Discount on subtotal: ₹{referralDiscount.toFixed(2)}
+                            </p>
+                            {Number(referralData?.maxDiscountAmount || 0) > 0 && (
+                              <p className="text-[11px] text-primary/80 mt-1">
+                                Max discount: ₹
+                                {Number(referralData.maxDiscountAmount).toFixed(2)}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={clearReferral}
+                            className="text-[11px] font-bold uppercase tracking-wide text-red-500 hover:text-red-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     )}
                     {appliedCoupon ? (
@@ -1775,7 +2039,10 @@ const Checkout = () => {
         isOpen={showPaymentModal}
         onClose={handleCloseModal}
         onSaveOrder={handleSaveOrder}
+        onCreateDemoOrder={handleCreateDemoInfluencerOrder}
         isSaving={isSavingOrder}
+        isCreatingDemoOrder={isCreatingDemoOrder}
+        showDemoOrderAction={!isGuestCheckout && Boolean(activeInfluencerCode)}
         orderTotal={total}
       />
 

@@ -4,10 +4,10 @@ import { fetchDataFromApi } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { FiChevronLeft, FiChevronRight, FiMinus, FiPlus, FiX } from "react-icons/fi";
 
-const clampZoom = (value) => Math.min(Math.max(Number(value || 1), 1), 3);
+const clampZoom = (value) => Math.min(Math.max(Number(value || 1), 0.5), 5);
 
 function FullImageViewContent() {
   const searchParams = useSearchParams();
@@ -17,13 +17,25 @@ function FullImageViewContent() {
   const [images, setImages] = useState([]);
   const [activeIndex, setActiveIndex] = useState(requestedIndex);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const dragAnchorRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     setActiveIndex(requestedIndex);
     setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setIsDragging(false);
   }, [requestedIndex]);
+
+  useEffect(() => {
+    if (zoom <= 1) {
+      setPan({ x: 0, y: 0 });
+      setIsDragging(false);
+    }
+  }, [zoom]);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,16 +98,51 @@ function FullImageViewContent() {
     if (!showPrev) return;
     setActiveIndex((prev) => Math.max(prev - 1, 0));
     setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setIsDragging(false);
   };
 
   const goNext = () => {
     if (!showNext) return;
     setActiveIndex((prev) => Math.min(prev + 1, images.length - 1));
     setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setIsDragging(false);
   };
 
   const zoomIn = () => setZoom((prev) => clampZoom(prev + 0.25));
   const zoomOut = () => setZoom((prev) => clampZoom(prev - 0.25));
+  const canPan = zoom > 1;
+
+  const handleWheelZoom = (event) => {
+    if (!activeImage) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const delta = event.deltaY < 0 ? 0.2 : -0.2;
+    setZoom((prev) => clampZoom(prev + delta));
+  };
+
+  const handleMouseDown = (event) => {
+    if (!canPan) return;
+    event.preventDefault();
+    setIsDragging(true);
+    dragAnchorRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const handleMouseMove = (event) => {
+    if (!isDragging || !canPan) return;
+    const prevPoint = dragAnchorRef.current;
+    const dx = event.clientX - prevPoint.x;
+    const dy = event.clientY - prevPoint.y;
+    dragAnchorRef.current = { x: event.clientX, y: event.clientY };
+    setPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+  };
+
+  const stopDragging = () => {
+    if (isDragging) {
+      setIsDragging(false);
+    }
+  };
 
   return (
     <section className="min-h-screen bg-[#f4f4f5] p-4 sm:p-6">
@@ -150,7 +197,15 @@ function FullImageViewContent() {
               </Link>
             </div>
           ) : (
-            <div className="flex min-h-[55vh] items-center justify-center overflow-hidden">
+            <div
+              className="flex min-h-[55vh] items-center justify-center overflow-hidden select-none"
+              onWheel={handleWheelZoom}
+              onWheelCapture={handleWheelZoom}
+              onMouseMove={handleMouseMove}
+              onMouseUp={stopDragging}
+              onMouseLeave={stopDragging}
+              style={{ touchAction: "none" }}
+            >
               {showPrev && (
                 <button
                   type="button"
@@ -166,8 +221,16 @@ function FullImageViewContent() {
                 <img
                   src={activeImage}
                   alt={`Product image ${activeIndex + 1}`}
-                  className="max-h-[70vh] w-auto object-contain transition-transform duration-200"
-                  style={{ transform: `scale(${zoom})` }}
+                  className={`max-h-[70vh] w-auto object-contain transition-transform duration-200 ${
+                    canPan ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
+                  }`}
+                  style={{
+                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                    transformOrigin: "center center",
+                    willChange: "transform",
+                  }}
+                  onMouseDown={handleMouseDown}
+                  onDragStart={(event) => event.preventDefault()}
                 />
               ) : (
                 <p className="text-gray-500">No images found.</p>
@@ -198,6 +261,8 @@ function FullImageViewContent() {
                   onClick={() => {
                     setActiveIndex(index);
                     setZoom(1);
+                    setPan({ x: 0, y: 0 });
+                    setIsDragging(false);
                   }}
                   className={`overflow-hidden rounded-lg border p-1 ${selected ? "border-primary" : "border-gray-200"}`}
                   aria-label={`View image ${index + 1}`}

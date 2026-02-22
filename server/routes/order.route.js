@@ -11,6 +11,7 @@ import {
   getUserOrderById,
   getUserOrders,
   handlePhonePeWebhook,
+  saveClientTestInvoiceToDisk,
   saveOrderForLater,
   updateOrderStatus,
 } from "../controllers/order.controller.js";
@@ -92,7 +93,8 @@ router.get("/:orderId/invoice", auth, downloadOrderInvoice);
 
 // Create test order (for testing without payment gateway)
 if (process.env.NODE_ENV !== "production") {
-  router.post("/test/create", createTestOrder);
+  router.post("/test/create", optionalAuth, createTestOrder);
+  router.post("/test/save-invoice", optionalAuth, saveClientTestInvoiceToDisk);
 }
 
 // ==================== ADMIN ROUTES ====================

@@ -14,7 +14,9 @@ import { FaCheck, FaCrown } from "react-icons/fa";
 import { HiSparkles } from "react-icons/hi2";
 import { IoSparkles } from "react-icons/io5";
 
-const API_URL = API_BASE_URL;
+const API_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.slice(0, -4)
+  : API_BASE_URL;
 
 const getStoredAuthToken = () => {
   const cookieToken = cookies.get("accessToken");
@@ -182,15 +184,31 @@ const GLASS_THEME_MAP = {
   "midnight-glass": "midnight-glass",
 };
 
+const normalizeThemeStyle = (styleKey) =>
+  String(styleKey || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-");
+
 const resolveGlassThemeKey = (styleKey) => {
-  const normalizedKey = String(styleKey || "").trim().toLowerCase();
+  const normalizedKey = normalizeThemeStyle(styleKey);
+  if (GLASS_THEME_MAP[normalizedKey]) {
+    return GLASS_THEME_MAP[normalizedKey];
+  }
+  if (normalizedKey.endsWith("glass")) {
+    const canonicalGlassKey = `${normalizedKey.replace(/glass$/, "").replace(/-+$/, "")}-glass`;
+    return GLASS_THEME_MAP[canonicalGlassKey] || "mint-glass";
+  }
   return GLASS_THEME_MAP[normalizedKey] || "mint-glass";
 };
 
 const resolvePresetThemeKey = (styleKey) => {
-  const normalizedKey = String(styleKey || "").trim().toLowerCase();
+  const normalizedKey = normalizeThemeStyle(styleKey);
   if (normalizedKey.endsWith("-glass")) {
     return normalizedKey.replace("-glass", "");
+  }
+  if (normalizedKey.endsWith("glass")) {
+    return normalizedKey.replace(/glass$/, "").replace(/-+$/, "") || "mint";
   }
   return normalizedKey || "mint";
 };
@@ -365,14 +383,16 @@ export default function MembershipPage() {
     };
   }, []);
 
+  const themeStyleKey = pageContent?.theme?.style || pageContent?.themeStyle;
+
   useEffect(() => {
     // Sync server-selected membership theme to the global CSS-variable theme layer.
-    setTheme(resolveGlassThemeKey(pageContent?.theme?.style));
-  }, [pageContent?.theme?.style, setTheme]);
+    setTheme(resolveGlassThemeKey(themeStyleKey));
+  }, [themeStyleKey, setTheme]);
 
   const theme = useMemo(() => {
-    return resolveMembershipTheme(pageContent?.theme?.style);
-  }, [pageContent?.theme?.style]);
+    return resolveMembershipTheme(themeStyleKey);
+  }, [themeStyleKey]);
 
   const handleSubscribe = () => {
     if (!isLoggedIn) {

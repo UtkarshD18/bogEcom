@@ -387,6 +387,12 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Marks development/test orders that must never be shipped.
+    isDemoOrder: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
 
     purchaseOrder: {
       type: mongoose.Schema.ObjectId,

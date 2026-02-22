@@ -222,7 +222,7 @@ const Sidebar = () => {
           </p>
         </button>
         <p className="text-sm font-medium text-gray-800 truncate">
-          {admin?.name || "Admin"}
+          {admin?.name || admin?.userName || "Admin"}
         </p>
         <p className="text-xs text-gray-500 truncate">{admin?.email || ""}</p>
       </div>
