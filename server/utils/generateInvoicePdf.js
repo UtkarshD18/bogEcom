@@ -3,11 +3,19 @@ import fsPromises from "fs/promises";
 import path from "path";
 import PDFDocument from "pdfkit";
 import { fileURLToPath } from "url";
+import { UPLOAD_ROOT } from "../middlewares/upload.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SERVER_ROOT = path.resolve(__dirname, "..");
-const INVOICE_DIR = path.join(SERVER_ROOT, "invoices");
+const configuredInvoiceDir = String(process.env.INVOICE_DIR || "").trim();
+const defaultInvoiceDir =
+  process.env.NODE_ENV === "production"
+    ? path.join(UPLOAD_ROOT, "invoices")
+    : path.join(SERVER_ROOT, "invoices");
+const INVOICE_DIR = configuredInvoiceDir
+  ? path.resolve(configuredInvoiceDir)
+  : defaultInvoiceDir;
 const SHOULD_FORCE_REGENERATE = String(process.env.INVOICE_FORCE_REGENERATE || "false").toLowerCase() === "true";
 
 const DEFAULT_HSN = process.env.INVOICE_DEFAULT_HSN || "2106";
@@ -962,15 +970,31 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
 export const getInvoiceFileName = (orderId) => `invoice_${orderId}.pdf`;
 
 export const getInvoiceRelativePath = (orderId) =>
-  path.posix.join("invoices", getInvoiceFileName(orderId));
+  path.posix.join("uploads", "invoices", getInvoiceFileName(orderId));
 
 export const getInvoiceAbsolutePath = (orderId) =>
   path.join(INVOICE_DIR, getInvoiceFileName(orderId));
 
 export const getAbsolutePathFromStoredInvoicePath = (invoicePath) => {
   if (!invoicePath) return null;
-  if (path.isAbsolute(invoicePath)) return invoicePath;
-  return path.join(SERVER_ROOT, invoicePath);
+  const normalizedPath = String(invoicePath).trim().replace(/\\/g, "/");
+  if (!normalizedPath) return null;
+
+  if (/^\/?uploads\//i.test(normalizedPath)) {
+    const uploadRelative = normalizedPath.replace(/^\/?uploads\/?/i, "");
+    return path.join(UPLOAD_ROOT, uploadRelative);
+  }
+
+  if (/^\/?invoices\//i.test(normalizedPath)) {
+    const invoiceRelative = normalizedPath.replace(/^\/?invoices\/?/i, "");
+    return path.join(INVOICE_DIR, invoiceRelative);
+  }
+
+  if (/^[a-zA-Z]:\//.test(normalizedPath) || path.isAbsolute(normalizedPath)) {
+    return normalizedPath;
+  }
+
+  return path.join(SERVER_ROOT, normalizedPath);
 };
 
 export const generateInvoicePdf = async ({
