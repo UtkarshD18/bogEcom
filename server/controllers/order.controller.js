@@ -1968,13 +1968,63 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
       throw new AppError("FORBIDDEN");
     }
 
+    const fallbackInvoiceAbsolutePath = getAbsolutePathFromStoredInvoicePath(
+      order.invoicePath || order.invoiceUrl,
+    );
+    const invoiceDebugContext = {
+      orderId,
+      requesterId: requester?._id?.toString?.() || String(requesterId || ""),
+      requesterRole: requester?.role || null,
+      orderStatus: order?.order_status || null,
+      paymentStatus: order?.payment_status || null,
+      isInvoiceGenerated: Boolean(order?.isInvoiceGenerated),
+      invoiceNumber: order?.invoiceNumber || null,
+      invoicePath: order?.invoicePath || null,
+      invoiceUrl: order?.invoiceUrl || null,
+      resolvedFallbackPath: fallbackInvoiceAbsolutePath || null,
+      timelineTail: Array.isArray(order?.statusTimeline)
+        ? order.statusTimeline.slice(-3).map((entry) => ({
+            status: entry?.status || null,
+            source: entry?.source || null,
+            timestamp: entry?.timestamp || null,
+          }))
+        : [],
+    };
+
     const invoiceResult = await ensureOrderInvoice(order);
     if (!invoiceResult.ok) {
-      logger.warn("downloadOrderInvoice", "Invoice unavailable", {
-        orderId,
+      logger.error("downloadOrderInvoice", "Invoice generation failed (temporary debug)", {
+        ...invoiceDebugContext,
         reason: invoiceResult.reason,
         error: invoiceResult.error?.message || null,
+        stack: invoiceResult.error?.stack || null,
       });
+
+      if (fallbackInvoiceAbsolutePath) {
+        try {
+          await fsPromises.access(fallbackInvoiceAbsolutePath);
+          const fallbackFilename = `${order.invoiceNumber || `invoice_${orderId}`}.pdf`;
+          logger.warn(
+            "downloadOrderInvoice",
+            "Serving fallback invoice file after generation failure (temporary debug)",
+            {
+              ...invoiceDebugContext,
+              servedFrom: fallbackInvoiceAbsolutePath,
+            },
+          );
+          return res.download(fallbackInvoiceAbsolutePath, fallbackFilename);
+        } catch (fallbackError) {
+          logger.warn(
+            "downloadOrderInvoice",
+            "Fallback invoice file unavailable after generation failure (temporary debug)",
+            {
+              ...invoiceDebugContext,
+              fallbackError: fallbackError?.message || String(fallbackError),
+            },
+          );
+        }
+      }
+
       return res.status(400).json({
         error: true,
         success: false,
@@ -2001,9 +2051,21 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) {
+      logger.warn("downloadOrderInvoice", "AppError in downloadOrderInvoice (temporary debug)", {
+        orderId: req?.params?.orderId || null,
+        requesterId: req?.user || null,
+        errorCode: error?.code || null,
+        errorMessage: error?.message || null,
+      });
       return sendError(res, error);
     }
 
+    logger.error("downloadOrderInvoice", "Unexpected error in downloadOrderInvoice (temporary debug)", {
+      orderId: req?.params?.orderId || null,
+      requesterId: req?.user || null,
+      error: error?.message || String(error),
+      stack: error?.stack || null,
+    });
     const dbError = handleDatabaseError(error, "downloadOrderInvoice");
     return sendError(res, dbError);
   }
