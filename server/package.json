@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
+    "build": "node -e \"console.log('Server build: no transpilation required')\"",
     "dev": "nodemon index.js",
     "test": "node --test",
     "migrate:enterprise": "node migrations/2026-02-enterprise-upgrade.mjs",
@@ -20,6 +21,7 @@
     "cloudinary": "^2.9.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "dayjs": "^1.11.19",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",

@@ -230,13 +230,7 @@ const CustomerCarePage = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700">
-                        {ticket.createdAt
-                          ? new Date(ticket.createdAt).toLocaleDateString("en-IN", {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            })
-                          : "-"}
+                        {ticket.created_at || ticket.createdAt || "-"}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <Link href={`/customer-care/${ticket.ticketId}`}>

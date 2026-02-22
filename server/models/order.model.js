@@ -118,6 +118,7 @@ const orderSchema = new mongoose.Schema(
         "rto",
         "rto_completed",
         "confirmed",
+        "completed",
       ],
       default: "pending",
       index: true,
@@ -370,7 +371,6 @@ const orderSchema = new mongoose.Schema(
       type: mongoose.Schema.ObjectId,
       ref: "PurchaseOrder",
       default: null,
-      index: true,
     },
 
     // Original price before any discounts
@@ -394,12 +394,6 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-    purchaseOrder: {
-      type: mongoose.Schema.ObjectId,
-      ref: "PurchaseOrder",
-      default: null,
-    },
-
     guestDetails: {
       fullName: { type: String, default: "" },
       phone: { type: String, default: "" },
@@ -421,7 +415,6 @@ shipping_provider: {
 awb_number: {
   type: String,
   default: null,
-  index: true,
 },
 
 shipping_label: {
@@ -438,16 +431,76 @@ shipment_status: {
   type: String,
   enum: [
     "pending",
+    "shipment_created",
     "booked",
+    "pickup_scheduled",
+    "in_transit",
+    "out_for_delivery",
     "shipped",
     "delivered",
     "cancelled",
+    "failed",
     "rto_initiated",
     "rto_in_transit",
     "rto_delivered",
   ],
   default: "pending",
 },
+
+    awbNumber: {
+      type: String,
+      default: null,
+    },
+
+    courierName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    shipmentId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    shipmentStatus: {
+      type: String,
+      enum: [
+        "pending",
+        "shipment_created",
+        "pickup_scheduled",
+        "in_transit",
+        "out_for_delivery",
+        "delivered",
+        "rto",
+        "cancelled",
+        "failed",
+      ],
+      default: "pending",
+      index: true,
+    },
+
+    trackingUrl: {
+      type: String,
+      default: null,
+    },
+
+    manifestId: {
+      type: String,
+      default: null,
+    },
+
+    shipmentFailureCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    shipmentLastError: {
+      type: String,
+      default: "",
+    },
 
     shipment_created_at: {
   type: Date,
@@ -469,6 +522,23 @@ shipment_status: {
     invoiceGeneratedAt: {
       type: Date,
       default: null,
+    },
+
+    isInvoiceGenerated: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    invoiceUrl: {
+      type: String,
+      default: null,
+    },
+
+    deliveryDate: {
+      type: Date,
+      default: null,
+      index: true,
     },
 
     // ==================== END NEW FIELDS ====================
@@ -497,6 +567,12 @@ orderSchema.index({ paymentId: 1 });
 orderSchema.index({ invoiceNumber: 1 }, { sparse: true });
 orderSchema.index({ "gst.state": 1, createdAt: -1 });
 orderSchema.index({ purchaseOrder: 1 }, { sparse: true });
+orderSchema.index({ awb_number: 1 }, { sparse: true });
+orderSchema.index({ awbNumber: 1 }, { sparse: true });
+orderSchema.index({ shipment_status: 1, order_status: 1 });
+orderSchema.index({ shipmentStatus: 1, order_status: 1 });
+orderSchema.index({ isInvoiceGenerated: 1, invoiceGeneratedAt: -1 });
+orderSchema.index({ deliveryDate: -1 }, { sparse: true });
 
 // Normalize legacy payment_status before validation
 orderSchema.pre("validate", function () {

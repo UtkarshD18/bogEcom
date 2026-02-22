@@ -73,6 +73,7 @@ import {
   reserveInventory,
   restoreInventory,
 } from "../services/inventory.service.js";
+import { autoCreateShipmentForPaidOrder } from "../services/automatedShipping.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -845,14 +846,14 @@ logger.info(
 
 const isInvoiceEligible = (order) => {
   if (!order) return false;
-  if (normalizeOrderStatus(order.order_status) === ORDER_STATUS.CANCELLED) {
+  const normalizedStatus = normalizeOrderStatus(order.order_status);
+  if (normalizedStatus === ORDER_STATUS.CANCELLED) {
     return false;
   }
-  const normalizedStatus = normalizeOrderStatus(order.order_status);
-  return (
-    order.payment_status === "paid" ||
-    [ORDER_STATUS.ACCEPTED, ORDER_STATUS.IN_WAREHOUSE, ORDER_STATUS.SHIPPED, ORDER_STATUS.OUT_FOR_DELIVERY, ORDER_STATUS.DELIVERED].includes(normalizedStatus)
-  );
+  if (String(order.payment_status || "").toLowerCase() !== "paid") {
+    return false;
+  }
+  return [ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(normalizedStatus);
 };
 
 const getInvoiceEligibilityMessage = (order) => {
@@ -861,7 +862,7 @@ const getInvoiceEligibilityMessage = (order) => {
     return "Invoice is not available for cancelled orders.";
   }
   if (!isInvoiceEligible(order)) {
-    return "Invoice is available after order is paid or accepted.";
+    return "Invoice will be available after delivery is completed.";
   }
   return null;
 };
@@ -1111,7 +1112,7 @@ const calculateCheckoutPricing = async ({
   };
 };
 
-const ensureOrderInvoice = async (orderDoc) => {
+export const ensureOrderInvoice = async (orderDoc) => {
   try {
     if (!orderDoc?._id) {
       return { ok: false, reason: "Order not found" };
@@ -1172,31 +1173,6 @@ const ensureOrderInvoice = async (orderDoc) => {
       orderDoc.invoiceNumber = generated.invoiceNumber;
       orderDoc.invoicePath = generated.invoicePath;
       orderDoc.invoiceGeneratedAt = generated.invoiceGeneratedAt;
-
-      // Avoid validating legacy fields while persisting generated invoice refs.
-      try {
-        await OrderModel.updateOne(
-          { _id: orderDoc._id },
-          {
-            $set: {
-              invoiceNumber: generated.invoiceNumber,
-              invoicePath: generated.invoicePath,
-              invoiceGeneratedAt: generated.invoiceGeneratedAt,
-            },
-          },
-        );
-      } catch (persistError) {
-        logger.warn(
-          "ensureOrderInvoice",
-          "Failed to persist order invoice metadata; continuing with generated PDF",
-          {
-            orderId: orderDoc._id,
-            invoiceNumber: generated.invoiceNumber,
-            invoicePath: generated.invoicePath,
-            error: persistError?.message || String(persistError),
-          },
-        );
-      }
     }
 
     if (!absolutePath) {
@@ -1258,9 +1234,62 @@ const ensureOrderInvoice = async (orderDoc) => {
       orderDoc._id.toString();
     const invoicePath = orderDoc.invoicePath || generated?.invoicePath || "";
 
+    orderDoc.invoiceNumber = invoiceNumber;
+    orderDoc.invoicePath = invoicePath;
+    orderDoc.invoiceGeneratedAt =
+      orderDoc.invoiceGeneratedAt || generated?.invoiceGeneratedAt || new Date();
+    orderDoc.isInvoiceGenerated = Boolean(invoicePath);
+    orderDoc.invoiceUrl = invoicePath || null;
+
+    const normalizedStatus = normalizeOrderStatus(orderDoc.order_status);
+    if (normalizedStatus === ORDER_STATUS.DELIVERED) {
+      orderDoc.deliveryDate = orderDoc.deliveryDate || new Date();
+    }
+    if (orderDoc.isInvoiceGenerated) {
+      applyOrderStatusTransition(orderDoc, ORDER_STATUS.COMPLETED, {
+        source: "INVOICE_AUTOGENERATION",
+      });
+    }
+
     const createdBy = toObjectIdOrNull(
       orderDoc.user || orderDoc.user?._id || populatedOrder.user || populatedOrder.user?._id,
     );
+
+    const orderSetPayload = {
+      invoiceNumber: orderDoc.invoiceNumber,
+      invoicePath: orderDoc.invoicePath,
+      invoiceGeneratedAt: orderDoc.invoiceGeneratedAt,
+      isInvoiceGenerated: orderDoc.isInvoiceGenerated,
+      invoiceUrl: orderDoc.invoiceUrl,
+      deliveryDate: orderDoc.deliveryDate || null,
+    };
+    if (orderDoc.order_status) {
+      orderSetPayload.order_status = orderDoc.order_status;
+    }
+    if (Array.isArray(orderDoc.statusTimeline)) {
+      orderSetPayload.statusTimeline = orderDoc.statusTimeline;
+    }
+
+    // Avoid validating legacy fields while persisting generated invoice refs.
+    try {
+      await OrderModel.updateOne(
+        { _id: orderDoc._id },
+        {
+          $set: orderSetPayload,
+        },
+      );
+    } catch (persistError) {
+      logger.warn(
+        "ensureOrderInvoice",
+        "Failed to persist order invoice metadata; continuing with generated PDF",
+        {
+          orderId: orderDoc._id,
+          invoiceNumber: orderDoc.invoiceNumber,
+          invoicePath: orderDoc.invoicePath,
+          error: persistError?.message || String(persistError),
+        },
+      );
+    }
 
     try {
       await InvoiceModel.findOneAndUpdate(
@@ -1426,7 +1455,9 @@ export const getOrderStats = asyncHandler(async (req, res) => {
       OrderModel.countDocuments({ order_status: "in_warehouse" }),
       OrderModel.countDocuments({ order_status: "shipped" }),
       OrderModel.countDocuments({ order_status: "out_for_delivery" }),
-      OrderModel.countDocuments({ order_status: "delivered" }),
+      OrderModel.countDocuments({
+        order_status: { $in: ["delivered", "completed"] },
+      }),
       OrderModel.countDocuments({ order_status: "cancelled" }),
       OrderModel.countDocuments({ payment_status: "paid" }),
       OrderModel.countDocuments({ payment_status: "failed" }),
@@ -1478,6 +1509,7 @@ export const getOrderStats = asyncHandler(async (req, res) => {
             shipped: stats[5],
             out_for_delivery: stats[6],
             delivered: stats[7],
+            completed: stats[7],
             cancelled: stats[8],
             confirmed: stats[3],
           },
@@ -3027,6 +3059,30 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           });
         }
       }
+
+      const autoShipmentResult = await autoCreateShipmentForPaidOrder({
+        orderId: order._id,
+        source: "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
+      });
+      if (!autoShipmentResult.ok && !autoShipmentResult.skipped) {
+        logger.error("handlePhonePeWebhook", "Automatic shipment booking failed", {
+          orderId: order._id,
+          reason: autoShipmentResult.reason || "SHIPMENT_CREATION_FAILED",
+          error: autoShipmentResult.error?.message || null,
+        });
+      }
+
+      if (autoShipmentResult?.order) {
+        order.awb_number = autoShipmentResult.order.awb_number;
+        order.awbNumber = autoShipmentResult.order.awbNumber;
+        order.shipment_status = autoShipmentResult.order.shipment_status;
+        order.shipmentStatus = autoShipmentResult.order.shipmentStatus;
+        order.shipping_provider = autoShipmentResult.order.shipping_provider;
+        order.courierName = autoShipmentResult.order.courierName;
+        order.trackingUrl = autoShipmentResult.order.trackingUrl;
+        order.shipmentId = autoShipmentResult.order.shipmentId;
+        order.manifestId = autoShipmentResult.order.manifestId;
+      }
     }
 
     syncOrderToFirestore(order, "update").catch((err) =>
@@ -3256,29 +3312,33 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       invoicePath: "",
       reason: null,
     };
-    if (isInvoiceEligible(testOrder)) {
-      const invoiceResult = await ensureOrderInvoice(testOrder);
-      if (!invoiceResult.ok) {
-        logger.error("createTestOrder", "Failed to generate invoice", {
-          orderId: testOrder._id,
-          reason: invoiceResult.reason,
-          error: invoiceResult.error?.message || null,
-        });
-        return res.status(500).json({
-          error: true,
-          success: false,
-          message: invoiceResult.reason || "Failed to generate test invoice",
-        });
-      }
-      invoiceSummary = {
-        generated: Boolean(invoiceResult.generated),
-        invoiceNumber: testOrder.invoiceNumber || null,
-        invoicePath: testOrder.invoicePath || "",
-        reason: null,
-      };
-    } else {
-      invoiceSummary.reason = getInvoiceEligibilityMessage(testOrder);
+    if (!isInvoiceEligible(testOrder)) {
+      applyOrderStatusTransition(testOrder, ORDER_STATUS.DELIVERED, {
+        source: "TEST_CREATE",
+      });
+      testOrder.deliveryDate = testOrder.deliveryDate || new Date();
+      await testOrder.save();
     }
+
+    const invoiceResult = await ensureOrderInvoice(testOrder);
+    if (!invoiceResult.ok) {
+      logger.error("createTestOrder", "Failed to generate invoice", {
+        orderId: testOrder._id,
+        reason: invoiceResult.reason,
+        error: invoiceResult.error?.message || null,
+      });
+      return res.status(500).json({
+        error: true,
+        success: false,
+        message: invoiceResult.reason || "Failed to generate test invoice",
+      });
+    }
+    invoiceSummary = {
+      generated: Boolean(invoiceResult.generated),
+      invoiceNumber: testOrder.invoiceNumber || null,
+      invoicePath: testOrder.invoicePath || "",
+      reason: null,
+    };
 
     const clientInvoice = {
       invoiceNumber: testOrder.invoiceNumber || null,

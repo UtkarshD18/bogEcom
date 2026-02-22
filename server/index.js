@@ -7,6 +7,7 @@ import http from "http";
 import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
+import "./config/dayjs.js";
 import {
   ACCESS_TOKEN_SECRET_KEYS,
   REFRESH_TOKEN_SECRET_KEYS,
