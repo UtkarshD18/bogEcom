@@ -12,6 +12,44 @@ import { toast } from "react-hot-toast";
 import { PhoneInput } from "react-international-phone";
 import "react-international-phone/style.css";
 
+const getStoredProfileField = (fieldName) => {
+  const cookieValue = cookies.get(fieldName);
+  if (cookieValue) return cookieValue;
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(fieldName) || "";
+};
+
+const persistProfileIdentity = ({ name, email }) => {
+  const normalizedName = String(name || "").trim();
+  const normalizedEmail = String(email || "").trim();
+
+  if (normalizedName) {
+    cookies.set("userName", normalizedName, { expires: 7 });
+  } else {
+    cookies.remove("userName");
+  }
+
+  if (normalizedEmail) {
+    cookies.set("userEmail", normalizedEmail, { expires: 7 });
+  } else {
+    cookies.remove("userEmail");
+  }
+
+  if (typeof window !== "undefined") {
+    if (normalizedName) {
+      localStorage.setItem("userName", normalizedName);
+    } else {
+      localStorage.removeItem("userName");
+    }
+
+    if (normalizedEmail) {
+      localStorage.setItem("userEmail", normalizedEmail);
+    } else {
+      localStorage.removeItem("userEmail");
+    }
+  }
+};
+
 const MyAccount = () => {
   const API_URL = API_BASE_URL;
 
@@ -22,6 +60,10 @@ const MyAccount = () => {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isMember, setIsMember] = useState(false);
+  const [profileSnapshot, setProfileSnapshot] = useState({
+    name: "",
+    email: "",
+  });
 
   const formatPhone = (value) => {
     const digits = String(value || "").replace(/\D/g, "");
@@ -33,6 +75,23 @@ const MyAccount = () => {
   };
 
   useEffect(() => {
+    const storedName = getStoredProfileField("userName");
+    const storedEmail = getStoredProfileField("userEmail");
+
+    if (storedName) {
+      setFullName((prev) => prev || storedName);
+    }
+    if (storedEmail) {
+      setEmail((prev) => prev || storedEmail);
+    }
+
+    if (storedName || storedEmail) {
+      setProfileSnapshot({
+        name: storedName,
+        email: storedEmail,
+      });
+    }
+
     const token = getStoredAccessToken();
     if (!token) return;
 
@@ -44,8 +103,18 @@ const MyAccount = () => {
         });
         const data = await response.json();
         if (data.success && data.data) {
-          setFullName(data.data?.name || "");
-          setEmail(data.data?.email || "");
+          const resolvedName = String(data.data?.name || "").trim();
+          const resolvedEmail = String(data.data?.email || "").trim();
+          setFullName(resolvedName);
+          setEmail(resolvedEmail);
+          setProfileSnapshot({
+            name: resolvedName,
+            email: resolvedEmail,
+          });
+          persistProfileIdentity({
+            name: resolvedName,
+            email: resolvedEmail,
+          });
           const expiry = data.data?.membershipExpiry
             ? new Date(data.data.membershipExpiry)
             : null;
@@ -87,6 +156,22 @@ const MyAccount = () => {
     setSaving(true);
     setMessage("");
     setError("");
+    const normalizedName = String(fullName || "").trim();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const snapshotName = String(profileSnapshot.name || "").trim();
+    const snapshotEmail = String(profileSnapshot.email || "")
+      .trim()
+      .toLowerCase();
+
+    if (
+      normalizedName === snapshotName &&
+      normalizedEmail === snapshotEmail
+    ) {
+      setSaving(false);
+      setMessage("No changes to update.");
+      return;
+    }
+
     const token = getStoredAccessToken();
     if (!token) {
       setSaving(false);
@@ -103,19 +188,25 @@ const MyAccount = () => {
         },
         credentials: "include",
         body: JSON.stringify({
-          name: fullName,
-          email,
+          name: normalizedName,
+          email: normalizedEmail,
         }),
       });
 
       const data = await response.json();
       if (data.success && data.data) {
-        const updatedName = data.data?.name || fullName;
-        const updatedEmail = data.data?.email || email;
+        const updatedName = String(data.data?.name || normalizedName).trim();
+        const updatedEmail = String(data.data?.email || normalizedEmail).trim();
         setFullName(updatedName);
         setEmail(updatedEmail);
-        cookies.set("userName", updatedName, { expires: 7 });
-        cookies.set("userEmail", updatedEmail, { expires: 7 });
+        setProfileSnapshot({
+          name: updatedName,
+          email: updatedEmail,
+        });
+        persistProfileIdentity({
+          name: updatedName,
+          email: updatedEmail,
+        });
         window.dispatchEvent(new Event("loginSuccess"));
         setMessage("Profile updated successfully.");
         toast.success("Profile updated successfully.");

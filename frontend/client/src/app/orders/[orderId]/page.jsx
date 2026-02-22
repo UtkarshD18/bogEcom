@@ -647,33 +647,27 @@ const OrderDetailsPage = () => {
     buildSavedOrderCalculationInput(order, { payableShipping: 0 }),
   );
   const normalizedOrderStatus = normalizeStatus(order?.order_status);
+  const hasDeliveredTimelineStatus = Array.isArray(order?.statusTimeline)
+    ? order.statusTimeline.some((entry) => {
+        const normalizedTimelineStatus = normalizeStatus(entry?.status);
+        return (
+          normalizedTimelineStatus === "delivered" ||
+          normalizedTimelineStatus === "completed"
+        );
+      })
+    : false;
+  const isDeliveredLikeOrder =
+    ["delivered", "completed"].includes(normalizedOrderStatus) ||
+    hasDeliveredTimelineStatus;
   const hasInvoiceHint = Boolean(
     order?.isInvoiceGenerated ||
       order?.invoiceUrl ||
       order?.invoicePath ||
       order?.invoiceGeneratedAt,
   );
-  const canDownloadInvoice =
-    hasInvoiceHint ||
-    ["delivered", "completed"].includes(normalizedOrderStatus);
+  const canDownloadInvoice = hasInvoiceHint || isDeliveredLikeOrder;
   const isReviewEligibleOrder = (() => {
-    const normalizedOrderStatus = normalizeStatus(order?.order_status);
-    if (
-      normalizedOrderStatus === "delivered" ||
-      normalizedOrderStatus === "completed"
-    ) {
-      return true;
-    }
-
-    return Array.isArray(order?.statusTimeline)
-      ? order.statusTimeline.some((entry) => {
-          const normalizedTimelineStatus = normalizeStatus(entry?.status);
-          return (
-            normalizedTimelineStatus === "delivered" ||
-            normalizedTimelineStatus === "completed"
-          );
-        })
-      : false;
+    return isDeliveredLikeOrder;
   })();
 
   const getItemProductId = (item) => {

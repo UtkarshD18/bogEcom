@@ -18,7 +18,8 @@ import { toast } from "react-hot-toast";
 
 const statusBadgeClass = (status) => {
   if (status === "OPEN") return "bg-red-100 text-red-700";
-  if (status === "IN_PROGRESS") return "bg-amber-100 text-amber-700";
+  if (status === "PENDING" || status === "IN_PROGRESS")
+    return "bg-amber-100 text-amber-700";
   if (status === "RESOLVED") return "bg-emerald-100 text-emerald-700";
   return "bg-gray-100 text-gray-700";
 };
@@ -314,7 +315,7 @@ const CustomerCareDetailPage = () => {
               onChange={(event) => setStatus(event.target.value)}
             >
               <MenuItem value="OPEN">OPEN</MenuItem>
-              <MenuItem value="IN_PROGRESS">IN_PROGRESS</MenuItem>
+              <MenuItem value="PENDING">PENDING</MenuItem>
               <MenuItem value="RESOLVED">RESOLVED</MenuItem>
             </TextField>
 

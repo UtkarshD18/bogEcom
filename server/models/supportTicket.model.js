@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { randomBytes } from "crypto";
 import { buildIstTicketTimestampPayload, getIstNow } from "../config/dayjs.js";
 
-const SUPPORT_STATUS = ["OPEN", "IN_PROGRESS", "RESOLVED"];
+const SUPPORT_STATUS = ["OPEN", "PENDING", "IN_PROGRESS", "RESOLVED"];
 
 const generateTicketId = () => {
   const datePart = getIstNow().format("YYYYMMDD");

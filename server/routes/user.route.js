@@ -2,6 +2,7 @@ import { Router } from "express";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
 import authOptional from "../middlewares/authOptional.js";
+import { authLimiter } from "../middlewares/rateLimiter.js";
 import { handleUploadError, uploadSingle } from "../middlewares/upload.js";
 
 import {
@@ -35,21 +36,26 @@ import {
 
 const userRouter = Router();
 
-userRouter.post("/register", registerUserController);
-userRouter.post("/verifyEmail", verifyEmailController);
-userRouter.post("/login", loginUserController);
-userRouter.post("/refresh-token", refreshTokenController);
+userRouter.post("/register", authLimiter, registerUserController);
+userRouter.post("/verifyEmail", authLimiter, verifyEmailController);
+userRouter.post("/login", authLimiter, loginUserController);
+userRouter.post("/refresh-token", authLimiter, refreshTokenController);
 userRouter.get("/logout", authOptional, logoutController);
-userRouter.post("/forgot-Password", forgotPasswordController);
+userRouter.post("/forgot-Password", authLimiter, forgotPasswordController);
 userRouter.post(
   "/verify-Forgot-Password-OTP",
+  authLimiter,
   verifyForgotPasswordOTPController,
 );
-userRouter.post("/forgot-Password/change-Password", changePasswordController);
-userRouter.post("/resend-otp", resendOTPController);
-userRouter.post("/authWithGoogle", authWithGoogle);
-userRouter.post("/google-login", authWithGoogle); // Alias for compatibility
-userRouter.post("/google-register", authWithGoogle); // Alias for registration
+userRouter.post(
+  "/forgot-Password/change-Password",
+  authLimiter,
+  changePasswordController,
+);
+userRouter.post("/resend-otp", authLimiter, resendOTPController);
+userRouter.post("/authWithGoogle", authLimiter, authWithGoogle);
+userRouter.post("/google-login", authLimiter, authWithGoogle); // Alias for compatibility
+userRouter.post("/google-register", authLimiter, authWithGoogle); // Alias for registration
 userRouter.post("/set-backup-password", auth, setBackupPassword); // Protected route for Google users
 
 // User settings routes

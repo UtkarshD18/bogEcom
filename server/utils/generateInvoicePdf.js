@@ -12,6 +12,16 @@ const SHOULD_FORCE_REGENERATE = String(process.env.INVOICE_FORCE_REGENERATE || "
 
 const DEFAULT_HSN = process.env.INVOICE_DEFAULT_HSN || "2106";
 const DEFAULT_TAX_RATE = Number(process.env.INVOICE_DEFAULT_GST_RATE || 5);
+const FIXED_SELLER_PROFILE = Object.freeze({
+  name: "BUY ONE GRAM PRIVATE LIMITED",
+  address: "G-225, RIICO INDUSTRIAL AREA SITAPURA, TONK ROAD, JAIPUR-302022",
+  gstin: "08AAJCB3889Q1ZO",
+  state: "Rajasthan",
+  placeOfSupplyStateCode: "08",
+  cin: "U51909RJ2020PTC071817",
+  msme: "UDYAM-RJ-17-0154669",
+  fssai: "12224027000921",
+});
 const normalizeHsnSixDigit = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length >= 6) return digits.slice(0, 6);
@@ -633,29 +643,18 @@ const drawHsnSummaryTable = (doc, x, y, width, rows, isInterState = false) => {
 };
 
 const resolveSellerDetails = (sellerDetails = {}) => {
-  const fallbackAddress = [
-    process.env.INVOICE_SELLER_ADDRESS_LINE1 || "",
-    process.env.INVOICE_SELLER_ADDRESS_LINE2 || "",
-    process.env.INVOICE_SELLER_CITY || "",
-    process.env.INVOICE_SELLER_STATE || "",
-    process.env.INVOICE_SELLER_PINCODE || "",
-  ]
-    .filter(Boolean)
-    .join(", ");
-
   return {
-    name: sellerDetails.name || process.env.INVOICE_SELLER_NAME || "BuyOneGram",
-    gstin: sellerDetails.gstin || process.env.INVOICE_SELLER_GSTIN || "",
-    address: sellerDetails.address || fallbackAddress || "Address not configured",
-    state: sellerDetails.state || process.env.INVOICE_SELLER_STATE || "",
-    cin: sellerDetails.cin || process.env.INVOICE_SELLER_CIN || "",
-    msme: sellerDetails.msme || process.env.INVOICE_SELLER_MSME || "",
-    fssai: sellerDetails.fssai || process.env.INVOICE_SELLER_FSSAI || "",
+    name: FIXED_SELLER_PROFILE.name,
+    gstin: FIXED_SELLER_PROFILE.gstin,
+    address: FIXED_SELLER_PROFILE.address,
+    state: FIXED_SELLER_PROFILE.state,
+    cin: FIXED_SELLER_PROFILE.cin,
+    msme: FIXED_SELLER_PROFILE.msme,
+    fssai: FIXED_SELLER_PROFILE.fssai,
     phone: sellerDetails.phone || process.env.INVOICE_SELLER_PHONE || "",
     email: sellerDetails.email || process.env.INVOICE_SELLER_EMAIL || "",
     currencySymbol: sellerDetails.currencySymbol || process.env.INVOICE_CURRENCY_SYMBOL || "Rs. ",
-    placeOfSupplyStateCode:
-      sellerDetails.placeOfSupplyStateCode || process.env.INVOICE_SELLER_STATE_CODE || "",
+    placeOfSupplyStateCode: FIXED_SELLER_PROFILE.placeOfSupplyStateCode,
     bankName: sellerDetails.bankName || process.env.INVOICE_BANK_NAME || "",
     bankAccount: sellerDetails.bankAccount || process.env.INVOICE_BANK_ACCOUNT || "",
     bankBranch: sellerDetails.bankBranch || process.env.INVOICE_BANK_BRANCH || "",
@@ -757,22 +756,28 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
     ),
   );
 
-  const shippingTotal = roundMoney(Number(order?.shipping || 0));
+  // Shipping is intentionally excluded from invoice math and display.
+  const persistedShippingTotal = roundMoney(Number(order?.shipping || 0));
+  const shippingTotal = 0;
 
-  // totalAmt is authoritative (includes GST + shipping).
+  // Persisted order totals may include shipping. Remove shipping from invoice total.
   const finalAmount = roundMoney(Number(order?.finalAmount || 0));
   const totalAmount = roundMoney(Number(order?.totalAmt || 0));
-  const storedGrandTotal = roundMoney(
+  const storedGrandTotalWithShipping = roundMoney(
     finalAmount > 0 ? finalAmount : totalAmount,
   );
-  const grandTotal =
-    storedGrandTotal > 0
-      ? storedGrandTotal
-      : roundMoney(Math.max(grossSubtotal, 0) + shippingTotal);
-
-  const netInclusiveSubtotal = roundMoney(
-    Math.max(grandTotal - shippingTotal, 0),
+  const derivedGrandTotalWithoutShipping = roundMoney(
+    Math.max(storedGrandTotalWithShipping - persistedShippingTotal, 0),
   );
+  const fallbackGrandTotalFromGoods = roundMoney(Math.max(grossSubtotal, 0));
+  const grandTotal =
+    storedGrandTotalWithShipping > 0
+      ? roundMoney(
+          Math.max(derivedGrandTotalWithoutShipping, fallbackGrandTotalFromGoods),
+        )
+      : fallbackGrandTotalFromGoods;
+
+  const netInclusiveSubtotal = roundMoney(Math.max(grandTotal, 0));
 
   // Derive discount so coins/coupons reconcile even if stored fields differ.
   const totalDiscount = roundMoney(
@@ -947,7 +952,6 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
       grandTotal: roundedGrandTotal,
       totalQuantityLabel,
       amountInWords: amountToWordsINR(roundedGrandTotal),
-      taxAmountInWords: amountToWordsINR(taxAmount),
       gstRate,
     },
     taxBreakup,
@@ -1229,10 +1233,6 @@ export const generateInvoicePdf = async ({
       y += rowHeight;
     };
 
-    if (Number(summary.shippingTotal || 0) > 0) {
-      drawLedgerRow("Shipping Charges", summary.shippingTotal);
-    }
-
     const gstRateText = Number(summary.gstRate || DEFAULT_TAX_RATE).toFixed(2);
     if (Number(taxBreakup.igst || 0) > 0) {
       drawLedgerRow(`OUTPUT IGST@${gstRateText}%`, taxBreakup.igst);
@@ -1283,11 +1283,16 @@ export const generateInvoicePdf = async ({
     }
 
     y += 6;
+    const summaryFormula = `Taxable Amount + GST: ${formatPlainAmount(summary.goodsAmount)} + ${formatPlainAmount(summary.taxAmount)} = ${formatPlainAmount(summary.grandTotal)}`;
+    doc.font("Helvetica").fontSize(8).fillColor("#111827").text(summaryFormula, margin + 2, y, {
+      width: contentWidth - 4,
+    });
+    y += 12;
     doc
       .font("Helvetica")
       .fontSize(8)
       .fillColor("#111827")
-      .text(`Tax Amount (in words): ${summary.taxAmountInWords}`, margin + 2, y, {
+      .text(`Total Amount (in words): ${summary.amountInWords}`, margin + 2, y, {
         width: contentWidth - 4,
       });
     y += 16;

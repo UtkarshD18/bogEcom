@@ -572,7 +572,9 @@ const Contact = () => {
                   <MenuItem value="">No order selected</MenuItem>
                   {orders.map((order) => (
                     <MenuItem key={order.id} value={order.id}>
-                      #{String(order.id || "").slice(-8).toUpperCase()} -{" "}
+                      #{String(order.displayId || order.id || "")
+                        .slice(-8)
+                        .toUpperCase()} -{" "}
                       {order.createdAt || "Unknown date"}
                     </MenuItem>
                   ))}

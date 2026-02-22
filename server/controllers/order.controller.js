@@ -862,10 +862,22 @@ const isInvoiceEligible = (order) => {
   if (normalizedStatus === ORDER_STATUS.CANCELLED) {
     return false;
   }
-  if (String(order.payment_status || "").toLowerCase() !== "paid") {
-    return false;
+
+  if ([ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(normalizedStatus)) {
+    return true;
   }
-  return [ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(normalizedStatus);
+
+  if (Array.isArray(order.statusTimeline)) {
+    return order.statusTimeline.some((entry) => {
+      const timelineStatus = normalizeOrderStatus(entry?.status);
+      return (
+        timelineStatus === ORDER_STATUS.DELIVERED ||
+        timelineStatus === ORDER_STATUS.COMPLETED
+      );
+    });
+  }
+
+  return false;
 };
 
 const getInvoiceEligibilityMessage = (order) => {
@@ -934,18 +946,14 @@ const getInvoiceSellerDetails = async () => {
   const storeInfo = (await getCachedSetting("storeInfo"))?.value || {};
 
   return {
-    name: process.env.INVOICE_SELLER_NAME || storeInfo.name || "HealthyOneGram",
-    gstin: process.env.INVOICE_SELLER_GSTIN || storeInfo.gstNumber || "",
-    address:
-      process.env.INVOICE_SELLER_ADDRESS ||
-      storeInfo.address ||
-      "Address not configured",
-    state: process.env.INVOICE_SELLER_STATE || "Rajasthan",
-    placeOfSupplyStateCode:
-      process.env.INVOICE_SELLER_STATE_CODE || storeInfo.stateGstCode || "",
-    cin: process.env.INVOICE_SELLER_CIN || storeInfo.cinNumber || "",
-    msme: process.env.INVOICE_SELLER_MSME || storeInfo.msmeNumber || "",
-    fssai: process.env.INVOICE_SELLER_FSSAI || storeInfo.fssaiNumber || "",
+    name: "BUY ONE GRAM PRIVATE LIMITED",
+    gstin: "08AAJCB3889Q1ZO",
+    address: "G-225, RIICO INDUSTRIAL AREA SITAPURA, TONK ROAD, JAIPUR-302022",
+    state: "Rajasthan",
+    placeOfSupplyStateCode: "08",
+    cin: "U51909RJ2020PTC071817",
+    msme: "UDYAM-RJ-17-0154669",
+    fssai: "12224027000921",
     phone: process.env.INVOICE_SELLER_PHONE || storeInfo.phone || "",
     email: process.env.INVOICE_SELLER_EMAIL || storeInfo.email || "",
     currencySymbol: storeInfo.currencySymbol || "Rs. ",
@@ -1124,8 +1132,10 @@ const calculateCheckoutPricing = async ({
   };
 };
 
-export const ensureOrderInvoice = async (orderDoc) => {
+export const ensureOrderInvoice = async (orderDoc, options = {}) => {
   try {
+    const forceRegenerate = Boolean(options?.forceRegenerate);
+
     if (!orderDoc?._id) {
       return { ok: false, reason: "Order not found" };
     }
@@ -1159,7 +1169,16 @@ export const ensureOrderInvoice = async (orderDoc) => {
     let absolutePath = existingAbsolutePath;
     let generatedNewFile = false;
 
-    if (orderDoc.invoicePath && existingAbsolutePath) {
+    if (forceRegenerate) {
+      generated = await generateInvoicePdf({
+        order: populatedOrder,
+        sellerDetails,
+        productMetaById,
+        forceRegenerate: true,
+      });
+      generatedNewFile = true;
+      absolutePath = generated.absolutePath;
+    } else if (orderDoc.invoicePath && existingAbsolutePath) {
       try {
         await fsPromises.access(existingAbsolutePath);
       } catch {
@@ -1167,6 +1186,7 @@ export const ensureOrderInvoice = async (orderDoc) => {
           order: populatedOrder,
           sellerDetails,
           productMetaById,
+          forceRegenerate: false,
         });
         generatedNewFile = true;
         absolutePath = generated.absolutePath;
@@ -1176,6 +1196,7 @@ export const ensureOrderInvoice = async (orderDoc) => {
         order: populatedOrder,
         sellerDetails,
         productMetaById,
+        forceRegenerate: false,
       });
       generatedNewFile = true;
       absolutePath = generated.absolutePath;
@@ -1304,6 +1325,9 @@ export const ensureOrderInvoice = async (orderDoc) => {
     }
 
     try {
+      const invoiceTotalExcludingShipping = round2(
+        Math.max(Number(pricing.total || 0) - Number(pricing.shipping || 0), 0),
+      );
       await InvoiceModel.findOneAndUpdate(
         { orderId: orderDoc._id },
         {
@@ -1311,8 +1335,8 @@ export const ensureOrderInvoice = async (orderDoc) => {
           invoiceNumber,
           subtotal: pricing.subtotal,
           taxBreakdown,
-          shipping: pricing.shipping,
-          total: pricing.total,
+          shipping: 0,
+          total: invoiceTotalExcludingShipping,
           gstNumber:
             populatedOrder.gstNumber ||
             populatedOrder.guestDetails?.gst ||
