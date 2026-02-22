@@ -19,7 +19,7 @@ import {
   withOrderPresentation,
 } from "../utils/orderPresentation.js";
 
-const TICKET_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED"];
+const TICKET_STATUSES = ["OPEN", "PENDING", "IN_PROGRESS", "RESOLVED"];
 const TICKET_STATUS_SET = new Set(TICKET_STATUSES);
 
 const sendSuccess = (res, message, data = {}, statusCode = 200) =>
@@ -92,7 +92,22 @@ const toPublicFileUrl = (req, filePath) => {
   return `${req.protocol}://${req.get("host")}/uploads/${relativePath}`;
 };
 
-const normalizeStatus = (status) => String(status || "").trim().toUpperCase();
+const normalizeStatus = (status) => {
+  const normalized = String(status || "").trim().toUpperCase();
+  if (normalized === "IN_PROGRESS") return "PENDING";
+  return normalized;
+};
+
+const getStatusFilterValues = (status) => {
+  const normalized = normalizeStatus(status);
+  if (normalized === "PENDING") {
+    return ["PENDING", "IN_PROGRESS"];
+  }
+  return [normalized];
+};
+
+const normalizeStatusForDisplay = (status) =>
+  normalizeStatus(status || "OPEN") || "OPEN";
 
 const coercePagination = (query) => {
   const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
@@ -169,6 +184,106 @@ const resolveOrderIdsForFilter = async (value) => {
   };
 };
 
+const normalizeObjectId = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  return mongoose.Types.ObjectId.isValid(normalized) ? normalized : "";
+};
+
+const buildOrderLookupTokens = (value) => {
+  const raw = sanitizeText(value || "", { maxLength: 120 });
+  if (!raw) return [];
+
+  const normalized = raw.replace(/^#/, "").trim();
+  const firstSegment = normalized.split(" - ")[0]?.trim() || "";
+  const upper = firstSegment.toUpperCase();
+  const compact = upper.replace(/\s+/g, "");
+  const withoutBogPrefix = compact.replace(/^BOG-/, "");
+
+  const tokens = new Set([
+    raw.trim(),
+    normalized,
+    firstSegment,
+    upper,
+    compact,
+    withoutBogPrefix,
+    withoutBogPrefix ? `BOG-${withoutBogPrefix}` : "",
+  ]);
+
+  return Array.from(tokens).filter(Boolean);
+};
+
+const resolveLinkedOrderForTicket = async ({ rawOrderId, userId }) => {
+  const normalizedUserId = normalizeObjectId(userId);
+  if (!normalizedUserId) {
+    return { error: "Login is required to attach an order." };
+  }
+
+  const normalizedOrderId = sanitizeText(rawOrderId || "", { maxLength: 120 });
+  if (!normalizedOrderId) {
+    return { orderId: null };
+  }
+
+  if (mongoose.Types.ObjectId.isValid(normalizedOrderId)) {
+    const ownedOrder = await OrderModel.findOne({
+      _id: normalizedOrderId,
+      user: normalizedUserId,
+    })
+      .select("_id")
+      .lean();
+
+    if (ownedOrder?._id) {
+      return { orderId: ownedOrder._id };
+    }
+  }
+
+  const tokens = buildOrderLookupTokens(normalizedOrderId);
+  if (!tokens.length) {
+    return { error: "Invalid order ID." };
+  }
+
+  const tokenRegexes = tokens.map((token) => new RegExp(`^${escapeRegExp(token)}$`, "i"));
+
+  const candidateOrders = await OrderModel.find({ user: normalizedUserId })
+    .select("_id displayOrderId orderNumber order_id createdAt")
+    .sort({ createdAt: -1 })
+    .limit(250)
+    .lean();
+
+  const matchedOrder = candidateOrders.find((order) => {
+    const displayCandidates = [
+      order?.displayOrderId,
+      order?.orderNumber,
+      order?.order_id,
+    ]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+
+    if (displayCandidates.some((item) => tokenRegexes.some((regex) => regex.test(item)))) {
+      return true;
+    }
+
+    const orderIdValue = String(order?._id || "").trim().toUpperCase();
+    if (!orderIdValue) return false;
+
+    const shortId = orderIdValue.slice(-8);
+    return tokens.some((token) => {
+      const normalizedToken = String(token || "")
+        .trim()
+        .toUpperCase()
+        .replace(/^BOG-/, "");
+
+      if (!normalizedToken) return false;
+      return orderIdValue === normalizedToken || shortId === normalizedToken;
+    });
+  });
+
+  if (!matchedOrder?._id) {
+    return { error: "Selected order was not found for this account." };
+  }
+
+  return { orderId: matchedOrder._id };
+};
 const getTicketTimestamp = (ticket, fieldName) => {
   const value = String(ticket?.[fieldName] || "").trim();
   if (value) return value;
@@ -208,6 +323,7 @@ const sanitizeTicketForResponse = (ticket) => {
     normalizedTicket,
     "updated_at",
   );
+  normalizedTicket.status = normalizeStatusForDisplay(normalizedTicket.status);
 
   delete normalizedTicket.createdAt;
   delete normalizedTicket.updatedAt;
@@ -233,7 +349,7 @@ const buildTicketSummary = (ticket) => {
     orderDisplayId: order?.displayOrderId || getOrderDisplayId(linkedOrderId),
     orderDate: order?.createdAt || null,
     orderTotal: order?.displayTotal ?? null,
-    status: ticket.status,
+    status: normalizeStatusForDisplay(ticket.status),
     created_at: getTicketTimestamp(ticket, "created_at"),
     updated_at: getTicketTimestamp(ticket, "updated_at"),
     created_at_ts: getTicketTimestampMs(ticket, "created_at"),
@@ -342,7 +458,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
 
   const safeName = escapeHtml(ticket.name || "Customer");
   const safeTicketId = escapeHtml(ticket.ticketId || "");
-  const safeStatus = escapeHtml(ticket.status || "OPEN");
+  const safeStatus = escapeHtml(normalizeStatusForDisplay(ticket.status));
   const safeSubject = escapeHtml(ticket.subject || "Support Request");
   const safeOrderId = ticket.orderId ? escapeHtml(String(ticket.orderId)) : "Not linked";
   const createdAt = formatTicketDate(getTicketTimestamp(ticket, "created_at"));
@@ -371,7 +487,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
     `Hi ${ticket.name || "Customer"},`,
     "Your support request has been registered successfully.",
     `Ticket ID: ${ticket.ticketId}`,
-    `Status: ${ticket.status}`,
+    `Status: ${normalizeStatusForDisplay(ticket.status)}`,
     `Subject: ${ticket.subject || "Support Request"}`,
     `Order: ${ticket.orderId ? String(ticket.orderId) : "Not linked"}`,
     `Created At: ${createdAt}`,
@@ -394,7 +510,7 @@ const sendAdminTicketNotificationEmail = async (ticket) => {
   const createdAt = formatTicketDate(getTicketTimestamp(ticket, "created_at"));
   const payload = {
     ticket_id: ticket.ticketId || "N/A",
-    status: ticket.status || "OPEN",
+    status: normalizeStatusForDisplay(ticket.status),
     name: ticket.name || "N/A",
     email: ticket.email || "N/A",
     phone: ticket.phone || "N/A",
@@ -443,7 +559,7 @@ const sendTicketUpdateEmail = async (ticket) => {
 
   const customerName = ticket.name || "Customer";
   const ticketId = ticket.ticketId || "N/A";
-  const status = ticket.status || "OPEN";
+  const status = normalizeStatusForDisplay(ticket.status);
   const reply = String(ticket.adminReply || "").trim();
   const safeReply = reply || "No additional reply was shared yet.";
   const updatedAt = formatTicketDate(getTicketTimestamp(ticket, "updated_at"));
@@ -516,7 +632,7 @@ export const createSupportTicket = async (req, res) => {
   const allFiles = [...imageFiles, ...videoFiles];
 
   try {
-    const userId = req.user || null;
+    const userId = normalizeObjectId(req.user) || null;
     const user =
       userId && mongoose.Types.ObjectId.isValid(String(userId))
         ? await UserModel.findById(userId).select("name email mobile").lean()
@@ -530,7 +646,7 @@ export const createSupportTicket = async (req, res) => {
       maxLength: 5000,
       allowNewLines: true,
     });
-    const rawOrderId = sanitizeText(req.body?.orderId || "", { maxLength: 40 });
+    const rawOrderId = sanitizeText(req.body?.orderId || "", { maxLength: 120 });
 
     const fieldErrors = {};
 
@@ -564,23 +680,11 @@ export const createSupportTicket = async (req, res) => {
 
     let orderId = null;
     if (rawOrderId) {
-      if (!mongoose.Types.ObjectId.isValid(rawOrderId)) {
-        fieldErrors.orderId = "Invalid order ID.";
-      } else if (!userId) {
-        fieldErrors.orderId = "Login is required to attach an order.";
+      const resolvedOrder = await resolveLinkedOrderForTicket({ rawOrderId, userId });
+      if (resolvedOrder.error) {
+        fieldErrors.orderId = resolvedOrder.error;
       } else {
-        const ownedOrder = await OrderModel.findOne({
-          _id: rawOrderId,
-          user: userId,
-        })
-          .select("_id")
-          .lean();
-
-        if (!ownedOrder) {
-          fieldErrors.orderId = "Selected order was not found for this account.";
-        } else {
-          orderId = ownedOrder._id;
-        }
+        orderId = resolvedOrder.orderId || null;
       }
     }
 
@@ -667,9 +771,11 @@ export const createSupportTicket = async (req, res) => {
   } catch (error) {
     await cleanupUploadedFiles(allFiles);
     console.error("createSupportTicket error:", error?.message || "Unexpected error");
+    const fallbackMessage = "Unable to create support ticket right now. Please try again.";
+    const isProduction = process.env.NODE_ENV === "production";
     return sendError(
       res,
-      "Unable to create support ticket right now. Please try again.",
+      isProduction ? fallbackMessage : `${fallbackMessage} (${error?.message || "unknown error"})`,
       500,
     );
   }
@@ -719,7 +825,8 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
       if (!TICKET_STATUS_SET.has(status)) {
         return sendError(res, "Invalid status filter.", 400);
       }
-      query.status = status;
+      const values = getStatusFilterValues(status);
+      query.status = values.length === 1 ? values[0] : { $in: values };
     }
 
     const email = normalizeEmail(req.query.email || "");
@@ -898,7 +1005,7 @@ export const updateSupportTicketAdmin = async (req, res) => {
 export const getUnresolvedSupportTicketCount = async (req, res) => {
   try {
     const count = await SupportTicketModel.countDocuments({
-      status: "OPEN",
+      status: { $in: ["OPEN", "PENDING", "IN_PROGRESS"] },
     });
 
     return sendSuccess(res, "Open ticket count fetched successfully.", {

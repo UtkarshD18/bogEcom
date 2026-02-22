@@ -497,7 +497,18 @@ const OrderDetailsPage = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Download failed");
+        let message = "Download failed";
+        try {
+          const errorPayload = await response.json();
+          message =
+            errorPayload?.message ||
+            errorPayload?.error?.message ||
+            errorPayload?.error ||
+            message;
+        } catch {
+          // Ignore non-JSON error payloads.
+        }
+        throw new Error(message);
       }
 
       const blob = await response.blob();
@@ -510,7 +521,7 @@ const OrderDetailsPage = () => {
       link.remove();
       window.URL.revokeObjectURL(objectUrl);
     } catch (downloadError) {
-      setError(downloadError.message || "Failed to download file");
+      toast.error(downloadError?.message || "Failed to download file");
     } finally {
       setDownloading((prev) => ({ ...prev, [key]: false }));
     }
@@ -636,32 +647,27 @@ const OrderDetailsPage = () => {
     buildSavedOrderCalculationInput(order, { payableShipping: 0 }),
   );
   const normalizedOrderStatus = normalizeStatus(order?.order_status);
-  const canDownloadInvoice =
-    ["delivered", "completed"].includes(normalizedOrderStatus) &&
-    Boolean(
-      order?.isInvoiceGenerated ||
-        order?.invoiceUrl ||
-        order?.invoicePath ||
-        order?.invoiceGeneratedAt,
-    );
+  const hasDeliveredTimelineStatus = Array.isArray(order?.statusTimeline)
+    ? order.statusTimeline.some((entry) => {
+        const normalizedTimelineStatus = normalizeStatus(entry?.status);
+        return (
+          normalizedTimelineStatus === "delivered" ||
+          normalizedTimelineStatus === "completed"
+        );
+      })
+    : false;
+  const isDeliveredLikeOrder =
+    ["delivered", "completed"].includes(normalizedOrderStatus) ||
+    hasDeliveredTimelineStatus;
+  const hasInvoiceHint = Boolean(
+    order?.isInvoiceGenerated ||
+      order?.invoiceUrl ||
+      order?.invoicePath ||
+      order?.invoiceGeneratedAt,
+  );
+  const canDownloadInvoice = hasInvoiceHint || isDeliveredLikeOrder;
   const isReviewEligibleOrder = (() => {
-    const normalizedOrderStatus = normalizeStatus(order?.order_status);
-    if (
-      normalizedOrderStatus === "delivered" ||
-      normalizedOrderStatus === "completed"
-    ) {
-      return true;
-    }
-
-    return Array.isArray(order?.statusTimeline)
-      ? order.statusTimeline.some((entry) => {
-          const normalizedTimelineStatus = normalizeStatus(entry?.status);
-          return (
-            normalizedTimelineStatus === "delivered" ||
-            normalizedTimelineStatus === "completed"
-          );
-        })
-      : false;
+    return isDeliveredLikeOrder;
   })();
 
   const getItemProductId = (item) => {

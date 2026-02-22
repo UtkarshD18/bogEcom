@@ -81,20 +81,62 @@ const normalizeSmtpPassword = (value, host) => {
   return normalized.replace(/\s+/g, "");
 };
 
+const dedupeAuthCandidates = (candidates = []) => {
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    const user = String(candidate?.user || "").trim();
+    const pass = String(candidate?.pass || "").trim();
+    const source = String(candidate?.source || "").trim() || "UNKNOWN";
+    if (!user || !pass) return false;
+    const key = `${user}::${pass}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    candidate.user = user;
+    candidate.pass = pass;
+    candidate.source = source;
+    return true;
+  });
+};
+
+const buildTransporter = (config, auth) =>
+  nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: auth.user,
+      pass: auth.pass,
+    },
+    connectionTimeout: 12000,
+    greetingTimeout: 12000,
+    socketTimeout: 20000,
+  });
+
 const getEmailConfig = () => {
   const host = normalizeEnvString(process.env.SMTP_HOST || DEFAULT_SMTP_HOST);
   const port = toInt(process.env.SMTP_PORT, DEFAULT_SMTP_PORT);
   const secure = toBool(process.env.SMTP_SECURE, DEFAULT_SMTP_SECURE);
-  const user = normalizeEnvString(process.env.SMTP_USER || process.env.EMAIL || "");
-  const pass = normalizeSmtpPassword(
-    process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || "",
+  const smtpUser = normalizeEnvString(process.env.SMTP_USER || "");
+  const smtpPass = normalizeSmtpPassword(process.env.SMTP_PASS || "", host);
+  const legacyUser = normalizeEnvString(process.env.EMAIL || "");
+  const legacyPass = normalizeSmtpPassword(
+    process.env.EMAIL_PASSWORD || "",
     host,
   );
+
+  const authCandidates = dedupeAuthCandidates([
+    { user: smtpUser, pass: smtpPass, source: "SMTP" },
+    { user: legacyUser, pass: legacyPass, source: "EMAIL" },
+  ]);
+  const selectedAuth = authCandidates[0] || { user: "", pass: "", source: "" };
+
+  const user = selectedAuth.user;
+  const pass = selectedAuth.pass;
   const fromName = normalizeEnvString(
     process.env.EMAIL_FROM_NAME || process.env.SMTP_FROM_NAME || "BuyOneGram",
   );
   const fromAddress = normalizeEnvString(
-    process.env.EMAIL_FROM_ADDRESS ||
+      process.env.EMAIL_FROM_ADDRESS ||
       process.env.SMTP_FROM ||
       process.env.EMAIL ||
       user ||
@@ -115,6 +157,8 @@ const getEmailConfig = () => {
     secure,
     user,
     pass,
+    authCandidates,
+    activeAuthSource: selectedAuth.source,
     fromName,
     fromAddress,
     retryCount,
@@ -127,19 +171,21 @@ const configFingerprint = (config) =>
     config.host,
     config.port,
     config.secure ? "secure" : "insecure",
-    config.user,
+    ...((config.authCandidates || []).map(
+      (candidate) => `${candidate.source}:${candidate.user}`,
+    )),
     config.fromAddress,
   ].join("|");
 
 const ensureTransporter = () => {
   const config = getEmailConfig();
 
-  if (!config.user || !config.pass) {
+  if (!config.user || !config.pass || !config.authCandidates?.length) {
     return {
       ok: false,
       config,
       reason:
-        "SMTP user/password missing. Set SMTP_USER and SMTP_PASS in server environment.",
+        "Email credentials missing. Set SMTP_USER/SMTP_PASS or EMAIL/EMAIL_PASSWORD in server environment.",
     };
   }
 
@@ -148,18 +194,11 @@ const ensureTransporter = () => {
     return { ok: true, config };
   }
 
-  transporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: {
-      user: config.user,
-      pass: config.pass,
-    },
-    connectionTimeout: 12000,
-    greetingTimeout: 12000,
-    socketTimeout: 20000,
-  });
+  const selectedAuth = config.authCandidates[0];
+  transporter = buildTransporter(config, selectedAuth);
+  config.user = selectedAuth.user;
+  config.pass = selectedAuth.pass;
+  config.activeAuthSource = selectedAuth.source;
   verified = false;
   verifyPromise = null;
   currentFingerprint = fingerprint;
@@ -169,33 +208,77 @@ const ensureTransporter = () => {
     port: config.port,
     secure: config.secure,
     user: config.user,
+    authSource: config.activeAuthSource,
   });
 
   return { ok: true, config };
 };
 
-const verifyTransporter = async () => {
+const verifyTransporter = async (config = {}) => {
   if (!transporter) return false;
   if (verified) return true;
 
   if (!verifyPromise) {
-    verifyPromise = transporter
-      .verify()
-      .then(() => {
-        verified = true;
-        logger.info("EmailService", "SMTP connected and authenticated");
+    verifyPromise = (async () => {
+      const tryVerifyCurrentTransport = async () => {
+        try {
+          await transporter.verify();
+          verified = true;
+          logger.info("EmailService", "SMTP connected and authenticated", {
+            user: config.user || "",
+            authSource: config.activeAuthSource || "",
+          });
+          return true;
+        } catch (error) {
+          verified = false;
+          logger.error("EmailService", "SMTP verification failed", {
+            error: error?.message || String(error),
+            user: config.user || "",
+            authSource: config.activeAuthSource || "",
+          });
+          return false;
+        }
+      };
+
+      let isValid = await tryVerifyCurrentTransport();
+      if (isValid) {
         return true;
-      })
-      .catch((error) => {
-        verified = false;
-        logger.error("EmailService", "SMTP verification failed", {
-          error: error?.message || String(error),
-        });
+      }
+
+      const authCandidates = Array.isArray(config.authCandidates)
+        ? config.authCandidates
+        : [];
+      if (authCandidates.length <= 1) {
         return false;
-      })
-      .finally(() => {
-        verifyPromise = null;
-      });
+      }
+
+      for (const candidate of authCandidates) {
+        if (candidate.user === config.user && candidate.pass === config.pass) {
+          continue;
+        }
+
+        logger.warn("EmailService", "Retrying SMTP verify with fallback credentials", {
+          previousUser: config.user || "",
+          previousSource: config.activeAuthSource || "",
+          fallbackUser: candidate.user,
+          fallbackSource: candidate.source,
+        });
+
+        transporter = buildTransporter(config, candidate);
+        config.user = candidate.user;
+        config.pass = candidate.pass;
+        config.activeAuthSource = candidate.source;
+
+        isValid = await tryVerifyCurrentTransport();
+        if (isValid) {
+          return true;
+        }
+      }
+
+      return false;
+    })().finally(() => {
+      verifyPromise = null;
+    });
   }
 
   return verifyPromise;
@@ -216,7 +299,7 @@ export const initializeEmailService = async () => {
     return { success: false, reason };
   }
 
-  const isValid = await verifyTransporter();
+  const isValid = await verifyTransporter(config);
   if (!isValid) {
     return {
       success: false,
@@ -271,7 +354,7 @@ export const sendEmail = async ({
     return { success: false, error: reason || "SMTP not configured" };
   }
 
-  const canSend = await verifyTransporter();
+  const canSend = await verifyTransporter(config);
   if (!canSend) {
     return { success: false, error: "SMTP verification failed" };
   }
