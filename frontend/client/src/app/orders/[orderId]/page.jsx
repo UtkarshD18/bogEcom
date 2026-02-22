@@ -635,10 +635,15 @@ const OrderDetailsPage = () => {
   const orderTotals = calculateOrderTotals(
     buildSavedOrderCalculationInput(order, { payableShipping: 0 }),
   );
+  const normalizedOrderStatus = normalizeStatus(order?.order_status);
   const canDownloadInvoice =
-    order?.order_status !== "cancelled" &&
-    (order?.payment_status === "paid" ||
-      normalizeStatus(order?.order_status) === "accepted");
+    ["delivered", "completed"].includes(normalizedOrderStatus) &&
+    Boolean(
+      order?.isInvoiceGenerated ||
+        order?.invoiceUrl ||
+        order?.invoicePath ||
+        order?.invoiceGeneratedAt,
+    );
   const isReviewEligibleOrder = (() => {
     const normalizedOrderStatus = normalizeStatus(order?.order_status);
     if (
@@ -1220,24 +1225,22 @@ const OrderDetailsPage = () => {
 
           {/* Actions */}
           <div className="flex flex-wrap gap-4 justify-center">
-            {canDownloadInvoice && (
-              <Button
-                onClick={handleDownloadInvoice}
-                disabled={downloading.invoice}
-                variant="contained"
-                sx={{
-                  backgroundColor: "#0f766e",
-                  color: "white",
-                  padding: "12px 24px",
-                  borderRadius: "12px",
-                  fontWeight: 600,
-                  textTransform: "none",
-                  "&:hover": { backgroundColor: "#115e59" },
-                }}
-              >
-                {downloading.invoice ? "Downloading..." : "Download Invoice"}
-              </Button>
-            )}
+            <Button
+              onClick={handleDownloadInvoice}
+              disabled={!canDownloadInvoice || downloading.invoice}
+              variant="contained"
+              sx={{
+                backgroundColor: "#0f766e",
+                color: "white",
+                padding: "12px 24px",
+                borderRadius: "12px",
+                fontWeight: 600,
+                textTransform: "none",
+                "&:hover": { backgroundColor: "#115e59" },
+              }}
+            >
+              {downloading.invoice ? "Downloading..." : "Download Invoice"}
+            </Button>
             <Link href="/my-orders">
               <Button
                 variant="outlined"

@@ -8,6 +8,7 @@ const allowedStatuses = [
   "shipped",
   "out_for_delivery",
   "delivered",
+  "completed",
   "cancelled",
   "rto",
   "rto_completed",

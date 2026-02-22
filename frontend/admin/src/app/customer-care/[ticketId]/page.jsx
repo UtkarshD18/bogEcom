@@ -163,9 +163,7 @@ const CustomerCareDetailPage = () => {
               </p>
               <p>
                 <span className="font-semibold">Created:</span>{" "}
-                {ticket.createdAt
-                  ? new Date(ticket.createdAt).toLocaleString("en-IN")
-                  : "N/A"}
+                {ticket.created_at || ticket.createdAt || "N/A"}
               </p>
             </div>
           </div>
@@ -195,15 +193,11 @@ const CustomerCareDetailPage = () => {
                       normalizedOrder.finalAmount ??
                       normalizedOrder.totalAmt ??
                       0,
-                  ).toLocaleString("en-IN", {
-                    minimumFractionDigits: 2,
-                  })}
+                  ).toFixed(2)}
                 </p>
                 <p>
                   <span className="font-semibold">Order Date:</span>{" "}
-                  {normalizedOrder.createdAt
-                    ? new Date(normalizedOrder.createdAt).toLocaleString("en-IN")
-                    : "N/A"}
+                  {normalizedOrder.createdAt || "N/A"}
                 </p>
               </div>
             ) : (

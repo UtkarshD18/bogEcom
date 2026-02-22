@@ -34,7 +34,7 @@ const ProductZoom = ({
   const openFullImageView = (index) => {
     if (!productId) return;
     router.push(
-      `/full-image-view?productId=${encodeURIComponent(
+      `/product-image-zoom?productId=${encodeURIComponent(
         productId,
       )}&index=${Math.max(Number(index || 0), 0)}`,
     );

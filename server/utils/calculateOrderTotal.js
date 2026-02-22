@@ -22,6 +22,22 @@ const resolveOrderDisplayId = (order = {}) => {
   return `BOG-${mongoId.slice(-8).toUpperCase()}`;
 };
 
+const toCanonicalShipmentStatus = (order = {}) => {
+  const explicit = String(order?.shipmentStatus || "").trim().toLowerCase();
+  if (explicit) return explicit;
+
+  const legacy = String(order?.shipment_status || "").trim().toLowerCase();
+  if (!legacy) return "pending";
+
+  if (legacy === "booked") return "shipment_created";
+  if (legacy === "shipped") return "in_transit";
+  if (legacy === "delivered") return "delivered";
+  if (legacy === "cancelled") return "cancelled";
+  if (legacy.startsWith("rto")) return "rto";
+  if (legacy === "failed") return "failed";
+  return legacy;
+};
+
 const calcItemsGross = (order = {}) => {
   const products = Array.isArray(order?.products) ? order.products : [];
   return round2(
@@ -105,6 +121,18 @@ export const normalizeOrderForResponse = (order) => {
   const base =
     typeof order.toObject === "function" ? order.toObject() : { ...order };
   const pricing = calculateOrderTotal(base);
+  const awbNumber = base.awbNumber || base.awb_number || null;
+  const shipmentStatus = toCanonicalShipmentStatus(base);
+  const courierName =
+    String(base.courierName || "").trim() ||
+    (String(base.shipping_provider || "").trim().toUpperCase() === "XPRESSBEES"
+      ? "Xpressbees"
+      : "");
+  const trackingUrl = base.trackingUrl || null;
+  const manifestId = base.manifestId || base.shipping_manifest || null;
+  const invoiceUrl = base.invoiceUrl || base.invoicePath || null;
+  const isInvoiceGenerated = Boolean(base.isInvoiceGenerated || invoiceUrl);
+  const deliveryDate = base.deliveryDate || null;
 
   return {
     ...base,
@@ -117,6 +145,16 @@ export const normalizeOrderForResponse = (order) => {
     discount: pricing.totalDiscount,
     finalAmount: pricing.total,
     totalAmt: pricing.total,
+    awb_number: awbNumber,
+    awbNumber,
+    courierName,
+    shipment_status: base.shipment_status || "pending",
+    shipmentStatus,
+    trackingUrl,
+    manifestId,
+    isInvoiceGenerated,
+    invoiceUrl,
+    deliveryDate,
   };
 };
 

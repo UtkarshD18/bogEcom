@@ -7,6 +7,12 @@ import { UPLOAD_ROOT } from "../middlewares/upload.js";
 import OrderModel from "../models/order.model.js";
 import SupportTicketModel from "../models/supportTicket.model.js";
 import UserModel from "../models/user.model.js";
+import {
+  buildIstTicketTimestampPayload,
+  formatIstTicketTimestamp,
+  getIstYear,
+  parseIstDateBoundary,
+} from "../config/dayjs.js";
 import { logger } from "../utils/errorHandler.js";
 import {
   getOrderDisplayId,
@@ -99,34 +105,29 @@ const buildDateRangeFilter = ({ date, dateFrom, dateTo }) => {
   const filter = {};
 
   if (date) {
-    const parsed = new Date(String(date));
-    if (Number.isNaN(parsed.getTime())) {
+    const start = parseIstDateBoundary(date, { endOfDay: false });
+    const end = parseIstDateBoundary(date, { endOfDay: true });
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
       return { error: "Invalid date filter." };
     }
-    const start = new Date(parsed);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(parsed);
-    end.setHours(23, 59, 59, 999);
     filter.$gte = start;
     filter.$lte = end;
     return { filter };
   }
 
   if (dateFrom) {
-    const parsed = new Date(String(dateFrom));
-    if (Number.isNaN(parsed.getTime())) {
+    const parsed = parseIstDateBoundary(dateFrom, { endOfDay: false });
+    if (!Number.isFinite(parsed)) {
       return { error: "Invalid dateFrom filter." };
     }
-    parsed.setHours(0, 0, 0, 0);
     filter.$gte = parsed;
   }
 
   if (dateTo) {
-    const parsed = new Date(String(dateTo));
-    if (Number.isNaN(parsed.getTime())) {
+    const parsed = parseIstDateBoundary(dateTo, { endOfDay: true });
+    if (!Number.isFinite(parsed)) {
       return { error: "Invalid dateTo filter." };
     }
-    parsed.setHours(23, 59, 59, 999);
     filter.$lte = parsed;
   }
 
@@ -168,6 +169,52 @@ const resolveOrderIdsForFilter = async (value) => {
   };
 };
 
+const getTicketTimestamp = (ticket, fieldName) => {
+  const value = String(ticket?.[fieldName] || "").trim();
+  if (value) return value;
+
+  const fallbackValue =
+    fieldName === "created_at"
+      ? ticket?.createdAt
+      : ticket?.updatedAt || ticket?.createdAt;
+  return formatIstTicketTimestamp(fallbackValue);
+};
+
+const getTicketTimestampMs = (ticket, fieldName) => {
+  const key = fieldName === "created_at" ? "created_at_ts" : "updated_at_ts";
+  const directValue = Number(ticket?.[key]);
+  if (Number.isFinite(directValue) && directValue > 0) return directValue;
+
+  const fallbackValue =
+    fieldName === "created_at"
+      ? ticket?.createdAt
+      : ticket?.updatedAt || ticket?.createdAt;
+  return buildIstTicketTimestampPayload(fallbackValue).unixMs;
+};
+
+const sanitizeTicketForResponse = (ticket) => {
+  if (!ticket) return null;
+
+  const normalizedTicket =
+    typeof ticket.toObject === "function" ? ticket.toObject() : { ...ticket };
+
+  normalizedTicket.created_at = getTicketTimestamp(normalizedTicket, "created_at");
+  normalizedTicket.updated_at = getTicketTimestamp(normalizedTicket, "updated_at");
+  normalizedTicket.created_at_ts = getTicketTimestampMs(
+    normalizedTicket,
+    "created_at",
+  );
+  normalizedTicket.updated_at_ts = getTicketTimestampMs(
+    normalizedTicket,
+    "updated_at",
+  );
+
+  delete normalizedTicket.createdAt;
+  delete normalizedTicket.updatedAt;
+
+  return normalizedTicket;
+};
+
 const buildTicketSummary = (ticket) => {
   const order =
     ticket.orderId && typeof ticket.orderId === "object"
@@ -187,8 +234,10 @@ const buildTicketSummary = (ticket) => {
     orderDate: order?.createdAt || null,
     orderTotal: order?.displayTotal ?? null,
     status: ticket.status,
-    createdAt: ticket.createdAt,
-    updatedAt: ticket.updatedAt,
+    created_at: getTicketTimestamp(ticket, "created_at"),
+    updated_at: getTicketTimestamp(ticket, "updated_at"),
+    created_at_ts: getTicketTimestampMs(ticket, "created_at"),
+    updated_at_ts: getTicketTimestampMs(ticket, "updated_at"),
   };
 };
 
@@ -229,16 +278,11 @@ const sendSupportEmail = async ({ to, subject, text, html, context = "support" }
 };
 
 const formatTicketDate = (value) => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "N/A";
-
-  return parsed.toLocaleString("en-IN", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const normalizedValue = String(value || "").trim();
+  if (!normalizedValue) return "N/A";
+  return normalizedValue.includes(",")
+    ? normalizedValue
+    : formatIstTicketTimestamp(normalizedValue);
 };
 
 const buildSupportEmailLayout = ({
@@ -285,7 +329,7 @@ const buildSupportEmailLayout = ({
         </p>
       </div>
       <div style="background-color:#2c2c2c;padding:24px;text-align:center;">
-        <p style="color:#aaaaaa;font-size:13px;margin:0 0 8px;">&copy; ${new Date().getFullYear()} HealthyOneGram. All rights reserved.</p>
+        <p style="color:#aaaaaa;font-size:13px;margin:0 0 8px;">&copy; ${getIstYear()} HealthyOneGram. All rights reserved.</p>
         <p style="color:#888888;font-size:12px;margin:0;">This is a service email for your support request.</p>
       </div>
     </div>
@@ -301,7 +345,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
   const safeStatus = escapeHtml(ticket.status || "OPEN");
   const safeSubject = escapeHtml(ticket.subject || "Support Request");
   const safeOrderId = ticket.orderId ? escapeHtml(String(ticket.orderId)) : "Not linked";
-  const createdAt = formatTicketDate(ticket.createdAt);
+  const createdAt = formatTicketDate(getTicketTimestamp(ticket, "created_at"));
 
   const html = buildSupportEmailLayout({
     title: "Support Ticket Generated Successfully",
@@ -347,7 +391,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
 const sendAdminTicketNotificationEmail = async (ticket) => {
   if (!SUPPORT_ADMIN_EMAIL) return false;
 
-  const createdAt = formatTicketDate(ticket.createdAt);
+  const createdAt = formatTicketDate(getTicketTimestamp(ticket, "created_at"));
   const payload = {
     ticket_id: ticket.ticketId || "N/A",
     status: ticket.status || "OPEN",
@@ -359,7 +403,7 @@ const sendAdminTicketNotificationEmail = async (ticket) => {
     order_id: ticket.orderId ? String(ticket.orderId) : "Not linked",
     created_at: createdAt,
     admin_panel_url: `${ADMIN_PANEL_URL}/support`,
-    year: String(new Date().getFullYear()),
+    year: getIstYear(),
   };
 
   const text = [
@@ -402,7 +446,7 @@ const sendTicketUpdateEmail = async (ticket) => {
   const status = ticket.status || "OPEN";
   const reply = String(ticket.adminReply || "").trim();
   const safeReply = reply || "No additional reply was shared yet.";
-  const updatedAt = formatTicketDate(ticket.updatedAt);
+  const updatedAt = formatTicketDate(getTicketTimestamp(ticket, "updated_at"));
 
   const text = [
     `Hi ${customerName},`,
@@ -425,7 +469,7 @@ const sendTicketUpdateEmail = async (ticket) => {
       updated_at: updatedAt,
       admin_reply: safeReply,
       support_url: `${SUPPORT_STORE_URL}/customer-care`,
-      year: String(new Date().getFullYear()),
+      year: getIstYear(),
     },
     text,
     context: "support.ticket.updated",
@@ -610,6 +654,9 @@ export const createSupportTicket = async (req, res) => {
       "Support ticket created successfully.",
       {
         ticketId: createdTicket.ticketId,
+        status: createdTicket.status,
+        created_at: getTicketTimestamp(createdTicket, "created_at"),
+        updated_at: getTicketTimestamp(createdTicket, "updated_at"),
         emailNotification: {
           sent: Boolean(emailSent),
           adminAlertSent: Boolean(adminEmailSent),
@@ -640,7 +687,7 @@ export const getMySupportTickets = async (req, res) => {
 
     const [tickets, total] = await Promise.all([
       SupportTicketModel.find(query)
-        .sort({ createdAt: -1 })
+        .sort({ created_at_ts: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -648,7 +695,7 @@ export const getMySupportTickets = async (req, res) => {
     ]);
 
     return sendSuccess(res, "Support tickets fetched successfully.", {
-      tickets,
+      tickets: tickets.map(sanitizeTicketForResponse),
       pagination: {
         page,
         limit,
@@ -700,7 +747,18 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
     }
 
     if (createdAtFilter && Object.keys(createdAtFilter).length > 0) {
-      query.createdAt = createdAtFilter;
+      const legacyDateFilter = {};
+      if (Number.isFinite(createdAtFilter.$gte)) {
+        legacyDateFilter.$gte = new Date(createdAtFilter.$gte);
+      }
+      if (Number.isFinite(createdAtFilter.$lte)) {
+        legacyDateFilter.$lte = new Date(createdAtFilter.$lte);
+      }
+
+      query.$or = [
+        { created_at_ts: createdAtFilter },
+        { createdAt: legacyDateFilter },
+      ];
     }
 
     const [tickets, total] = await Promise.all([
@@ -710,7 +768,7 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
           "orderId",
           "_id createdAt order_status payment_status totalAmt finalAmount subtotal discount tax shipping coinRedemption products",
         )
-        .sort({ createdAt: -1 })
+        .sort({ created_at_ts: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -761,7 +819,9 @@ export const getSupportTicketByIdAdmin = async (req, res) => {
       ticket.orderId = withOrderPresentation(ticket.orderId);
     }
 
-    return sendSuccess(res, "Support ticket fetched successfully.", { ticket });
+    return sendSuccess(res, "Support ticket fetched successfully.", {
+      ticket: sanitizeTicketForResponse(ticket),
+    });
   } catch (error) {
     console.error(
       "getSupportTicketByIdAdmin error:",
@@ -823,7 +883,7 @@ export const updateSupportTicketAdmin = async (req, res) => {
     }
 
     return sendSuccess(res, "Support ticket updated successfully.", {
-      ticket,
+      ticket: sanitizeTicketForResponse(ticket),
       emailNotification: { sent: Boolean(emailSent) },
     });
   } catch (error) {
