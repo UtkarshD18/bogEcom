@@ -284,7 +284,6 @@ const resolveLinkedOrderForTicket = async ({ rawOrderId, userId }) => {
 
   return { orderId: matchedOrder._id };
 };
-
 const getTicketTimestamp = (ticket, fieldName) => {
   const value = String(ticket?.[fieldName] || "").trim();
   if (value) return value;

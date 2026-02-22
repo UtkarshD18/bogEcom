@@ -857,7 +857,6 @@ const isInvoiceEligible = (order) => {
   if (hasExistingInvoice) {
     return true;
   }
-
   const normalizedStatus = normalizeOrderStatus(order.order_status);
   if (normalizedStatus === ORDER_STATUS.CANCELLED) {
     return false;
