@@ -126,7 +126,7 @@ supportTicketSchema.pre("validate", function assignTicketId() {
   }
 });
 
-supportTicketSchema.pre("save", function syncIstTimestamps(next) {
+supportTicketSchema.pre("save", function syncIstTimestamps() {
   const nowPayload = buildIstTicketTimestampPayload();
 
   if (!this.created_at || !Number.isFinite(this.created_at_ts)) {
@@ -139,8 +139,6 @@ supportTicketSchema.pre("save", function syncIstTimestamps(next) {
 
   this.updated_at = nowPayload.formatted;
   this.updated_at_ts = nowPayload.unixMs;
-
-  next();
 });
 
 // Query-performance indexes for admin dashboards and user ticket history.

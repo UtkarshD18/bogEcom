@@ -497,7 +497,18 @@ const OrderDetailsPage = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Download failed");
+        let message = "Download failed";
+        try {
+          const errorPayload = await response.json();
+          message =
+            errorPayload?.message ||
+            errorPayload?.error?.message ||
+            errorPayload?.error ||
+            message;
+        } catch {
+          // Ignore non-JSON error payloads.
+        }
+        throw new Error(message);
       }
 
       const blob = await response.blob();
@@ -510,7 +521,7 @@ const OrderDetailsPage = () => {
       link.remove();
       window.URL.revokeObjectURL(objectUrl);
     } catch (downloadError) {
-      setError(downloadError.message || "Failed to download file");
+      toast.error(downloadError?.message || "Failed to download file");
     } finally {
       setDownloading((prev) => ({ ...prev, [key]: false }));
     }
@@ -636,14 +647,15 @@ const OrderDetailsPage = () => {
     buildSavedOrderCalculationInput(order, { payableShipping: 0 }),
   );
   const normalizedOrderStatus = normalizeStatus(order?.order_status);
+  const hasInvoiceHint = Boolean(
+    order?.isInvoiceGenerated ||
+      order?.invoiceUrl ||
+      order?.invoicePath ||
+      order?.invoiceGeneratedAt,
+  );
   const canDownloadInvoice =
-    ["delivered", "completed"].includes(normalizedOrderStatus) &&
-    Boolean(
-      order?.isInvoiceGenerated ||
-        order?.invoiceUrl ||
-        order?.invoicePath ||
-        order?.invoiceGeneratedAt,
-    );
+    hasInvoiceHint ||
+    ["delivered", "completed"].includes(normalizedOrderStatus);
   const isReviewEligibleOrder = (() => {
     const normalizedOrderStatus = normalizeStatus(order?.order_status);
     if (

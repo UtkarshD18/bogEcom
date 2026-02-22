@@ -846,6 +846,18 @@ logger.info(
 
 const isInvoiceEligible = (order) => {
   if (!order) return false;
+
+  const hasExistingInvoice = Boolean(
+    order.invoicePath ||
+      order.invoiceNumber ||
+      order.invoiceGeneratedAt ||
+      order.isInvoiceGenerated ||
+      order.invoiceUrl,
+  );
+  if (hasExistingInvoice) {
+    return true;
+  }
+
   const normalizedStatus = normalizeOrderStatus(order.order_status);
   if (normalizedStatus === ORDER_STATUS.CANCELLED) {
     return false;
