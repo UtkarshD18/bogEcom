@@ -115,13 +115,6 @@ export default function AdminDashboard() {
       description: "View and manage orders",
     },
     {
-      name: "Shipping",
-      icon: FiPackage,
-      href: "/shipping",
-      color: "bg-emerald-500",
-      description: "Book, track, and manage shipments",
-    },
-    {
       name: "Notifications",
       icon: FiUsers,
       href: "/notifications",

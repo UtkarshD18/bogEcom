@@ -221,8 +221,17 @@ const ProductDetailPage = () => {
     try {
       if (!product) return;
       const productId = product._id || product.id;
-      const wasWishlisted = productId ? isInWishlist(productId) : false;
-      await toggleWishlist(product);
+      const variantPayload = selectedVariant
+        ? {
+            variantId: selectedVariant?._id || null,
+            variantName: selectedVariant?.name || "",
+            quantity,
+          }
+        : { quantity };
+      const wasWishlisted = productId
+        ? isInWishlist(productId, variantPayload?.variantId || null)
+        : false;
+      await toggleWishlist(product, variantPayload);
 
       setSnackbar({
         open: true,
@@ -600,7 +609,7 @@ const ProductDetailPage = () => {
                     <p className="font-semibold text-gray-800 text-sm">
                       Free Delivery
                     </p>
-                    <p className="text-xs text-gray-500">Orders above ₹499</p>
+                    <p className="text-xs text-gray-500">On all orders (₹0 shipping)</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -743,7 +752,7 @@ const ProductDetailPage = () => {
                   business days.
                 </p>
                 <p>
-                  <strong>Free Shipping:</strong> On orders above ₹499.
+                  <strong>Shipping Charges:</strong> ₹0 on all orders.
                 </p>
                 <p>
                   <strong>Packaging:</strong> Eco-friendly packaging to ensure

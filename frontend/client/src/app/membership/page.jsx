@@ -138,7 +138,7 @@ const DEFAULT_CONTENT = {
         icon: "🚚",
         title: "Free Shipping",
         description:
-          "Enjoy free shipping on all orders above ₹500. No hidden charges.",
+          "Enjoy free shipping on all orders with ₹0 delivery charge.",
       },
       {
         icon: "🎁",

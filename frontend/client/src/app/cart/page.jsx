@@ -253,7 +253,7 @@ export default function CartPage() {
                                                 &#8377;{displayShippingCharge.toFixed(2)}
                                             </span>
                                         )}
-                                        <span>FREE</span>
+                                        <span>&#8377;0.00</span>
                                     </span>
                                 </div>
                                 <div className="pt-6 border-t border-white/10 flex justify-between items-end">
