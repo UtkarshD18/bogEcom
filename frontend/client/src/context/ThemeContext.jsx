@@ -252,7 +252,7 @@ const ThemeProvider = ({ children }) => {
         setIsLogin(false);
       }
     }
-  }, []);
+  }, [applyThemeToDOM]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Listen for flavor changes from FlavorSwitcherBar
@@ -270,7 +270,7 @@ const ThemeProvider = ({ children }) => {
 
     window.addEventListener("themeChange", handleFlavorChange);
     return () => window.removeEventListener("themeChange", handleFlavorChange);
-  }, []);
+  }, [applyThemeToDOM]);
 
   const setSelectedFlavor = (newFlavor) => {
     setFlavor(newFlavor);

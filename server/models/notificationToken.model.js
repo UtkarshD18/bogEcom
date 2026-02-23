@@ -41,6 +41,12 @@ const notificationTokenSchema = new mongoose.Schema(
       enum: ["web", "android", "ios"],
       default: "web",
     },
+    origin: {
+      type: String,
+      trim: true,
+      default: "",
+      index: true,
+    },
     lastUsedAt: {
       type: Date,
       default: Date.now,
@@ -64,30 +70,57 @@ notificationTokenSchema.pre("save", function () {
 });
 
 // Static method to get all active guest tokens
-notificationTokenSchema.statics.getGuestTokens = function () {
-  return this.find({
+notificationTokenSchema.statics.getGuestTokens = function (options = {}) {
+  const origins = Array.isArray(options?.origins)
+    ? options.origins.filter(Boolean)
+    : [];
+  const query = {
     userType: "guest",
     isActive: true,
     failureCount: { $lt: 5 }, // Exclude tokens with too many failures
-  }).select("token");
+  };
+
+  if (origins.length > 0) {
+    query.origin = { $in: origins };
+  }
+
+  return this.find(query).select("token origin");
 };
 
 // Static method to get all active user tokens
-notificationTokenSchema.statics.getUserTokens = function () {
-  return this.find({
+notificationTokenSchema.statics.getUserTokens = function (options = {}) {
+  const origins = Array.isArray(options?.origins)
+    ? options.origins.filter(Boolean)
+    : [];
+  const query = {
     userType: "user",
     isActive: true,
     failureCount: { $lt: 5 },
-  }).select("token userId");
+  };
+
+  if (origins.length > 0) {
+    query.origin = { $in: origins };
+  }
+
+  return this.find(query).select("token userId origin");
 };
 
 // Static method to get tokens for a specific user
-notificationTokenSchema.statics.getTokensByUserId = function (userId) {
-  return this.find({
+notificationTokenSchema.statics.getTokensByUserId = function (userId, options = {}) {
+  const origins = Array.isArray(options?.origins)
+    ? options.origins.filter(Boolean)
+    : [];
+  const query = {
     userId: userId,
     isActive: true,
     failureCount: { $lt: 5 },
-  }).select("token");
+  };
+
+  if (origins.length > 0) {
+    query.origin = { $in: origins };
+  }
+
+  return this.find(query).select("token origin");
 };
 
 // Static method to mark token as failed

@@ -1,7 +1,7 @@
 "use client";
 
 import { API_BASE_URL } from "@/utils/api";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 const ReferralContext = createContext({
   referralCode: null,
@@ -34,31 +34,6 @@ export const ReferralProvider = ({ children }) => {
     if (typeof window === "undefined") return null;
     return window.sessionStorage;
   };
-
-  // Check URL for referral code on initial load
-  useEffect(() => {
-    const detectReferral = async () => {
-      if (typeof window === "undefined") return;
-
-      const urlParams = new URLSearchParams(window.location.search);
-      const refCode = urlParams.get("ref");
-
-      if (refCode) {
-        // New referral code from URL - validate and store (session only)
-        await validateAndStoreReferral(refCode.toUpperCase(), "link");
-
-        // Clean URL (remove ref param) without reload
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.delete("ref");
-        window.history.replaceState({}, "", newUrl.toString());
-      } else {
-        // Load referral only for this browser session
-        loadStoredReferral();
-      }
-    };
-
-    detectReferral();
-  }, []);
 
   const loadStoredReferral = () => {
     try {
@@ -143,6 +118,36 @@ export const ReferralProvider = ({ children }) => {
       setIsValidating(false);
     }
   };
+
+  const loadStoredReferralRef = useRef(loadStoredReferral);
+  const validateAndStoreReferralRef = useRef(validateAndStoreReferral);
+  loadStoredReferralRef.current = loadStoredReferral;
+  validateAndStoreReferralRef.current = validateAndStoreReferral;
+
+  // Check URL for referral code on initial load
+  useEffect(() => {
+    const detectReferral = async () => {
+      if (typeof window === "undefined") return;
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get("ref");
+
+      if (refCode) {
+        // New referral code from URL - validate and store (session only)
+        await validateAndStoreReferralRef.current(refCode.toUpperCase(), "link");
+
+        // Clean URL (remove ref param) without reload
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete("ref");
+        window.history.replaceState({}, "", newUrl.toString());
+      } else {
+        // Load referral only for this browser session
+        loadStoredReferralRef.current();
+      }
+    };
+
+    detectReferral();
+  }, []);
 
   const clearReferral = () => {
     if (typeof window !== "undefined") {

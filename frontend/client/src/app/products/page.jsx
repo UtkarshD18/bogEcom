@@ -22,6 +22,7 @@ function ProductsPageContent() {
 
     // Get search term from URL
     const urlSearchTerm = searchParams.get("search") || "";
+    const urlCategory = searchParams.get("category") || "";
     const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
 
     // Sync state with URL when URL changes (e.g. from header search)
@@ -33,8 +34,8 @@ function ProductsPageContent() {
         const loadProducts = async () => {
             setLoading(true);
             try {
-                // Construct API URL with search param
-                const query = urlSearchTerm ? `?search=${encodeURIComponent(urlSearchTerm)}` : "";
+                const params = new URLSearchParams(searchParams.toString());
+                const query = params.toString() ? `?${params.toString()}` : "";
                 const res = await fetchDataFromApi(`/api/products${query}`);
 
                 // Handle various API response structures (arrays, nested products, nested data)
@@ -48,24 +49,33 @@ function ProductsPageContent() {
             }
         };
         loadProducts();
-    }, [urlSearchTerm]);
+    }, [searchParams, urlSearchTerm, urlCategory]);
 
     // Handle search input change
     const handleSearchChange = (e) => {
-        const value = e.target.value;
-        setSearchTerm(value);
+        setSearchTerm(e.target.value);
+    };
 
-        // Debounce URL update
+    useEffect(() => {
+        const normalizedCurrent = urlSearchTerm.trim();
+        const normalizedNext = searchTerm.trim();
+
+        if (normalizedCurrent === normalizedNext) return undefined;
+
         const timeoutId = setTimeout(() => {
-            if (value) {
-                router.push(`/products?search=${encodeURIComponent(value)}`);
+            const params = new URLSearchParams(searchParams.toString());
+            if (normalizedNext) {
+                params.set("search", normalizedNext);
             } else {
-                router.push("/products");
+                params.delete("search");
             }
+
+            const nextUrl = params.toString() ? `/products?${params.toString()}` : "/products";
+            router.replace(nextUrl);
         }, 500);
 
         return () => clearTimeout(timeoutId);
-    };
+    }, [router, searchParams, searchTerm, urlSearchTerm]);
 
     return (
         <div className="min-h-screen pb-20 pt-10">

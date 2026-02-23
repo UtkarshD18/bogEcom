@@ -105,6 +105,7 @@ const CoinRewardLayer = () => {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let initialAnimationTimer;
 
     const customHandler = (event) => {
       playRewardAnimation(event?.detail || null);
@@ -119,12 +120,17 @@ const CoinRewardLayer = () => {
 
     const existing = window.localStorage.getItem(COIN_REWARD_KEY);
     if (existing) {
-      playRewardAnimation(existing);
+      initialAnimationTimer = window.setTimeout(() => {
+        playRewardAnimation(existing);
+      }, 0);
     }
 
     return () => {
       window.removeEventListener("coinRewardAnimation", customHandler);
       window.removeEventListener("storage", storageHandler);
+      if (typeof initialAnimationTimer === "number") {
+        window.clearTimeout(initialAnimationTimer);
+      }
     };
   }, [playRewardAnimation]);
 

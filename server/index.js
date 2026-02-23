@@ -14,6 +14,7 @@ import {
   getRefreshTokenSecret,
 } from "./config/authSecrets.js";
 import connectDb from "./config/connectDb.js";
+import { initializeEmailService } from "./config/emailService.js";
 import createCookieCsrfGuard from "./middlewares/csrfGuard.js";
 import {
   adminLimiter,
@@ -359,6 +360,21 @@ connectDb().then(async () => {
   } else {
     console.log(
       "Firebase credentials not provided; push notifications are disabled.",
+    );
+  }
+
+  try {
+    const emailInit = await initializeEmailService();
+    if (!emailInit?.success) {
+      console.warn(
+        "Email service initialization warning:",
+        emailInit?.reason || "SMTP not ready",
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "Email service initialization failed:",
+      error?.message || error,
     );
   }
 

@@ -175,6 +175,14 @@ const Checkout = () => {
   const [gstError, setGstError] = useState("");
   const [gstSaving, setGstSaving] = useState(false);
   const [gstSavedValue, setGstSavedValue] = useState("");
+  const [shippingQuote, setShippingQuote] = useState({
+    charge: 0,
+    freeDelivery: true,
+    source: "default",
+  });
+  const [shippingQuoteLoading, setShippingQuoteLoading] = useState(false);
+  const [backendPricing, setBackendPricing] = useState(null);
+  const [backendPricingLoading, setBackendPricingLoading] = useState(false);
 
   const INDIAN_STATES = [
     "Andhra Pradesh",
@@ -226,11 +234,12 @@ const Checkout = () => {
   // Prices are GST-inclusive throughout the storefront.
   // GST rate comes from settings (defaults to 5% if missing).
   const gstRatePercent = getGstRatePercentFromSettings(taxSettings);
+  const selectedCheckoutAddress = addresses.find((a) => a._id === selectedAddress) || null;
 
   // Derive the delivery state for GST display (CGST+SGST vs IGST)
   const checkoutStateForPreview = isGuestCheckout
     ? guestDetails.state
-    : addresses.find((a) => a._id === selectedAddress)?.state || "";
+    : selectedCheckoutAddress?.state || "";
   const hasCheckoutStateInput = Boolean(String(checkoutStateForPreview || "").trim());
   const normalizedCheckoutState = normalizeStateValue(checkoutStateForPreview);
   const isRajasthanDelivery = normalizedCheckoutState === "Rajasthan";
@@ -293,10 +302,6 @@ const Checkout = () => {
         ),
       )
     : 0;
-  const baseBeforeCoupon = round2(
-    Math.max(baseAfterMembership - referralDiscount, 0),
-  );
-
   // Step 4 + 5: coupon + GST are resolved by shared calculateOrderTotals().
   const tradeDiscountBeforeCoupon = round2(
     membershipDiscount + referralDiscount,
@@ -320,13 +325,51 @@ const Checkout = () => {
   const couponDiscount = totalsBeforeCoin.couponDiscount;
   const subtotal = totalsBeforeCoin.discountedSubtotal; // GST-exclusive after coupon
   const tax = totalsBeforeCoin.tax; // GST on discounted base
-  const payableShipping = 0;
-
-  const productCostAfterCoupon = round2(subtotal + tax); // GST-inclusive after coupon (no shipping)
+  const quotePincode = String(
+    isGuestCheckout
+      ? guestDetails.pincode
+      : selectedCheckoutAddress?.pincode || "",
+  )
+    .trim()
+    .replace(/\D/g, "");
+  const canQuoteShipping = /^\d{6}$/.test(quotePincode);
+  const quoteSubtotal = round2(totalsBeforeCoin.totalPayable || 0);
+  const payableShipping = round2(Number(shippingQuote?.charge || 0));
+  const effectiveDiscountBreakdown = backendPricing?.discountBreakdown || {};
+  const effectiveSubtotal = Number(
+    backendPricing?.subtotal ?? cartBaseSubtotal ?? 0,
+  );
+  const effectiveMembershipDiscount = Number(
+    effectiveDiscountBreakdown.membership ?? membershipDiscount ?? 0,
+  );
+  const effectiveInfluencerDiscount = Number(
+    effectiveDiscountBreakdown.influencer ?? referralDiscount ?? 0,
+  );
+  const effectiveCouponDiscount = Number(
+    effectiveDiscountBreakdown.coupon ?? couponDiscount ?? 0,
+  );
+  const effectiveTaxableAmount = Number(
+    backendPricing?.taxableAmount ?? subtotal ?? 0,
+  );
+  const effectiveTax = Number(backendPricing?.gstAmount ?? tax ?? 0);
+  const effectiveShipping = Number(
+    backendPricing?.shipping ?? payableShipping ?? 0,
+  );
+  const effectiveTotal = Number(
+    backendPricing?.finalAmount ??
+      round2(Math.max(effectiveTaxableAmount + effectiveTax + effectiveShipping, 0)),
+  );
+  const effectiveCouponCode =
+    backendPricing?.codes?.couponCode || appliedCoupon?.code || null;
+  const effectiveInfluencerCode =
+    backendPricing?.codes?.influencerCode || referralCode || null;
+  const effectiveOriginalAmount = Number(
+    backendPricing?.originalAmount ?? round2(cartBaseSubtotal + effectiveTax),
+  );
 
   // DISPLAY-ONLY GST breakup for summary labels (payable tax stays `tax`).
   const displayTaxBreakup = getDisplayTaxBreakup({
-    taxAmount: tax,
+    taxAmount: effectiveTax,
     isRajasthan: isRajasthanDelivery,
   });
   const summaryTaxLabel = !hasCheckoutStateInput
@@ -335,25 +378,89 @@ const Checkout = () => {
       ? "GST (S.GST+C.GST)"
       : "IGST";
   const summaryTaxAmount = !hasCheckoutStateInput
-    ? tax
+    ? effectiveTax
     : isRajasthanDelivery
       ? round2(displayTaxBreakup.cgst + displayTaxBreakup.sgst)
       : displayTaxBreakup.igst;
 
   // Coins are earned from orders, but redemption is restricted to membership checkout.
-  const effectiveRedeemCoins = 0;
   const coinRedeemAmount = 0;
 
-  // Step 8: Final payable = discounted base + GST + shipping - coinRedeem
-  const finalTotals = calculateOrderTotals({
-    ...checkoutTotalsInput,
-    shippingCost: payableShipping,
-    shippingRules: {
-      shippingCostOverride: payableShipping,
-    },
-    coinRedeemAmount,
-  });
-  const total = finalTotals.totalPayable;
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!canQuoteShipping) {
+      setShippingQuote({
+        charge: 0,
+        freeDelivery: true,
+        source: "missing_pincode",
+      });
+      setShippingQuoteLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const fetchShippingQuote = async () => {
+      setShippingQuoteLoading(true);
+      try {
+        const response = await fetch(`${API_URL}/api/shipping/quote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            pincode: quotePincode,
+            subtotal: quoteSubtotal,
+            paymentType: "prepaid",
+          }),
+        });
+
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch {
+          payload = null;
+        }
+
+        if (cancelled) return;
+
+        if (response.ok && payload?.success && payload?.data) {
+          const charge = round2(
+            Number(payload.data.charge ?? payload.data.amount ?? 0),
+          );
+          setShippingQuote({
+            charge: Math.max(charge, 0),
+            freeDelivery: Boolean(
+              payload.data.freeDelivery ?? Math.max(charge, 0) <= 0,
+            ),
+            source: payload.data.source || "quote",
+          });
+        } else {
+          setShippingQuote({
+            charge: 0,
+            freeDelivery: true,
+            source: "quote_fallback",
+          });
+        }
+      } catch (_error) {
+        if (!cancelled) {
+          setShippingQuote({
+            charge: 0,
+            freeDelivery: true,
+            source: "quote_error",
+          });
+        }
+      } finally {
+        if (!cancelled) setShippingQuoteLoading(false);
+      }
+    };
+
+    fetchShippingQuote();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canQuoteShipping, quotePincode, quoteSubtotal]);
 
   // Fetch addresses from database
   const fetchAddresses = useCallback(async () => {
@@ -736,95 +843,8 @@ const Checkout = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // Validate coupon with backend
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) {
-      setCouponError("Please enter a coupon code");
-      return;
-    }
-
-    setCouponLoading(true);
-    setCouponError("");
-
-    try {
-      const token = getStoredAccessToken();
-      const response = await fetch(`${API_URL}/api/coupons/validate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-        body: JSON.stringify({
-          code: couponCode.trim(),
-          // Backend validates coupon against the GST-exclusive base amount
-          // (after membership/referral, before coupon/shipping).
-          orderAmount: baseBeforeCoupon,
-          influencerCode: referralCode || null,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setAppliedCoupon(data.data);
-        setCouponCode("");
-        setSnackbar({
-          open: true,
-          message: `Coupon applied! You save Rs.${data.data.discountAmount}`,
-          severity: "success",
-        });
-
-        // Track if it's an affiliate coupon
-        if (data.data.isAffiliateCoupon) {
-          setAffiliateFromCoupon(data.data.code, data.data.affiliateSource);
-          setAffiliateData({
-            code: data.data.code,
-            source: data.data.affiliateSource,
-            fromCoupon: true,
-          });
-        }
-      } else {
-        const shouldTryReferral = response.status === 404;
-        if (shouldTryReferral && applyReferralCode) {
-          const referralResult = await applyReferralCode(
-            couponCode.trim(),
-            "manual",
-          );
-
-          if (referralResult?.success) {
-            setAppliedCoupon(null);
-            setCouponCode("");
-            setCouponError("");
-            setSnackbar({
-              open: true,
-              message: "Referral code applied successfully",
-              severity: "success",
-            });
-            return;
-          }
-        }
-
-        setCouponError(data.message || "Invalid coupon");
-      }
-    } catch (error) {
-      console.error("Coupon validation error:", error);
-      setCouponError("Failed to validate coupon. Please try again.");
-    } finally {
-      setCouponLoading(false);
-    }
-  };
-
-  // Remove applied coupon
-  const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
-    setSnackbar({
-      open: true,
-      message: "Coupon removed",
-      severity: "info",
-    });
-  };
-
-  const buildOrderProductsPayload = () =>
+  const buildOrderProductsPayload = useCallback(
+    () =>
     (cartItems || []).map((item) => {
       const data = getItemData(item);
       return {
@@ -835,9 +855,11 @@ const Checkout = () => {
         image: data.image,
         subTotal: data.price * data.quantity,
       };
-    });
+    }),
+    [cartItems],
+  );
 
-  const buildGuestDetailsPayload = () => {
+  const buildGuestDetailsPayload = useCallback(() => {
     if (isGuestCheckout) {
       return {
         fullName: guestDetails.fullName,
@@ -855,6 +877,197 @@ const Checkout = () => {
       };
     }
     return {};
+  }, [guestDetails, gstNumber, isGuestCheckout]);
+
+  const fetchPricingPreview = useCallback(
+    async ({ couponCodeOverride = undefined, quiet = false } = {}) => {
+      const token = getStoredAccessToken();
+      const isValidObjectId =
+        selectedAddress && /^[a-f\d]{24}$/i.test(selectedAddress);
+
+      const requestedCouponCode =
+        couponCodeOverride === undefined
+          ? appliedCoupon?.code || null
+          : couponCodeOverride || null;
+
+      const payload = {
+        products: buildOrderProductsPayload(),
+        delivery_address: isValidObjectId ? selectedAddress : null,
+        guestDetails: buildGuestDetailsPayload(),
+        couponCode: requestedCouponCode,
+        influencerCode: referralCode || null,
+        coinRedeem: { coins: 0 },
+        paymentType: "prepaid",
+      };
+
+      if (!payload.products?.length) {
+        setBackendPricing(null);
+        return { success: false, message: "No products available for preview" };
+      }
+
+      setBackendPricingLoading(true);
+      try {
+        const response = await fetch(`${API_URL}/api/orders/preview`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        });
+
+        let data = null;
+        try {
+          data = await response.json();
+        } catch {
+          data = null;
+        }
+
+        if (response.ok && data?.success && data?.data) {
+          const preview = data.data;
+          setBackendPricing(preview);
+
+          const resolvedCouponCode = preview?.codes?.couponCode || null;
+          if (resolvedCouponCode) {
+            setAppliedCoupon({
+              code: resolvedCouponCode,
+              discountAmount: Number(
+                preview?.discountBreakdown?.coupon ?? 0,
+              ),
+            });
+          } else if (couponCodeOverride !== undefined) {
+            setAppliedCoupon(null);
+          }
+
+          return { success: true, data: preview };
+        }
+
+        if (!quiet) {
+          setCouponError(data?.message || "Failed to refresh pricing");
+        }
+
+        return {
+          success: false,
+          message: data?.message || "Failed to refresh pricing",
+          status: response.status,
+        };
+      } catch (error) {
+        if (!quiet) {
+          setCouponError("Failed to refresh pricing. Please try again.");
+        }
+        return {
+          success: false,
+          message: error?.message || "Failed to refresh pricing",
+        };
+      } finally {
+        setBackendPricingLoading(false);
+      }
+    },
+    [
+      appliedCoupon?.code,
+      buildGuestDetailsPayload,
+      buildOrderProductsPayload,
+      referralCode,
+      selectedAddress,
+    ],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const runPreview = async () => {
+      const result = await fetchPricingPreview({ quiet: true });
+      if (cancelled) return;
+      if (!result.success) {
+        // keep local fallback totals when preview is temporarily unavailable
+      }
+    };
+
+    if ((cartItems || []).length > 0) {
+      runPreview();
+    } else {
+      setBackendPricing(null);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    fetchPricingPreview,
+    cartItems,
+    selectedAddress,
+    guestDetails.pincode,
+    guestDetails.state,
+    referralCode,
+    appliedCoupon?.code,
+  ]);
+
+  // Validate coupon using backend checkout preview (single source of truth)
+  const handleApplyCoupon = async () => {
+    const candidateCode = couponCode.trim().toUpperCase();
+    if (!candidateCode) {
+      setCouponError("Please enter a coupon code");
+      return;
+    }
+
+    setCouponLoading(true);
+    setCouponError("");
+
+    try {
+      const previewResult = await fetchPricingPreview({
+        couponCodeOverride: candidateCode,
+      });
+
+      if (previewResult.success) {
+        const couponDiscountApplied = Number(
+          previewResult?.data?.discountBreakdown?.coupon ?? 0,
+        );
+        setCouponCode("");
+        setSnackbar({
+          open: true,
+          message: `Coupon applied! You save Rs.${couponDiscountApplied.toFixed(2)}`,
+          severity: "success",
+        });
+        return;
+      }
+
+      const shouldTryReferral =
+        previewResult.status === 400 || previewResult.status === 404;
+      if (shouldTryReferral && applyReferralCode) {
+        const referralResult = await applyReferralCode(candidateCode, "manual");
+        if (referralResult?.success) {
+          setAppliedCoupon(null);
+          setCouponCode("");
+          setCouponError("");
+          await fetchPricingPreview({ couponCodeOverride: null, quiet: true });
+          setSnackbar({
+            open: true,
+            message: "Referral code applied successfully",
+            severity: "success",
+          });
+          return;
+        }
+      }
+
+      setCouponError(previewResult.message || "Invalid coupon");
+    } catch (error) {
+      console.error("Coupon validation error:", error);
+      setCouponError("Failed to validate coupon. Please try again.");
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  // Remove applied coupon
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    fetchPricingPreview({ couponCodeOverride: null, quiet: true });
+    setSnackbar({
+      open: true,
+      message: "Coupon removed",
+      severity: "info",
+    });
   };
 
   const createPurchaseOrderDraft = async ({ token, deliveryAddressId }) => {
@@ -913,6 +1126,14 @@ const Checkout = () => {
         return;
       }
 
+      const pricingResult = await fetchPricingPreview();
+      if (!pricingResult.success) {
+        throw new Error(
+          pricingResult.message ||
+            "Unable to verify latest pricing. Please try again.",
+        );
+      }
+
       const statusRes = await fetch(`${API_URL}/api/orders/payment-status`);
       const statusData = await statusRes.json();
 
@@ -927,7 +1148,9 @@ const Checkout = () => {
       const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
 
       const currentAffiliate = getStoredAffiliateData();
-      const originalAmount = round2(subtotal + tax + payableShipping);
+      const originalAmount = round2(
+        Math.max(effectiveOriginalAmount + effectiveShipping, 0),
+      );
 
       let purchaseOrderId = null;
       try {
@@ -941,19 +1164,19 @@ const Checkout = () => {
 
       const orderData = {
         products: buildOrderProductsPayload(),
-        totalAmt: total,
+        totalAmt: effectiveTotal,
         originalAmount,
-        finalAmount: total,
+        finalAmount: effectiveTotal,
         delivery_address: isValidObjectId ? selectedAddress : null,
         location: isGuestCheckout ? guestLocationPayload : null,
         notes: orderNote,
-        tax,
-        shipping: payableShipping,
+        tax: effectiveTax,
+        shipping: effectiveShipping,
         // Coupon details (backend will revalidate)
-        couponCode: appliedCoupon?.code || null,
-        discountAmount: couponDiscount,
+        couponCode: effectiveCouponCode,
+        discountAmount: effectiveCouponDiscount,
         // Influencer/Referral tracking
-        influencerCode: referralCode || null,
+        influencerCode: effectiveInfluencerCode,
         // Legacy affiliate tracking
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
@@ -1057,6 +1280,14 @@ const Checkout = () => {
         return;
       }
 
+      const pricingResult = await fetchPricingPreview();
+      if (!pricingResult.success) {
+        throw new Error(
+          pricingResult.message ||
+            "Unable to verify latest pricing. Please try again.",
+        );
+      }
+
       const token = authToken;
       const currentAffiliate = getStoredAffiliateData();
 
@@ -1079,7 +1310,7 @@ const Checkout = () => {
 
       const orderData = {
         products: buildOrderProductsPayload(),
-        totalAmt: total,
+        totalAmt: effectiveTotal,
         delivery_address: isValidObjectId ? selectedAddress : null,
         location: isGuestCheckout ? guestLocationPayload : null,
         shippingAddress: selectedAddrObj
@@ -1105,11 +1336,11 @@ const Checkout = () => {
             : null,
         guestDetails: buildGuestDetailsPayload(),
         // Coupon details
-        couponCode: appliedCoupon?.code || null,
-        discountAmount: couponDiscount,
-        finalAmount: total,
+        couponCode: effectiveCouponCode,
+        discountAmount: effectiveCouponDiscount,
+        finalAmount: effectiveTotal,
         // Influencer/Referral tracking - backend recalculates for security
-        influencerCode: referralCode || null,
+        influencerCode: effectiveInfluencerCode,
         // Legacy affiliate tracking
         affiliateCode: currentAffiliate?.code || null,
         affiliateSource: currentAffiliate?.source || null,
@@ -1573,16 +1804,32 @@ const Checkout = () => {
                     <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
                       <span>Subtotal</span>
                       <span className="text-white">
-                        ₹{cartBaseSubtotal.toFixed(2)}
+                        ₹{effectiveSubtotal.toFixed(2)}
                       </span>
                     </div>
 
-                    {couponDiscount > 0 && (
+                    {effectiveMembershipDiscount > 0 && (
+                      <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
+                        <span>Membership Discount</span>
+                        <span>-₹{effectiveMembershipDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {effectiveInfluencerDiscount > 0 && (
+                      <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
+                        <span>
+                          Referral {effectiveInfluencerCode ? `(${effectiveInfluencerCode})` : ""}
+                        </span>
+                        <span>-₹{effectiveInfluencerDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {effectiveCouponDiscount > 0 && (
                       <div className="flex justify-between text-primary/80 font-bold uppercase tracking-widest text-xs">
                         <span className="flex items-center gap-1">
-                          <FiTag /> Coupon
+                          <FiTag /> Coupon {effectiveCouponCode ? `(${effectiveCouponCode})` : ""}
                         </span>
-                        <span>-₹{couponDiscount.toFixed(2)}</span>
+                        <span>-₹{effectiveCouponDiscount.toFixed(2)}</span>
                       </div>
                     )}
 
@@ -1596,20 +1843,34 @@ const Checkout = () => {
                     )}
 
                     <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
+                      <span>Taxable Amount</span>
+                      <span>₹{effectiveTaxableAmount.toFixed(2)}</span>
+                    </div>
+
+                    <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
                       <span>{summaryTaxLabel}</span>
                       <span>&#8377;{summaryTaxAmount.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-gray-400 font-bold uppercase tracking-widest text-xs">
                       <span>Shipping</span>
                       {hasCheckoutStateInput ? (
-                        <span className="text-primary flex items-center gap-2">
-                          {displayShippingCharge > 0 && (
-                            <span className="line-through text-gray-500">
-                              &#8377;{displayShippingCharge.toFixed(2)}
-                            </span>
-                          )}
-                          <span>FREE</span>
-                        </span>
+                        Number(effectiveShipping || 0) > 0 ? (
+                          <span className="text-white">
+                            &#8377;{effectiveShipping.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-primary flex items-center gap-2">
+                            {displayShippingCharge > 0 && (
+                              <span className="line-through text-gray-500">
+                                &#8377;{displayShippingCharge.toFixed(2)}
+                              </span>
+                            )}
+                            <span>FREE</span>
+                            {(shippingQuoteLoading || backendPricingLoading) && (
+                              <span className="text-gray-500">(syncing)</span>
+                            )}
+                          </span>
+                        )
                       ) : (
                         <span className="text-gray-500">--</span>
                       )}
@@ -1621,7 +1882,7 @@ const Checkout = () => {
                           Total Payable
                         </p>
                         <p className="text-3xl font-black text-white tracking-tight">
-                          ₹{total.toFixed(0)}
+                          ₹{effectiveTotal.toFixed(2)}
                         </p>
                       </div>
                     </div>
@@ -1664,7 +1925,7 @@ const Checkout = () => {
                             <FiCheck /> {appliedCoupon.code}
                           </p>
                           <p className="text-xs text-primary font-bold">
-                            You saved ₹{appliedCoupon.discountAmount}
+                            You saved ₹{Number(appliedCoupon.discountAmount || 0).toFixed(2)}
                           </p>
                         </div>
                         <button
@@ -1755,7 +2016,7 @@ const Checkout = () => {
         onClose={handleCloseModal}
         onSaveOrder={handleSaveOrder}
         isSaving={isSavingOrder}
-        orderTotal={total}
+        orderTotal={effectiveTotal}
       />
 
       {/* Snackbar */}

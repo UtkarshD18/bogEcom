@@ -12,6 +12,12 @@ import mongoose from "mongoose";
  * - Discounts and pricing
  */
 
+const HSN_CODE_REGEX = /^\d{4,8}$/;
+const normalizeHsnCode = (value) =>
+  String(value || "")
+    .replace(/\s+/g, "")
+    .trim();
+
 // Review sub-schema
 const reviewSchema = new mongoose.Schema(
   {
@@ -210,6 +216,16 @@ const productSchema = new mongoose.Schema(
     barcode: {
       type: String,
       default: "",
+    },
+    hsnCode: {
+      type: String,
+      default: "",
+      trim: true,
+      validate: {
+        validator: (value) =>
+          !String(value || "").trim() || HSN_CODE_REGEX.test(String(value || "").trim()),
+        message: "HSN code must be 4 to 8 digits",
+      },
     },
     stock: {
       type: Number,
@@ -488,6 +504,38 @@ productSchema.pre("validate", function () {
   if (!this.sku) {
     const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
     this.sku = `BOG-${randomPart}`;
+  }
+
+  const specHsn =
+    this.specifications instanceof Map
+      ? this.specifications.get("hsn") ||
+        this.specifications.get("HSN") ||
+        this.specifications.get("Hsn")
+      : this.specifications?.hsn ||
+        this.specifications?.HSN ||
+        this.specifications?.Hsn;
+
+  const normalizedDocHsn = normalizeHsnCode(this.hsnCode);
+  const normalizedSpecHsn = normalizeHsnCode(specHsn);
+  const resolvedHsnCode = normalizedDocHsn || normalizedSpecHsn;
+
+  if (resolvedHsnCode && !HSN_CODE_REGEX.test(resolvedHsnCode)) {
+    this.invalidate("hsnCode", "HSN code must be 4 to 8 digits");
+    return;
+  }
+
+  this.hsnCode = resolvedHsnCode;
+  if (!(this.specifications instanceof Map)) {
+    this.specifications = new Map(
+      Object.entries(this.specifications || {}),
+    );
+  }
+  if (resolvedHsnCode) {
+    this.specifications.set("hsn", resolvedHsnCode);
+  } else {
+    this.specifications.delete("hsn");
+    this.specifications.delete("HSN");
+    this.specifications.delete("Hsn");
   }
 });
 

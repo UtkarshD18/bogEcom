@@ -168,6 +168,12 @@ const NotificationsPage = () => {
               <p>Guest Tokens: {stats?.guestTokens || 0}</p>
               <p>User Tokens: {stats?.userTokens || 0}</p>
               <p>Inactive Tokens: {stats?.inactiveTokens || 0}</p>
+              {Array.isArray(stats?.allowedOrigins) &&
+                stats.allowedOrigins.length > 0 && (
+                  <p className="text-xs text-gray-500">
+                    Allowed Origins: {stats.allowedOrigins.join(", ")}
+                  </p>
+                )}
 
               {(stats?.totalActive || 0) === 0 && (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">

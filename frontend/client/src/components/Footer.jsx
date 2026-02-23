@@ -318,7 +318,7 @@ const Footer = () => {
                 { name: "Delivery", link: "/delivery" },
                 { name: "Secure payment", link: "/secure-payment" },
                 policyLinks.terms,
-                { name: "Cancellation & Return", link: "/cancellation" },
+                { name: "Cancellation Policy", link: "/cancellation" },
                 { name: "About Us", link: "/about-us" },
               ].map((item, i) => (
                 <li key={i}>
@@ -393,9 +393,9 @@ const Footer = () => {
                 {status === "loading" ? (
                   <span className="w-5 h-5 border-2 border-[#0a0a0a]/20 border-t-[#0a0a0a] rounded-full animate-spin" />
                 ) : status === "success" ? (
-                  "✓ SUBSCRIBED!"
+                  "SUBSCRIBED!"
                 ) : (
-                  "SUBSCRIBE →"
+                  "SUBSCRIBE ->"
                 )}
               </button>
             </form>
@@ -496,7 +496,7 @@ const Footer = () => {
           </div>
 
           <p className="text-center text-[11px] sm:text-[13px] font-medium text-gray-600">
-            © 2026 Healthyonegram. All rights reserved.
+            (c) 2026 Healthyonegram. All rights reserved.
           </p>
         </div>
       </div>

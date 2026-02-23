@@ -62,7 +62,7 @@ const Sidebar = () => {
     if (categoryParam) {
       setSelectedCategories(categoryParam.split(","));
     }
-  }, []);
+  }, [searchParams]);
 
   // Handle category filter change
   const handleCategoryChange = (categoryId) => {

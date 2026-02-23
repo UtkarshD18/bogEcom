@@ -107,7 +107,7 @@ const SecurePayment = () => {
                 Powered by PhonePe
               </h2>
               <p className="text-gray-600 mb-4">
-                We've partnered with PhonePe, India's leading payment platform
+                We&apos;ve partnered with PhonePe, India&apos;s leading payment platform
                 trusted by millions of businesses. Your transactions are
                 processed securely with bank-grade security protocols.
               </p>

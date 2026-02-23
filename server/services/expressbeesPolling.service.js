@@ -9,6 +9,7 @@ import {
 } from "../utils/orderStatus.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
+import { sendOrderUpdateNotification } from "../controllers/notification.controller.js";
 
 let pollingTimer = null;
 let pollingInFlight = false;
@@ -83,6 +84,15 @@ export const pollExpressbeesTracking = async () => {
         if (transition.updated) {
           order.updatedAt = new Date();
           await order.save();
+
+          if (order.user) {
+            sendOrderUpdateNotification(order, order.order_status).catch((err) =>
+              logger.error("expressbeesPoll", "Failed to send notification", {
+                orderId: order._id,
+                error: err.message,
+              }),
+            );
+          }
 
           syncOrderToFirestore(order, "update").catch((err) =>
             logger.error("expressbeesPoll", "Failed to sync to Firestore", {

@@ -2,7 +2,7 @@
 
 import { API_BASE_URL } from "@/utils/api";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button, CircularProgress } from "@mui/material";
 import {
   FiCopy,
@@ -98,7 +98,7 @@ const AffiliatePortalPage = () => {
   const [hasToken, setHasToken] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
 
-  const saveSession = (code, email) => {
+  const saveSession = useCallback((code, email) => {
     if (typeof window === "undefined") return;
     const payload = {
       code: code.trim().toUpperCase(),
@@ -106,14 +106,14 @@ const AffiliatePortalPage = () => {
       savedAt: Date.now(),
     };
     localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-  };
+  }, []);
 
-  const clearSession = () => {
+  const clearSession = useCallback(() => {
     if (typeof window === "undefined") return;
     localStorage.removeItem(SESSION_KEY);
-  };
+  }, []);
 
-  const refreshAccessToken = async () => {
+  const refreshAccessToken = useCallback(async () => {
     if (typeof window === "undefined") return null;
     const refreshToken = localStorage.getItem(INFLUENCER_REFRESH_TOKEN_KEY);
     if (!refreshToken) return null;
@@ -133,9 +133,9 @@ const AffiliatePortalPage = () => {
 
     localStorage.setItem(INFLUENCER_TOKEN_KEY, result.data.accessToken);
     return result.data.accessToken;
-  };
+  }, []);
 
-  const loadSession = () => {
+  const loadSession = useCallback(() => {
     if (typeof window === "undefined") return null;
     try {
       const raw = localStorage.getItem(SESSION_KEY);
@@ -150,9 +150,9 @@ const AffiliatePortalPage = () => {
     } catch (err) {
       return null;
     }
-  };
+  }, []);
 
-  const fetchPortalData = async (code, email, persistSession = false) => {
+  const fetchPortalData = useCallback(async (code, email, persistSession = false) => {
     setError("");
     setData(null);
     setLoading(true);
@@ -180,9 +180,9 @@ const AffiliatePortalPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [saveSession]);
 
-  const fetchPortalDataWithToken = async (token, retry = true) => {
+  const fetchPortalDataWithToken = useCallback(async (token, retry = true) => {
     setError("");
     setData(null);
     setLoading(true);
@@ -225,7 +225,7 @@ const AffiliatePortalPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [refreshAccessToken, router]);
 
   useEffect(() => {
     const token =
@@ -243,7 +243,7 @@ const AffiliatePortalPage = () => {
     if (session?.code && session?.email) {
       fetchPortalData(session.code, session.email, false);
     }
-  }, []);
+  }, [fetchPortalData, fetchPortalDataWithToken, loadSession]);
 
   const handleLogout = () => {
     clearSession();

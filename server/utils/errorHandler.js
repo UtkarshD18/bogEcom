@@ -351,17 +351,17 @@ export function handleDatabaseError(error, context = "Database Operation") {
       acc[field] = err.message;
       return acc;
     }, {});
-    throw new AppError("INVALID_INPUT", details);
+    return new AppError("INVALID_INPUT", details);
   }
 
   if (error.name === "CastError") {
-    throw new AppError("INVALID_OBJECT_ID", { field: error.path, value: error.value });
+    return new AppError("INVALID_OBJECT_ID", { field: error.path, value: error.value });
   }
 
   if (error.code === 11000) {
     const field = Object.keys(error.keyPattern)[0];
-    throw new AppError("CONFLICT", { field, message: `${field} already exists` });
+    return new AppError("CONFLICT", { field, message: `${field} already exists` });
   }
 
-  throw new AppError("DATABASE_ERROR", { originalError: error.message });
+  return new AppError("DATABASE_ERROR", { originalError: error.message });
 }

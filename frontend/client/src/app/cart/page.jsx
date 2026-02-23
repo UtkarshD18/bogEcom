@@ -69,7 +69,7 @@ export default function CartPage() {
                     <MdShoppingBag size={48} className="text-gray-300" />
                 </div>
                 <h1 className="text-2xl font-black text-gray-900 mb-2">Your cart is empty</h1>
-                <p className="text-gray-500 mb-8 max-w-xs">Looks like you haven't added any peanut butter goodness yet!</p>
+                <p className="text-gray-500 mb-8 max-w-xs">Looks like you haven&apos;t added any peanut butter goodness yet!</p>
                 <Link
                     href="/products"
                     className="px-8 py-4 bg-primary text-white font-black rounded-2xl shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95"

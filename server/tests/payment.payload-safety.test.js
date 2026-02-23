@@ -12,13 +12,20 @@ const checkoutPagePath = path.resolve(
   "../../frontend/client/src/app/checkout/page.jsx",
 );
 
-test("payment payload wiring keeps shipping display-only (payable shipping forced to zero)", async () => {
+test("payment payload wiring keeps payable shipping sourced from backend quote (never from display strike-through)", async () => {
   const source = await fs.readFile(checkoutPagePath, "utf8");
 
-  assert.match(source, /const payableShipping = 0;/);
-  assert.match(source, /shippingCost: payableShipping,/);
-  assert.match(source, /const originalAmount = round2\(subtotal \+ tax \+ payableShipping\);/);
-  assert.match(source, /shipping: payableShipping,/);
+  assert.match(
+    source,
+    /const payableShipping = round2\(Number\(shippingQuote\?\.charge \|\| 0\)\);/,
+  );
+  assert.match(source, /\/api\/shipping\/quote/);
+  assert.match(source, /\/api\/orders\/preview/);
+  assert.match(source, /backendPricing\?\.shipping \?\? payableShipping \?\? 0/);
+  assert.match(source, /const originalAmount = round2\(\s*Math\.max\(effectiveOriginalAmount \+ effectiveShipping, 0\),\s*\);/);
+  assert.match(source, /shipping: effectiveShipping,/);
+  assert.match(source, /totalAmt: effectiveTotal,/);
+  assert.match(source, /finalAmount: effectiveTotal,/);
 
   // Guard against accidental inclusion of strike-through display amount in payment payload.
   assert.doesNotMatch(source, /shipping:\s*displayShippingCharge/);
@@ -59,7 +66,7 @@ test("multi-item cart with coupon keeps payable total independent of display shi
   );
 });
 
-test("address switch Rajasthan <-> other state changes only display path, not payable total", async () => {
+test("address switch Rajasthan <-> other state keeps display logic separate from payable calculation source", async () => {
   const source = await fs.readFile(checkoutPagePath, "utf8");
 
   // State-driven display branch exists.
@@ -69,9 +76,11 @@ test("address switch Rajasthan <-> other state changes only display path, not pa
     /useShippingDisplayCharge\(\{\s*isRajasthan: isRajasthanDelivery,\s*\}\)/,
   );
 
-  // Payable total comes from finalTotals and remains state-agnostic because
-  // shippingCost is locked to payableShipping (0).
-  assert.match(source, /const total = finalTotals\.totalPayable;/);
+  // Payable total comes from backend preview response with local shipping-quote fallback,
+  // while strike-through display shipping remains a visual-only path.
+  assert.match(source, /const effectiveShipping = Number\(/);
+  assert.match(source, /backendPricing\?\.shipping \?\? payableShipping \?\? 0/);
+  assert.match(source, /const effectiveTotal = Number\(/);
 
   const sampleTotalsA = calculateCheckoutTotals({
     items: [{ price: 105, quantity: 4 }],

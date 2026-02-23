@@ -214,7 +214,7 @@ const CancellationPage = () => {
               Policy
             </span>
             <h1 className="mt-4 text-3xl sm:text-4xl font-extrabold text-gray-900">
-              Cancellation & Return Policy
+              Cancellation Policy
             </h1>
             {updatedAt && (
               <p className="mt-2 text-sm text-gray-500">
@@ -262,10 +262,10 @@ const CancellationPage = () => {
             Policy Document
           </span>
           <h1 className="mt-5 text-3xl sm:text-4xl md:text-5xl font-extrabold text-gray-900 tracking-tight">
-            Cancellation & Return Policy
+            Cancellation Policy
           </h1>
           <p className="mt-3 text-sm text-gray-600">
-            Please read our cancellation and return policy carefully before
+            Please read our cancellation policy carefully before
             placing an order.
           </p>
           {updatedAt && (
@@ -297,8 +297,8 @@ const CancellationPage = () => {
             Need help?
           </div>
           <p className="mt-2 text-sm text-gray-600">
-            For cancellation or return questions, please contact customer
-            support before placing an order.
+            For cancellation questions, please contact customer support before
+            placing an order.
           </p>
         </div>
       </div>

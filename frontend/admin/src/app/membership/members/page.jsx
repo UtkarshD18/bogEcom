@@ -13,7 +13,7 @@ import {
   MenuItem,
   TextField,
 } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { RiVipCrownFill } from "react-icons/ri";
 
@@ -54,6 +54,7 @@ export default function MembershipMembersPage() {
   const [pointsDialogOpen, setPointsDialogOpen] = useState(false);
   const [pointsTarget, setPointsTarget] = useState(null);
   const [pointsValue, setPointsValue] = useState("");
+  const pointsApplyLockRef = useRef(false);
 
   const fetchMembers = useCallback(async () => {
     if (!token) return;
@@ -167,30 +168,40 @@ export default function MembershipMembersPage() {
   };
 
   const handlePointsApply = async () => {
+    if (pointsApplyLockRef.current || actionLoading) {
+      return;
+    }
+
     const parsed = Number(pointsValue);
     if (!pointsTarget?._id || !Number.isFinite(parsed) || parsed === 0) {
       toast.error("Enter a valid non-zero points value");
       return;
     }
 
-    await runAction(async () => {
-      const response = await postData(
-        "/api/admin/membership-users/add-points",
-        {
-          membershipUserId: pointsTarget._id,
-          points: parsed,
-        },
-        token,
-      );
-      if (!response?.success) {
-        toast.error(response?.message || "Failed to update points");
-        return;
-      }
-      toast.success("Points updated");
-      setPointsDialogOpen(false);
-      setPointsTarget(null);
-      setPointsValue("");
-    });
+    pointsApplyLockRef.current = true;
+    try {
+      await runAction(async () => {
+        const response = await postData(
+          "/api/admin/membership-users/add-points",
+          {
+            membershipUserId: pointsTarget._id,
+            points: parsed,
+            requestId: `membership-points-${pointsTarget._id}-${Date.now()}`,
+          },
+          token,
+        );
+        if (!response?.success) {
+          toast.error(response?.message || "Failed to update points");
+          return;
+        }
+        toast.success("Points updated");
+        setPointsDialogOpen(false);
+        setPointsTarget(null);
+        setPointsValue("");
+      });
+    } finally {
+      pointsApplyLockRef.current = false;
+    }
   };
 
   return (

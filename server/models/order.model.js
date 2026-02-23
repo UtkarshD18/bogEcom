@@ -411,6 +411,12 @@ awb_number: {
   index: true,
 },
 
+shipping_order_number: {
+  type: String,
+  default: null,
+  index: true,
+},
+
 shipping_label: {
   type: String,
   default: null, // PDF URL from courier

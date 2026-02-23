@@ -38,6 +38,9 @@ import { io } from "socket.io-client";
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
+const SOCKET_BASE_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.replace(/\/api\/?$/, "")
+  : API_BASE_URL.replace(/\/+$/, "");
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: MdAccessTime },
@@ -171,7 +174,7 @@ const OrderDetailsPage = () => {
     const token = cookies.get("accessToken");
     if (!token) return;
 
-    const socket = io(API_URL, {
+    const socket = io(SOCKET_BASE_URL, {
       withCredentials: true,
       transports: ["websocket"],
     });
@@ -198,6 +201,43 @@ const OrderDetailsPage = () => {
 
     return () => {
       socket.disconnect();
+    };
+  }, [orderId]);
+
+  useEffect(() => {
+    if (!orderId) return undefined;
+
+    const token = cookies.get("accessToken");
+    if (!token) return undefined;
+
+    let cancelled = false;
+
+    const pollOrder = async () => {
+      try {
+        const response = await fetch(`${API_URL}/orders/${orderId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!cancelled && data?.success && data?.data) {
+          setOrder(data.data);
+        }
+      } catch {
+        // Poll fallback is best-effort.
+      }
+    };
+
+    const intervalId = setInterval(pollOrder, 45000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
     };
   }, [orderId]);
 
@@ -514,9 +554,36 @@ const OrderDetailsPage = () => {
         (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
       )
     : [];
-  const orderTotals = calculateOrderTotals(
+  const fallbackTotals = calculateOrderTotals(
     buildSavedOrderCalculationInput(order, { payableShipping: 0 }),
   );
+  const pricing = order?.pricing || {};
+  const couponCodeValue = order?.couponCode || pricing?.couponCode || null;
+  const influencerCodeValue =
+    order?.influencerCode || pricing?.influencerCode || null;
+  const orderTotals = {
+    subtotal: Number(pricing.subtotal ?? fallbackTotals.subtotal ?? 0),
+    totalDiscount: Number(
+      pricing.totalDiscount ?? fallbackTotals.totalDiscount ?? 0,
+    ),
+    coinRedemptionAmount: Number(
+      pricing.coinRedemptionAmount ??
+        fallbackTotals.coinRedemptionAmount ??
+        order?.coinRedemption?.amount ??
+        0,
+    ),
+    tax: Number(pricing.tax ?? fallbackTotals.tax ?? 0),
+    shipping: Number(
+      pricing.shipping ?? order?.shipping ?? fallbackTotals.shipping ?? 0,
+    ),
+    total: Number(
+      pricing.total ??
+        order?.finalAmount ??
+        order?.totalAmt ??
+        fallbackTotals.total ??
+        0,
+    ),
+  };
   const canDownloadInvoice =
     order?.order_status !== "cancelled" &&
     (order?.payment_status === "paid" ||
@@ -949,7 +1016,7 @@ const OrderDetailsPage = () => {
               {orderTotals.totalDiscount > 0 && (
                 <div className="flex justify-between text-primary">
                   <span>
-                    Discount {order.couponCode && `(${order.couponCode})`}
+                    Discount {couponCodeValue ? `(Coupon ${couponCodeValue})` : influencerCodeValue ? `(Influencer ${influencerCodeValue})` : ""}
                   </span>
                   <span>-₹{orderTotals.totalDiscount.toFixed(2)}</span>
                 </div>
@@ -972,17 +1039,17 @@ const OrderDetailsPage = () => {
                   <MdLocalShipping />
                   Shipping
                 </span>
-                {hasDeliveryState ? (
+                {orderTotals.shipping > 0 ? (
+                  <span>₹{orderTotals.shipping.toFixed(2)}</span>
+                ) : (
                   <span className="text-primary font-medium flex items-center gap-2">
-                    {displayShippingCharge > 0 && (
+                    {hasDeliveryState && displayShippingCharge > 0 && (
                       <span className="line-through text-gray-500 font-normal">
                         ₹{displayShippingCharge.toFixed(2)}
                       </span>
                     )}
                     <span>FREE</span>
                   </span>
-                ) : (
-                  <span className="text-gray-500">--</span>
                 )}
               </div>
               <div className="border-t border-gray-200 pt-3 flex justify-between font-bold text-gray-800">

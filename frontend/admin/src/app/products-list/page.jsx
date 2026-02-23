@@ -115,6 +115,26 @@ const ProductsListContent = () => {
     setLowStockOnly(lowStockParam === "true");
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    const refreshProducts = () => {
+      fetchProducts();
+    };
+    const handleStorage = (event) => {
+      if (event?.key === "adminInventoryUpdatedAt") {
+        refreshProducts();
+      }
+    };
+
+    window.addEventListener("adminInventoryUpdated", refreshProducts);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("adminInventoryUpdated", refreshProducts);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [fetchProducts, isAuthenticated]);
+
   const handleDeleteProduct = async (productId) => {
     if (!confirm("Are you sure you want to delete this product?")) return;
 

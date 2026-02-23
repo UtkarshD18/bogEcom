@@ -16,7 +16,7 @@ import {
 } from "@mui/material";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { HiOutlineFire } from "react-icons/hi";
 import { IoMdCart, IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
 import { MdLocalShipping, MdPolicy, MdVerified } from "react-icons/md";
@@ -75,7 +75,7 @@ const ProductDetailPage = () => {
   const productRating = Number(product?.adminStarRating ?? product?.rating ?? 0);
   const customerReviewCount = customerReviews.length;
 
-  const fetchProductReviews = async (productId) => {
+  const fetchProductReviews = useCallback(async (productId) => {
     if (!productId) {
       setCustomerReviews([]);
       return;
@@ -94,10 +94,10 @@ const ProductDetailPage = () => {
     } finally {
       setReviewsLoading(false);
     }
-  };
+  }, []);
 
   // Fetch product details from API
-  const fetchProduct = async () => {
+  const fetchProduct = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetchDataFromApi(`/api/products/${id}`);
@@ -140,14 +140,14 @@ const ProductDetailPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchProductReviews, id]);
 
   useEffect(() => {
     if (id) {
       fetchProduct();
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  }, [id]);
+  }, [fetchProduct, id]);
 
   // Handle Add to Cart or Remove from Cart (toggle)
   const handleAddToCart = async () => {

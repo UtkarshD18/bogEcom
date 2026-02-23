@@ -819,7 +819,11 @@ export const restoreInventory = async (order, source = "ORDER_CANCELLED") => {
 
 export const applyPurchaseOrderInventory = async (
   poOrId,
-  { receivedItems = [], adminId = null } = {},
+  {
+    receivedItems = [],
+    adminId = null,
+    allowPartialReceipts = false,
+  } = {},
 ) => {
   const po =
     typeof poOrId === "string"
@@ -829,26 +833,42 @@ export const applyPurchaseOrderInventory = async (
     throw new AppError("NOT_FOUND", { message: "Purchase order not found" });
   }
 
-  if (po.inventory_applied) {
+  if (po.inventory_applied && !allowPartialReceipts) {
     return { status: "noop", reason: "already_applied", purchaseOrder: po };
   }
 
-  const receivedMap = new Map(
-    receivedItems.map((item) => [
-      String(item.productId || ""),
-      Number(item.qty_received ?? item.quantity ?? 0),
-    ]),
-  );
+  const receivedMap = new Map();
+  (Array.isArray(receivedItems) ? receivedItems : []).forEach((item) => {
+    const productId = String(item?.productId || item?._id || item?.id || "");
+    if (!productId) return;
+    const qty = Number(
+      item?.receivedQuantity ?? item?.qty_received ?? item?.quantity ?? 0,
+    );
+    if (!Number.isFinite(qty)) return;
+    const prev = Number(receivedMap.get(productId) || 0);
+    receivedMap.set(productId, prev + qty);
+  });
 
   const applied = [];
   try {
     for (const item of po.items) {
       const productId = String(item.productId || "");
       if (!productId) continue;
+      const orderedQty = Math.max(Number(item.quantity || 0), 0);
+      const alreadyReceived = Math.max(
+        Number(item.receivedQuantity ?? item.qty_received ?? 0),
+        0,
+      );
+      const remainingQty = Math.max(orderedQty - alreadyReceived, 0);
+      const requestedQty = receivedMap.has(productId)
+        ? Number(receivedMap.get(productId))
+        : allowPartialReceipts
+          ? 0
+          : remainingQty;
       const qty =
-        receivedMap.has(productId) && Number.isFinite(receivedMap.get(productId))
-          ? Math.max(receivedMap.get(productId), 0)
-          : Math.max(Number(item.qty_received ?? item.quantity ?? 0), 0);
+        remainingQty > 0
+          ? Math.min(Math.max(Number(requestedQty || 0), 0), remainingQty)
+          : 0;
 
       if (qty <= 0) continue;
 
@@ -895,12 +915,31 @@ export const applyPurchaseOrderInventory = async (
         referenceId: String(po._id || ""),
       });
 
-      item.qty_received = qty;
+      const nextReceived = Math.min(orderedQty, alreadyReceived + qty);
+      item.receivedQuantity = nextReceived;
+      item.qty_received = nextReceived;
       applied.push({ productId, quantity: qty });
     }
 
+    if (applied.length === 0) {
+      return {
+        status: "noop",
+        reason: "no_received_items",
+        purchaseOrder: po,
+      };
+    }
+
+    const allItemsReceived = (po.items || []).every((line) => {
+      const orderedQty = Math.max(Number(line?.quantity || 0), 0);
+      const receivedQty = Math.max(
+        Number(line?.receivedQuantity ?? line?.qty_received ?? 0),
+        0,
+      );
+      return orderedQty <= 0 || receivedQty >= orderedQty;
+    });
+
     po.status = "received";
-    po.inventory_applied = true;
+    po.inventory_applied = allItemsReceived;
     po.receivedAt = new Date();
     if (adminId) {
       po.receivedBy = adminId;
@@ -910,9 +949,19 @@ export const applyPurchaseOrderInventory = async (
     logger.info("applyPurchaseOrderInventory", "Inventory updated from PO", {
       purchaseOrderId: po._id,
       itemCount: applied.length,
+      totalQuantity: applied.reduce(
+        (sum, entry) => sum + Number(entry.quantity || 0),
+        0,
+      ),
+      allItemsReceived,
     });
 
-    return { status: "applied", purchaseOrder: po };
+    return {
+      status: "applied",
+      purchaseOrder: po,
+      allItemsReceived,
+      appliedItems: applied,
+    };
   } catch (error) {
     if (applied.length > 0) {
       for (const item of applied) {

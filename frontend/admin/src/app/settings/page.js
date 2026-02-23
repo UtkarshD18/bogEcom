@@ -81,9 +81,13 @@ const SettingsPage = () => {
   const [storeInfo, setStoreInfo] = useState({
     name: "BuyOneGram",
     email: "support@buyonegram.com",
-    phone: "+91 9876541234",
+    phone: "+919460838106",
     address: "",
     gstNumber: "",
+    stateGstCode: "08",
+    cinNumber: "",
+    msmeNumber: "",
+    fssaiNumber: "",
     currency: "INR",
     currencySymbol: "₹",
   });
@@ -137,7 +141,10 @@ const SettingsPage = () => {
               setDiscountSettings(setting.value);
               break;
             case "storeInfo":
-              setStoreInfo(setting.value);
+              setStoreInfo((prev) => ({
+                ...prev,
+                ...(setting.value || {}),
+              }));
               break;
             case "paymentGatewayEnabled":
               setSiteControls((prev) => ({
@@ -931,6 +938,62 @@ const SettingsPage = () => {
             size="small"
             fullWidth
             placeholder="e.g., 27ABCDE1234F1Z5"
+          />
+
+          <TextField
+            label="State GST Code"
+            value={storeInfo.stateGstCode || ""}
+            onChange={(e) =>
+              setStoreInfo({
+                ...storeInfo,
+                stateGstCode: e.target.value,
+              })
+            }
+            size="small"
+            fullWidth
+            placeholder="e.g., 08"
+          />
+
+          <TextField
+            label="CIN Number"
+            value={storeInfo.cinNumber || ""}
+            onChange={(e) =>
+              setStoreInfo({
+                ...storeInfo,
+                cinNumber: e.target.value,
+              })
+            }
+            size="small"
+            fullWidth
+            placeholder="e.g., U51909RJ2020PTC071817"
+          />
+
+          <TextField
+            label="MSME / UDYAM Number"
+            value={storeInfo.msmeNumber || ""}
+            onChange={(e) =>
+              setStoreInfo({
+                ...storeInfo,
+                msmeNumber: e.target.value,
+              })
+            }
+            size="small"
+            fullWidth
+            placeholder="e.g., UDYAM-RJ-17-0154669"
+          />
+
+          <TextField
+            label="FSSAI Number"
+            value={storeInfo.fssaiNumber || ""}
+            onChange={(e) =>
+              setStoreInfo({
+                ...storeInfo,
+                fssaiNumber: e.target.value,
+              })
+            }
+            size="small"
+            fullWidth
+            placeholder="e.g., 12224027000921"
           />
 
           <TextField

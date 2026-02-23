@@ -13,6 +13,7 @@ import {
 } from "../utils/orderStatus.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
+import { sendOrderUpdateNotification } from "./notification.controller.js";
 
 const extractPayload = (body) => {
   if (!body) return {};
@@ -126,6 +127,15 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
     if (transitionResult.updated) {
       order.updatedAt = new Date();
       await order.save();
+
+      if (order.user) {
+        sendOrderUpdateNotification(order, order.order_status).catch((err) =>
+          logger.error("expressbeesWebhook", "Failed to send notification", {
+            orderId: order._id,
+            error: err.message,
+          }),
+        );
+      }
 
       syncOrderToFirestore(order, "update").catch((err) =>
         logger.error("expressbeesWebhook", "Failed to sync to Firestore", {

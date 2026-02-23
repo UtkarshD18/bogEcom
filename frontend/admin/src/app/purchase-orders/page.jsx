@@ -294,6 +294,24 @@ export default function PurchaseOrdersPage() {
     return product?.unit || "-";
   };
 
+  const emitInventoryRefresh = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const updatedAt = Date.now();
+    window.dispatchEvent(
+      new CustomEvent("adminInventoryUpdated", {
+        detail: { updatedAt },
+      }),
+    );
+    try {
+      window.localStorage.setItem(
+        "adminInventoryUpdatedAt",
+        String(updatedAt),
+      );
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, []);
+
   const handleCreateOrder = async () => {
     const validItems = itemRows.filter((row) => row.product?._id);
     if (validItems.length === 0) {
@@ -427,10 +445,24 @@ export default function PurchaseOrdersPage() {
       );
       if (res.success) {
         toast.success("Purchase order marked as received");
+        const updatedOrder = res.data?.purchaseOrder || null;
+        if (updatedOrder?._id) {
+          setOrders((prev) =>
+            (prev || []).map((order) =>
+              order?._id === updatedOrder._id ? updatedOrder : order,
+            ),
+          );
+        }
         fetchOrders();
         setSelectedOrder((prev) =>
-          prev && prev._id === orderId ? res.data?.purchaseOrder || prev : prev,
+          prev && prev.order?._id === orderId
+            ? {
+                ...prev,
+                order: updatedOrder || prev.order,
+              }
+            : prev,
         );
+        emitInventoryRefresh();
       } else {
         toast.error(res.message || "Failed to mark as received");
       }
@@ -449,7 +481,7 @@ export default function PurchaseOrdersPage() {
         productId: item.productId,
         productTitle: item.productTitle,
         orderedQty: Number(item.quantity || 0),
-        receivedQty: Number(item.receivedQuantity || 0),
+        receivedQty: Number(item.receivedQuantity ?? item.qty_received ?? 0),
         receiveNow: "",
       })),
     });
@@ -486,10 +518,29 @@ export default function PurchaseOrdersPage() {
         token,
       );
       if (res.success) {
+        const updatedOrder =
+          res.data?.purchaseOrder ||
+          (res.data?._id ? res.data : null);
+        if (updatedOrder?._id) {
+          setOrders((prev) =>
+            (prev || []).map((order) =>
+              order?._id === updatedOrder._id ? updatedOrder : order,
+            ),
+          );
+          setSelectedOrder((prev) =>
+            prev && prev.order?._id === updatedOrder._id
+              ? {
+                  ...prev,
+                  order: updatedOrder,
+                }
+              : prev,
+          );
+        }
         toast.success("Receipt updated");
         setReceiveDialogOpen(false);
         setReceiveTarget(null);
         fetchOrders();
+        emitInventoryRefresh();
       } else {
         toast.error(res.message || "Failed to update receipt");
       }
@@ -932,8 +983,8 @@ export default function PurchaseOrdersPage() {
                   <div>{formatPacking(item)}</div>
                   <div>
                     {item.quantity}
-                    {Number(item.receivedQuantity || 0) > 0
-                      ? ` (${item.receivedQuantity} rec)`
+                    {Number(item.receivedQuantity ?? item.qty_received ?? 0) > 0
+                      ? ` (${Number(item.receivedQuantity ?? item.qty_received ?? 0)} rec)`
                       : ""}
                   </div>
                   <div>₹{Number(item.price || 0).toLocaleString("en-IN")}</div>

@@ -9,25 +9,13 @@ Once an order is shipped, no modifications or cancellations can be made.`;
 
 const DEFAULT_POLICY_CONTENT = `## Non-Cancellable & Non-Returnable Orders
 
-Orders placed with a discount or during any sale events are not eligible for cancellation or return.
+Orders placed with a discount or during any sale events are not eligible for cancellation, return, or exchange.
 
 Once an order is shipped, no modifications or cancellations can be made.
 
-## Return / Exchange / Refund Policy
+## Important Notice
 
-We offer refund / exchange within first 1 days from the date of your purchase. If 1 days have passed
-since your purchase, you will not be offered a return, exchange or refund of any kind. In order to become
-eligible for a return or an exchange, (i) the purchased item should be unused and in the same condition as
-you received it, (ii) the item must have original packaging, (iii) if the item that you purchased on a sale,
-then the item may not be eligible for a return / exchange. Further, only such items are replaced by us
-(based on an exchange request), if such items are found defective or damaged.
-You agree that there may be a certain category of products / items that are exempted from returns or
-refunds. Such categories of the products would be identified to you at the item of purchase. For exchange
-/ return accepted request(s) (as applicable), once your returned product / item is received and inspected
-by us, we will send you an email to notify you about receipt of the returned / exchanged product. Further.
-If the same has been approved after the quality check at our end, your request (i.e. return / exchange) will
-be processed in accordance with our policies.
-Replacement of damaged products will be processed and delivered within 5-7 Days of receiving the request and approval`;
+We do not accept returns, exchanges, or refunds once an order is processed.`;
 
 const DEFAULT_THEME = { style: "mint", layout: "glass" };
 const THEME_STYLES = [
@@ -39,6 +27,31 @@ const THEME_STYLES = [
   "midnight",
 ];
 const THEME_LAYOUTS = ["glass", "minimal"];
+
+const LEGACY_RETURN_ACCEPTANCE_PATTERNS = [
+  /##\s*Return\s*\/\s*Exchange\s*\/\s*Refund Policy/i,
+  /we offer refund\s*\/\s*exchange/i,
+  /return accepted request/i,
+];
+
+const stripLegacyReturnAcceptanceCopy = (rawContent) => {
+  const content = String(rawContent || "").trim();
+  if (!content) return content;
+
+  const hasLegacyAcceptanceCopy = LEGACY_RETURN_ACCEPTANCE_PATTERNS.some(
+    (pattern) => pattern.test(content),
+  );
+  if (!hasLegacyAcceptanceCopy) {
+    return content;
+  }
+
+  const withoutLegacySection = content
+    .replace(/##\s*Return\s*\/\s*Exchange\s*\/\s*Refund Policy[\s\S]*$/i, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return withoutLegacySection || DEFAULT_POLICY_CONTENT;
+};
 
 const normalizeTheme = (value) => {
   if (!value || typeof value !== "object") return null;
@@ -65,8 +78,17 @@ const ensureActivePolicy = async () => {
 
   // Safe upgrade: only overwrite content if it was never customized.
   const current = String(policy.content || "").trim();
-  if (!current || current === LEGACY_DEFAULT_POLICY_CONTENT.trim()) {
+  const cleanedContent = stripLegacyReturnAcceptanceCopy(current);
+
+  if (
+    !current ||
+    current === LEGACY_DEFAULT_POLICY_CONTENT.trim() ||
+    cleanedContent !== current
+  ) {
     policy.content = DEFAULT_POLICY_CONTENT;
+    if (cleanedContent && cleanedContent !== DEFAULT_POLICY_CONTENT) {
+      policy.content = cleanedContent;
+    }
     policy.theme = { ...DEFAULT_THEME, ...(policy.theme || {}) };
     await policy.save();
   }
@@ -148,20 +170,22 @@ export const updateCancellationPolicy = async (req, res) => {
       });
     }
     const sanitizedContent = sanitizePolicyHtml(content);
+    const sanitizedWithoutLegacyAcceptance =
+      stripLegacyReturnAcceptanceCopy(sanitizedContent);
 
     let policy = await CancellationPolicyModel.findOne({ isActive: true });
 
     if (!policy) {
       // Create new policy
       policy = await CancellationPolicyModel.create({
-        content: sanitizedContent,
+        content: sanitizedWithoutLegacyAcceptance,
         isActive: true,
         updatedBy: adminId,
         ...(normalizedTheme ? { theme: normalizedTheme } : {}),
       });
     } else {
       // Update existing policy
-      policy.content = sanitizedContent;
+      policy.content = sanitizedWithoutLegacyAcceptance;
       if (normalizedTheme) {
         const existingTheme =
           policy.theme?.toObject?.() || policy.theme || {};

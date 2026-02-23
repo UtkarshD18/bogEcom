@@ -8,6 +8,25 @@ import cookies from "js-cookie";
 
 const API_URL = API_BASE_URL;
 
+const toFriendlyNotificationError = (err) => {
+  const code = String(err?.code || "").toLowerCase();
+  const message = String(err?.message || "");
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    code.includes("messaging/token-subscribe-failed") ||
+    normalizedMessage.includes("fcmregistrations.googleapis.com")
+  ) {
+    return "Push notifications are temporarily unavailable. Please try again later.";
+  }
+
+  if (code.includes("messaging/permission-blocked")) {
+    return "Notifications are blocked in your browser settings.";
+  }
+
+  return message || "Failed to enable push notifications.";
+};
+
 /**
  * useNotifications Hook
  *
@@ -64,6 +83,8 @@ export const useNotifications = (options = {}) => {
           userType,
           userId: userType === "user" ? userId : null,
           platform: "web",
+          origin:
+            typeof window !== "undefined" ? window.location.origin : "",
         }),
       });
 
@@ -242,7 +263,7 @@ export const useNotifications = (options = {}) => {
       return true;
     } catch (err) {
       console.error("Error requesting permission:", err);
-      setError(err.message);
+      setError(toFriendlyNotificationError(err));
       return false;
     } finally {
       setIsRegistering(false);

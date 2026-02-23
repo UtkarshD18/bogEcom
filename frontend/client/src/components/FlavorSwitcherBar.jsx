@@ -1,6 +1,6 @@
 "use client";
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useState } from "react";
 
 // Convert FLAVORS object to array for mapping
 const FLAVORS_ARRAY = [
@@ -12,24 +12,19 @@ const FLAVORS_ARRAY = [
 
 export default function FlavorSwitcherBar() {
   const context = useContext(MyContext);
-  const [selected, setSelected] = useState(FLAVORS.creamy.name);
-  const [mounted, setMounted] = useState(false);
+  const [selected, setSelected] = useState(() => {
+    if (typeof window === "undefined") return FLAVORS.creamy.name;
 
-  useEffect(() => {
     const saved = localStorage.getItem("selectedFlavor");
-    if (saved) {
-      try {
-        const flavor = JSON.parse(saved);
-        setSelected(flavor.name);
-      } catch {
-        setSelected(FLAVORS.creamy.name);
-      }
-    } else {
-      // Default to Creamy
-      setSelected(FLAVORS.creamy.name);
+    if (!saved) return FLAVORS.creamy.name;
+
+    try {
+      const flavor = JSON.parse(saved);
+      return flavor?.name || FLAVORS.creamy.name;
+    } catch {
+      return FLAVORS.creamy.name;
     }
-    setMounted(true);
-  }, []);
+  });
 
   const handleClick = (flavor) => {
     setSelected(flavor.name);
@@ -44,8 +39,6 @@ export default function FlavorSwitcherBar() {
 
   const currentFlavor =
     FLAVORS_ARRAY.find((f) => f.name === selected) || FLAVORS.creamy;
-
-  if (!mounted) return null;
 
   return (
     <div

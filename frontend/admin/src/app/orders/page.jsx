@@ -83,7 +83,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     }));
 
     return {
-      order_number: `#${order?._id?.slice(-6) || "000001"}`,
+      order_number: order?.shipping_order_number || "",
       payment_type: paymentType,
       order_amount: orderAmount,
       collectable_amount: paymentType === "cod" ? orderAmount : 0,
@@ -806,11 +806,11 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
         <DialogContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
             <TextField
-              label="Order Number"
+              label="Order Number (Auto)"
               value={shippingForm?.order_number || ""}
-              onChange={(e) =>
-                updateShippingField("order_number", e.target.value)
-              }
+              placeholder="Generated on booking (HOG25-26/0001)"
+              InputProps={{ readOnly: true }}
+              helperText="Server-generated and auto-incremented by financial year."
               fullWidth
             />
             <Select

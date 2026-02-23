@@ -11,6 +11,7 @@ import {
   getUserOrderById,
   getUserOrders,
   handlePhonePeWebhook,
+  previewOrderPricing,
   saveOrderForLater,
   updateOrderStatus,
 } from "../controllers/order.controller.js";
@@ -50,6 +51,9 @@ router.post("/webhook/phonepe", handlePhonePeWebhook);
 
 // Check payment gateway status
 router.get("/payment-status", getPaymentGatewayStatus);
+
+// Server-side checkout totals preview (single source of truth)
+router.post("/preview", optionalAuth, previewOrderPricing);
 
 // ==================== USER ROUTES ====================
 

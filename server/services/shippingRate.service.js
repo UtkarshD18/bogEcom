@@ -5,6 +5,7 @@ const shippingCache = new Map();
 
 const DISPLAY_MARKUP_PERCENT = 30;
 const DISPLAY_METRICS_CACHE_KEY = "shipping_display_metrics";
+const SHIPPING_QUOTE_CONFIG_CACHE_KEY = "shipping_quote_config";
 
 const DEFAULT_RATE_CHART = Object.freeze({
   A: { base500: 24, add500: 14 },
@@ -94,6 +95,24 @@ const resolveDisplayRateChart = async () => {
   }
 };
 
+const getShippingQuoteConfig = async () => {
+  const cached = getCached(SHIPPING_QUOTE_CONFIG_CACHE_KEY);
+  if (cached) return cached;
+
+  try {
+    const setting = await SettingsModel.findOne({ key: "shippingSettings" })
+      .select("value")
+      .lean();
+    const shippingSettings = setting?.value || {};
+    setCached(SHIPPING_QUOTE_CONFIG_CACHE_KEY, shippingSettings);
+    return shippingSettings;
+  } catch (_error) {
+    const fallback = {};
+    setCached(SHIPPING_QUOTE_CONFIG_CACHE_KEY, fallback);
+    return fallback;
+  }
+};
+
 const resolveRajasthanLocalCandidate = (rateChart) => {
   if (!isPlainObject(rateChart)) return [];
 
@@ -157,14 +176,48 @@ export const getShippingQuote = async ({
   destinationPincode,
   subtotal = 0,
   paymentType = "prepaid",
+  totalWeightGrams = 0,
 }) => {
+  const orderValue = Math.max(Number(subtotal || 0), 0);
   const estimatedWeight =
-    subtotal <= 500 ? 500 : Math.ceil(Number(subtotal || 0) / 500) * 500;
+    totalWeightGrams > 0
+      ? Number(totalWeightGrams)
+      : orderValue <= 500
+        ? 500
+        : Math.ceil(orderValue / 500) * 500;
   const weight = getWeightSlab(estimatedWeight);
   const zone = detectZoneByPincode(destinationPincode);
 
-  // Business rule: free delivery for every order.
-  const charge = 0;
+  const shippingSettings = await getShippingQuoteConfig();
+  const forceFreeShipping = shippingSettings?.forceFreeShipping !== false;
+
+  let charge = 0;
+  let freeDelivery = true;
+
+  if (!forceFreeShipping) {
+    const freeShippingEnabled = shippingSettings?.freeShippingEnabled === true;
+    const freeShippingThreshold = Number(
+      shippingSettings?.freeShippingThreshold || 0,
+    );
+
+    if (
+      freeShippingEnabled &&
+      Number.isFinite(freeShippingThreshold) &&
+      orderValue >= freeShippingThreshold
+    ) {
+      charge = 0;
+      freeDelivery = true;
+    } else {
+      const standardCost = Number(shippingSettings?.standardShippingCost || 0);
+      const expressCost = Number(shippingSettings?.expressShippingCost || 0);
+      const selectedCost =
+        String(paymentType || "").toLowerCase() === "express"
+          ? expressCost
+          : standardCost;
+      charge = round2(Math.max(selectedCost, 0));
+      freeDelivery = charge <= 0;
+    }
+  }
 
   return {
     success: true,
@@ -172,6 +225,8 @@ export const getShippingQuote = async ({
     charge,
     amount: charge,
     weight,
+    freeDelivery,
+    source: forceFreeShipping ? "force_free_shipping" : "settings",
   };
 };
 

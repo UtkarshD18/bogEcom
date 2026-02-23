@@ -16,7 +16,7 @@ import {
 import cookies from "js-cookie";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useContext, useEffect, useState } from "react";
+import { Suspense, useCallback, useContext, useEffect, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 
@@ -107,7 +107,7 @@ const LoginForm = () => {
   const context = useContext(MyContext);
   const router = useRouter();
 
-  const completeGoogleSignIn = async (result) => {
+  const completeGoogleSignIn = useCallback(async (result) => {
     const credential = GoogleAuthProvider.credentialFromResult(result);
     const token = credential?.accessToken || "";
     const user = result?.user;
@@ -161,7 +161,7 @@ const LoginForm = () => {
     setTimeout(() => {
       router.push(redirectUrl);
     }, 100);
-  };
+  }, [context, redirectUrl, router]);
 
   // Initialize Firebase auth
   useEffect(() => {
@@ -201,7 +201,7 @@ const LoginForm = () => {
         console.error("Firebase auth initialization error:", error);
       }
     }
-  }, []);
+  }, [completeGoogleSignIn, context]);
 
   useEffect(() => {
     const token = getStoredToken();
@@ -225,7 +225,7 @@ const LoginForm = () => {
       clearStoredSession();
     }
     cookies.remove("actionType");
-  }, []);
+  }, [context, router]);
   const onChangeInput = (e) => {
     const { name, value } = e.target;
     setFormFields(() => {
