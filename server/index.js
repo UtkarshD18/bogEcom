@@ -7,6 +7,7 @@ import http from "http";
 import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
+import "./config/dayjs.js";
 import {
   ACCESS_TOKEN_SECRET_KEYS,
   REFRESH_TOKEN_SECRET_KEYS,
@@ -18,7 +19,6 @@ import { initializeEmailService } from "./config/emailService.js";
 import createCookieCsrfGuard from "./middlewares/csrfGuard.js";
 import {
   adminLimiter,
-  authLimiter,
   generalLimiter,
   uploadLimiter,
 } from "./middlewares/rateLimiter.js";
@@ -281,7 +281,7 @@ app.get("/", (req, res) => {
 
 // API routes with rate limiting
 app.use("/api/about", generalLimiter, aboutPageRouter);
-app.use("/api/user", authLimiter, userRouter);
+app.use("/api/user", generalLimiter, userRouter);
 app.use("/api/address", generalLimiter, addressRouter);
 app.use("/api/products", generalLimiter, productRouter);
 app.use("/api/categories", generalLimiter, categoryRouter);

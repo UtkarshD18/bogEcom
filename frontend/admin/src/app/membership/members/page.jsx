@@ -173,8 +173,13 @@ export default function MembershipMembersPage() {
     }
 
     const parsed = Number(pointsValue);
-    if (!pointsTarget?._id || !Number.isFinite(parsed) || parsed === 0) {
-      toast.error("Enter a valid non-zero points value");
+    if (
+      !pointsTarget?._id ||
+      !Number.isFinite(parsed) ||
+      parsed === 0 ||
+      !Number.isInteger(parsed)
+    ) {
+      toast.error("Enter a valid non-zero whole number");
       return;
     }
 
@@ -191,10 +196,10 @@ export default function MembershipMembersPage() {
           token,
         );
         if (!response?.success) {
-          toast.error(response?.message || "Failed to update points");
+          toast.error(response?.message || "Failed to update coins");
           return;
         }
-        toast.success("Points updated");
+        toast.success("Coins updated");
         setPointsDialogOpen(false);
         setPointsTarget(null);
         setPointsValue("");
@@ -212,7 +217,7 @@ export default function MembershipMembersPage() {
           <h1 className="text-2xl font-bold">Membership Members</h1>
         </div>
         <p className="text-blue-100">
-          Manage all users who purchased membership, extension, and points.
+          Manage all users who purchased membership, extension, and coins.
         </p>
       </div>
 
@@ -324,17 +329,17 @@ export default function MembershipMembersPage() {
           setPointsValue("");
         }}
       >
-        <DialogTitle>Add / Subtract Points</DialogTitle>
+        <DialogTitle>Add / Subtract Coins</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             margin="dense"
-            label="Points (+/-)"
+            label="Coins (+/-)"
             type="number"
             fullWidth
             value={pointsValue}
             onChange={(event) => setPointsValue(event.target.value)}
-            helperText="Use negative value to subtract points."
+            helperText="Use negative value to subtract coins."
           />
         </DialogContent>
         <DialogActions>

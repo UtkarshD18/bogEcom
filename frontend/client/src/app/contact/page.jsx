@@ -572,14 +572,10 @@ const Contact = () => {
                   <MenuItem value="">No order selected</MenuItem>
                   {orders.map((order) => (
                     <MenuItem key={order.id} value={order.id}>
-                      #{String(order.id || "").slice(-8).toUpperCase()} -{" "}
-                      {order.createdAt
-                        ? new Date(order.createdAt).toLocaleDateString("en-IN", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })
-                        : "Unknown date"}
+                      #{String(order.displayId || order.id || "")
+                        .slice(-8)
+                        .toUpperCase()} -{" "}
+                      {order.createdAt || "Unknown date"}
                     </MenuItem>
                   ))}
                 </TextField>

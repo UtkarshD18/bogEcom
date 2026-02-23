@@ -21,7 +21,6 @@ const ProductItem = (props) => {
     const flavor = context?.flavor || FLAVORS.creamy;
 
     const productId = id || _id || product?._id || product?.id;
-    const isWishlisted = isInWishlist(productId);
     const alreadyInCart = isInCart(productId);
 
     const productData = product || {
@@ -50,11 +49,17 @@ const ProductItem = (props) => {
     const displayWeight = defaultVariant ? defaultVariant.weight : productData.weight;
     const displayUnit = defaultVariant ? (defaultVariant.unit || "g") : (productData.unit && productData.unit !== "piece" ? productData.unit : "g");
     const isExclusiveProduct = Boolean(productData?.isExclusive);
+    const wishlistVariantId = defaultVariant?._id || null;
+    const isWishlisted = isInWishlist(productId, wishlistVariantId);
 
     const handleWishlistClick = async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        await toggleWishlist(productData);
+        await toggleWishlist(productData, {
+            variantId: wishlistVariantId,
+            variantName: defaultVariant?.name || "",
+            quantity: 1,
+        });
     };
 
     const handleAddToCart = async (e) => {
@@ -67,7 +72,25 @@ const ProductItem = (props) => {
             try { await removeFromCart(productId); } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
         } else {
             setIsAddingToCart(true);
-            try { await addToCart(productData, 1); } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
+            try {
+                const cartPayload = defaultVariant
+                    ? {
+                        ...productData,
+                        price: defaultVariant.price,
+                        originalPrice: defaultVariant.originalPrice || productData.originalPrice,
+                        selectedVariant: {
+                            _id: defaultVariant._id,
+                            name: defaultVariant.name,
+                            sku: defaultVariant.sku,
+                            price: defaultVariant.price,
+                            weight: defaultVariant.weight,
+                            unit: defaultVariant.unit,
+                        },
+                        variantId: defaultVariant._id,
+                    }
+                    : productData;
+                await addToCart(cartPayload, 1);
+            } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
         }
     };
 

@@ -82,6 +82,23 @@ test("without coupon, shipping charge applies when threshold is not met", () => 
   assert.equal(totals.totalPayable, 567);
 });
 
+test("GST breakdown for 179 inclusive follows subtotal + 5% tax = 179", () => {
+  const totals = calculateOrderTotals({
+    items: [{ price: 179, quantity: 1 }],
+    shippingRules: {
+      shippingCostOverride: 0,
+    },
+    taxRules: {
+      gstRatePercent: 5,
+      pricesIncludeTax: true,
+    },
+  });
+
+  assert.equal(totals.subtotal, 170.48);
+  assert.equal(totals.tax, 8.52);
+  assert.equal(totals.totalPayable, 179);
+});
+
 test("free shipping threshold removes shipping when subtotal-after-discount crosses threshold", () => {
   const totals = calculateOrderTotals({
     items: [{ price: 999, quantity: 1 }],

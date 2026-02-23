@@ -63,10 +63,31 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     if (typeof raw?.toString === "function") return String(raw.toString());
     return null;
   })();
+  const hasInvoiceArtifacts = Boolean(
+    order?.isInvoiceGenerated ||
+      order?.invoiceUrl ||
+      order?.invoicePath ||
+      order?.invoiceGeneratedAt,
+  );
   const canDownloadInvoice =
     order?.order_status !== "cancelled" &&
-    (order?.payment_status === "paid" ||
+    (hasInvoiceArtifacts ||
+      order?.payment_status === "paid" ||
       normalizeStatus(order?.order_status) === "accepted");
+  const fallbackOrderId = String(order?._id || order?.id || "")
+    .trim()
+    .slice(-8)
+    .toUpperCase();
+  const orderDisplayId = String(
+    order?.displayOrderId || (fallbackOrderId ? `BOG-${fallbackOrderId}` : "N/A"),
+  )
+    .trim()
+    .toUpperCase();
+  const invoiceFileId =
+    orderDisplayId.replace(/[^A-Z0-9-]/g, "") ||
+    String(order?._id || "")
+      .slice(-8)
+      .toUpperCase();
 
   const buildShipmentPayload = () => {
     const addr = order?.delivery_address || {};
@@ -375,9 +396,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
       const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `invoice-${String(order?._id || "")
-        .slice(-8)
-        .toUpperCase()}.pdf`;
+      a.download = `invoice-${invoiceFileId}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -500,7 +519,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           </Button>
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 font-bold">
-          #{order?._id?.slice(-6) || "------"}
+          {orderDisplayId}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 break-words">
           {purchaseOrderId ? (
@@ -552,7 +571,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           {order?.delivery_address?.pincode || "N/A"}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
-          ₹{order?.finalAmount || order?.totalAmt || "0"}
+          Rs. {order?.finalAmount || order?.totalAmt || "0"}
         </td>
         <td className="text-[14px] text-gray-600 px-4 py-2 text-primary font-bold break-all">
           {order?.user?._id?.slice(-6) || "------"}
@@ -1208,3 +1227,4 @@ const Orders = () => {
 };
 
 export default Orders;
+

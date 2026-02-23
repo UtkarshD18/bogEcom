@@ -3,11 +3,24 @@ import ProductModel from "../models/product.model.js";
 import WishlistModel from "../models/wishlist.model.js";
 import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 
-const getAvailableQuantity = (product) => {
+const round2 = (value) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+const getAvailableQuantity = (product, variantId = null) => {
   if (!product) return 0;
   if (product.track_inventory === false || product.trackInventory === false) {
     return Number.MAX_SAFE_INTEGER;
   }
+
+  if (variantId && product.hasVariants && product.variants?.length) {
+    const variant = product.variants.id
+      ? product.variants.id(variantId)
+      : product.variants.find((v) => String(v?._id || "") === String(variantId));
+    const variantStock = Number(variant?.stock_quantity ?? variant?.stock ?? 0);
+    const variantReserved = Number(variant?.reserved_quantity ?? 0);
+    return Math.max(variantStock - variantReserved, 0);
+  }
+
   const stock = Number(product.stock_quantity ?? product.stock ?? 0);
   const reserved = Number(product.reserved_quantity ?? 0);
   return Math.max(stock - reserved, 0);
@@ -17,6 +30,14 @@ const MAX_MOVE_TO_CART_QTY = 100;
 
 const isValidObjectId = (value) =>
   mongoose.Types.ObjectId.isValid(String(value || "").trim());
+
+const normalizeVariantId = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  return String(value).trim();
+};
+
+const isSameVariant = (left, right) =>
+  String(normalizeVariantId(left) || "") === String(normalizeVariantId(right) || "");
 
 const normalizeQuantity = (value) => {
   const parsed = Number(value);
@@ -30,7 +51,78 @@ const canUserAccessExclusiveProducts = async (userId) => {
 };
 
 const WISHLIST_PRODUCT_SELECT =
-  "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive";
+  "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive hasVariants variants";
+
+const resolveWishlistSnapshot = ({ product, variantId, variantName, quantity }) => {
+  const normalizedVariantId = normalizeVariantId(variantId);
+  if (normalizedVariantId && !isValidObjectId(normalizedVariantId)) {
+    return { errorMessage: "Invalid variant ID" };
+  }
+
+  let resolvedPrice = Number(product?.price ?? 0);
+  let resolvedOriginalPrice = Number(
+    product?.originalPrice ?? product?.price ?? 0,
+  );
+  let resolvedVariantName = String(variantName || "").trim().slice(0, 120);
+  let availableStock = getAvailableQuantity(product, null);
+
+  if (normalizedVariantId) {
+    if (!product?.hasVariants || !Array.isArray(product?.variants)) {
+      return { errorMessage: "Selected variant is not available" };
+    }
+
+    const resolvedVariant = product.variants.id
+      ? product.variants.id(normalizedVariantId)
+      : product.variants.find(
+          (variant) => String(variant?._id || "") === normalizedVariantId,
+        );
+
+    if (!resolvedVariant) {
+      return { errorMessage: "Selected variant is not available" };
+    }
+
+    resolvedPrice = Number(resolvedVariant.price ?? product.price ?? 0);
+    resolvedOriginalPrice = Number(
+      resolvedVariant.originalPrice ??
+        product.originalPrice ??
+        resolvedPrice,
+    );
+    if (!resolvedVariantName) {
+      resolvedVariantName = String(resolvedVariant.name || "").trim().slice(0, 120);
+    }
+    availableStock = getAvailableQuantity(product, normalizedVariantId);
+  }
+
+  const normalizedQty = normalizeQuantity(quantity ?? 1);
+  if (
+    !Number.isInteger(normalizedQty) ||
+    normalizedQty < 1 ||
+    normalizedQty > MAX_MOVE_TO_CART_QTY
+  ) {
+    return {
+      errorMessage: `Quantity must be an integer between 1 and ${MAX_MOVE_TO_CART_QTY}`,
+    };
+  }
+
+  if (Number.isFinite(availableStock) && availableStock < normalizedQty) {
+    return {
+      errorMessage: `Only ${availableStock} items available`,
+    };
+  }
+
+  return {
+    variantId: normalizedVariantId,
+    variantName: resolvedVariantName,
+    quantity: normalizedQty,
+    priceSnapshot: round2(Math.max(resolvedPrice, 0)),
+    originalPriceSnapshot: round2(
+      Math.max(
+        resolvedOriginalPrice > 0 ? resolvedOriginalPrice : resolvedPrice,
+        0,
+      ),
+    ),
+  };
+};
 
 const formatWishlistItems = (items = []) =>
   (items || []).map((item) => {
@@ -44,6 +136,11 @@ const formatWishlistItems = (items = []) =>
       _id: rawItem?._id,
       product: productId,
       productData: productDoc || rawItem?.productData || null,
+      variantId: normalizeVariantId(rawItem?.variantId),
+      variantName: String(rawItem?.variantName || "").trim(),
+      quantity: Math.max(Number(rawItem?.quantity || 1), 1),
+      priceSnapshot: round2(Number(rawItem?.priceSnapshot || 0)),
+      originalPriceSnapshot: round2(Number(rawItem?.originalPriceSnapshot || 0)),
       addedAt: rawItem?.addedAt,
     };
   });
@@ -118,12 +215,23 @@ export const addToWishlist = async (req, res) => {
   try {
     const userId = req.user;
     const productId = String(req.body?.productId || "").trim();
+    const requestedVariantId = normalizeVariantId(req.body?.variantId);
+    const requestedVariantName = String(req.body?.variantName || "").trim();
+    const requestedQuantity = req.body?.quantity ?? 1;
 
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
         error: true,
         success: false,
         message: "Valid product ID is required",
+      });
+    }
+
+    if (requestedVariantId && !isValidObjectId(requestedVariantId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid variant ID",
       });
     }
 
@@ -162,7 +270,9 @@ export const addToWishlist = async (req, res) => {
 
     // Check if already in wishlist
     const existingItem = wishlist.items.find(
-      (item) => String(item.product) === productId,
+      (item) =>
+        String(item.product) === productId &&
+        normalizeVariantId(item?.variantId) === requestedVariantId,
     );
 
     if (existingItem) {
@@ -173,9 +283,28 @@ export const addToWishlist = async (req, res) => {
       });
     }
 
+    const snapshot = resolveWishlistSnapshot({
+      product,
+      variantId: requestedVariantId,
+      variantName: requestedVariantName,
+      quantity: requestedQuantity,
+    });
+    if (snapshot?.errorMessage) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: snapshot.errorMessage,
+      });
+    }
+
     // Add to wishlist
     wishlist.items.push({
       product: productId,
+      variantId: snapshot.variantId,
+      variantName: snapshot.variantName,
+      quantity: snapshot.quantity,
+      priceSnapshot: snapshot.priceSnapshot,
+      originalPriceSnapshot: snapshot.originalPriceSnapshot,
     });
 
     await wishlist.save();
@@ -214,12 +343,21 @@ export const removeFromWishlist = async (req, res) => {
   try {
     const userId = req.user;
     const productId = String(req.params?.productId || "").trim();
+    const variantId = normalizeVariantId(req.query?.variantId);
 
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
         error: true,
         success: false,
         message: "Invalid product ID",
+      });
+    }
+
+    if (variantId && !isValidObjectId(variantId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid variant ID",
       });
     }
 
@@ -234,7 +372,13 @@ export const removeFromWishlist = async (req, res) => {
 
     const initialLength = wishlist.items.length;
     wishlist.items = wishlist.items.filter(
-      (item) => item.product && String(item.product) !== productId,
+      (item) => {
+        if (!item.product) return false;
+        const isProductMatch = String(item.product) === productId;
+        if (!isProductMatch) return true;
+        if (!variantId) return false;
+        return normalizeVariantId(item?.variantId) !== variantId;
+      },
     );
 
     if (wishlist.items.length === initialLength) {
@@ -280,6 +424,9 @@ export const toggleWishlist = async (req, res) => {
   try {
     const userId = req.user;
     const productId = String(req.body?.productId || "").trim();
+    const requestedVariantId = normalizeVariantId(req.body?.variantId);
+    const requestedVariantName = String(req.body?.variantName || "").trim();
+    const requestedQuantity = req.body?.quantity ?? 1;
 
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
@@ -289,9 +436,16 @@ export const toggleWishlist = async (req, res) => {
       });
     }
 
+    if (requestedVariantId && !isValidObjectId(requestedVariantId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid variant ID",
+      });
+    }
+
     const product = await ProductModel.findById(productId)
-      .select("_id isActive isExclusive")
-      .lean();
+      .select(WISHLIST_PRODUCT_SELECT);
     if (!product || !product.isActive) {
       return res.status(404).json({
         error: true,
@@ -320,7 +474,9 @@ export const toggleWishlist = async (req, res) => {
     wishlist.items = wishlist.items.filter((item) => item.product);
 
     const existingIndex = wishlist.items.findIndex(
-      (item) => String(item.product) === productId,
+      (item) =>
+        String(item.product) === productId &&
+        normalizeVariantId(item?.variantId) === requestedVariantId,
     );
 
     let isWishlisted;
@@ -329,26 +485,48 @@ export const toggleWishlist = async (req, res) => {
       wishlist.items.splice(existingIndex, 1);
       isWishlisted = false;
     } else {
+      const snapshot = resolveWishlistSnapshot({
+        product,
+        variantId: requestedVariantId,
+        variantName: requestedVariantName,
+        quantity: requestedQuantity,
+      });
+      if (snapshot?.errorMessage) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: snapshot.errorMessage,
+        });
+      }
+
       // Add to wishlist
-      wishlist.items.push({ product: productId });
+      wishlist.items.push({
+        product: productId,
+        variantId: snapshot.variantId,
+        variantName: snapshot.variantName,
+        quantity: snapshot.quantity,
+        priceSnapshot: snapshot.priceSnapshot,
+        originalPriceSnapshot: snapshot.originalPriceSnapshot,
+      });
       isWishlisted = true;
     }
 
     await wishlist.save();
     await wishlist.populate({
       path: "items.product",
-      select:
-        "name price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive rating brand isExclusive",
+      select: WISHLIST_PRODUCT_SELECT,
     });
+
+    const formattedItems = formatWishlistItems(wishlist.items);
 
     res.status(200).json({
       error: false,
       success: true,
       message: isWishlisted ? "Added to wishlist" : "Removed from wishlist",
       data: {
-        items: wishlist.items,
+        items: formattedItems,
         isWishlisted,
-        itemCount: wishlist.itemCount,
+        itemCount: formattedItems.length,
       },
     });
   } catch (error) {
@@ -368,6 +546,7 @@ export const checkWishlist = async (req, res) => {
   try {
     const userId = req.user;
     const productId = String(req.params?.productId || "").trim();
+    const variantId = normalizeVariantId(req.query?.variantId);
 
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
@@ -377,10 +556,22 @@ export const checkWishlist = async (req, res) => {
       });
     }
 
+    if (variantId && !isValidObjectId(variantId)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid variant ID",
+      });
+    }
+
     const wishlist = await WishlistModel.findOne({ user: userId });
 
     const isWishlisted =
-      wishlist?.items.some((item) => item.product && String(item.product) === productId) ||
+      wishlist?.items.some((item) => {
+        if (!item?.product || String(item.product) !== productId) return false;
+        if (!variantId) return true;
+        return normalizeVariantId(item?.variantId) === variantId;
+      }) ||
       false;
 
     res.status(200).json({
@@ -434,7 +625,8 @@ export const moveToCart = async (req, res) => {
   try {
     const userId = req.user;
     const productId = String(req.body?.productId || "").trim();
-    const quantity = normalizeQuantity(req.body?.quantity ?? 1);
+    const requestedVariantId = normalizeVariantId(req.body?.variantId);
+    const requestedQuantity = req.body?.quantity;
 
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
@@ -444,11 +636,11 @@ export const moveToCart = async (req, res) => {
       });
     }
 
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_MOVE_TO_CART_QTY) {
+    if (requestedVariantId && !isValidObjectId(requestedVariantId)) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: `Quantity must be an integer between 1 and ${MAX_MOVE_TO_CART_QTY}`,
+        message: "Invalid variant ID",
       });
     }
 
@@ -467,7 +659,11 @@ export const moveToCart = async (req, res) => {
 
     // Find item in wishlist
     const itemIndex = wishlist.items.findIndex(
-      (item) => item.product && String(item.product) === productId,
+      (item) => {
+        if (!item?.product || String(item.product) !== productId) return false;
+        if (!requestedVariantId) return true;
+        return isSameVariant(item?.variantId, requestedVariantId);
+      },
     );
 
     if (itemIndex === -1) {
@@ -475,6 +671,17 @@ export const moveToCart = async (req, res) => {
         error: true,
         success: false,
         message: "Product not in wishlist",
+      });
+    }
+
+    const wishlistItem = wishlist.items[itemIndex];
+    const selectedVariantId = normalizeVariantId(wishlistItem?.variantId);
+    const quantity = normalizeQuantity(requestedQuantity ?? wishlistItem?.quantity ?? 1);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_MOVE_TO_CART_QTY) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: `Quantity must be an integer between 1 and ${MAX_MOVE_TO_CART_QTY}`,
       });
     }
 
@@ -499,7 +706,7 @@ export const moveToCart = async (req, res) => {
       }
     }
 
-    const availableStock = getAvailableQuantity(product);
+    const availableStock = getAvailableQuantity(product, selectedVariantId);
     if (Number.isFinite(availableStock) && availableStock < quantity) {
       return res.status(400).json({
         error: true,
@@ -515,7 +722,10 @@ export const moveToCart = async (req, res) => {
     }
 
     const cartItemIndex = cart.items.findIndex(
-      (item) => item.product && String(item.product) === productId,
+      (item) =>
+        item.product &&
+        String(item.product) === productId &&
+        isSameVariant(item?.variant, selectedVariantId),
     );
 
     if (cartItemIndex >= 0) {
@@ -532,11 +742,42 @@ export const moveToCart = async (req, res) => {
       }
       cart.items[cartItemIndex].quantity = mergedQuantity;
     } else {
+      let resolvedPrice = Number(wishlistItem?.priceSnapshot || 0);
+      let resolvedOriginalPrice = Number(wishlistItem?.originalPriceSnapshot || 0);
+      let resolvedVariantName = String(wishlistItem?.variantName || "").trim().slice(0, 120);
+
+      if (selectedVariantId && Array.isArray(product?.variants)) {
+        const variant = product.variants.id
+          ? product.variants.id(selectedVariantId)
+          : product.variants.find(
+              (entry) => String(entry?._id || "") === selectedVariantId,
+            );
+        if (variant) {
+          resolvedPrice = Number(variant.price ?? resolvedPrice ?? product.price ?? 0);
+          resolvedOriginalPrice = Number(
+            variant.originalPrice ??
+              resolvedOriginalPrice ??
+              product.originalPrice ??
+              resolvedPrice,
+          );
+          if (!resolvedVariantName) {
+            resolvedVariantName = String(variant.name || "").trim().slice(0, 120);
+          }
+        }
+      } else {
+        resolvedPrice = Number(resolvedPrice || product.price || 0);
+        resolvedOriginalPrice = Number(
+          resolvedOriginalPrice || product.originalPrice || resolvedPrice || 0,
+        );
+      }
+
       cart.items.push({
         product: productId,
         quantity,
-        price: product.price,
-        originalPrice: product.originalPrice || 0,
+        price: round2(Math.max(resolvedPrice, 0)),
+        originalPrice: round2(Math.max(resolvedOriginalPrice, 0)),
+        variant: selectedVariantId,
+        variantName: resolvedVariantName,
       });
     }
 

@@ -36,6 +36,72 @@ export const WishlistProvider = ({ children }) => {
         "",
     );
 
+  const resolveVariantId = (item) => {
+    const raw =
+      item?.variantId ||
+      item?.variant?._id ||
+      item?.variant ||
+      item?.selectedVariant?._id ||
+      null;
+    if (raw === undefined || raw === null || raw === "") return null;
+    return String(raw).trim();
+  };
+
+  const resolveQuantity = (item, fallback = 1) => {
+    const parsed = Number(item?.quantity ?? fallback);
+    if (!Number.isFinite(parsed) || parsed < 1) return 1;
+    return Math.floor(parsed);
+  };
+
+  const getWishlistKey = (productId, variantId = null) =>
+    `${String(productId || "")}::${String(variantId || "")}`;
+
+  const resolveGuestSnapshot = ({
+    product,
+    variantId = null,
+    variantName = "",
+    quantity = 1,
+  }) => {
+    const normalizedVariantId =
+      variantId === undefined || variantId === null || variantId === ""
+        ? null
+        : String(variantId).trim();
+    let resolvedVariantName = String(variantName || "").trim();
+    let price = Number(product?.price || 0);
+    let originalPrice = Number(
+      product?.originalPrice || product?.oldPrice || product?.price || 0,
+    );
+
+    if (normalizedVariantId && Array.isArray(product?.variants)) {
+      const match = product.variants.find(
+        (variant) => String(variant?._id || "") === normalizedVariantId,
+      );
+      if (match) {
+        price = Number(match.price ?? price ?? 0);
+        originalPrice = Number(match.originalPrice ?? originalPrice ?? price ?? 0);
+        if (!resolvedVariantName) {
+          resolvedVariantName = String(match.name || "").trim();
+        }
+      }
+    }
+
+    if (!resolvedVariantName && product?.selectedVariant?.name) {
+      resolvedVariantName = String(product.selectedVariant.name).trim();
+    }
+
+    const parsedQty = Number(quantity);
+    const resolvedQuantity =
+      Number.isFinite(parsedQty) && parsedQty > 0 ? Math.floor(parsedQty) : 1;
+
+    return {
+      variantId: normalizedVariantId,
+      variantName: resolvedVariantName,
+      quantity: resolvedQuantity,
+      priceSnapshot: Number.isFinite(price) ? price : 0,
+      originalPriceSnapshot: Number.isFinite(originalPrice) ? originalPrice : 0,
+    };
+  };
+
   const saveLocal = (items) => {
     if (typeof window === "undefined") return;
     localStorage.setItem("wishlist", JSON.stringify(items));
@@ -105,14 +171,21 @@ export const WishlistProvider = ({ children }) => {
   // ADD
   // =============================
 
-  const addToWishlist = async (product) => {
+  const addToWishlist = async (product, options = {}) => {
     const productId = resolveProductId(product);
+    const variantId = resolveVariantId(options) || resolveVariantId(product);
+    const variantName = String(
+      options?.variantName || product?.selectedVariant?.name || "",
+    ).trim();
+    const quantity = resolveQuantity(options, 1);
     const token = getToken();
 
     // ---------- GUEST ----------
     if (!token) {
       const exists = wishlistItems.some(
-        (item) => resolveProductId(item) === productId
+        (item) =>
+          getWishlistKey(resolveProductId(item), resolveVariantId(item)) ===
+          getWishlistKey(productId, variantId)
       );
 
       if (exists) {
@@ -120,11 +193,23 @@ export const WishlistProvider = ({ children }) => {
         return;
       }
 
+      const guestSnapshot = resolveGuestSnapshot({
+        product,
+        variantId,
+        variantName,
+        quantity,
+      });
+
       const newItems = [
         ...wishlistItems,
         {
           product: productId,
           productData: product,
+          variantId: guestSnapshot.variantId,
+          variantName: guestSnapshot.variantName,
+          quantity: guestSnapshot.quantity,
+          priceSnapshot: guestSnapshot.priceSnapshot,
+          originalPriceSnapshot: guestSnapshot.originalPriceSnapshot,
           addedAt: new Date().toISOString(),
         },
       ];
@@ -145,7 +230,12 @@ export const WishlistProvider = ({ children }) => {
           Authorization: `Bearer ${token}`,
         },
         credentials: "include",
-        body: JSON.stringify({ productId }),
+        body: JSON.stringify({
+          productId,
+          variantId: variantId || undefined,
+          variantName: variantName || undefined,
+          quantity,
+        }),
       });
 
       const data = await parseJsonSafely(res);
@@ -172,6 +262,7 @@ export const WishlistProvider = ({ children }) => {
 
   const removeFromWishlist = async (input) => {
     const productId = resolveProductId(input);
+    const variantId = resolveVariantId(input);
     const token = getToken();
 
     if (!productId) {
@@ -182,7 +273,13 @@ export const WishlistProvider = ({ children }) => {
     // ---------- GUEST ----------
     if (!token) {
       const next = wishlistItems.filter(
-        (item) => resolveProductId(item) !== productId
+        (item) => {
+          const itemProductId = resolveProductId(item);
+          const itemVariantId = resolveVariantId(item);
+          if (itemProductId !== productId) return true;
+          if (!variantId) return false;
+          return String(itemVariantId || "") !== String(variantId || "");
+        }
       );
       setWishlistItems(next);
       setWishlistCount(next.length);
@@ -194,17 +291,17 @@ export const WishlistProvider = ({ children }) => {
     setRemovingItems((prev) => ({ ...prev, [productId]: true }));
 
     try {
-      const res = await fetch(
-        `${API_URL}/api/wishlist/remove/${productId}`,
-        {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include",
-        }
-      );
+      const query = variantId
+        ? `?variantId=${encodeURIComponent(String(variantId))}`
+        : "";
+      const res = await fetch(`${API_URL}/api/wishlist/remove/${productId}${query}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+      });
 
       const data = await parseJsonSafely(res);
 
@@ -234,17 +331,21 @@ export const WishlistProvider = ({ children }) => {
   // HELPERS
   // =============================
 
-  const isInWishlist = (productId) =>
-    wishlistItems.some(
-      (item) => resolveProductId(item) === String(productId)
-    );
+  const isInWishlist = (productId, variantId = null) =>
+    wishlistItems.some((item) => {
+      const itemProductId = resolveProductId(item);
+      if (itemProductId !== String(productId)) return false;
+      if (!variantId) return true;
+      return String(resolveVariantId(item) || "") === String(variantId || "");
+    });
 
-  const toggleWishlist = (product) => {
+  const toggleWishlist = (product, options = {}) => {
     const id = resolveProductId(product);
-    if (isInWishlist(id)) {
-      return removeFromWishlist(id);
+    const variantId = resolveVariantId(options) || resolveVariantId(product);
+    if (isInWishlist(id, variantId)) {
+      return removeFromWishlist({ product: id, variantId });
     }
-    return addToWishlist(product);
+    return addToWishlist(product, options);
   };
 
   const clearWishlist = async () => {

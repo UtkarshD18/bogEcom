@@ -41,5 +41,6 @@ const verifyExpressbeesSecret = (req, res, next) => {
 
 // If Expressbees cannot send headers, enforce an IP allowlist at the edge (WAF/NGINX).
 router.post("/expressbees", verifyExpressbeesSecret, handleExpressbeesWebhook);
+router.post("/xpressbees", verifyExpressbeesSecret, handleExpressbeesWebhook);
 
 export default router;

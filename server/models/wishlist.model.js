@@ -11,6 +11,29 @@ const wishlistItemSchema = new mongoose.Schema({
     ref: "Product",
     required: true,
   },
+  variantId: {
+    type: String,
+    default: null,
+  },
+  variantName: {
+    type: String,
+    default: "",
+  },
+  quantity: {
+    type: Number,
+    default: 1,
+    min: 1,
+  },
+  priceSnapshot: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  originalPriceSnapshot: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   addedAt: {
     type: Date,
     default: Date.now,
@@ -55,10 +78,16 @@ wishlistSchema.pre("save", function () {
   const seen = new Set();
   const deduped = [];
   for (const item of this.items || []) {
-    const key = String(item.product || "");
-    if (!key) continue;
-    if (seen.has(key)) continue; // silently skip duplicates
-    seen.add(key);
+    const productKey = String(item.product || "");
+    if (!productKey) continue;
+
+    const variantKey = String(item.variantId || "").trim();
+    const dedupeKey = `${productKey}::${variantKey}`;
+    if (seen.has(dedupeKey)) continue; // silently skip duplicates
+    seen.add(dedupeKey);
+
+    const safeQuantity = Math.max(Number(item.quantity || 1), 1);
+    item.quantity = safeQuantity;
     deduped.push(item);
   }
   this.items = deduped;

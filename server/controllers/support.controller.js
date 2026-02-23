@@ -7,9 +7,19 @@ import { UPLOAD_ROOT } from "../middlewares/upload.js";
 import OrderModel from "../models/order.model.js";
 import SupportTicketModel from "../models/supportTicket.model.js";
 import UserModel from "../models/user.model.js";
+import {
+  buildIstTicketTimestampPayload,
+  formatIstTicketTimestamp,
+  getIstYear,
+  parseIstDateBoundary,
+} from "../config/dayjs.js";
 import { logger } from "../utils/errorHandler.js";
+import {
+  getOrderDisplayId,
+  withOrderPresentation,
+} from "../utils/orderPresentation.js";
 
-const TICKET_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED"];
+const TICKET_STATUSES = ["OPEN", "PENDING", "IN_PROGRESS", "RESOLVED"];
 const TICKET_STATUS_SET = new Set(TICKET_STATUSES);
 
 const sendSuccess = (res, message, data = {}, statusCode = 200) =>
@@ -82,7 +92,22 @@ const toPublicFileUrl = (req, filePath) => {
   return `${req.protocol}://${req.get("host")}/uploads/${relativePath}`;
 };
 
-const normalizeStatus = (status) => String(status || "").trim().toUpperCase();
+const normalizeStatus = (status) => {
+  const normalized = String(status || "").trim().toUpperCase();
+  if (normalized === "IN_PROGRESS") return "PENDING";
+  return normalized;
+};
+
+const getStatusFilterValues = (status) => {
+  const normalized = normalizeStatus(status);
+  if (normalized === "PENDING") {
+    return ["PENDING", "IN_PROGRESS"];
+  }
+  return [normalized];
+};
+
+const normalizeStatusForDisplay = (status) =>
+  normalizeStatus(status || "OPEN") || "OPEN";
 
 const coercePagination = (query) => {
   const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
@@ -95,42 +120,223 @@ const buildDateRangeFilter = ({ date, dateFrom, dateTo }) => {
   const filter = {};
 
   if (date) {
-    const parsed = new Date(String(date));
-    if (Number.isNaN(parsed.getTime())) {
+    const start = parseIstDateBoundary(date, { endOfDay: false });
+    const end = parseIstDateBoundary(date, { endOfDay: true });
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
       return { error: "Invalid date filter." };
     }
-    const start = new Date(parsed);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(parsed);
-    end.setHours(23, 59, 59, 999);
     filter.$gte = start;
     filter.$lte = end;
     return { filter };
   }
 
   if (dateFrom) {
-    const parsed = new Date(String(dateFrom));
-    if (Number.isNaN(parsed.getTime())) {
+    const parsed = parseIstDateBoundary(dateFrom, { endOfDay: false });
+    if (!Number.isFinite(parsed)) {
       return { error: "Invalid dateFrom filter." };
     }
-    parsed.setHours(0, 0, 0, 0);
     filter.$gte = parsed;
   }
 
   if (dateTo) {
-    const parsed = new Date(String(dateTo));
-    if (Number.isNaN(parsed.getTime())) {
+    const parsed = parseIstDateBoundary(dateTo, { endOfDay: true });
+    if (!Number.isFinite(parsed)) {
       return { error: "Invalid dateTo filter." };
     }
-    parsed.setHours(23, 59, 59, 999);
     filter.$lte = parsed;
   }
 
   return { filter };
 };
 
+const resolveOrderIdsForFilter = async (value) => {
+  const rawOrderFilter = sanitizeText(value || "", { maxLength: 40 });
+  if (!rawOrderFilter) {
+    return { ids: [] };
+  }
+
+  if (mongoose.Types.ObjectId.isValid(rawOrderFilter)) {
+    return { ids: [rawOrderFilter] };
+  }
+
+  const shortOrderId = rawOrderFilter.replace(/^#/, "").toLowerCase();
+  if (!/^[a-f0-9]{4,12}$/.test(shortOrderId)) {
+    return { error: "Invalid orderId filter." };
+  }
+
+  const matchingOrders = await OrderModel.aggregate([
+    {
+      $addFields: {
+        orderIdString: { $toString: "$_id" },
+      },
+    },
+    {
+      $match: {
+        orderIdString: { $regex: `^${shortOrderId}` },
+      },
+    },
+    { $project: { _id: 1 } },
+    { $limit: 100 },
+  ]);
+
+  return {
+    ids: matchingOrders.map((order) => order._id),
+  };
+};
+
+const normalizeObjectId = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  return mongoose.Types.ObjectId.isValid(normalized) ? normalized : "";
+};
+
+const buildOrderLookupTokens = (value) => {
+  const raw = sanitizeText(value || "", { maxLength: 120 });
+  if (!raw) return [];
+
+  const normalized = raw.replace(/^#/, "").trim();
+  const firstSegment = normalized.split(" - ")[0]?.trim() || "";
+  const upper = firstSegment.toUpperCase();
+  const compact = upper.replace(/\s+/g, "");
+  const withoutBogPrefix = compact.replace(/^BOG-/, "");
+
+  const tokens = new Set([
+    raw.trim(),
+    normalized,
+    firstSegment,
+    upper,
+    compact,
+    withoutBogPrefix,
+    withoutBogPrefix ? `BOG-${withoutBogPrefix}` : "",
+  ]);
+
+  return Array.from(tokens).filter(Boolean);
+};
+
+const resolveLinkedOrderForTicket = async ({ rawOrderId, userId }) => {
+  const normalizedUserId = normalizeObjectId(userId);
+  if (!normalizedUserId) {
+    return { error: "Login is required to attach an order." };
+  }
+
+  const normalizedOrderId = sanitizeText(rawOrderId || "", { maxLength: 120 });
+  if (!normalizedOrderId) {
+    return { orderId: null };
+  }
+
+  if (mongoose.Types.ObjectId.isValid(normalizedOrderId)) {
+    const ownedOrder = await OrderModel.findOne({
+      _id: normalizedOrderId,
+      user: normalizedUserId,
+    })
+      .select("_id")
+      .lean();
+
+    if (ownedOrder?._id) {
+      return { orderId: ownedOrder._id };
+    }
+  }
+
+  const tokens = buildOrderLookupTokens(normalizedOrderId);
+  if (!tokens.length) {
+    return { error: "Invalid order ID." };
+  }
+
+  const tokenRegexes = tokens.map((token) => new RegExp(`^${escapeRegExp(token)}$`, "i"));
+
+  const candidateOrders = await OrderModel.find({ user: normalizedUserId })
+    .select("_id displayOrderId orderNumber order_id createdAt")
+    .sort({ createdAt: -1 })
+    .limit(250)
+    .lean();
+
+  const matchedOrder = candidateOrders.find((order) => {
+    const displayCandidates = [
+      order?.displayOrderId,
+      order?.orderNumber,
+      order?.order_id,
+    ]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+
+    if (displayCandidates.some((item) => tokenRegexes.some((regex) => regex.test(item)))) {
+      return true;
+    }
+
+    const orderIdValue = String(order?._id || "").trim().toUpperCase();
+    if (!orderIdValue) return false;
+
+    const shortId = orderIdValue.slice(-8);
+    return tokens.some((token) => {
+      const normalizedToken = String(token || "")
+        .trim()
+        .toUpperCase()
+        .replace(/^BOG-/, "");
+
+      if (!normalizedToken) return false;
+      return orderIdValue === normalizedToken || shortId === normalizedToken;
+    });
+  });
+
+  if (!matchedOrder?._id) {
+    return { error: "Selected order was not found for this account." };
+  }
+
+  return { orderId: matchedOrder._id };
+};
+const getTicketTimestamp = (ticket, fieldName) => {
+  const value = String(ticket?.[fieldName] || "").trim();
+  if (value) return value;
+
+  const fallbackValue =
+    fieldName === "created_at"
+      ? ticket?.createdAt
+      : ticket?.updatedAt || ticket?.createdAt;
+  return formatIstTicketTimestamp(fallbackValue);
+};
+
+const getTicketTimestampMs = (ticket, fieldName) => {
+  const key = fieldName === "created_at" ? "created_at_ts" : "updated_at_ts";
+  const directValue = Number(ticket?.[key]);
+  if (Number.isFinite(directValue) && directValue > 0) return directValue;
+
+  const fallbackValue =
+    fieldName === "created_at"
+      ? ticket?.createdAt
+      : ticket?.updatedAt || ticket?.createdAt;
+  return buildIstTicketTimestampPayload(fallbackValue).unixMs;
+};
+
+const sanitizeTicketForResponse = (ticket) => {
+  if (!ticket) return null;
+
+  const normalizedTicket =
+    typeof ticket.toObject === "function" ? ticket.toObject() : { ...ticket };
+
+  normalizedTicket.created_at = getTicketTimestamp(normalizedTicket, "created_at");
+  normalizedTicket.updated_at = getTicketTimestamp(normalizedTicket, "updated_at");
+  normalizedTicket.created_at_ts = getTicketTimestampMs(
+    normalizedTicket,
+    "created_at",
+  );
+  normalizedTicket.updated_at_ts = getTicketTimestampMs(
+    normalizedTicket,
+    "updated_at",
+  );
+  normalizedTicket.status = normalizeStatusForDisplay(normalizedTicket.status);
+
+  delete normalizedTicket.createdAt;
+  delete normalizedTicket.updatedAt;
+
+  return normalizedTicket;
+};
+
 const buildTicketSummary = (ticket) => {
-  const order = ticket.orderId && typeof ticket.orderId === "object" ? ticket.orderId : null;
+  const order =
+    ticket.orderId && typeof ticket.orderId === "object"
+      ? withOrderPresentation(ticket.orderId)
+      : null;
+  const linkedOrderId = order?._id || ticket.orderId || null;
 
   return {
     id: ticket._id,
@@ -139,11 +345,15 @@ const buildTicketSummary = (ticket) => {
     name: ticket.name,
     email: ticket.email,
     phone: ticket.phone,
-    orderId: order?._id || ticket.orderId || null,
+    orderId: linkedOrderId,
+    orderDisplayId: order?.displayOrderId || getOrderDisplayId(linkedOrderId),
     orderDate: order?.createdAt || null,
-    status: ticket.status,
-    createdAt: ticket.createdAt,
-    updatedAt: ticket.updatedAt,
+    orderTotal: order?.displayTotal ?? null,
+    status: normalizeStatusForDisplay(ticket.status),
+    created_at: getTicketTimestamp(ticket, "created_at"),
+    updated_at: getTicketTimestamp(ticket, "updated_at"),
+    created_at_ts: getTicketTimestampMs(ticket, "created_at"),
+    updated_at_ts: getTicketTimestampMs(ticket, "updated_at"),
   };
 };
 
@@ -184,16 +394,11 @@ const sendSupportEmail = async ({ to, subject, text, html, context = "support" }
 };
 
 const formatTicketDate = (value) => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "N/A";
-
-  return parsed.toLocaleString("en-IN", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const normalizedValue = String(value || "").trim();
+  if (!normalizedValue) return "N/A";
+  return normalizedValue.includes(",")
+    ? normalizedValue
+    : formatIstTicketTimestamp(normalizedValue);
 };
 
 const buildSupportEmailLayout = ({
@@ -240,7 +445,7 @@ const buildSupportEmailLayout = ({
         </p>
       </div>
       <div style="background-color:#2c2c2c;padding:24px;text-align:center;">
-        <p style="color:#aaaaaa;font-size:13px;margin:0 0 8px;">&copy; ${new Date().getFullYear()} HealthyOneGram. All rights reserved.</p>
+        <p style="color:#aaaaaa;font-size:13px;margin:0 0 8px;">&copy; ${getIstYear()} HealthyOneGram. All rights reserved.</p>
         <p style="color:#888888;font-size:12px;margin:0;">This is a service email for your support request.</p>
       </div>
     </div>
@@ -253,10 +458,10 @@ const sendTicketRegistrationEmail = async (ticket) => {
 
   const safeName = escapeHtml(ticket.name || "Customer");
   const safeTicketId = escapeHtml(ticket.ticketId || "");
-  const safeStatus = escapeHtml(ticket.status || "OPEN");
+  const safeStatus = escapeHtml(normalizeStatusForDisplay(ticket.status));
   const safeSubject = escapeHtml(ticket.subject || "Support Request");
   const safeOrderId = ticket.orderId ? escapeHtml(String(ticket.orderId)) : "Not linked";
-  const createdAt = formatTicketDate(ticket.createdAt);
+  const createdAt = formatTicketDate(getTicketTimestamp(ticket, "created_at"));
 
   const html = buildSupportEmailLayout({
     title: "Support Ticket Generated Successfully",
@@ -282,7 +487,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
     `Hi ${ticket.name || "Customer"},`,
     "Your support request has been registered successfully.",
     `Ticket ID: ${ticket.ticketId}`,
-    `Status: ${ticket.status}`,
+    `Status: ${normalizeStatusForDisplay(ticket.status)}`,
     `Subject: ${ticket.subject || "Support Request"}`,
     `Order: ${ticket.orderId ? String(ticket.orderId) : "Not linked"}`,
     `Created At: ${createdAt}`,
@@ -302,10 +507,10 @@ const sendTicketRegistrationEmail = async (ticket) => {
 const sendAdminTicketNotificationEmail = async (ticket) => {
   if (!SUPPORT_ADMIN_EMAIL) return false;
 
-  const createdAt = formatTicketDate(ticket.createdAt);
+  const createdAt = formatTicketDate(getTicketTimestamp(ticket, "created_at"));
   const payload = {
     ticket_id: ticket.ticketId || "N/A",
-    status: ticket.status || "OPEN",
+    status: normalizeStatusForDisplay(ticket.status),
     name: ticket.name || "N/A",
     email: ticket.email || "N/A",
     phone: ticket.phone || "N/A",
@@ -314,7 +519,7 @@ const sendAdminTicketNotificationEmail = async (ticket) => {
     order_id: ticket.orderId ? String(ticket.orderId) : "Not linked",
     created_at: createdAt,
     admin_panel_url: `${ADMIN_PANEL_URL}/support`,
-    year: String(new Date().getFullYear()),
+    year: getIstYear(),
   };
 
   const text = [
@@ -354,10 +559,10 @@ const sendTicketUpdateEmail = async (ticket) => {
 
   const customerName = ticket.name || "Customer";
   const ticketId = ticket.ticketId || "N/A";
-  const status = ticket.status || "OPEN";
+  const status = normalizeStatusForDisplay(ticket.status);
   const reply = String(ticket.adminReply || "").trim();
   const safeReply = reply || "No additional reply was shared yet.";
-  const updatedAt = formatTicketDate(ticket.updatedAt);
+  const updatedAt = formatTicketDate(getTicketTimestamp(ticket, "updated_at"));
 
   const text = [
     `Hi ${customerName},`,
@@ -380,7 +585,7 @@ const sendTicketUpdateEmail = async (ticket) => {
       updated_at: updatedAt,
       admin_reply: safeReply,
       support_url: `${SUPPORT_STORE_URL}/customer-care`,
-      year: String(new Date().getFullYear()),
+      year: getIstYear(),
     },
     text,
     context: "support.ticket.updated",
@@ -427,7 +632,7 @@ export const createSupportTicket = async (req, res) => {
   const allFiles = [...imageFiles, ...videoFiles];
 
   try {
-    const userId = req.user || null;
+    const userId = normalizeObjectId(req.user) || null;
     const user =
       userId && mongoose.Types.ObjectId.isValid(String(userId))
         ? await UserModel.findById(userId).select("name email mobile").lean()
@@ -441,7 +646,7 @@ export const createSupportTicket = async (req, res) => {
       maxLength: 5000,
       allowNewLines: true,
     });
-    const rawOrderId = sanitizeText(req.body?.orderId || "", { maxLength: 40 });
+    const rawOrderId = sanitizeText(req.body?.orderId || "", { maxLength: 120 });
 
     const fieldErrors = {};
 
@@ -475,23 +680,11 @@ export const createSupportTicket = async (req, res) => {
 
     let orderId = null;
     if (rawOrderId) {
-      if (!mongoose.Types.ObjectId.isValid(rawOrderId)) {
-        fieldErrors.orderId = "Invalid order ID.";
-      } else if (!userId) {
-        fieldErrors.orderId = "Login is required to attach an order.";
+      const resolvedOrder = await resolveLinkedOrderForTicket({ rawOrderId, userId });
+      if (resolvedOrder.error) {
+        fieldErrors.orderId = resolvedOrder.error;
       } else {
-        const ownedOrder = await OrderModel.findOne({
-          _id: rawOrderId,
-          user: userId,
-        })
-          .select("_id")
-          .lean();
-
-        if (!ownedOrder) {
-          fieldErrors.orderId = "Selected order was not found for this account.";
-        } else {
-          orderId = ownedOrder._id;
-        }
+        orderId = resolvedOrder.orderId || null;
       }
     }
 
@@ -565,6 +758,9 @@ export const createSupportTicket = async (req, res) => {
       "Support ticket created successfully.",
       {
         ticketId: createdTicket.ticketId,
+        status: createdTicket.status,
+        created_at: getTicketTimestamp(createdTicket, "created_at"),
+        updated_at: getTicketTimestamp(createdTicket, "updated_at"),
         emailNotification: {
           sent: Boolean(emailSent),
           adminAlertSent: Boolean(adminEmailSent),
@@ -575,9 +771,11 @@ export const createSupportTicket = async (req, res) => {
   } catch (error) {
     await cleanupUploadedFiles(allFiles);
     console.error("createSupportTicket error:", error?.message || "Unexpected error");
+    const fallbackMessage = "Unable to create support ticket right now. Please try again.";
+    const isProduction = process.env.NODE_ENV === "production";
     return sendError(
       res,
-      "Unable to create support ticket right now. Please try again.",
+      isProduction ? fallbackMessage : `${fallbackMessage} (${error?.message || "unknown error"})`,
       500,
     );
   }
@@ -595,7 +793,7 @@ export const getMySupportTickets = async (req, res) => {
 
     const [tickets, total] = await Promise.all([
       SupportTicketModel.find(query)
-        .sort({ createdAt: -1 })
+        .sort({ created_at_ts: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -603,7 +801,7 @@ export const getMySupportTickets = async (req, res) => {
     ]);
 
     return sendSuccess(res, "Support tickets fetched successfully.", {
-      tickets,
+      tickets: tickets.map(sanitizeTicketForResponse),
       pagination: {
         page,
         limit,
@@ -627,7 +825,8 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
       if (!TICKET_STATUS_SET.has(status)) {
         return sendError(res, "Invalid status filter.", 400);
       }
-      query.status = status;
+      const values = getStatusFilterValues(status);
+      query.status = values.length === 1 ? values[0] : { $in: values };
     }
 
     const email = normalizeEmail(req.query.email || "");
@@ -635,12 +834,13 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
       query.email = { $regex: escapeRegExp(email), $options: "i" };
     }
 
-    const orderId = sanitizeText(req.query.orderId || "", { maxLength: 40 });
-    if (orderId) {
-      if (!mongoose.Types.ObjectId.isValid(orderId)) {
-        return sendError(res, "Invalid orderId filter.", 400);
+    const orderFilter = sanitizeText(req.query.orderId || "", { maxLength: 40 });
+    if (orderFilter) {
+      const { error, ids } = await resolveOrderIdsForFilter(orderFilter);
+      if (error) {
+        return sendError(res, error, 400);
       }
-      query.orderId = orderId;
+      query.orderId = { $in: ids };
     }
 
     const { error: dateError, filter: createdAtFilter } = buildDateRangeFilter({
@@ -654,14 +854,28 @@ export const getAllSupportTicketsAdmin = async (req, res) => {
     }
 
     if (createdAtFilter && Object.keys(createdAtFilter).length > 0) {
-      query.createdAt = createdAtFilter;
+      const legacyDateFilter = {};
+      if (Number.isFinite(createdAtFilter.$gte)) {
+        legacyDateFilter.$gte = new Date(createdAtFilter.$gte);
+      }
+      if (Number.isFinite(createdAtFilter.$lte)) {
+        legacyDateFilter.$lte = new Date(createdAtFilter.$lte);
+      }
+
+      query.$or = [
+        { created_at_ts: createdAtFilter },
+        { createdAt: legacyDateFilter },
+      ];
     }
 
     const [tickets, total] = await Promise.all([
       SupportTicketModel.find(query)
         .populate("userId", "_id name email mobile")
-        .populate("orderId", "_id createdAt order_status payment_status totalAmt finalAmount")
-        .sort({ createdAt: -1 })
+        .populate(
+          "orderId",
+          "_id createdAt order_status payment_status totalAmt finalAmount subtotal discount tax shipping coinRedemption products",
+        )
+        .sort({ created_at_ts: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -708,7 +922,13 @@ export const getSupportTicketByIdAdmin = async (req, res) => {
       return sendError(res, "Support ticket not found.", 404);
     }
 
-    return sendSuccess(res, "Support ticket fetched successfully.", { ticket });
+    if (ticket.orderId && typeof ticket.orderId === "object") {
+      ticket.orderId = withOrderPresentation(ticket.orderId);
+    }
+
+    return sendSuccess(res, "Support ticket fetched successfully.", {
+      ticket: sanitizeTicketForResponse(ticket),
+    });
   } catch (error) {
     console.error(
       "getSupportTicketByIdAdmin error:",
@@ -770,7 +990,7 @@ export const updateSupportTicketAdmin = async (req, res) => {
     }
 
     return sendSuccess(res, "Support ticket updated successfully.", {
-      ticket,
+      ticket: sanitizeTicketForResponse(ticket),
       emailNotification: { sent: Boolean(emailSent) },
     });
   } catch (error) {
@@ -785,7 +1005,7 @@ export const updateSupportTicketAdmin = async (req, res) => {
 export const getUnresolvedSupportTicketCount = async (req, res) => {
   try {
     const count = await SupportTicketModel.countDocuments({
-      status: "OPEN",
+      status: { $in: ["OPEN", "PENDING", "IN_PROGRESS"] },
     });
 
     return sendSuccess(res, "Open ticket count fetched successfully.", {

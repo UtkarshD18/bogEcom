@@ -6,6 +6,8 @@
 
 import fsPromises from "fs/promises";
 import mongoose from "mongoose";
+import path from "path";
+import { fileURLToPath } from "url";
 import AddressModel from "../models/address.model.js";
 import CategoryModel from "../models/category.model.js";
 import CouponModel from "../models/coupon.model.js";
@@ -359,6 +361,85 @@ const getPrimaryStoreUrl = () =>
     .split(",")[0]
     .trim()
     .replace(/\/+$/, "");
+
+const CONTROLLER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const TEST_INVOICE_EXPORT_DIR = path.resolve(
+  CONTROLLER_DIR,
+  "../invoices/local-test-invoices",
+);
+
+const sanitizeFileComponent = (value, fallback = "test_invoice") => {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || fallback;
+};
+
+const normalizePathForResponse = (absolutePath) => {
+  if (!absolutePath) return "";
+  const relative = path.relative(process.cwd(), absolutePath);
+  if (!relative || relative.startsWith("..")) {
+    return absolutePath.replace(/\\/g, "/");
+  }
+  return relative.replace(/\\/g, "/");
+};
+
+const persistInvoiceSnapshotToDisk = async ({
+  filenameSeed,
+  payload,
+  invoicePath = "",
+  context = "persistInvoiceSnapshotToDisk",
+}) => {
+  const safeName = sanitizeFileComponent(
+    filenameSeed,
+    `test_invoice_${Date.now()}`,
+  );
+  const jsonAbsolutePath = path.join(TEST_INVOICE_EXPORT_DIR, `${safeName}.json`);
+
+  try {
+    await fsPromises.mkdir(TEST_INVOICE_EXPORT_DIR, { recursive: true });
+    await fsPromises.writeFile(
+      jsonAbsolutePath,
+      JSON.stringify(payload, null, 2),
+      "utf8",
+    );
+
+    let pdfAbsolutePath = "";
+    const sourcePdfPath = invoicePath
+      ? getAbsolutePathFromStoredInvoicePath(invoicePath)
+      : null;
+    if (sourcePdfPath) {
+      const pdfExt = path.extname(sourcePdfPath) || ".pdf";
+      pdfAbsolutePath = path.join(TEST_INVOICE_EXPORT_DIR, `${safeName}${pdfExt}`);
+      const sourceResolved = path.resolve(sourcePdfPath);
+      const destinationResolved = path.resolve(pdfAbsolutePath);
+      if (sourceResolved !== destinationResolved) {
+        await fsPromises.copyFile(sourceResolved, destinationResolved);
+      }
+    }
+
+    return {
+      ok: true,
+      folder: normalizePathForResponse(TEST_INVOICE_EXPORT_DIR),
+      jsonPath: normalizePathForResponse(jsonAbsolutePath),
+      pdfPath: normalizePathForResponse(pdfAbsolutePath),
+    };
+  } catch (error) {
+    logger.error(context, "Failed to persist invoice snapshot on disk", {
+      error: error?.message || String(error),
+      folder: TEST_INVOICE_EXPORT_DIR,
+      invoicePath,
+    });
+    return {
+      ok: false,
+      folder: normalizePathForResponse(TEST_INVOICE_EXPORT_DIR),
+      jsonPath: normalizePathForResponse(jsonAbsolutePath),
+      pdfPath: "",
+      error: error?.message || "Failed to persist invoice snapshot",
+    };
+  }
+};
 
 const formatInr = (value) => `Rs. ${round2(value).toFixed(2)}`;
 
@@ -1013,7 +1094,7 @@ const calculateCheckoutPricing = async ({
   };
 };
 
-const ensureOrderInvoice = async (orderDoc) => {
+export const ensureOrderInvoice = async (orderDoc) => {
   try {
     if (!orderDoc?._id) {
       return { ok: false, reason: "Order not found" };
@@ -3000,6 +3081,7 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     const totalAmount = round2(
       orderProducts.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
     );
+    const shippingSuppressed = true;
 
     // Create test order
     const testOrder = new OrderModel({
@@ -3018,28 +3100,60 @@ export const createTestOrder = asyncHandler(async (req, res) => {
         { status: ORDER_STATUS.ACCEPTED, source: "TEST_CREATE", timestamp: new Date() },
       ],
       paymentId: `TEST_${Date.now()}`,
+      isDemoOrder: true,
+      xpressbeesPosted: false,
     });
 
     await testOrder.save();
 
+    let invoiceSummary = null;
     if (isInvoiceEligible(testOrder)) {
-      ensureOrderInvoice(testOrder).catch((err) =>
-        logger.error("createTestOrder", "Failed to generate invoice", {
-          orderId: testOrder._id,
-          error: err.message,
-        }),
-      );
+      const invoiceResult = await ensureOrderInvoice(testOrder);
+      if (invoiceResult?.ok) {
+        invoiceSummary = {
+          invoiceNumber:
+            invoiceResult?.invoice?.invoiceNumber || testOrder.invoiceNumber || null,
+          invoicePath:
+            invoiceResult?.invoice?.invoicePath || testOrder.invoicePath || null,
+          invoiceGeneratedAt:
+            invoiceResult?.invoice?.invoiceGeneratedAt ||
+            testOrder.invoiceGeneratedAt ||
+            null,
+        };
+      }
     }
+
+    const localDiskInvoice = await persistInvoiceSnapshotToDisk({
+      filenameSeed: `test_order_${testOrder._id}`,
+      invoicePath: testOrder.invoicePath || invoiceSummary?.invoicePath || "",
+      context: "createTestOrder",
+      payload: {
+        source: "create_test_order",
+        orderId: String(testOrder._id),
+        shippingSuppressed,
+        xpressbeesPosted: false,
+        invoice: invoiceSummary,
+        order: normalizeOrderForResponse(testOrder),
+      },
+    });
 
     logger.info("createTestOrder", "Test order created", {
       orderId: testOrder._id,
+      shippingSuppressed,
+      xpressbeesPosted: false,
+      invoiceNumber: testOrder.invoiceNumber || null,
+      localInvoiceJsonPath: localDiskInvoice?.jsonPath || null,
     });
 
     return sendSuccess(
       res,
       {
         orderId: testOrder._id,
-        order: testOrder,
+        shippingSuppressed: true,
+        xpressbeesPosted: false,
+        order: normalizeOrderForResponse(testOrder),
+        invoice: invoiceSummary,
+        localDiskInvoice,
       },
       "Test order created successfully",
       201,
@@ -3052,4 +3166,59 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     const dbError = handleDatabaseError(error, "createTestOrder");
     return sendError(res, dbError);
   }
+});
+
+/**
+ * Persist client test invoice snapshot (from localStorage) to server disk.
+ * @route POST /api/orders/test/save-invoice
+ * @access Development only
+ */
+export const saveClientTestInvoiceToDisk = asyncHandler(async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    throw new AppError("FORBIDDEN");
+  }
+
+  const payloadCandidate = req.body?.invoice || req.body || null;
+  if (!payloadCandidate || typeof payloadCandidate !== "object") {
+    throw new AppError("MISSING_FIELD", { field: "invoice" });
+  }
+
+  const invoiceRecord = {
+    ...payloadCandidate,
+    savedAt: new Date().toISOString(),
+  };
+
+  const invoicePath = String(invoiceRecord.invoicePath || "").trim();
+  const filenameSeed =
+    invoiceRecord.invoiceId ||
+    invoiceRecord.invoiceNumber ||
+    invoiceRecord.orderId ||
+    `client_invoice_${Date.now()}`;
+
+  const localDiskInvoice = await persistInvoiceSnapshotToDisk({
+    filenameSeed,
+    invoicePath,
+    context: "saveClientTestInvoiceToDisk",
+    payload: {
+      source: "client_local_storage_invoice",
+      actorUserId: req.user ? String(req.user) : null,
+      invoice: invoiceRecord,
+    },
+  });
+
+  if (!localDiskInvoice.ok) {
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: localDiskInvoice.error || "Failed to save invoice on disk",
+      data: { localDiskInvoice },
+    });
+  }
+
+  return sendSuccess(
+    res,
+    { localDiskInvoice },
+    "Invoice snapshot saved to local disk",
+    201,
+  );
 });

@@ -46,12 +46,61 @@ import { MdHome, MdInfo, MdLocationOn, MdWork } from "react-icons/md";
 
 const API_URL = API_BASE_URL;
 const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
+const TEST_INVOICE_STORAGE_KEY = "bog_test_invoices";
 
 const buildAuthHeaders = (extraHeaders = {}) => {
   const token = getStoredAccessToken();
   return token
     ? { ...extraHeaders, Authorization: `Bearer ${token}` }
     : extraHeaders;
+};
+
+const persistTestInvoiceSnapshot = (invoiceRecord = {}) => {
+  if (typeof window === "undefined") return;
+  try {
+    const existingInvoices = (() => {
+      try {
+        const parsed = JSON.parse(
+          localStorage.getItem(TEST_INVOICE_STORAGE_KEY) || "[]",
+        );
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    })();
+
+    const nextInvoices = [invoiceRecord, ...existingInvoices].slice(0, 30);
+    localStorage.setItem(TEST_INVOICE_STORAGE_KEY, JSON.stringify(nextInvoices));
+    localStorage.setItem("bog_last_test_invoice", JSON.stringify(invoiceRecord));
+
+    const token = getStoredAccessToken();
+    fetch(`${API_URL}/api/orders/test/save-invoice`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify({ invoice: invoiceRecord }),
+    }).catch(() => {
+      // Best-effort sync; local storage is primary for test snapshots.
+    });
+  } catch {
+    // Never block checkout on local snapshot errors.
+  }
+};
+
+const createDemoTestOrderRequest = (payload = {}) => {
+  const token = getStoredAccessToken();
+  return fetch(`${API_URL}/api/orders/test/create`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
 };
 
 /**

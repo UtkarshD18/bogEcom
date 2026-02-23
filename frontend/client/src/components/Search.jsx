@@ -36,8 +36,11 @@ const Search = ({
       );
       console.log("[Search] Response:", response);
       if (response?.error !== true && response?.data) {
-        console.log("[Search] Found", response.data.length, "results");
-        setSuggestions(response.data);
+        const safeSuggestions = Array.isArray(response.data)
+          ? response.data.filter((product) => product?.isExclusive !== true)
+          : [];
+        console.log("[Search] Found", safeSuggestions.length, "results");
+        setSuggestions(safeSuggestions);
         setShowDropdown(true);
       } else {
         console.log("[Search] No results or error:", response?.message);

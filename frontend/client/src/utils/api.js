@@ -15,7 +15,16 @@ export const axiosClient = axios.create({
   },
 });
 
-const normalizePath = (url) => (url?.startsWith("/") ? url : `/${url}`);
+const BASE_HAS_API_SUFFIX = /\/api$/i.test(String(API_BASE_URL || ""));
+
+const normalizePath = (url) => {
+  const normalized = url?.startsWith("/") ? url : `/${url}`;
+  if (!BASE_HAS_API_SUFFIX) return normalized;
+  if (/^\/api(\/|$)/i.test(normalized)) {
+    return normalized.replace(/^\/api/i, "");
+  }
+  return normalized;
+};
 export const getStoredAccessToken = () => {
   const cookieToken = Cookies.get("accessToken");
   if (cookieToken) return cookieToken;
@@ -54,11 +63,10 @@ const refreshAccessToken = async () => {
         return null;
       }
 
-      const response = await axios.post(
-        `${API_BASE_URL}/api/user/refresh-token`,
+      const response = await axiosClient.post(
+        normalizePath("/api/user/refresh-token"),
         { refreshToken },
         {
-          withCredentials: true,
           headers: { "Content-Type": "application/json" },
         },
       );

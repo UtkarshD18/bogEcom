@@ -72,6 +72,17 @@ export default function ClientLayout({ children }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const intervalId = window.setInterval(() => {
+      window.location.reload();
+    }, 10 * 60 * 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   return (
     <div className="overflow-x-hidden w-full max-w-full">
       <style>{`body { font-family: inherit; }`}</style>
