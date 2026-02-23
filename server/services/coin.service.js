@@ -827,7 +827,9 @@ export const redeemCoins = async ({
     };
   }
 
-  await ensureCoinLedgerState(safeUserId);
+  await ensureCoinLedgerState(safeUserId, {
+    includeMembershipBootstrap: true,
+  });
   const usableCoins = await getUsableCoinBalanceFromLedger(safeUserId, new Date());
 
   const applyPercentageCap = source !== "membership";
@@ -901,7 +903,9 @@ export const getUserCoinSummary = async ({ userId }) => {
     };
   }
 
-  await ensureCoinLedgerState(safeUserId);
+  await ensureCoinLedgerState(safeUserId, {
+    includeMembershipBootstrap: true,
+  });
 
   const usableCoins = await getUsableCoinBalanceFromLedger(safeUserId, new Date());
   const expiringSoon = await getExpiringSoonCoinsFromLedger(
