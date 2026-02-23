@@ -1169,12 +1169,17 @@ export async function updateUserSettings(req, res) {
   }
 }
 
-// Update user profile (name/email)
+// Update user profile (name/email/mobile)
 export async function updateUserProfile(req, res) {
   try {
     const userId = req.user?._id || req.user;
     const rawName = String(req.body?.name || "").trim();
     const rawEmail = String(req.body?.email || "").trim().toLowerCase();
+    const hasMobileField = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "mobile",
+    );
+    const rawMobileInput = hasMobileField ? String(req.body?.mobile ?? "").trim() : "";
     const hasAvatarField = Object.prototype.hasOwnProperty.call(
       req.body || {},
       "avatar",
@@ -1211,6 +1216,22 @@ export async function updateUserProfile(req, res) {
       }
 
       updateData.email = rawEmail;
+    }
+
+    if (hasMobileField) {
+      if (!rawMobileInput) {
+        updateData.mobile = "";
+      } else {
+        const sanitizedMobile = rawMobileInput.replace(/\D/g, "");
+        if (sanitizedMobile.length < 10 || sanitizedMobile.length > 15) {
+          return res.status(400).json({
+            success: false,
+            error: true,
+            message: "Please provide a valid mobile number",
+          });
+        }
+        updateData.mobile = sanitizedMobile;
+      }
     }
 
     if (hasAvatarField) {

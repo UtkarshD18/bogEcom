@@ -290,7 +290,8 @@ const OrderDetailsPage = () => {
 
     const socket = io(SOCKET_URL, {
       withCredentials: true,
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
+      auth: { token },
     });
 
     socket.on("order:update", (payload) => {

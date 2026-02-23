@@ -41,6 +41,19 @@ export const AdminProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const router = useRouter();
 
+  const updateAdminProfile = useCallback((updates = {}) => {
+    setAdmin((prev) => {
+      const normalized = normalizeAdminPayload({
+        ...(prev || {}),
+        ...(updates || {}),
+      });
+      if (normalized) {
+        localStorage.setItem("adminUser", JSON.stringify(normalized));
+      }
+      return normalized;
+    });
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminUser");
@@ -187,6 +200,7 @@ export const AdminProvider = ({ children }) => {
     loading,
     login,
     logout,
+    updateAdminProfile,
     isAuthenticated: !!admin,
   };
 

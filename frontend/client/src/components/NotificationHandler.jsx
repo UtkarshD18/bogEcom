@@ -19,7 +19,12 @@ const NotificationHandler = () => {
   // Check login status
   useEffect(() => {
     const checkAuth = () => {
-      const token = cookies.get("accessToken");
+      const token =
+        cookies.get("accessToken") ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("accessToken") ||
+            localStorage.getItem("token")
+          : null);
       setIsLoggedIn(!!token);
     };
 

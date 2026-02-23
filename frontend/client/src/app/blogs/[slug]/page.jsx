@@ -75,10 +75,10 @@ export default function BlogDetailPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Back Button */}
-      <div className="container mx-auto px-4 py-4">
+      <div className="container mx-auto px-4 pt-6 pb-3 relative z-10">
         <Link
           href="/blogs"
-          className="inline-flex items-center text-orange-500 hover:text-orange-600 transition"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700 transition"
         >
           ← Back to Blogs
         </Link>
@@ -87,11 +87,6 @@ export default function BlogDetailPage() {
       {/* Blog Header */}
       <div className="bg-gradient-to-r from-orange-500 to-pink-500 text-white py-12">
         <div className="container mx-auto px-4">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-medium">
-              {blog.category || "General"}
-            </span>
-          </div>
           <h1 className="text-4xl md:text-5xl font-bold mb-4">{blog.title}</h1>
           <div className="flex items-center gap-4 text-sm opacity-90">
             <span>{blog.author || "Admin"}</span>

@@ -956,6 +956,11 @@ const getInvoiceSellerDetails = async () => {
     phone: process.env.INVOICE_SELLER_PHONE || storeInfo.phone || "",
     email: process.env.INVOICE_SELLER_EMAIL || storeInfo.email || "",
     currencySymbol: storeInfo.currencySymbol || "Rs. ",
+    logoPath: process.env.INVOICE_LOGO_PATH || "",
+    bankName: process.env.INVOICE_BANK_NAME || "ICICI BANK LIMITED",
+    bankAccount: process.env.INVOICE_BANK_ACCOUNT || "731405000083",
+    bankBranch: process.env.INVOICE_BANK_BRANCH || "SITAPURA",
+    bankIfsc: process.env.INVOICE_BANK_IFSC || "ICIC0006748",
   };
 };
 
@@ -1397,7 +1402,10 @@ export const getAllOrders = asyncHandler(async (req, res) => {
     const { page = 1, limit = 20, search, status } = req.pagination;
 
     const skip = (page - 1) * limit;
-    const filter = {};
+    const filter = {
+      // Keep purchase orders out of the regular orders listing.
+      purchaseOrder: null,
+    };
 
     // Filter by status
     if (status && status !== "all") {
@@ -1433,7 +1441,6 @@ export const getAllOrders = asyncHandler(async (req, res) => {
         .populate("user", "name email avatar mobile")
         .populate("delivery_address")
         .populate("influencerId", "code name")
-        .populate("purchaseOrder", "_id status total createdAt")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -1991,9 +1998,11 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
         : [],
     };
 
-    const invoiceResult = await ensureOrderInvoice(order);
+    const invoiceResult = await ensureOrderInvoice(order, {
+      forceRegenerate: true,
+    });
     if (!invoiceResult.ok) {
-      logger.error("downloadOrderInvoice", "Invoice generation failed (temporary debug)", {
+      logger.error("downloadOrderInvoice", "Invoice generation failed", {
         ...invoiceDebugContext,
         reason: invoiceResult.reason,
         error: invoiceResult.error?.message || null,
@@ -2006,7 +2015,7 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
           const fallbackFilename = `${order.invoiceNumber || `invoice_${orderId}`}.pdf`;
           logger.warn(
             "downloadOrderInvoice",
-            "Serving fallback invoice file after generation failure (temporary debug)",
+            "Serving fallback invoice file after generation failure",
             {
               ...invoiceDebugContext,
               servedFrom: fallbackInvoiceAbsolutePath,
@@ -2016,7 +2025,7 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
         } catch (fallbackError) {
           logger.warn(
             "downloadOrderInvoice",
-            "Fallback invoice file unavailable after generation failure (temporary debug)",
+            "Fallback invoice file unavailable after generation failure",
             {
               ...invoiceDebugContext,
               fallbackError: fallbackError?.message || String(fallbackError),
@@ -2051,7 +2060,7 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) {
-      logger.warn("downloadOrderInvoice", "AppError in downloadOrderInvoice (temporary debug)", {
+      logger.warn("downloadOrderInvoice", "AppError in downloadOrderInvoice", {
         orderId: req?.params?.orderId || null,
         requesterId: req?.user || null,
         errorCode: error?.code || null,
@@ -2060,7 +2069,7 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
       return sendError(res, error);
     }
 
-    logger.error("downloadOrderInvoice", "Unexpected error in downloadOrderInvoice (temporary debug)", {
+    logger.error("downloadOrderInvoice", "Unexpected error in downloadOrderInvoice", {
       orderId: req?.params?.orderId || null,
       requesterId: req?.user || null,
       error: error?.message || String(error),
