@@ -44,7 +44,8 @@ const ProductRow = ({
         const params = [];
 
         if (categorySlug) params.push(`category=${categorySlug}`);
-        if (isFeatured) params.push("isFeatured=true");
+        if (isFeatured) params.push("featured=true");
+        if (isBestSeller) params.push("bestSeller=true");
         if (isNewArrivals) params.push("sortBy=createdAt&order=desc");
         if (isBestSeller) params.push("sortBy=soldCount&order=desc");
         params.push(`limit=${limit}`);
@@ -52,12 +53,13 @@ const ProductRow = ({
         url += params.join("&");
 
         const response = await fetchDataFromApi(url);
-        if (response.success && response.data) {
-          const safeProducts = Array.isArray(response.data)
-            ? response.data.filter((product) => product?.isExclusive !== true)
-            : [];
-          setProducts(safeProducts);
-        }
+        const rawProducts = Array.isArray(response)
+          ? response
+          : response?.products || response?.data || response?.items || [];
+        const safeProducts = Array.isArray(rawProducts)
+          ? rawProducts.filter((product) => product?.isExclusive !== true)
+          : [];
+        setProducts(safeProducts);
       } catch (error) {
         console.error("Failed to fetch products:", error);
       } finally {

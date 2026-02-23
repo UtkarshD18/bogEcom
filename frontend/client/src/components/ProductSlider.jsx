@@ -29,18 +29,35 @@ const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
         const params = [];
 
         if (categorySlug) params.push(`category=${categorySlug}`);
-        if (isFeatured) params.push("isFeatured=true");
+        if (isFeatured) params.push("featured=true");
         params.push(`limit=${limit}`);
 
         url += params.join("&");
 
         const response = await fetchDataFromApi(url);
-        if (response.success && response.data) {
-          const safeProducts = Array.isArray(response.data)
-            ? response.data.filter((product) => product?.isExclusive !== true)
+        const rawProducts = Array.isArray(response)
+          ? response
+          : response?.products || response?.data || response?.items || [];
+        let safeProducts = Array.isArray(rawProducts)
+          ? rawProducts.filter((product) => product?.isExclusive !== true)
+          : [];
+
+        if (safeProducts.length === 0 && isFeatured) {
+          const fallbackResponse = await fetchDataFromApi(
+            `/api/products?sortBy=soldCount&order=desc&limit=${limit}`,
+          );
+          const fallbackProducts = Array.isArray(fallbackResponse)
+            ? fallbackResponse
+            : fallbackResponse?.products ||
+              fallbackResponse?.data ||
+              fallbackResponse?.items ||
+              [];
+          safeProducts = Array.isArray(fallbackProducts)
+            ? fallbackProducts.filter((product) => product?.isExclusive !== true)
             : [];
-          setProducts(safeProducts);
         }
+
+        setProducts(safeProducts);
       } catch (error) {
         console.error("Failed to fetch products:", error);
       } finally {

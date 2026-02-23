@@ -131,7 +131,11 @@ export const getProducts = async (req, res) => {
       sortBy = "createdAt",
       order = "desc",
       featured,
+      isFeatured,
       newArrivals,
+      isNewArrivals,
+      bestSeller,
+      isBestSeller,
       onSale,
       inStock,
       lowStock,
@@ -141,7 +145,7 @@ export const getProducts = async (req, res) => {
     const canViewExclusive = req?.userIsAdmin === true;
 
     // Build filter object
-    const filter = { isActive: true };
+    const filter = { isActive: { $ne: false } };
     // Exclusive products are never part of normal storefront listings.
     // Only admins can include them in this endpoint for dashboard management.
     if (!canViewExclusive) {
@@ -152,7 +156,7 @@ export const getProducts = async (req, res) => {
     // Debug: Count all products first
     const totalAllProducts = await ProductModel.countDocuments({});
     const totalActiveProducts = await ProductModel.countDocuments({
-      isActive: true,
+      isActive: { $ne: false },
     });
     debugLog(
       "[Product Search] Total products in DB:",
@@ -214,7 +218,7 @@ export const getProducts = async (req, res) => {
       // Debug: Test the name search directly
       const nameMatchTest = await ProductModel.find({
         name: { $regex: searchRegex },
-        isActive: true,
+        isActive: { $ne: false },
       })
         .select("name")
         .limit(5)
@@ -311,8 +315,12 @@ export const getProducts = async (req, res) => {
     }
 
     // Boolean filters
-    if (featured === "true") filter.isFeatured = true;
-    if (newArrivals === "true") filter.isNewArrival = true;
+    const featuredFlag = featured ?? isFeatured;
+    const newArrivalsFlag = newArrivals ?? isNewArrivals;
+    const bestSellerFlag = bestSeller ?? isBestSeller;
+    if (featuredFlag === "true") filter.isFeatured = true;
+    if (newArrivalsFlag === "true") filter.isNewArrival = true;
+    if (bestSellerFlag === "true") filter.isBestSeller = true;
     if (onSale === "true") filter.isOnSale = true;
     if (inStock === "true") {
       exprFilters.push({
@@ -460,7 +468,10 @@ export const getProductById = async (req, res) => {
         .populate("subCategory", "name slug")
         .populate("reviews.user", "name avatar");
     } else {
-      product = await ProductModel.findOne({ slug: id, isActive: true })
+      product = await ProductModel.findOne({
+        slug: id,
+        isActive: { $ne: false },
+      })
         .populate("category", "name slug")
         .populate("subCategory", "name slug")
         .populate("reviews.user", "name avatar");
@@ -506,7 +517,7 @@ export const getFeaturedProducts = async (req, res) => {
     const canViewExclusive = req?.userIsAdmin === true;
 
     const filter = {
-      isActive: true,
+      isActive: { $ne: false },
       isFeatured: true,
       ...(canViewExclusive ? {} : { isExclusive: { $ne: true } }),
     };
@@ -551,7 +562,7 @@ export const getExclusiveProducts = async (req, res) => {
     const skip = (safePage - 1) * safeLimit;
 
     const filter = {
-      isActive: true,
+      isActive: { $ne: false },
       isExclusive: true,
     };
 

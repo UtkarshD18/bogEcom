@@ -25,6 +25,38 @@ function ProductsPageContent() {
     const urlCategory = searchParams.get("category") || "";
     const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
 
+    const sanitizeParamValue = (value) => {
+        const normalized = String(value || "").trim();
+        if (!normalized) return "";
+        if (normalized === "undefined" || normalized === "null") return "";
+        return normalized;
+    };
+
+    const buildSafeParams = (paramsLike) => {
+        const source = new URLSearchParams(paramsLike?.toString?.() || "");
+        const safe = new URLSearchParams();
+        [
+            "search",
+            "category",
+            "minPrice",
+            "maxPrice",
+            "sortBy",
+            "order",
+            "featured",
+            "newArrivals",
+            "bestSeller",
+            "onSale",
+            "inStock",
+            "lowStock",
+            "page",
+            "limit",
+        ].forEach((key) => {
+            const value = sanitizeParamValue(source.get(key));
+            if (value) safe.set(key, value);
+        });
+        return safe;
+    };
+
     // Sync state with URL when URL changes (e.g. from header search)
     useEffect(() => {
         setSearchTerm(urlSearchTerm);
@@ -34,7 +66,7 @@ function ProductsPageContent() {
         const loadProducts = async () => {
             setLoading(true);
             try {
-                const params = new URLSearchParams(searchParams.toString());
+                const params = buildSafeParams(searchParams);
                 const query = params.toString() ? `?${params.toString()}` : "";
                 const res = await fetchDataFromApi(`/api/products${query}`);
 
@@ -63,7 +95,7 @@ function ProductsPageContent() {
         if (normalizedCurrent === normalizedNext) return undefined;
 
         const timeoutId = setTimeout(() => {
-            const params = new URLSearchParams(searchParams.toString());
+            const params = buildSafeParams(searchParams);
             if (normalizedNext) {
                 params.set("search", normalizedNext);
             } else {
