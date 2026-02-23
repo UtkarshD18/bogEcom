@@ -147,7 +147,7 @@ export default function LegalPage() {
               ❓ Legal Questions?
             </h3>
             <p className="text-gray-700 mb-6">
-              We're here to help clarify any legal concerns
+              We&apos;re here to help clarify any legal concerns
             </p>
             <a
               href="mailto:support@healthyonegram.com"

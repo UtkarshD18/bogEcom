@@ -1,4 +1,5 @@
 import OrderModel from "../models/order.model.js";
+import SequenceModel from "../models/sequence.model.js";
 import {
   AppError,
   asyncHandler,
@@ -30,6 +31,98 @@ import { mapExpressbeesToShipmentStatus } from "../utils/orderStatus.js";
 const normalizeShipmentStatus = (status) => {
   const mapped = mapExpressbeesToShipmentStatus(status);
   return mapped || "pending";
+};
+
+const SHIPMENT_ORDER_PREFIX = String(
+  process.env.XPRESSBEES_ORDER_PREFIX || "HOG",
+)
+  .trim()
+  .toUpperCase();
+
+const getFinancialYearWindow = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const fyStartYear = month >= 3 ? year : year - 1;
+  const fyEndYear = fyStartYear + 1;
+  return { fyStartYear, fyEndYear };
+};
+
+const buildShipmentOrderNumber = ({ fyStartYear, fyEndYear, sequence }) => {
+  const fyStart = String(fyStartYear % 100).padStart(2, "0");
+  const fyEnd = String(fyEndYear % 100).padStart(2, "0");
+  const seq = String(Math.max(Number(sequence || 1), 1)).padStart(4, "0");
+  return `${SHIPMENT_ORDER_PREFIX}${fyStart}-${fyEnd}/${seq}`;
+};
+
+const getNextShipmentOrderNumber = async () => {
+  const { fyStartYear, fyEndYear } = getFinancialYearWindow();
+  const counterKey = `xpressbees:order-number:${fyStartYear}-${fyEndYear}`;
+
+  const counter = await SequenceModel.findByIdAndUpdate(
+    counterKey,
+    { $inc: { value: 1 } },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  );
+
+  return buildShipmentOrderNumber({
+    fyStartYear,
+    fyEndYear,
+    sequence: counter?.value || 1,
+  });
+};
+
+const resolveShipmentOrderNumber = async ({ orderId, requestedOrderNumber }) => {
+  const requested = String(requestedOrderNumber || "").trim();
+
+  if (!orderId) {
+    return requested || getNextShipmentOrderNumber();
+  }
+
+  validateMongoId(orderId, "orderId");
+  const existingOrder = await OrderModel.findById(orderId)
+    .select("shipping_order_number")
+    .lean();
+
+  if (!existingOrder) {
+    throw new AppError("ORDER_NOT_FOUND");
+  }
+
+  const existingOrderNumber = String(
+    existingOrder.shipping_order_number || "",
+  ).trim();
+  if (existingOrderNumber) {
+    return existingOrderNumber;
+  }
+
+  const generatedOrderNumber = await getNextShipmentOrderNumber();
+
+  const claimedOrder = await OrderModel.findOneAndUpdate(
+    {
+      _id: orderId,
+      $or: [
+        { shipping_order_number: { $exists: false } },
+        { shipping_order_number: null },
+        { shipping_order_number: "" },
+      ],
+    },
+    { $set: { shipping_order_number: generatedOrderNumber } },
+    { new: true, runValidators: true },
+  )
+    .select("shipping_order_number")
+    .lean();
+
+  if (claimedOrder?.shipping_order_number) {
+    return String(claimedOrder.shipping_order_number).trim();
+  }
+
+  const latestOrder = await OrderModel.findById(orderId)
+    .select("shipping_order_number")
+    .lean();
+
+  return (
+    String(latestOrder?.shipping_order_number || "").trim() ||
+    generatedOrderNumber
+  );
 };
 
 const validatePincode = (value, field) => {
@@ -109,25 +202,14 @@ const updateOrderShipping = async (orderId, updates, context = "shipping") => {
   if (!orderId) return null;
   validateMongoId(orderId, "orderId");
 
-  const existingOrder = await OrderModel.findById(orderId)
-    .select("_id isDemoOrder")
-    .lean();
-
-  if (!existingOrder) {
-    throw new AppError("ORDER_NOT_FOUND");
-  }
-
-  if (existingOrder.isDemoOrder) {
-    throw new AppError("FORBIDDEN", {
-      message: "Shipping updates are disabled for demo test orders",
-      orderId,
-    });
-  }
-
   const order = await OrderModel.findByIdAndUpdate(orderId, updates, {
     new: true,
     runValidators: true,
   });
+
+  if (!order) {
+    throw new AppError("ORDER_NOT_FOUND");
+  }
 
   syncOrderToFirestore(order, "update").catch((err) =>
     logger.error(context, "Failed to sync order to Firestore", {
@@ -215,9 +297,6 @@ export const xpressbeesBookShipment = asyncHandler(async (req, res) => {
       throw new AppError("MISSING_FIELD", { field: "shipment" });
     }
 
-    if (!shipment.order_number) {
-      throw new AppError("MISSING_FIELD", { field: "order_number" });
-    }
     validatePaymentType(shipment.payment_type);
     if (shipment.order_amount === undefined || shipment.order_amount === null) {
       throw new AppError("MISSING_FIELD", { field: "order_amount" });
@@ -232,6 +311,11 @@ export const xpressbeesBookShipment = asyncHandler(async (req, res) => {
       shipment,
       orderId,
     });
+    const resolvedOrderNumber = await resolveShipmentOrderNumber({
+      orderId,
+      requestedOrderNumber: normalizedShipment.order_number,
+    });
+    normalizedShipment.order_number = resolvedOrderNumber;
 
     if (
       !Array.isArray(normalizedShipment.order_items) ||
@@ -244,9 +328,16 @@ export const xpressbeesBookShipment = asyncHandler(async (req, res) => {
     }
 
     const data = await bookShipment(normalizedShipment);
+    if (data && typeof data === "object") {
+      data.order_number = resolvedOrderNumber;
+      if (data?.data && typeof data.data === "object") {
+        data.data.order_number = data.data.order_number || resolvedOrderNumber;
+      }
+    }
 
     if (orderId && data?.status && data?.data?.awb_number) {
       await updateOrderShipping(orderId, {
+        shipping_order_number: resolvedOrderNumber,
         shipping_provider: "XPRESSBEES",
         awb_number: data.data.awb_number,
         shipment_status: normalizeShipmentStatus(data.data.status),

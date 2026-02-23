@@ -1,29 +1,20 @@
 "use client";
 import { useProducts } from "@/context/ProductContext";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo } from "react";
 
 export default function BlogDetailPage() {
   const params = useParams();
-  const slug = params.slug;
-  const { blogs, fetchBlogs } = useProducts();
-  const [blog, setBlog] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const router = useRouter();
+  const slug = Array.isArray(params?.slug) ? params.slug[0] : params?.slug;
+  const { blogs, fetchBlogs, loading } = useProducts();
 
-  useEffect(() => {
-    if (blogs && blogs.length > 0) {
-      const foundBlog = blogs.find((b) => b.slug === slug);
-      if (foundBlog) {
-        setBlog(foundBlog);
-        setError(null);
-      } else {
-        setError("Blog not found");
-      }
-      setLoading(false);
-    }
-  }, [blogs, slug]);
+  const blog = useMemo(
+    () => blogs.find((candidate) => candidate?.slug === slug) || null,
+    [blogs, slug],
+  );
+  const showNotFound = !loading && !blog;
 
   // Listen for blog updates from admin
   useEffect(() => {
@@ -45,7 +36,7 @@ export default function BlogDetailPage() {
     );
   }
 
-  if (error || !blog) {
+  if (showNotFound) {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-12">
@@ -54,7 +45,7 @@ export default function BlogDetailPage() {
               Blog Not Found
             </h1>
             <p className="text-gray-600 mb-6">
-              Sorry, we couldn't find the blog you're looking for.
+              Sorry, we could not find the blog you are looking for.
             </p>
             <Link
               href="/blogs"
@@ -68,34 +59,45 @@ export default function BlogDetailPage() {
     );
   }
 
-  const relatedBlogs = blogs.filter(
-    (b) => b.category === blog.category && b._id !== blog._id,
-  );
+  const categoryLabel = String(blog?.category || "").trim();
+  const authorLabel = String(blog?.author || "").trim() || "Admin";
+  const relatedBlogs = blogs.filter((candidate) => {
+    if (!candidate || candidate._id === blog._id) {
+      return false;
+    }
+    if (!categoryLabel) {
+      return true;
+    }
+    return String(candidate.category || "").trim() === categoryLabel;
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Back Button */}
       <div className="container mx-auto px-4 py-4">
-        <Link
-          href="/blogs"
+        <button
+          type="button"
+          onClick={() => router.push("/blogs")}
           className="inline-flex items-center text-orange-500 hover:text-orange-600 transition"
         >
-          ← Back to Blogs
-        </Link>
+          {"<-"} Back to Blogs
+        </button>
       </div>
 
       {/* Blog Header */}
       <div className="bg-gradient-to-r from-orange-500 to-pink-500 text-white py-12">
         <div className="container mx-auto px-4">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-medium">
-              {blog.category || "General"}
-            </span>
-          </div>
+          {categoryLabel ? (
+            <div className="flex items-center gap-3 mb-4">
+              <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-medium">
+                {categoryLabel}
+              </span>
+            </div>
+          ) : null}
           <h1 className="text-4xl md:text-5xl font-bold mb-4">{blog.title}</h1>
           <div className="flex items-center gap-4 text-sm opacity-90">
-            <span>{blog.author || "Admin"}</span>
-            <span>•</span>
+            <span>{authorLabel}</span>
+            <span>|</span>
             <span>
               {new Date(blog.createdAt).toLocaleDateString("en-IN", {
                 year: "numeric",
@@ -105,8 +107,8 @@ export default function BlogDetailPage() {
             </span>
             {blog.viewCount && (
               <>
-                <span>•</span>
-                <span>👁️ {blog.viewCount} views</span>
+                <span>|</span>
+                <span>Views: {blog.viewCount}</span>
               </>
             )}
           </div>

@@ -226,12 +226,19 @@ const AccountSidebar = () => {
     }
   };
 
+  const syncFromCookiesRef = useRef(syncFromCookies);
+  const fetchProfileRef = useRef(fetchProfile);
+  const fetchPrimaryPhoneRef = useRef(fetchPrimaryPhone);
+  syncFromCookiesRef.current = syncFromCookies;
+  fetchProfileRef.current = fetchProfile;
+  fetchPrimaryPhoneRef.current = fetchPrimaryPhone;
+
   // Load user data from cookies + API
   useEffect(() => {
     const handleAuthChange = () => {
-      syncFromCookies();
-      fetchProfile();
-      fetchPrimaryPhone();
+      syncFromCookiesRef.current();
+      fetchProfileRef.current();
+      fetchPrimaryPhoneRef.current();
     };
 
     handleAuthChange();

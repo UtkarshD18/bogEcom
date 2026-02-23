@@ -41,6 +41,39 @@ export const AdminProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const router = useRouter();
 
+  const syncAdminSession = useCallback(
+    (nextAdmin = null, nextToken = null) => {
+      const fallbackAdmin = (() => {
+        if (typeof window === "undefined") return null;
+        try {
+          const stored = localStorage.getItem("adminUser");
+          return stored ? JSON.parse(stored) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      const mergedAdmin = {
+        ...(fallbackAdmin || {}),
+        ...(admin || {}),
+        ...(nextAdmin || {}),
+      };
+
+      if (Object.keys(mergedAdmin).length > 0) {
+        localStorage.setItem("adminUser", JSON.stringify(mergedAdmin));
+        setAdmin(mergedAdmin);
+      }
+
+      if (typeof nextToken === "string" && nextToken.trim()) {
+        localStorage.setItem("adminToken", nextToken);
+        setToken(nextToken);
+      }
+
+      return mergedAdmin;
+    },
+    [admin],
+  );
+
   const logout = useCallback(() => {
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminUser");
@@ -167,9 +200,7 @@ export const AdminProvider = ({ children }) => {
 
         localStorage.setItem("adminToken", accessToken);
         localStorage.setItem("adminUser", JSON.stringify(normalizedAdmin));
-
-        setAdmin(normalizedAdmin);
-        setToken(accessToken);
+        syncAdminSession(normalizedAdmin, accessToken);
 
         return { error: false, message: "Login successful" };
       }
@@ -181,12 +212,33 @@ export const AdminProvider = ({ children }) => {
     }
   };
 
+  const refreshAdminProfile = useCallback(async () => {
+    try {
+      const activeToken =
+        token || localStorage.getItem("adminToken") || null;
+      if (!activeToken) return null;
+
+      const response = await getData("/api/user/user-details", activeToken);
+      if (response?.error === false && response?.data) {
+        const normalizedAdmin = normalizeAdminPayload(response.data) || response.data;
+        syncAdminSession(normalizedAdmin);
+        return normalizedAdmin;
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }, [syncAdminSession, token]);
+
   const value = {
     admin,
     token,
     loading,
     login,
     logout,
+    syncAdminSession,
+    refreshAdminProfile,
     isAuthenticated: !!admin,
   };
 

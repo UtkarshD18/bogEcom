@@ -4,7 +4,7 @@ import { useProducts } from "@/context/ProductContext";
 import { getImageUrl } from "@/utils/imageUtils";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Swiper, SwiperSlide } from "swiper/react";
 
 import "swiper/css";
@@ -38,22 +38,22 @@ const fallbackSlides = [
 ];
 
 const HomeSlider = () => {
-    const { homeSlides = [], loading } = useProducts();
-    const [displaySlides, setDisplaySlides] = useState(fallbackSlides);
+    const { homeSlides = [] } = useProducts();
     const [activeIndex, setActiveIndex] = useState(0);
     const swiperRef = useRef(null);
 
-    useEffect(() => {
-        if (homeSlides && homeSlides.length > 0) {
-            const formattedSlides = homeSlides.map((slide) => ({
-                image: slide.image,
-                title: slide.title,
-                subtitle: slide.subtitle || slide.description,
-                cta: slide.buttonText || "Shop Now",
-                link: slide.buttonLink || "/products",
-            }));
-            setDisplaySlides(formattedSlides);
+    const displaySlides = useMemo(() => {
+        if (!homeSlides || homeSlides.length === 0) {
+            return fallbackSlides;
         }
+
+        return homeSlides.map((slide) => ({
+            image: slide.image,
+            title: slide.title,
+            subtitle: slide.subtitle || slide.description,
+            cta: slide.buttonText || "Shop Now",
+            link: slide.buttonLink || "/products",
+        }));
     }, [homeSlides]);
 
     return (

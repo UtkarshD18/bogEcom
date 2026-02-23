@@ -36,6 +36,7 @@ const EditProduct = () => {
   const [weight, setWeight] = useState("");
   const [unit, setUnit] = useState("g");
   const [tags, setTags] = useState("");
+  const [hsnCode, setHsnCode] = useState("");
   const [newImages, setNewImages] = useState([]); // { file, preview }
   const [existingImages, setExistingImages] = useState([]); // URLs
   const [categories, setCategories] = useState([]);
@@ -145,6 +146,14 @@ const EditProduct = () => {
         setWeight(product.weight || "");
         setUnit(product.unit || "g");
         setTags(product.tags ? product.tags.join(", ") : "");
+        setHsnCode(
+          String(
+            product.hsnCode ||
+              product.specifications?.hsn ||
+              product.specifications?.HSN ||
+              "",
+          ).trim(),
+        );
         setExistingImages(product.images || []);
 
         // Load variants
@@ -263,6 +272,14 @@ const EditProduct = () => {
       return;
     }
 
+    const normalizedHsnCode = String(hsnCode || "")
+      .trim()
+      .replace(/\s+/g, "");
+    if (normalizedHsnCode && !/^\d{4,8}$/.test(normalizedHsnCode)) {
+      toast.error("HSN code must be 4 to 8 digits");
+      return;
+    }
+
     // Check if token exists
     console.log("EditProduct handleSubmit:", {
       hasToken: !!token,
@@ -317,6 +334,7 @@ const EditProduct = () => {
         weight: weight ? Number(weight) : undefined,
         unit,
         tags: tags ? tags.split(",").map((t) => t.trim()) : [],
+        hsnCode: normalizedHsnCode,
         images: allImages,
         thumbnail: allImages[0] || "",
         hasVariants,
@@ -491,7 +509,7 @@ const EditProduct = () => {
           </div>
 
           {/* Stock & Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5 mb-5">
             <div className="col flex flex-col gap-1">
               <span className="text-[15px] text-gray-800 font-medium">
                 Stock Quantity
@@ -588,6 +606,23 @@ const EditProduct = () => {
                 placeholder="organic, healthy, natural (comma separated)"
                 className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
               />
+            </div>
+
+            <div className="col flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                HSN Code
+              </span>
+              <input
+                type="text"
+                value={hsnCode}
+                onChange={(e) => setHsnCode(e.target.value)}
+                placeholder="e.g., 200811"
+                maxLength={8}
+                className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+              />
+              <p className="text-xs text-gray-500">
+                4 to 8 digits, used on tax invoice.
+              </p>
             </div>
 
             <div className="col flex flex-col gap-1">

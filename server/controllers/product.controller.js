@@ -29,6 +29,80 @@ const toBoolean = (value) => {
   return Boolean(value);
 };
 
+const HSN_CODE_REGEX = /^\d{4,8}$/;
+const escapeRegex = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const normalizeSlug = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const normalizeHsnCode = (value) =>
+  String(value || "")
+    .replace(/\s+/g, "")
+    .trim();
+
+const extractHsnFromSpecifications = (specifications) => {
+  if (!specifications) return "";
+  if (specifications instanceof Map) {
+    return (
+      specifications.get("hsn") ||
+      specifications.get("HSN") ||
+      specifications.get("Hsn") ||
+      ""
+    );
+  }
+  if (typeof specifications === "object") {
+    return (
+      specifications.hsn ||
+      specifications.HSN ||
+      specifications.Hsn ||
+      ""
+    );
+  }
+  return "";
+};
+
+const normalizeSpecifications = (specifications) => {
+  if (!specifications) return {};
+  if (specifications instanceof Map) {
+    return Object.fromEntries(specifications.entries());
+  }
+  if (typeof specifications === "object" && !Array.isArray(specifications)) {
+    return { ...specifications };
+  }
+  return {};
+};
+
+const resolveHsnCode = ({ explicitValue, fallbackSpecifications }) => {
+  const candidate =
+    explicitValue !== undefined
+      ? explicitValue
+      : extractHsnFromSpecifications(fallbackSpecifications);
+
+  const normalized = normalizeHsnCode(candidate);
+  if (normalized && !HSN_CODE_REGEX.test(normalized)) {
+    const error = new Error("HSN code must be 4 to 8 digits");
+    error.statusCode = 400;
+    throw error;
+  }
+  return normalized;
+};
+
+const mergeHsnIntoSpecifications = (specifications, hsnCode) => {
+  const normalized = normalizeSpecifications(specifications);
+  delete normalized.HSN;
+  delete normalized.Hsn;
+  if (hsnCode) {
+    normalized.hsn = hsnCode;
+  } else {
+    delete normalized.hsn;
+  }
+  return normalized;
+};
+
 /**
  * Product Controller
  *
@@ -151,32 +225,67 @@ export const getProducts = async (req, res) => {
       );
     }
 
-    // Category filter - support both ObjectId and slug
+    // Category filter - support ObjectId(s), slug(s), and category name(s)
     if (category) {
-      // Check if it's a valid ObjectId
-      const mongoose = (await import("mongoose")).default;
-      const isValidObjectId = mongoose.Types.ObjectId.isValid(category);
+      const rawCategoryValues = String(category)
+        .split(",")
+        .map((entry) => decodeURIComponent(String(entry || "")).trim())
+        .filter(Boolean);
 
-      if (isValidObjectId) {
-        if (category.includes(",")) {
-          filter.category = { $in: category.split(",") };
-        } else {
-          filter.category = category;
+      const objectIdValues = rawCategoryValues.filter((entry) =>
+        mongoose.Types.ObjectId.isValid(entry),
+      );
+
+      const textCategoryValues = rawCategoryValues.filter(
+        (entry) => !mongoose.Types.ObjectId.isValid(entry),
+      );
+
+      let matchedTextCategoryIds = [];
+      if (textCategoryValues.length > 0) {
+        const normalizedSlugs = textCategoryValues
+          .map((entry) => normalizeSlug(entry))
+          .filter(Boolean);
+
+        const categoryOrFilters = [];
+
+        if (normalizedSlugs.length > 0) {
+          categoryOrFilters.push({ slug: { $in: normalizedSlugs } });
         }
-      } else {
-        // It's a slug - look up the category by slug
-        const categoryDoc = await CategoryModel.findOne({ slug: category });
-        if (categoryDoc) {
-          filter.category = categoryDoc._id;
-        } else {
-          // Try to find by name (case-insensitive)
-          const categoryByName = await CategoryModel.findOne({
-            name: { $regex: new RegExp(`^${category}$`, "i") },
-          });
-          if (categoryByName) {
-            filter.category = categoryByName._id;
+
+        textCategoryValues.forEach((entry) => {
+          const escaped = escapeRegex(entry);
+          categoryOrFilters.push({ name: { $regex: `^${escaped}$`, $options: "i" } });
+
+          const slugCandidate = normalizeSlug(entry);
+          if (slugCandidate) {
+            const escapedSlug = escapeRegex(slugCandidate);
+            categoryOrFilters.push({
+              slug: { $regex: `^${escapedSlug}$`, $options: "i" },
+            });
           }
+        });
+
+        if (categoryOrFilters.length > 0) {
+          const categoryDocs = await CategoryModel.find({
+            $or: categoryOrFilters,
+          })
+            .select("_id")
+            .lean();
+          matchedTextCategoryIds = categoryDocs.map((doc) => String(doc._id));
         }
+      }
+
+      const resolvedCategoryIds = Array.from(
+        new Set([...objectIdValues, ...matchedTextCategoryIds]),
+      );
+
+      if (resolvedCategoryIds.length === 1) {
+        [filter.category] = resolvedCategoryIds;
+      } else if (resolvedCategoryIds.length > 1) {
+        filter.category = { $in: resolvedCategoryIds };
+      } else {
+        // Explicit category query with no match should return no products.
+        filter.category = { $in: [] };
       }
     }
 
@@ -578,6 +687,8 @@ export const createProduct = async (req, res) => {
       metaKeywords,
       discount,
       rating,
+      hsnCode,
+      hsn_code,
     } = req.body;
 
     // Validate required fields
@@ -659,6 +770,15 @@ export const createProduct = async (req, res) => {
       }
     }
 
+    const resolvedHsnCode = resolveHsnCode({
+      explicitValue: hsnCode ?? hsn_code,
+      fallbackSpecifications: specifications,
+    });
+    const normalizedSpecifications = mergeHsnIntoSpecifications(
+      specifications,
+      resolvedHsnCode,
+    );
+
     const product = new ProductModel({
       name: String(name || "").trim(),
       description,
@@ -689,7 +809,8 @@ export const createProduct = async (req, res) => {
       isNewArrival: isNewArrival || false,
       isExclusive: toBoolean(isExclusive),
       demandStatus: demandStatus || "NORMAL",
-      specifications,
+      hsnCode: resolvedHsnCode,
+      specifications: normalizedSpecifications,
       ingredients,
       freeShipping: freeShipping || false,
       metaTitle,
@@ -716,6 +837,14 @@ export const createProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating product:", error);
+
+    if (error?.statusCode === 400) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: error.message || "Invalid HSN code",
+      });
+    }
 
     if (error.name === "ValidationError") {
       const firstValidationError = Object.values(error.errors || {})[0];
@@ -758,6 +887,13 @@ export const updateProduct = async (req, res) => {
     delete updateData.createdAt;
     delete updateData.viewCount;
     delete updateData.soldCount;
+    if (
+      !Object.prototype.hasOwnProperty.call(updateData, "hsnCode") &&
+      Object.prototype.hasOwnProperty.call(updateData, "hsn_code")
+    ) {
+      updateData.hsnCode = updateData.hsn_code;
+    }
+    delete updateData.hsn_code;
 
     if ("stock" in updateData && !("stock_quantity" in updateData)) {
       updateData.stock_quantity = updateData.stock;
@@ -791,6 +927,39 @@ export const updateProduct = async (req, res) => {
         success: false,
         message: "Product not found",
       });
+    }
+
+    const hasExplicitHsnUpdate = Object.prototype.hasOwnProperty.call(
+      updateData,
+      "hsnCode",
+    );
+    const hasSpecificationsUpdate = Object.prototype.hasOwnProperty.call(
+      updateData,
+      "specifications",
+    );
+
+    if (hasExplicitHsnUpdate || hasSpecificationsUpdate) {
+      const existingSpecs = normalizeSpecifications(product.specifications);
+      const incomingSpecs = hasSpecificationsUpdate
+        ? normalizeSpecifications(updateData.specifications)
+        : {};
+      const effectiveSpecs = hasSpecificationsUpdate
+        ? { ...existingSpecs, ...incomingSpecs }
+        : existingSpecs;
+
+      const resolvedHsnCode = resolveHsnCode({
+        explicitValue: hasExplicitHsnUpdate ? updateData.hsnCode : undefined,
+        fallbackSpecifications: {
+          ...effectiveSpecs,
+          ...(product.hsnCode ? { hsn: product.hsnCode } : {}),
+        },
+      });
+
+      updateData.hsnCode = resolvedHsnCode;
+      updateData.specifications = mergeHsnIntoSpecifications(
+        effectiveSpecs,
+        resolvedHsnCode,
+      );
     }
 
     // Validate variants if being updated
@@ -843,6 +1012,15 @@ export const updateProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating product:", error);
+
+    if (error?.statusCode === 400) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: error.message || "Invalid HSN code",
+      });
+    }
+
     res.status(500).json({
       error: true,
       success: false,

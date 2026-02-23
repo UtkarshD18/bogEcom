@@ -169,6 +169,42 @@ const Orders = () => {
     fetchOrders();
   }, [router]);
 
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) return undefined;
+
+    let cancelled = false;
+
+    const pollOrders = async () => {
+      try {
+        const response = await fetch(`${API_URL}/orders/my-orders`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!cancelled && data?.success && Array.isArray(data?.data)) {
+          setOrders(data.data);
+        }
+      } catch {
+        // Polling fallback is best-effort only.
+      }
+    };
+
+    const intervalId = setInterval(pollOrders, 45000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, []);
+
   const normalizeStatus = (status) => {
     if (!status) return "pending";
     const value = String(status).trim().toLowerCase().replace(/\s+/g, "_");
@@ -440,11 +476,54 @@ const Orders = () => {
             ) : (
               <div className="space-y-6">
                 {orders.map((order) => {
-                  const orderTotals = calculateOrderTotals(
+                  const fallbackTotals = calculateOrderTotals(
                     buildSavedOrderCalculationInput(order, {
                       payableShipping: 0,
                     }),
                   );
+                  const pricing = order?.pricing || {};
+                  const couponCodeValue =
+                    order?.couponCode || pricing?.couponCode || null;
+                  const influencerCodeValue =
+                    order?.influencerCode || pricing?.influencerCode || null;
+                  const membershipDiscountValue = Number(
+                    order?.membershipDiscount ??
+                      pricing?.membershipDiscount ??
+                      0,
+                  );
+                  const influencerDiscountValue = Number(
+                    order?.influencerDiscount ??
+                      pricing?.influencerDiscount ??
+                      0,
+                  );
+                  const couponDiscountValue = Number(
+                    order?.discountAmount ??
+                      pricing?.couponDiscount ??
+                      0,
+                  );
+                  const orderTotals = {
+                    subtotal: Number(pricing.subtotal ?? fallbackTotals.subtotal ?? 0),
+                    totalDiscount: Number(
+                      pricing.totalDiscount ?? fallbackTotals.totalDiscount ?? 0,
+                    ),
+                    coinRedemptionAmount: Number(
+                      pricing.coinRedemptionAmount ??
+                        fallbackTotals.coinRedemptionAmount ??
+                        order?.coinRedemption?.amount ??
+                        0,
+                    ),
+                    tax: Number(pricing.tax ?? fallbackTotals.tax ?? 0),
+                    shipping: Number(
+                      pricing.shipping ?? order?.shipping ?? fallbackTotals.shipping ?? 0,
+                    ),
+                    total: Number(
+                      pricing.total ??
+                        order?.finalAmount ??
+                        order?.totalAmt ??
+                        fallbackTotals.total ??
+                        0,
+                    ),
+                  };
 
                   return (
                     <div
@@ -534,7 +613,9 @@ const Orders = () => {
                                 <p className="text-gray-900 font-medium">
                                   ₹
                                   {Number(
-                                    item.price * item.quantity || 0,
+                                    item.subTotal ??
+                                      item.price * item.quantity ??
+                                      0,
                                   ).toLocaleString("en-IN", {
                                     minimumFractionDigits: 2,
                                   })}
@@ -610,7 +691,11 @@ const Orders = () => {
                           <div className="flex justify-between">
                             <span className="text-gray-600">
                               Discount
-                              {order.couponCode ? ` (${order.couponCode})` : ""}
+                              {couponCodeValue
+                                ? ` (Coupon ${couponCodeValue})`
+                                : influencerCodeValue
+                                  ? ` (Influencer ${influencerCodeValue})`
+                                  : ""}
                               :
                             </span>
                             <span className="text-primary">
@@ -622,6 +707,51 @@ const Orders = () => {
                               })}
                             </span>
                           </div>
+                          {membershipDiscountValue > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">
+                                Membership Discount:
+                              </span>
+                              <span className="text-primary">
+                                -&#8377;
+                                {membershipDiscountValue.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </div>
+                          )}
+                          {influencerDiscountValue > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">
+                                Influencer
+                                {influencerCodeValue
+                                  ? ` (${influencerCodeValue})`
+                                  : ""}
+                                :
+                              </span>
+                              <span className="text-primary">
+                                -&#8377;
+                                {influencerDiscountValue.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </div>
+                          )}
+                          {couponDiscountValue > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">
+                                Coupon
+                                {couponCodeValue ? ` (${couponCodeValue})` : ""}
+                                :
+                              </span>
+                              <span className="text-primary">
+                                -&#8377;
+                                {couponDiscountValue.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </div>
+                          )}
                           {Number(orderTotals.coinRedemptionAmount || 0) >
                             0 && (
                             <div className="flex justify-between">
@@ -667,15 +797,17 @@ const Orders = () => {
                                   metrics: shippingMetrics,
                                 });
 
-                              if (!hasOrderStateInput) {
+                              if (Number(orderTotals.shipping || 0) > 0) {
                                 return (
-                                  <span className="text-gray-500">--</span>
+                                  <span className="text-gray-900">
+                                    ₹{Number(orderTotals.shipping || 0).toFixed(2)}
+                                  </span>
                                 );
                               }
 
                               return (
                                 <span className="text-primary font-medium flex items-center gap-2">
-                                  {orderDisplayShippingCharge > 0 && (
+                                  {hasOrderStateInput && orderDisplayShippingCharge > 0 && (
                                     <span className="line-through text-gray-500 font-normal">
                                       ₹{orderDisplayShippingCharge.toFixed(2)}
                                     </span>

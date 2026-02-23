@@ -6,7 +6,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { round2 } from "@/utils/gst";
 import { getResponseErrorMessage, parseJsonSafely } from "@/utils/safeJsonFetch";
 import Cookies from "js-cookie";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 
 /**
@@ -540,9 +540,14 @@ export const CartProvider = ({ children }) => {
     return item?.quantity || 0;
   };
 
+  const fetchCartRef = useRef(fetchCart);
+  const loadFromLocalStorageRef = useRef(loadFromLocalStorage);
+  fetchCartRef.current = fetchCart;
+  loadFromLocalStorageRef.current = loadFromLocalStorage;
+
   // Initialize cart on mount
   useEffect(() => {
-    fetchCart();
+    fetchCartRef.current();
   }, []);
 
   // Refresh cart after login or auth changes
@@ -551,9 +556,9 @@ export const CartProvider = ({ children }) => {
 
     const handleAuthChange = () => {
       if (getToken()) {
-        fetchCart();
+        fetchCartRef.current();
       } else {
-        loadFromLocalStorage();
+        loadFromLocalStorageRef.current();
       }
     };
 

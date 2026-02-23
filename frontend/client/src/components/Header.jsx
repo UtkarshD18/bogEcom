@@ -158,7 +158,7 @@ const Header = () => {
   }, [mobileMenuOpen]);
 
   // Function to check login status
-  const checkLoginStatus = () => {
+  const checkLoginStatus = useCallback(() => {
     const accessToken = getStoredAuthToken();
     const userEmailCookie =
       cookies.get("userEmail") ||
@@ -196,7 +196,7 @@ const Header = () => {
       setUserName("");
       setUserPhoto("");
     }
-  };
+  }, [API_URL]);
 
   const fetchCoinSummary = useCallback(async () => {
     if (!getStoredAuthToken()) {
@@ -275,7 +275,7 @@ const Header = () => {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("focus", checkLoginStatus);
     };
-  }, []);
+  }, [checkLoginStatus]);
 
   useEffect(() => {
     if (!isLoggedIn) {

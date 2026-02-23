@@ -34,11 +34,8 @@ function ProductsPageContent() {
         const loadProducts = async () => {
             setLoading(true);
             try {
-                const queryParams = new URLSearchParams();
-                if (urlSearchTerm) queryParams.set("search", urlSearchTerm);
-                if (urlCategory) queryParams.set("category", urlCategory);
-                const queryString = queryParams.toString();
-                const query = queryString ? `?${queryString}` : "";
+                const params = new URLSearchParams(searchParams.toString());
+                const query = params.toString() ? `?${params.toString()}` : "";
                 const res = await fetchDataFromApi(`/api/products${query}`);
 
                 // Handle various API response structures (arrays, nested products, nested data)
@@ -52,24 +49,33 @@ function ProductsPageContent() {
             }
         };
         loadProducts();
-    }, [urlSearchTerm, urlCategory]);
+    }, [searchParams, urlSearchTerm, urlCategory]);
 
     // Handle search input change
     const handleSearchChange = (e) => {
-        const value = e.target.value;
-        setSearchTerm(value);
+        setSearchTerm(e.target.value);
+    };
 
-        // Debounce URL update
+    useEffect(() => {
+        const normalizedCurrent = urlSearchTerm.trim();
+        const normalizedNext = searchTerm.trim();
+
+        if (normalizedCurrent === normalizedNext) return undefined;
+
         const timeoutId = setTimeout(() => {
             const params = new URLSearchParams(searchParams.toString());
-            if (value) params.set("search", value);
-            else params.delete("search");
-            const query = params.toString();
-            router.push(query ? `/products?${query}` : "/products");
+            if (normalizedNext) {
+                params.set("search", normalizedNext);
+            } else {
+                params.delete("search");
+            }
+
+            const nextUrl = params.toString() ? `/products?${params.toString()}` : "/products";
+            router.replace(nextUrl);
         }, 500);
 
         return () => clearTimeout(timeoutId);
-    };
+    }, [router, searchParams, searchTerm, urlSearchTerm]);
 
     return (
         <div className="min-h-screen pb-20 pt-10">

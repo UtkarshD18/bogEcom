@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const FLAVORS = [
   {
@@ -26,13 +26,26 @@ const FLAVORS = [
 
 export default function FlavorSwitcher({ onChange }) {
   const [selected, setSelected] = useState(null);
+  const selectedFlavor = useMemo(
+    () => FLAVORS.find((flavor) => flavor.name === selected) || null,
+    [selected],
+  );
 
   const handleClick = (flavor) => {
     setSelected(flavor.name);
     if (onChange) onChange(flavor);
-    // Change site color
-    document.body.style.background = `linear-gradient(135deg, ${flavor.color} 0%, #fff 100%)`;
   };
+
+  useEffect(() => {
+    if (!selectedFlavor || typeof document === "undefined") return;
+
+    const previousBackground = document.body.style.background;
+    document.body.style.background = `linear-gradient(135deg, ${selectedFlavor.color} 0%, #fff 100%)`;
+
+    return () => {
+      document.body.style.background = previousBackground;
+    };
+  }, [selectedFlavor]);
 
   return (
     <div

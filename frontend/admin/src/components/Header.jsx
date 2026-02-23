@@ -14,7 +14,7 @@ const Header = () => {
   const [notificationAnchor, setNotificationAnchor] = useState(null);
   const { notificationCount, orders, markOrderAsSeen, clearAllNotifications } =
     useOrderNotifications();
-  const { logout } = useAdmin();
+  const { logout, admin } = useAdmin();
   const router = useRouter();
 
   const open = Boolean(anchorEl);
@@ -51,6 +51,15 @@ const Header = () => {
     logout();
   };
 
+  const avatarSrc = (() => {
+    const value = String(admin?.avatar || "").trim();
+    if (!value) return "/profile.png";
+    if (/^https?:\/\//i.test(value)) return value;
+    const base = String(process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+    if (!base) return value;
+    return `${base}${value.startsWith("/") ? "" : "/"}${value}`;
+  })();
+
   return (
     <header className="w-full h-[60px] bg-white shadow-md flex items-center justify-end px-5 sticky top-0 z-50">
       <Tooltip title="Notifications">
@@ -61,7 +70,7 @@ const Header = () => {
         </Badge>
       </Tooltip>
       <Button onClick={handleProfileClick}>
-        <Avatar src="/profile.png" />
+        <Avatar src={avatarSrc} />
       </Button>
       <Menu anchorEl={anchorEl} open={open} onClose={handleProfileClose}>
         <MenuItem onClick={handleProfileMenu}>

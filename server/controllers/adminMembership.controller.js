@@ -7,12 +7,35 @@ import {
   toggleMembershipUserStatus,
   updateMembershipUserPoints,
 } from "../services/membershipUser.service.js";
-import { adjustCoinsByAdmin } from "../services/coin.service.js";
 
 const toPositiveInt = (value, fallback = 0) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
   return Math.max(Math.floor(num), 0);
+};
+
+const POINTS_REQUEST_TTL_MS = 8_000;
+const recentPointsRequests = new Map();
+
+const cleanupRecentPointsRequests = (nowTs = Date.now()) => {
+  for (const [key, ts] of recentPointsRequests.entries()) {
+    if (nowTs - ts > POINTS_REQUEST_TTL_MS) {
+      recentPointsRequests.delete(key);
+    }
+  }
+};
+
+const buildPointsRequestKey = ({
+  requestId,
+  membershipUserId,
+  points,
+  actorId,
+}) => {
+  const safeRequestId = String(requestId || "").trim();
+  if (safeRequestId) {
+    return `request:${safeRequestId}`;
+  }
+  return `fallback:${String(actorId || "admin")}:${String(membershipUserId || "")}:${Number(points || 0)}`;
 };
 
 const sendBadRequest = (res, message) =>
@@ -102,55 +125,55 @@ export const extendAdminMembershipUser = async (req, res) => {
 };
 
 export const addPointsToAdminMembershipUser = async (req, res) => {
+  let dedupeKey = "";
   try {
     const membershipUserId = String(req.body?.membershipUserId || "").trim();
     const points = Number(req.body?.points);
-    const updatedBy = String(req.user?._id || req.user || "").trim() || null;
+    const requestId = String(req.body?.requestId || "").trim();
+    const actorId = String(req.userId || req.user?._id || req.user || "admin");
 
     if (!membershipUserId) {
       return sendBadRequest(res, "membershipUserId is required");
     }
-    if (!Number.isFinite(points) || points === 0 || !Number.isInteger(points)) {
-      return sendBadRequest(res, "points must be a non-zero whole number");
+    if (!Number.isFinite(points) || points === 0) {
+      return sendBadRequest(res, "points must be a non-zero number");
     }
+
+    const nowTs = Date.now();
+    cleanupRecentPointsRequests(nowTs);
+    dedupeKey = buildPointsRequestKey({
+      requestId,
+      membershipUserId,
+      points,
+      actorId,
+    });
+    const previousTs = recentPointsRequests.get(dedupeKey);
+    if (previousTs && nowTs - previousTs < POINTS_REQUEST_TTL_MS) {
+      const latestMembershipUser = await getMembershipUserById(membershipUserId);
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Points update already processed",
+        data: latestMembershipUser,
+      });
+    }
+    recentPointsRequests.set(dedupeKey, nowTs);
 
     const membershipUser = await updateMembershipUserPoints({
       membershipUserId,
       pointsDelta: points,
     });
-    const appliedDelta = Number(membershipUser?.appliedDelta || 0);
-    const rawTargetUser = membershipUser?.user;
-    const targetUserId =
-      (rawTargetUser && rawTargetUser._id && String(rawTargetUser._id).trim()) ||
-      (rawTargetUser && rawTargetUser.id && String(rawTargetUser.id).trim()) ||
-      (rawTargetUser && String(rawTargetUser).trim()) ||
-      null;
-    let coinUpdate = null;
-
-    if (appliedDelta !== 0 && targetUserId) {
-      coinUpdate = await adjustCoinsByAdmin({
-        userId: targetUserId,
-        coinsDelta: appliedDelta,
-        referenceId: `membership-points:${membershipUserId}:${Date.now()}`,
-        meta: {
-          membershipUserId,
-          updatedBy,
-          reason: "admin-membership-points-update",
-        },
-      });
-    }
 
     return res.status(200).json({
       error: false,
       success: true,
-      message:
-        appliedDelta > 0 ? "Points added successfully" : "Points updated successfully",
-      data: {
-        ...membershipUser,
-        coinUpdate,
-      },
+      message: points > 0 ? "Points added successfully" : "Points updated successfully",
+      data: membershipUser,
     });
   } catch (error) {
+    if (dedupeKey) {
+      recentPointsRequests.delete(dedupeKey);
+    }
     console.error("Error updating membership points:", error);
     return sendBadRequest(
       res,

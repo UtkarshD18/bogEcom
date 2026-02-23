@@ -3,7 +3,7 @@
 import { API_BASE_URL } from "@/utils/api";
 import { parseJsonSafely, getResponseErrorMessage } from "@/utils/safeJsonFetch";
 import Cookies from "js-cookie";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 
 const WishlistContext = createContext();
@@ -364,8 +364,11 @@ export const WishlistProvider = ({ children }) => {
     localStorage.removeItem("wishlist");
   };
 
+  const fetchWishlistRef = useRef(fetchWishlist);
+  fetchWishlistRef.current = fetchWishlist;
+
   useEffect(() => {
-    fetchWishlist();
+    fetchWishlistRef.current();
   }, []);
 
   return (

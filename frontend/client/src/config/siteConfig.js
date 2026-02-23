@@ -314,7 +314,7 @@ export const getProductsByCategory = (categorySlug) => {
   return featuredProducts.filter((p) => p.category === categorySlug);
 };
 
-export default {
+const siteData = {
   siteConfig,
   navigationConfig,
   homeSlides,
@@ -332,3 +332,5 @@ export default {
   getFeaturedProducts,
   getProductsByCategory,
 };
+
+export default siteData;

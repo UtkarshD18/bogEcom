@@ -11,40 +11,33 @@ import { useContext, useEffect, useState } from "react";
 import { GoArrowLeft } from "react-icons/go";
 const Verify = () => {
   const [otp, setOtp] = useState("");
-  const [userEmail, setUserEmail] = useState("");
+  const [userEmail] = useState(() => cookies.get("userEmail") || "");
   const [isLoading, setIsLoading] = useState(false);
 
   const context = useContext(MyContext);
 
   const [timeLeft, setTimeLeft] = useState(120);
-  const [expired, setExpired] = useState(false);
+  const expired = timeLeft <= 0;
 
   const router = useRouter();
 
   useEffect(() => {
-    const email = cookies.get("userEmail");
-    if (!email) {
-      context?.alertBox("error", "Email not found. Please register again.");
-      router.push("/register");
-      return;
-    }
-    setUserEmail(email);
-  }, []);
+    if (userEmail) return;
+    context?.alertBox("error", "Email not found. Please register again.");
+    router.push("/register");
+  }, [context, router, userEmail]);
 
   const handleChangeOTP = (value) => {
     setOtp(value);
   };
 
   useEffect(() => {
-    if (timeLeft === 0) {
-      setExpired(true);
-      return;
-    }
+    if (expired) return;
     const timer = setTimeout(() => {
-      setTimeLeft(timeLeft - 1);
+      setTimeLeft((prev) => Math.max(prev - 1, 0));
     }, 1000);
     return () => clearTimeout(timer);
-  }, [timeLeft]);
+  }, [expired]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -99,7 +92,6 @@ const Verify = () => {
           setIsLoading(false);
           context?.alertBox("success", res?.message);
           setTimeLeft(120);
-          setExpired(false);
           setOtp("");
         } else {
           setIsLoading(false);

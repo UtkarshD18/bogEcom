@@ -219,6 +219,58 @@ test("applyPurchaseOrderInventory is idempotent", async () => {
   assert.equal(updated.stock_quantity, 5);
 });
 
+test("applyPurchaseOrderInventory supports partial PO receipts", async () => {
+  const product = await ProductModel.create({
+    name: "Partial Receive Test",
+    slug: "test-product-9",
+    price: 100,
+    category: new mongoose.Types.ObjectId(),
+    stock: 0,
+    stock_quantity: 0,
+  });
+
+  const po = await PurchaseOrderModel.create({
+    items: [
+      {
+        productId: product._id,
+        productTitle: "Partial Receive Test",
+        quantity: 5,
+        price: 100,
+        subTotal: 500,
+      },
+    ],
+    subtotal: 500,
+    tax: 0,
+    shipping: 0,
+    total: 500,
+    status: "approved",
+  });
+
+  await applyPurchaseOrderInventory(po, {
+    allowPartialReceipts: true,
+    receivedItems: [{ productId: product._id, receivedQuantity: 2 }],
+  });
+
+  let updatedProduct = await ProductModel.findById(product._id).lean();
+  let updatedPo = await PurchaseOrderModel.findById(po._id).lean();
+  assert.equal(updatedProduct.stock_quantity, 2);
+  assert.equal(updatedPo.items[0].receivedQuantity, 2);
+  assert.equal(updatedPo.items[0].qty_received, 2);
+  assert.equal(updatedPo.inventory_applied, false);
+
+  await applyPurchaseOrderInventory(po, {
+    allowPartialReceipts: true,
+    receivedItems: [{ productId: product._id, receivedQuantity: 4 }],
+  });
+
+  updatedProduct = await ProductModel.findById(product._id).lean();
+  updatedPo = await PurchaseOrderModel.findById(po._id).lean();
+  assert.equal(updatedProduct.stock_quantity, 5);
+  assert.equal(updatedPo.items[0].receivedQuantity, 5);
+  assert.equal(updatedPo.items[0].qty_received, 5);
+  assert.equal(updatedPo.inventory_applied, true);
+});
+
 test("reserveInventory reserves variant stock", async () => {
   const product = await ProductModel.create({
     name: "Variant Product",

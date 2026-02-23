@@ -24,6 +24,24 @@ const getFrontendBaseUrl = () => {
   return first.replace(/\/+$/, "") || "https://healthyonegram.com";
 };
 
+const normalizeOrigin = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return "";
+  }
+};
+
+const getAllowedNotificationOrigins = () => {
+  const raw = process.env.CLIENT_URL || "";
+  return String(raw)
+    .split(",")
+    .map((entry) => normalizeOrigin(entry))
+    .filter(Boolean);
+};
+
 /**
  * Notification Controller
  *
@@ -47,10 +65,14 @@ const getFrontendBaseUrl = () => {
  */
 export const registerToken = async (req, res) => {
   try {
-    const { token, platform } = req.body;
+    const { token, platform, origin } = req.body;
 
     const resolvedUserId = req.user || null;
     const resolvedUserType = resolvedUserId ? "user" : "guest";
+    const resolvedOrigin =
+      normalizeOrigin(origin) ||
+      normalizeOrigin(req.headers.origin) ||
+      normalizeOrigin(req.headers.referer);
 
     // Validate token
     if (!token || typeof token !== "string" || token.length < 50) {
@@ -78,6 +100,7 @@ export const registerToken = async (req, res) => {
         userType: resolvedUserType,
         userId: resolvedUserId,
         platform: platform || "web",
+        origin: resolvedOrigin || "",
         isActive: true,
         failureCount: 0,
         lastUsedAt: new Date(),
@@ -92,6 +115,7 @@ export const registerToken = async (req, res) => {
       data: {
         id: tokenDoc._id,
         userType: tokenDoc.userType,
+        origin: tokenDoc.origin || "",
       },
     });
   } catch (error) {
@@ -172,11 +196,13 @@ export const sendOfferNotification = async (coupon, options = {}) => {
   }
 
   try {
+    const allowedOrigins = getAllowedNotificationOrigins();
+
     // Get all active tokens (both guests and users for offers)
     const [guestTokens, userTokens] = await Promise.all([
-      NotificationTokenModel.getGuestTokens(),
+      NotificationTokenModel.getGuestTokens({ origins: allowedOrigins }),
       options.includeUsers !== false
-        ? NotificationTokenModel.getUserTokens()
+        ? NotificationTokenModel.getUserTokens({ origins: allowedOrigins })
         : Promise.resolve([]),
     ]);
 
@@ -225,13 +251,14 @@ export const sendOfferNotification = async (coupon, options = {}) => {
         `Use code ${coupon.code} to get ${discountText} on your order!`,
     };
 
+    const frontendBase = getFrontendBaseUrl();
     const data = {
       type: "offer",
       couponCode: coupon.code,
       discountType: coupon.discountType,
       discountValue: String(coupon.discountValue),
       expiresAt: coupon.endDate?.toISOString() || "",
-      url: "/",
+      url: frontendBase || "/",
     };
 
     // Send in batches of 500 (FCM limit)
@@ -252,7 +279,7 @@ export const sendOfferNotification = async (coupon, options = {}) => {
           data,
           webpush: {
             fcmOptions: {
-              link: getFrontendBaseUrl(),
+              link: frontendBase || "/",
             },
           },
         });
@@ -362,7 +389,10 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
     }
 
     // Get tokens for this specific user
-    const userTokens = await NotificationTokenModel.getTokensByUserId(userId);
+    const allowedOrigins = getAllowedNotificationOrigins();
+    const userTokens = await NotificationTokenModel.getTokensByUserId(userId, {
+      origins: allowedOrigins,
+    });
 
     if (userTokens.length === 0) {
       debugLog(`No tokens for user ${userId}`);
@@ -391,11 +421,15 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
       body: statusMessages[newStatus] || `Order status updated to ${newStatus}`,
     };
 
+    const frontendBase = getFrontendBaseUrl();
+    const orderLink = frontendBase
+      ? `${frontendBase}/orders/${order._id}`
+      : `/orders/${order._id}`;
     const data = {
       type: "order_update",
       orderId: order._id.toString(),
       orderStatus: newStatus,
-      url: `/orders/${order._id}`,
+      url: orderLink,
     };
 
     // Send to all user tokens
@@ -405,7 +439,7 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
       data,
       webpush: {
         fcmOptions: {
-          link: `${getFrontendBaseUrl()}/orders/${order._id}`,
+          link: orderLink,
         },
       },
     });
@@ -464,16 +498,25 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
  */
 export const getNotificationStats = async (req, res) => {
   try {
+    const allowedOrigins = getAllowedNotificationOrigins();
+    const originFilter =
+      allowedOrigins.length > 0 ? { origin: { $in: allowedOrigins } } : {};
+
     const [guestCount, userCount, inactiveCount] = await Promise.all([
       NotificationTokenModel.countDocuments({
+        ...originFilter,
         userType: "guest",
         isActive: true,
       }),
       NotificationTokenModel.countDocuments({
+        ...originFilter,
         userType: "user",
         isActive: true,
       }),
-      NotificationTokenModel.countDocuments({ isActive: false }),
+      NotificationTokenModel.countDocuments({
+        ...originFilter,
+        isActive: false,
+      }),
     ]);
 
     res.status(200).json({
@@ -485,6 +528,7 @@ export const getNotificationStats = async (req, res) => {
         userTokens: userCount,
         inactiveTokens: inactiveCount,
         totalActive: guestCount + userCount,
+        allowedOrigins,
       },
     });
   } catch (error) {

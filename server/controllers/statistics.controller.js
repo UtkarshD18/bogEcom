@@ -5,7 +5,8 @@ import UserModel from "../models/user.model.js";
 const getEffectiveAmountExpression = {
   $cond: [{ $gt: ["$finalAmount", 0] }, "$finalAmount", "$totalAmt"],
 };
-const DELIVERED_ORDER_FILTER = { order_status: "delivered" };
+const DASHBOARD_TIMEZONE = process.env.DASHBOARD_TIMEZONE || "Asia/Kolkata";
+const ACTIVE_ORDER_FILTER = { order_status: { $ne: "cancelled" } };
 
 /**
  * Statistics Controller
@@ -21,7 +22,6 @@ const DELIVERED_ORDER_FILTER = { order_status: "delivered" };
 export const getDashboardStats = async (req, res) => {
   try {
     const { period = "month" } = req.query; // month, quarter, year, allTime
-    const countableOrderFilter = DELIVERED_ORDER_FILTER;
 
     // Calculate date range based on period
     let startDate = new Date();
@@ -47,17 +47,16 @@ export const getDashboardStats = async (req, res) => {
 
     // Fetch all stats in parallel
     const [
-      totalOrders,
       totalRevenue,
       totalUsers,
       totalProducts,
       averageOrderValue,
       ordersInPeriod,
       lowStockAggregation,
+      monthlySales,
     ] = await Promise.all([
-      OrderModel.countDocuments(countableOrderFilter),
       OrderModel.aggregate([
-        { $match: countableOrderFilter },
+        { $match: ACTIVE_ORDER_FILTER },
         { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
           $group: {
@@ -69,7 +68,7 @@ export const getDashboardStats = async (req, res) => {
       UserModel.countDocuments(),
       ProductModel.countDocuments(),
       OrderModel.aggregate([
-        { $match: countableOrderFilter },
+        { $match: ACTIVE_ORDER_FILTER },
         { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
           $group: {
@@ -79,7 +78,7 @@ export const getDashboardStats = async (req, res) => {
         },
       ]),
       OrderModel.countDocuments({
-        ...countableOrderFilter,
+        ...ACTIVE_ORDER_FILTER,
         createdAt: { $gte: startDate },
       }),
       ProductModel.aggregate([
@@ -154,26 +153,44 @@ export const getDashboardStats = async (req, res) => {
         { $match: { lowStockFlag: true } },
         { $count: "lowStockCount" },
       ]),
+      OrderModel.aggregate([
+        { $match: ACTIVE_ORDER_FILTER },
+        {
+          $addFields: {
+            effectiveAmount: getEffectiveAmountExpression,
+            effectiveCreatedAt: { $ifNull: ["$createdAt", "$updatedAt"] },
+          },
+        },
+        { $match: { effectiveCreatedAt: { $type: "date" } } },
+        {
+          $group: {
+            _id: {
+              month: {
+                $month: {
+                  date: "$effectiveCreatedAt",
+                  timezone: DASHBOARD_TIMEZONE,
+                },
+              },
+              year: {
+                $year: {
+                  date: "$effectiveCreatedAt",
+                  timezone: DASHBOARD_TIMEZONE,
+                },
+              },
+            },
+            total: { $sum: "$effectiveAmount" },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } },
+      ]),
     ]);
 
     const lowStockCount = lowStockAggregation?.[0]?.lowStockCount || 0;
-
-    // Monthly sales aggregation for dashboard graph
-    const monthlySales = await OrderModel.aggregate([
-      { $match: countableOrderFilter },
-      { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
-      {
-        $group: {
-          _id: {
-            month: { $month: "$createdAt" },
-            year: { $year: "$createdAt" },
-          },
-          total: { $sum: "$effectiveAmount" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.year": 1, "_id.month": 1 } },
-    ]);
+    const totalOrders = monthlySales.reduce(
+      (sum, month) => sum + Number(month?.count || 0),
+      0,
+    );
 
     res.status(200).json({
       error: false,

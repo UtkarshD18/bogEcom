@@ -32,19 +32,17 @@ export const useOrderUpdates = (
 
   const [order, setOrder] = useState(null);
   const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(enabled && (orderId || userId)));
   const [error, setError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
 
   // Single order listener
   useEffect(() => {
     if (!enabled || !orderId) {
-      setLoading(false);
       return;
     }
 
     if (!firebaseApp) {
-      setLoading(false);
       return;
     }
 
@@ -81,8 +79,10 @@ export const useOrderUpdates = (
       );
     } catch (err) {
       console.error("[Firestore] Setup error:", err);
-      setError(err.message);
-      setLoading(false);
+      Promise.resolve().then(() => {
+        setError(err.message);
+        setLoading(false);
+      });
     }
 
     return () => {
@@ -100,7 +100,6 @@ export const useOrderUpdates = (
     }
 
     if (!firebaseApp) {
-      setLoading(false);
       return;
     }
 
@@ -139,8 +138,10 @@ export const useOrderUpdates = (
       );
     } catch (err) {
       console.error("[Firestore] Setup error:", err);
-      setError(err.message);
-      setLoading(false);
+      Promise.resolve().then(() => {
+        setError(err.message);
+        setLoading(false);
+      });
     }
 
     return () => {

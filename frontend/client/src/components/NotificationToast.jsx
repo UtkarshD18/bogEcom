@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import {
   MdClose,
   MdLocalOffer,
@@ -19,26 +19,18 @@ import {
  * @param {Number} props.duration - Auto-dismiss duration (ms), 0 to disable
  */
 const NotificationToast = ({ message, onDismiss, duration = 5000 }) => {
-  const [isVisible, setIsVisible] = useState(false);
+  const handleDismiss = useCallback(() => {
+    onDismiss?.();
+  }, [onDismiss]);
 
   useEffect(() => {
-    if (message) {
-      setIsVisible(true);
+    if (!message || duration <= 0) return;
+    const timer = setTimeout(() => {
+      handleDismiss();
+    }, duration);
 
-      if (duration > 0) {
-        const timer = setTimeout(() => {
-          handleDismiss();
-        }, duration);
-
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [message, duration]);
-
-  const handleDismiss = () => {
-    setIsVisible(false);
-    setTimeout(() => onDismiss?.(), 300);
-  };
+    return () => clearTimeout(timer);
+  }, [duration, handleDismiss, message]);
 
   const handleClick = () => {
     if (message?.data?.url) {
@@ -47,7 +39,7 @@ const NotificationToast = ({ message, onDismiss, duration = 5000 }) => {
     handleDismiss();
   };
 
-  if (!message || !isVisible) return null;
+  if (!message) return null;
 
   const isOffer = message.data?.type === "offer";
   const isOrder = message.data?.type === "order_update";
@@ -65,9 +57,7 @@ const NotificationToast = ({ message, onDismiss, duration = 5000 }) => {
 
   return (
     <div
-      className={`fixed top-4 right-4 z-[10000] max-w-sm w-full transition-all duration-300 ${
-        isVisible ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"
-      }`}
+      className="fixed top-4 right-4 z-[10000] max-w-sm w-full transition-all duration-300 translate-x-0 opacity-100"
     >
       <div
         onClick={handleClick}

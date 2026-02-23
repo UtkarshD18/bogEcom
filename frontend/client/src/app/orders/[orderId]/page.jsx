@@ -38,9 +38,9 @@ import { io } from "socket.io-client";
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
-const SOCKET_URL = API_BASE_URL.endsWith("/api")
-  ? API_BASE_URL.slice(0, -4)
-  : API_BASE_URL;
+const SOCKET_BASE_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.replace(/\/api\/?$/, "")
+  : API_BASE_URL.replace(/\/+$/, "");
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: MdAccessTime },
@@ -51,58 +51,6 @@ const STATUS_STEPS = [
   { key: "out_for_delivery", label: "Out for Delivery", icon: MdLocalShipping },
   { key: "delivered", label: "Delivered", icon: MdCheckCircle },
 ];
-
-const ORDER_ID_REGEX = /^[a-f\d]{24}$/i;
-const getAuthToken = () => {
-  if (typeof window === "undefined") return cookies.get("accessToken") || "";
-  return (
-    cookies.get("accessToken") ||
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("token") ||
-    ""
-  );
-};
-
-const normalizeOrderIdValue = (value) =>
-  String(value || "").trim().toUpperCase();
-
-const resolveOrderRouteId = (record) =>
-  record?._id || record?.id || record?.orderId || null;
-
-const resolveOrderDisplayId = (record) => {
-  const explicitId =
-    record?.displayOrderId ||
-    record?.orderNumber ||
-    record?.order_id ||
-    "";
-  if (String(explicitId || "").trim()) {
-    return String(explicitId).trim().toUpperCase();
-  }
-
-  const routeId = String(resolveOrderRouteId(record) || "").trim();
-  if (!routeId) return "N/A";
-  return `BOG-${routeId.slice(-8).toUpperCase()}`;
-};
-
-const isMatchingOrderIdentifier = (record, identifier) => {
-  const wanted = normalizeOrderIdValue(identifier);
-  if (!wanted) return false;
-
-  const routeId = resolveOrderRouteId(record);
-  const displayId = resolveOrderDisplayId(record);
-  const candidates = [
-    routeId,
-    displayId,
-    record?.displayOrderId,
-    record?.orderNumber,
-    record?.order_id,
-    record?.orderId,
-  ]
-    .map((value) => normalizeOrderIdValue(value))
-    .filter(Boolean);
-
-  return candidates.includes(wanted);
-};
 
 const normalizeStatus = (status) => {
   if (!status) return "pending";
@@ -168,9 +116,6 @@ const OrderDetailsPage = () => {
     isRajasthan: isRajasthanDelivery,
   });
 
-  const canonicalOrderId = resolveOrderRouteId(order);
-  const displayOrderId = resolveOrderDisplayId(order);
-
   // Fetch order details
   useEffect(() => {
     const fetchOrder = async () => {
@@ -180,97 +125,38 @@ const OrderDetailsPage = () => {
         return;
       }
 
-      const token = getAuthToken();
+      const token = cookies.get("accessToken");
       if (!token) {
         router.push("/login?redirect=/orders/" + orderId);
         return;
       }
 
       try {
-        const requestOrderByUrl = async (url) => {
-          const response = await fetch(url, {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            credentials: "include",
-          });
-          let data = null;
-          try {
-            data = await response.json();
-          } catch {
-            data = null;
-          }
-          return { response, data };
-        };
+        const response = await fetch(`${API_URL}/orders/${orderId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+        });
 
-        const fetchSingleOrder = async () => {
-          const userScoped = await requestOrderByUrl(
-            `${API_URL}/orders/user/order/${orderId}`,
-          );
-          if (userScoped?.response?.status !== 404) {
-            return userScoped;
-          }
-          return requestOrderByUrl(`${API_URL}/orders/${orderId}`);
-        };
+        const data = await response.json();
 
-        let resolvedOrder = null;
-
-        if (ORDER_ID_REGEX.test(String(orderId))) {
-          const { response, data } = await fetchSingleOrder();
-
-          if (response.status === 401) {
-            router.push("/login?redirect=/orders/" + orderId);
-            return;
-          }
-
-          if (response.status === 403) {
-            setError("You are not authorized to view this order");
-            setLoading(false);
-            return;
-          }
-
-          if (data?.success && data?.data) {
-            resolvedOrder = data.data;
-          } else if (response.status >= 400 && response.status < 500) {
-            setError(data?.message || "Failed to fetch order");
-          }
+        if (response.status === 401) {
+          router.push("/login?redirect=/orders/" + orderId);
+          return;
         }
 
-        if (!resolvedOrder) {
-          const listResponse = await fetch(`${API_URL}/orders/my-orders`, {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            credentials: "include",
-          });
-          const listData = await listResponse.json();
-
-          if (listResponse.status === 401) {
-            router.push("/login?redirect=/orders/" + orderId);
-            return;
-          }
-
-          const orders = Array.isArray(listData?.data) ? listData.data : [];
-          const matchedOrder = orders.find((item) =>
-            isMatchingOrderIdentifier(item, orderId),
-          );
-
-          if (matchedOrder) {
-            resolvedOrder = matchedOrder;
-            const matchedRouteId = resolveOrderRouteId(matchedOrder);
-            if (matchedRouteId && String(matchedRouteId) !== String(orderId)) {
-              router.replace(`/orders/${matchedRouteId}`);
-            }
-          }
+        if (response.status === 403) {
+          setError("You are not authorized to view this order");
+          setLoading(false);
+          return;
         }
 
-        if (resolvedOrder) {
-          setOrder(resolvedOrder);
-          setError(null);
+        if (data.success) {
+          setOrder(data.data);
         } else {
-          setError("Failed to fetch order");
+          setError(data.message || "Failed to fetch order");
         }
       } catch (err) {
         console.error("Error fetching order:", err);
@@ -285,10 +171,10 @@ const OrderDetailsPage = () => {
 
   useEffect(() => {
     if (!orderId) return;
-    const token = getAuthToken();
+    const token = cookies.get("accessToken");
     if (!token) return;
 
-    const socket = io(SOCKET_URL, {
+    const socket = io(SOCKET_BASE_URL, {
       withCredentials: true,
       transports: ["websocket"],
     });
@@ -319,9 +205,46 @@ const OrderDetailsPage = () => {
   }, [orderId]);
 
   useEffect(() => {
+    if (!orderId) return undefined;
+
+    const token = cookies.get("accessToken");
+    if (!token) return undefined;
+
+    let cancelled = false;
+
+    const pollOrder = async () => {
+      try {
+        const response = await fetch(`${API_URL}/orders/${orderId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!cancelled && data?.success && data?.data) {
+          setOrder(data.data);
+        }
+      } catch {
+        // Poll fallback is best-effort.
+      }
+    };
+
+    const intervalId = setInterval(pollOrder, 45000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [orderId]);
+
+  useEffect(() => {
     const fetchMyOrderReviews = async () => {
       if (!orderId) return;
-      const token = getAuthToken();
+      const token = cookies.get("accessToken");
       if (!token) return;
 
       try {
@@ -490,25 +413,14 @@ const OrderDetailsPage = () => {
   const downloadFile = async (url, filename, key) => {
     try {
       setDownloading((prev) => ({ ...prev, [key]: true }));
-      const token = getAuthToken();
+      const token = cookies.get("accessToken");
       const response = await fetch(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         credentials: "include",
       });
 
       if (!response.ok) {
-        let message = "Download failed";
-        try {
-          const errorPayload = await response.json();
-          message =
-            errorPayload?.message ||
-            errorPayload?.error?.message ||
-            errorPayload?.error ||
-            message;
-        } catch {
-          // Ignore non-JSON error payloads.
-        }
-        throw new Error(message);
+        throw new Error("Download failed");
       }
 
       const blob = await response.blob();
@@ -521,17 +433,16 @@ const OrderDetailsPage = () => {
       link.remove();
       window.URL.revokeObjectURL(objectUrl);
     } catch (downloadError) {
-      toast.error(downloadError?.message || "Failed to download file");
+      setError(downloadError.message || "Failed to download file");
     } finally {
       setDownloading((prev) => ({ ...prev, [key]: false }));
     }
   };
 
   const handleDownloadInvoice = () => {
-    if (!canonicalOrderId) return;
     downloadFile(
-      `${API_URL}/orders/${canonicalOrderId}/invoice`,
-      `invoice-${displayOrderId || canonicalOrderId}.pdf`,
+      `${API_URL}/orders/${order._id}/invoice`,
+      `invoice-${order._id}.pdf`,
       "invoice",
     );
   };
@@ -643,31 +554,58 @@ const OrderDetailsPage = () => {
         (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
       )
     : [];
-  const orderTotals = calculateOrderTotals(
+  const fallbackTotals = calculateOrderTotals(
     buildSavedOrderCalculationInput(order, { payableShipping: 0 }),
   );
-  const normalizedOrderStatus = normalizeStatus(order?.order_status);
-  const hasDeliveredTimelineStatus = Array.isArray(order?.statusTimeline)
-    ? order.statusTimeline.some((entry) => {
-        const normalizedTimelineStatus = normalizeStatus(entry?.status);
-        return (
-          normalizedTimelineStatus === "delivered" ||
-          normalizedTimelineStatus === "completed"
-        );
-      })
-    : false;
-  const isDeliveredLikeOrder =
-    ["delivered", "completed"].includes(normalizedOrderStatus) ||
-    hasDeliveredTimelineStatus;
-  const hasInvoiceHint = Boolean(
-    order?.isInvoiceGenerated ||
-      order?.invoiceUrl ||
-      order?.invoicePath ||
-      order?.invoiceGeneratedAt,
-  );
-  const canDownloadInvoice = hasInvoiceHint || isDeliveredLikeOrder;
+  const pricing = order?.pricing || {};
+  const couponCodeValue = order?.couponCode || pricing?.couponCode || null;
+  const influencerCodeValue =
+    order?.influencerCode || pricing?.influencerCode || null;
+  const orderTotals = {
+    subtotal: Number(pricing.subtotal ?? fallbackTotals.subtotal ?? 0),
+    totalDiscount: Number(
+      pricing.totalDiscount ?? fallbackTotals.totalDiscount ?? 0,
+    ),
+    coinRedemptionAmount: Number(
+      pricing.coinRedemptionAmount ??
+        fallbackTotals.coinRedemptionAmount ??
+        order?.coinRedemption?.amount ??
+        0,
+    ),
+    tax: Number(pricing.tax ?? fallbackTotals.tax ?? 0),
+    shipping: Number(
+      pricing.shipping ?? order?.shipping ?? fallbackTotals.shipping ?? 0,
+    ),
+    total: Number(
+      pricing.total ??
+        order?.finalAmount ??
+        order?.totalAmt ??
+        fallbackTotals.total ??
+        0,
+    ),
+  };
+  const canDownloadInvoice =
+    order?.order_status !== "cancelled" &&
+    (order?.payment_status === "paid" ||
+      normalizeStatus(order?.order_status) === "accepted");
   const isReviewEligibleOrder = (() => {
-    return isDeliveredLikeOrder;
+    const normalizedOrderStatus = normalizeStatus(order?.order_status);
+    if (
+      normalizedOrderStatus === "delivered" ||
+      normalizedOrderStatus === "completed"
+    ) {
+      return true;
+    }
+
+    return Array.isArray(order?.statusTimeline)
+      ? order.statusTimeline.some((entry) => {
+          const normalizedTimelineStatus = normalizeStatus(entry?.status);
+          return (
+            normalizedTimelineStatus === "delivered" ||
+            normalizedTimelineStatus === "completed"
+          );
+        })
+      : false;
   })();
 
   const getItemProductId = (item) => {
@@ -755,7 +693,7 @@ const OrderDetailsPage = () => {
       return;
     }
 
-    const token = getAuthToken();
+    const token = cookies.get("accessToken");
     if (!token) {
       toast.error("Please login again");
       return;
@@ -825,7 +763,7 @@ const OrderDetailsPage = () => {
                 <p className="text-gray-500 mt-1">
                   Order ID:{" "}
                   <span className="font-mono font-medium">
-                    {displayOrderId}
+                    #{order._id?.slice(-8).toUpperCase()}
                   </span>
                 </p>
                 <p className="text-gray-500 text-sm">
@@ -1078,7 +1016,7 @@ const OrderDetailsPage = () => {
               {orderTotals.totalDiscount > 0 && (
                 <div className="flex justify-between text-primary">
                   <span>
-                    Discount {order.couponCode && `(${order.couponCode})`}
+                    Discount {couponCodeValue ? `(Coupon ${couponCodeValue})` : influencerCodeValue ? `(Influencer ${influencerCodeValue})` : ""}
                   </span>
                   <span>-₹{orderTotals.totalDiscount.toFixed(2)}</span>
                 </div>
@@ -1101,17 +1039,17 @@ const OrderDetailsPage = () => {
                   <MdLocalShipping />
                   Shipping
                 </span>
-                {hasDeliveryState ? (
+                {orderTotals.shipping > 0 ? (
+                  <span>₹{orderTotals.shipping.toFixed(2)}</span>
+                ) : (
                   <span className="text-primary font-medium flex items-center gap-2">
-                    {displayShippingCharge > 0 && (
+                    {hasDeliveryState && displayShippingCharge > 0 && (
                       <span className="line-through text-gray-500 font-normal">
                         ₹{displayShippingCharge.toFixed(2)}
                       </span>
                     )}
-                    <span>₹0.00</span>
+                    <span>FREE</span>
                   </span>
-                ) : (
-                  <span className="text-gray-500">--</span>
                 )}
               </div>
               <div className="border-t border-gray-200 pt-3 flex justify-between font-bold text-gray-800">
@@ -1231,22 +1169,24 @@ const OrderDetailsPage = () => {
 
           {/* Actions */}
           <div className="flex flex-wrap gap-4 justify-center">
-            <Button
-              onClick={handleDownloadInvoice}
-              disabled={!canDownloadInvoice || downloading.invoice}
-              variant="contained"
-              sx={{
-                backgroundColor: "#0f766e",
-                color: "white",
-                padding: "12px 24px",
-                borderRadius: "12px",
-                fontWeight: 600,
-                textTransform: "none",
-                "&:hover": { backgroundColor: "#115e59" },
-              }}
-            >
-              {downloading.invoice ? "Downloading..." : "Download Invoice"}
-            </Button>
+            {canDownloadInvoice && (
+              <Button
+                onClick={handleDownloadInvoice}
+                disabled={downloading.invoice}
+                variant="contained"
+                sx={{
+                  backgroundColor: "#0f766e",
+                  color: "white",
+                  padding: "12px 24px",
+                  borderRadius: "12px",
+                  fontWeight: 600,
+                  textTransform: "none",
+                  "&:hover": { backgroundColor: "#115e59" },
+                }}
+              >
+                {downloading.invoice ? "Downloading..." : "Download Invoice"}
+              </Button>
+            )}
             <Link href="/my-orders">
               <Button
                 variant="outlined"

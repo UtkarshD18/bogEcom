@@ -34,7 +34,6 @@ export default function MembershipCTA() {
   const router = useRouter();
   const themeContext = useContext(MyContext);
   const flavor = themeContext?.flavor || FLAVORS.creamy;
-  const [mounted, setMounted] = useState(false);
 
   const [title, setTitle] = useState("Join Our Buy One Gram Club");
   const [subtitle, setSubtitle] = useState(
@@ -46,7 +45,6 @@ export default function MembershipCTA() {
   const [ctaButtonLink, setCtaButtonLink] = useState("/membership");
 
   useEffect(() => {
-    setMounted(true);
     fetchDataFromApi("/api/membership/home-content/public").then((res) => {
       if (res?.success && res.data) {
         const d = res.data;
@@ -59,8 +57,6 @@ export default function MembershipCTA() {
       }
     });
   }, []);
-
-  if (!mounted) return null;
 
   return (
     <section

@@ -100,6 +100,7 @@ settingsSchema.statics.defaultSettings = [
   {
     key: "shippingSettings",
     value: {
+      forceFreeShipping: true,
       freeShippingThreshold: 500,
       standardShippingCost: 50,
       expressShippingCost: 100,
@@ -159,9 +160,13 @@ settingsSchema.statics.defaultSettings = [
     value: {
       name: "BuyOneGram",
       email: "support@buyonegram.com",
-      phone: "+91 9876541234",
+      phone: "+919460838106",
       address: "Sitapura Industrial Area, Jaipur, Rajasthan 302019",
       gstNumber: "",
+      stateGstCode: "08",
+      cinNumber: "",
+      msmeNumber: "",
+      fssaiNumber: "",
       currency: "INR",
       currencySymbol: "₹",
     },

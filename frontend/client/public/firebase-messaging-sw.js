@@ -36,13 +36,26 @@ if (isConfigured) {
   messaging.onBackgroundMessage((payload) => {
     console.log("[SW] Background message received:", payload);
 
+    const fallbackUrl = self.location?.origin || "/";
+    const resolvedUrl = (() => {
+      const incomingUrl = payload?.data?.url || payload?.fcmOptions?.link || "/";
+      try {
+        return new URL(String(incomingUrl || "/"), fallbackUrl).href;
+      } catch {
+        return fallbackUrl;
+      }
+    })();
+
     const notificationTitle = payload.notification?.title || "New Notification";
     const notificationOptions = {
       body: payload.notification?.body || "",
       icon: "/logo192.png",
       badge: "/logo192.png",
       tag: payload.data?.type || "default",
-      data: payload.data || {},
+      data: {
+        ...(payload.data || {}),
+        url: resolvedUrl,
+      },
       actions: [
         {
           action: "open",
@@ -59,25 +72,69 @@ if (isConfigured) {
   console.warn("[SW] Firebase config not injected. Push notifications disabled.");
 }
 
+const resolveNotificationUrl = (rawUrl) => {
+  const fallback = self.location?.origin || "/";
+  const value = String(rawUrl || "").trim();
+  if (!value) return fallback;
+  try {
+    return new URL(value, fallback).href;
+  } catch {
+    return fallback;
+  }
+};
+
+const matchesClientTarget = (clientUrl, targetUrl) => {
+  try {
+    const clientParsed = new URL(clientUrl);
+    const targetParsed = new URL(targetUrl);
+    return (
+      clientParsed.origin === targetParsed.origin &&
+      clientParsed.pathname === targetParsed.pathname
+    );
+  } catch {
+    return false;
+  }
+};
+
 // Handle notification click
 self.addEventListener("notificationclick", (event) => {
   console.log("[SW] Notification clicked:", event);
 
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url || "/";
+  const urlToOpen = resolveNotificationUrl(event.notification.data?.url || "/");
 
   event.waitUntil(
     clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
-        // Check if there's already a window open
+        // Focus same page if already open.
         for (const client of windowClients) {
-          if (client.url.includes(urlToOpen) && "focus" in client) {
+          if ("focus" in client && matchesClientTarget(client.url, urlToOpen)) {
             return client.focus();
           }
         }
-        // Open new window if none found
+
+        // Otherwise focus any same-origin client before opening a new one.
+        for (const client of windowClients) {
+          if ("focus" in client) {
+            try {
+              const parsed = new URL(client.url);
+              if (parsed.origin === new URL(urlToOpen).origin) {
+                return client.focus().then(() => {
+                  if ("navigate" in client) {
+                    return client.navigate(urlToOpen);
+                  }
+                  return undefined;
+                });
+              }
+            } catch {
+              // Ignore parse errors and continue.
+            }
+          }
+        }
+
+        // Open new window if none found.
         if (clients.openWindow) {
           return clients.openWindow(urlToOpen);
         }

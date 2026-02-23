@@ -18,7 +18,7 @@ import { MdInfo, MdSave } from "react-icons/md";
 
 /**
  * Admin CMS - Cancellation Policy Editor
- * Allows admin to edit the cancellation and return policy
+ * Allows admin to edit the cancellation policy
  */
 const CancellationPolicyAdmin = () => {
   const { token, isAuthenticated, loading } = useAdmin();
@@ -144,10 +144,10 @@ const CancellationPolicyAdmin = () => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-[18px] text-gray-700 font-[600] mb-1">
-            Cancellation & Return Policy
+            Cancellation Policy
           </h2>
           <p className="text-sm text-gray-500">
-            Manage the cancellation and return policy content
+            Manage the cancellation policy content
           </p>
         </div>
         <div className="flex gap-2">
@@ -180,9 +180,8 @@ const CancellationPolicyAdmin = () => {
             Information
           </h3>
           <p className="text-sm text-gray-600">
-            This content will be displayed on the public cancellation & return
-            policy page. Customers can access it from the footer and legal
-            sections.
+            This content will be displayed on the public cancellation policy
+            page. Customers can access it from the footer and legal sections.
           </p>
         </div>
       </div>

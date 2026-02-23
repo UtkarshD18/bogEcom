@@ -130,7 +130,7 @@ const Search = ({
       setFadeKey((prev) => prev + 1);
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [placeholders.length]);
 
   return (
     <div
@@ -245,7 +245,7 @@ const Search = ({
                   onClick={handleSubmit}
                   className="w-full py-3 text-center text-[var(--flavor-color)] hover:bg-[var(--flavor-glass)] font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
                 >
-                  View all results for "{searchTerm}"
+                  View all results for &quot;{searchTerm}&quot;
                   <IoSearchOutline size={14} />
                 </button>
               </div>

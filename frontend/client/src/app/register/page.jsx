@@ -10,7 +10,7 @@ import { GoogleAuthProvider, getAuth, signInWithPopup } from "firebase/auth";
 import cookies from "js-cookie";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 
@@ -20,8 +20,6 @@ const GOOGLE_POPUP_CANCEL_CODES = new Set([
 ]);
 
 const Register = () => {
-  const [auth, setAuth] = useState(null);
-  const [provider, setProvider] = useState(null);
   const [isShowPassword, setIsShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -31,18 +29,17 @@ const Register = () => {
     password: "",
   });
 
-  // Initialize Firebase auth
-  useEffect(() => {
-    if (firebaseApp) {
-      try {
-        setAuth(getAuth(firebaseApp));
-        setProvider(new GoogleAuthProvider());
-        console.log("✓ Firebase auth initialized in register page");
-      } catch (error) {
-        console.error("Firebase auth initialization error:", error);
-      }
+  const auth = useMemo(() => {
+    if (!firebaseApp) return null;
+    try {
+      return getAuth(firebaseApp);
+    } catch (error) {
+      console.error("Firebase auth initialization error:", error);
+      return null;
     }
   }, []);
+
+  const provider = useMemo(() => new GoogleAuthProvider(), []);
 
   const signUpWithGoogle = async () => {
     if (!auth || !provider) {

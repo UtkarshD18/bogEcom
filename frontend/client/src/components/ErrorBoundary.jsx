@@ -67,8 +67,8 @@ class ErrorBoundary extends Component {
             Something went wrong
           </h2>
           <p className="text-gray-600 mb-6 text-center max-w-md">
-            We're sorry, but something unexpected happened. Please try again or
-            refresh the page.
+            We&apos;re sorry, but something unexpected happened. Please try
+            again or refresh the page.
           </p>
           <div className="flex gap-4">
             <Button

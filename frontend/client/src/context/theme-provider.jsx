@@ -32,13 +32,10 @@ const normalizeTheme = (value) => {
 const ThemeContext = createContext(null);
 
 export const ThemeProvider = ({ children }) => {
-  const [theme, setThemeState] = useState(DEFAULT_THEME);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedTheme = normalizeTheme(localStorage.getItem(STORAGE_KEY));
-    setThemeState(storedTheme);
-  }, []);
+  const [theme, setThemeState] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_THEME;
+    return normalizeTheme(localStorage.getItem(STORAGE_KEY));
+  });
 
   useEffect(() => {
     if (typeof document === "undefined") return;

@@ -126,7 +126,7 @@ export const setAffiliateFromCoupon = (couponCode, source = "influencer") => {
   });
 };
 
-export default {
+const affiliateTracking = {
   getAffiliateFromURL,
   saveAffiliateData,
   getStoredAffiliateData,
@@ -134,3 +134,5 @@ export default {
   initAffiliateTracking,
   setAffiliateFromCoupon,
 };
+
+export default affiliateTracking;

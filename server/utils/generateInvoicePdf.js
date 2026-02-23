@@ -1,37 +1,22 @@
 import fs from "fs";
 import fsPromises from "fs/promises";
-import os from "os";
 import path from "path";
 import PDFDocument from "pdfkit";
 import { fileURLToPath } from "url";
-import { UPLOAD_ROOT } from "../middlewares/upload.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SERVER_ROOT = path.resolve(__dirname, "..");
-const configuredInvoiceDir = String(process.env.INVOICE_DIR || "").trim();
-const defaultInvoiceDir =
-  process.env.NODE_ENV === "production"
-    ? path.join(UPLOAD_ROOT, "invoices")
-    : path.join(SERVER_ROOT, "invoices");
-const INVOICE_DIR = configuredInvoiceDir
-  ? path.resolve(configuredInvoiceDir)
-  : defaultInvoiceDir;
-const FALLBACK_INVOICE_DIR = path.join(os.tmpdir(), "bog-invoices");
-let ACTIVE_INVOICE_DIR = INVOICE_DIR;
+const INVOICE_DIR = path.join(SERVER_ROOT, "invoices");
 const SHOULD_FORCE_REGENERATE = String(process.env.INVOICE_FORCE_REGENERATE || "false").toLowerCase() === "true";
 
 const DEFAULT_HSN = process.env.INVOICE_DEFAULT_HSN || "2106";
 const DEFAULT_TAX_RATE = Number(process.env.INVOICE_DEFAULT_GST_RATE || 5);
-const FIXED_SELLER_PROFILE = Object.freeze({
-  name: "BUY ONE GRAM PRIVATE LIMITED",
-  address: "G-225, RIICO INDUSTRIAL AREA SITAPURA, TONK ROAD, JAIPUR-302022",
-  gstin: "08AAJCB3889Q1ZO",
-  state: "Rajasthan",
-  placeOfSupplyStateCode: "08",
-  cin: "U51909RJ2020PTC071817",
-  msme: "UDYAM-RJ-17-0154669",
-  fssai: "12224027000921",
+const DEFAULT_BANK_DETAILS = Object.freeze({
+  bankName: "ICICI BANK LIMITED",
+  bankAccount: "731405000083",
+  bankBranch: "SITAPURA",
+  bankIfsc: "ICIC0006748",
 });
 const normalizeHsnSixDigit = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
@@ -108,36 +93,8 @@ const resolveStateCode = (stateCode, stateName) => {
   return GST_STATE_CODE_BY_NAME[normalizedName] || "";
 };
 
-const toPdfSafeText = (value) => {
-  if (value === null || value === undefined) return "";
-
-  const normalized = String(value).replace(/\r\n/g, "\n");
-  return normalized
-    .split("\n")
-    .map((line) => line.replace(/[^\x09\x20-\x7E]/g, " "))
-    .join("\n");
-};
-
-const patchPdfDocTextEncoding = (doc) => {
-  const originalText = doc.text.bind(doc);
-  doc.text = (text, ...args) => originalText(toPdfSafeText(text), ...args);
-
-  const originalHeightOfString = doc.heightOfString.bind(doc);
-  doc.heightOfString = (text, ...args) =>
-    originalHeightOfString(toPdfSafeText(text), ...args);
-
-  const originalWidthOfString = doc.widthOfString.bind(doc);
-  doc.widthOfString = (text, ...args) =>
-    originalWidthOfString(toPdfSafeText(text), ...args);
-};
-
 const ensureInvoiceDirectory = async () => {
-  try {
-    await fsPromises.mkdir(ACTIVE_INVOICE_DIR, { recursive: true });
-  } catch {
-    ACTIVE_INVOICE_DIR = FALLBACK_INVOICE_DIR;
-    await fsPromises.mkdir(ACTIVE_INVOICE_DIR, { recursive: true });
-  }
+  await fsPromises.mkdir(INVOICE_DIR, { recursive: true });
 };
 
 const fileExists = async (filePath) => {
@@ -150,14 +107,29 @@ const fileExists = async (filePath) => {
 };
 
 const resolveInvoiceLogoPath = () => {
+  const configuredLogoPath = String(process.env.INVOICE_LOGO_PATH || "").trim();
+  const configuredCandidates = configuredLogoPath
+    ? [
+        configuredLogoPath,
+        path.join(SERVER_ROOT, configuredLogoPath),
+        path.join(SERVER_ROOT, "..", configuredLogoPath),
+      ]
+    : [];
   const candidates = [
+    ...configuredCandidates,
     path.join(SERVER_ROOT, "assets", "logo.png"),
+    path.join(SERVER_ROOT, "assets", "logo-og-v2.png"),
+    path.join(SERVER_ROOT, "..", "frontend", "client", "public", "logo-og-v2.png"),
     path.join(SERVER_ROOT, "..", "frontend", "client", "public", "logo.png"),
     path.join(SERVER_ROOT, "..", "frontend", "client", "public", "logo.svg"),
   ];
+  const seen = new Set();
   for (const candidate of candidates) {
+    const normalized = path.resolve(candidate);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
     try {
-      if (fs.existsSync(candidate)) return candidate;
+      if (fs.existsSync(normalized)) return normalized;
     } catch {
       // ignore invalid paths
     }
@@ -176,6 +148,31 @@ const buildInvoiceNumber = (order) => {
     .slice(-6)
     .toUpperCase();
   return `INV-${yyyy}${mm}${dd}-${suffix}`;
+};
+
+const normalizeInlineText = (value) =>
+  String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const formatBuyerOrderNumber = (order) => {
+  const candidates = [order?.orderNumber, order?.order_id, order?.orderId];
+  for (const candidateRaw of candidates) {
+    const candidate = normalizeInlineText(candidateRaw);
+    if (!candidate) continue;
+    if (/^BOG[-/]/i.test(candidate)) return candidate.toUpperCase();
+    if (/^[a-f0-9]{24}$/i.test(candidate)) {
+      return `BOG-${candidate.slice(-8).toUpperCase()}`;
+    }
+    return candidate;
+  }
+
+  const fallbackId = String(order?._id || "").trim();
+  if (fallbackId) {
+    return `BOG-${fallbackId.slice(-8).toUpperCase()}`;
+  }
+
+  return "-";
 };
 
 const formatDate = (value) => {
@@ -564,16 +561,24 @@ const drawKeyValueTable = (doc, x, y, width, height, rows) => {
 
   rows.forEach((row, index) => {
     const rowY = y + rowHeight * index;
+    const labelText = normalizeInlineText(row?.label) || "-";
+    const valueText = normalizeInlineText(row?.value) || "-";
     if (index > 0) {
       doc.moveTo(x, rowY).lineTo(x + width, rowY).stroke("#111827");
     }
     doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827");
-    doc.text(String(row.label || ""), x + 4, rowY + 4, {
+    doc.text(labelText, x + 4, rowY + 4, {
       width: splitX - x - 8,
+      lineBreak: false,
+      ellipsis: true,
+      height: Math.max(rowHeight - 8, 8),
     });
     doc.font("Helvetica").fontSize(8).fillColor("#111827");
-    doc.text(String(row.value || "-"), splitX + 4, rowY + 4, {
+    doc.text(valueText, splitX + 4, rowY + 4, {
       width: x + width - splitX - 8,
+      lineBreak: false,
+      ellipsis: true,
+      height: Math.max(rowHeight - 8, 8),
     });
   });
 };
@@ -682,22 +687,45 @@ const drawHsnSummaryTable = (doc, x, y, width, rows, isInterState = false) => {
 };
 
 const resolveSellerDetails = (sellerDetails = {}) => {
+  const fallbackAddress = [
+    process.env.INVOICE_SELLER_ADDRESS_LINE1 || "",
+    process.env.INVOICE_SELLER_ADDRESS_LINE2 || "",
+    process.env.INVOICE_SELLER_CITY || "",
+    process.env.INVOICE_SELLER_STATE || "",
+    process.env.INVOICE_SELLER_PINCODE || "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   return {
-    name: FIXED_SELLER_PROFILE.name,
-    gstin: FIXED_SELLER_PROFILE.gstin,
-    address: FIXED_SELLER_PROFILE.address,
-    state: FIXED_SELLER_PROFILE.state,
-    cin: FIXED_SELLER_PROFILE.cin,
-    msme: FIXED_SELLER_PROFILE.msme,
-    fssai: FIXED_SELLER_PROFILE.fssai,
+    name: sellerDetails.name || process.env.INVOICE_SELLER_NAME || "BuyOneGram",
+    gstin: sellerDetails.gstin || process.env.INVOICE_SELLER_GSTIN || "",
+    address: sellerDetails.address || fallbackAddress || "Address not configured",
+    state: sellerDetails.state || process.env.INVOICE_SELLER_STATE || "",
+    cin: sellerDetails.cin || process.env.INVOICE_SELLER_CIN || "",
+    msme: sellerDetails.msme || process.env.INVOICE_SELLER_MSME || "",
+    fssai: sellerDetails.fssai || process.env.INVOICE_SELLER_FSSAI || "",
     phone: sellerDetails.phone || process.env.INVOICE_SELLER_PHONE || "",
     email: sellerDetails.email || process.env.INVOICE_SELLER_EMAIL || "",
     currencySymbol: sellerDetails.currencySymbol || process.env.INVOICE_CURRENCY_SYMBOL || "Rs. ",
-    placeOfSupplyStateCode: FIXED_SELLER_PROFILE.placeOfSupplyStateCode,
-    bankName: sellerDetails.bankName || process.env.INVOICE_BANK_NAME || "",
-    bankAccount: sellerDetails.bankAccount || process.env.INVOICE_BANK_ACCOUNT || "",
-    bankBranch: sellerDetails.bankBranch || process.env.INVOICE_BANK_BRANCH || "",
-    bankIfsc: sellerDetails.bankIfsc || process.env.INVOICE_BANK_IFSC || "",
+    placeOfSupplyStateCode:
+      sellerDetails.placeOfSupplyStateCode || process.env.INVOICE_SELLER_STATE_CODE || "",
+    bankName:
+      sellerDetails.bankName ||
+      process.env.INVOICE_BANK_NAME ||
+      DEFAULT_BANK_DETAILS.bankName,
+    bankAccount:
+      sellerDetails.bankAccount ||
+      process.env.INVOICE_BANK_ACCOUNT ||
+      DEFAULT_BANK_DETAILS.bankAccount,
+    bankBranch:
+      sellerDetails.bankBranch ||
+      process.env.INVOICE_BANK_BRANCH ||
+      DEFAULT_BANK_DETAILS.bankBranch,
+    bankIfsc:
+      sellerDetails.bankIfsc ||
+      process.env.INVOICE_BANK_IFSC ||
+      DEFAULT_BANK_DETAILS.bankIfsc,
     declaration:
       sellerDetails.declaration ||
       process.env.INVOICE_DECLARATION ||
@@ -795,28 +823,22 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
     ),
   );
 
-  // Shipping is intentionally excluded from invoice math and display.
-  const persistedShippingTotal = roundMoney(Number(order?.shipping || 0));
-  const shippingTotal = 0;
+  const shippingTotal = roundMoney(Number(order?.shipping || 0));
 
-  // Persisted order totals may include shipping. Remove shipping from invoice total.
+  // totalAmt is authoritative (includes GST + shipping).
   const finalAmount = roundMoney(Number(order?.finalAmount || 0));
   const totalAmount = roundMoney(Number(order?.totalAmt || 0));
-  const storedGrandTotalWithShipping = roundMoney(
+  const storedGrandTotal = roundMoney(
     finalAmount > 0 ? finalAmount : totalAmount,
   );
-  const derivedGrandTotalWithoutShipping = roundMoney(
-    Math.max(storedGrandTotalWithShipping - persistedShippingTotal, 0),
-  );
-  const fallbackGrandTotalFromGoods = roundMoney(Math.max(grossSubtotal, 0));
   const grandTotal =
-    storedGrandTotalWithShipping > 0
-      ? roundMoney(
-          Math.max(derivedGrandTotalWithoutShipping, fallbackGrandTotalFromGoods),
-        )
-      : fallbackGrandTotalFromGoods;
+    storedGrandTotal > 0
+      ? storedGrandTotal
+      : roundMoney(Math.max(grossSubtotal, 0) + shippingTotal);
 
-  const netInclusiveSubtotal = roundMoney(Math.max(grandTotal, 0));
+  const netInclusiveSubtotal = roundMoney(
+    Math.max(grandTotal - shippingTotal, 0),
+  );
 
   // Derive discount so coins/coupons reconcile even if stored fields differ.
   const totalDiscount = roundMoney(
@@ -991,6 +1013,7 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
       grandTotal: roundedGrandTotal,
       totalQuantityLabel,
       amountInWords: amountToWordsINR(roundedGrandTotal),
+      taxAmountInWords: amountToWordsINR(taxAmount),
       gstRate,
     },
     taxBreakup,
@@ -1001,58 +1024,15 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
 export const getInvoiceFileName = (orderId) => `invoice_${orderId}.pdf`;
 
 export const getInvoiceRelativePath = (orderId) =>
-  path.posix.join("uploads", "invoices", getInvoiceFileName(orderId));
+  path.posix.join("invoices", getInvoiceFileName(orderId));
 
 export const getInvoiceAbsolutePath = (orderId) =>
-  path.join(ACTIVE_INVOICE_DIR, getInvoiceFileName(orderId));
+  path.join(INVOICE_DIR, getInvoiceFileName(orderId));
 
 export const getAbsolutePathFromStoredInvoicePath = (invoicePath) => {
   if (!invoicePath) return null;
-  const normalizedPath = String(invoicePath).trim().replace(/\\/g, "/");
-  if (!normalizedPath) return null;
-
-  const candidates = [];
-
-  const pushCandidate = (candidatePath) => {
-    const resolved = String(candidatePath || "").trim();
-    if (!resolved) return;
-    if (!candidates.includes(resolved)) {
-      candidates.push(resolved);
-    }
-  };
-
-  if (/^[a-zA-Z]:\//.test(normalizedPath) || path.isAbsolute(normalizedPath)) {
-    pushCandidate(normalizedPath);
-  }
-
-  if (/^\/?uploads\//i.test(normalizedPath)) {
-    const uploadRelative = normalizedPath.replace(/^\/?uploads\/?/i, "");
-    pushCandidate(path.join(UPLOAD_ROOT, uploadRelative));
-  }
-
-  if (/^\/?invoices\//i.test(normalizedPath)) {
-    const invoiceRelative = normalizedPath.replace(/^\/?invoices\/?/i, "");
-    // Legacy location used by older releases.
-    pushCandidate(path.join(SERVER_ROOT, "invoices", invoiceRelative));
-    // Current runtime location.
-    pushCandidate(path.join(ACTIVE_INVOICE_DIR, invoiceRelative));
-    // Explicit upload-root location fallback.
-    pushCandidate(path.join(UPLOAD_ROOT, "invoices", invoiceRelative));
-  }
-
-  pushCandidate(path.join(SERVER_ROOT, normalizedPath));
-
-  for (const candidate of candidates) {
-    try {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    } catch {
-      // ignore invalid candidate and continue
-    }
-  }
-
-  return candidates[0] || null;
+  if (path.isAbsolute(invoicePath)) return invoicePath;
+  return path.join(SERVER_ROOT, invoicePath);
 };
 
 export const generateInvoicePdf = async ({
@@ -1085,7 +1065,6 @@ export const generateInvoicePdf = async ({
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 40 });
     const stream = fs.createWriteStream(absolutePath);
-    patchPdfDocTextEncoding(doc);
 
     stream.on("finish", resolve);
     stream.on("error", reject);
@@ -1224,16 +1203,11 @@ export const generateInvoicePdf = async ({
     const destination = [consigneeAddress?.city, consigneeAddress?.state]
       .filter(Boolean)
       .join(", ");
-    const buyerOrderNumber =
-      order?.displayOrderId ||
-      order?.orderNumber ||
-      order?.order_id ||
-      order?.orderId ||
-      (order?._id ? `BOG-${String(order._id).slice(-8).toUpperCase()}` : "-");
+    const buyerOrderNumber = formatBuyerOrderNumber(order);
     const metaRows = [
       { label: "Invoice No.", value: invoiceNumber },
       { label: "Dated", value: formatDate(invoiceDate) },
-      { label: "Customer Remarks", value: String(order?.notes || "").trim() || "-" },
+      { label: "Customer Remarks", value: normalizeInlineText(order?.notes) || "-" },
       {
         label: "Mode/Terms of Payment",
         value: String(order?.payment_status || order?.paymentMethod || "-").toUpperCase(),
@@ -1316,6 +1290,10 @@ export const generateInvoicePdf = async ({
       y += rowHeight;
     };
 
+    if (Number(summary.shippingTotal || 0) > 0) {
+      drawLedgerRow("Shipping Charges", summary.shippingTotal);
+    }
+
     const gstRateText = Number(summary.gstRate || DEFAULT_TAX_RATE).toFixed(2);
     if (Number(taxBreakup.igst || 0) > 0) {
       drawLedgerRow(`OUTPUT IGST@${gstRateText}%`, taxBreakup.igst);
@@ -1366,16 +1344,11 @@ export const generateInvoicePdf = async ({
     }
 
     y += 6;
-    const summaryFormula = `Taxable Amount + GST: ${formatPlainAmount(summary.goodsAmount)} + ${formatPlainAmount(summary.taxAmount)} = ${formatPlainAmount(summary.grandTotal)}`;
-    doc.font("Helvetica").fontSize(8).fillColor("#111827").text(summaryFormula, margin + 2, y, {
-      width: contentWidth - 4,
-    });
-    y += 12;
     doc
       .font("Helvetica")
       .fontSize(8)
       .fillColor("#111827")
-      .text(`Total Amount (in words): ${summary.amountInWords}`, margin + 2, y, {
+      .text(`Tax Amount (in words): ${summary.taxAmountInWords}`, margin + 2, y, {
         width: contentWidth - 4,
       });
     y += 16;

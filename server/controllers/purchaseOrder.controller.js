@@ -837,6 +837,7 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
   try {
     const { id } = req.params;
     const { items = [], invoiceNumber, vehicleNumber, notes } = req.body || {};
+    const adminId = req.user?._id || req.user?.id || req.user || null;
 
     const po = await PurchaseOrderModel.findById(id);
     if (!po) {
@@ -847,23 +848,29 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
       });
     }
 
-    const normalizedItems = Array.isArray(items) ? items : [];
-    normalizedItems.forEach((item) => {
-      const productId = String(item.productId || item._id || item.id || "");
-      if (!productId) return;
-      const receivedNow = Math.max(Number(item.receivedQuantity || 0), 0);
-      if (!receivedNow) return;
-
-      const line = po.items.find(
-        (poItem) => String(poItem.productId) === productId,
+    const normalizedItems = (Array.isArray(items) ? items : [])
+      .map((item) => ({
+        productId: String(item?.productId || item?._id || item?.id || ""),
+        receivedQuantity: Math.max(
+          Number(item?.receivedQuantity ?? item?.qty_received ?? item?.quantity ?? 0),
+          0,
+        ),
+      }))
+      .filter(
+        (item) =>
+          item.productId &&
+          Number.isFinite(item.receivedQuantity) &&
+          item.receivedQuantity > 0,
       );
-      if (!line) return;
 
-      const orderedQty = Math.max(Number(line.quantity || 0), 0);
-      const currentReceived = Math.max(Number(line.receivedQuantity || 0), 0);
-      const nextReceived = Math.min(orderedQty, currentReceived + receivedNow);
-      line.receivedQuantity = nextReceived;
-    });
+    const inventoryResult =
+      normalizedItems.length > 0
+        ? await applyPurchaseOrderInventory(po, {
+            receivedItems: normalizedItems,
+            adminId,
+            allowPartialReceipts: true,
+          })
+        : { status: "noop", reason: "no_received_items", purchaseOrder: po };
 
     if (!po.receipt) po.receipt = {};
     if (invoiceNumber !== undefined) {
@@ -877,14 +884,23 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
     }
 
     const hasReceiptUpdate =
-      normalizedItems.some((item) => Number(item.receivedQuantity || 0) > 0) ||
-      invoiceNumber ||
-      vehicleNumber ||
-      notes;
+      normalizedItems.length > 0 ||
+      invoiceNumber !== undefined ||
+      vehicleNumber !== undefined ||
+      notes !== undefined;
 
     if (hasReceiptUpdate) {
       po.receipt.receivedAt = new Date();
-      po.status = "received";
+      if (normalizedItems.length > 0) {
+        po.status = "received";
+      }
+    }
+
+    if (normalizedItems.length > 0) {
+      po.receivedAt = new Date();
+      if (adminId) {
+        po.receivedBy = adminId;
+      }
     }
 
     await po.save();
@@ -897,7 +913,18 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
       error: false,
       success: true,
       message: "Receipt details updated",
-      data: normalizedPo,
+      data: {
+        ...normalizedPo,
+        purchaseOrder: normalizedPo,
+        inventory: {
+          status: inventoryResult?.status || "noop",
+          reason: inventoryResult?.reason || null,
+          allItemsReceived:
+            typeof inventoryResult?.allItemsReceived === "boolean"
+              ? inventoryResult.allItemsReceived
+              : null,
+        },
+      },
     });
   } catch (error) {
     return res.status(500).json({

@@ -30,7 +30,7 @@ const ResetPassword = () => {
       router.push("/forgot-password");
       return;
     }
-  }, []);
+  }, [context, router]);
 
   const onChangeInput = (e) => {
     const { name, value } = e.target;

@@ -114,7 +114,7 @@ export const isCloudinaryUrl = (imageUrl) => {
   return imageUrl && imageUrl.includes("res.cloudinary.com");
 };
 
-export default {
+const imageUtils = {
   getImageUrl,
   getOptimizedImageUrl,
   getThumbnailUrl,
@@ -122,3 +122,5 @@ export default {
   getBannerImageUrl,
   isCloudinaryUrl,
 };
+
+export default imageUtils;
