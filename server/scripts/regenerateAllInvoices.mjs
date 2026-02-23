@@ -22,6 +22,10 @@ const FIXED_SELLER_DETAILS = Object.freeze({
   fssai: "12224027000921",
   currencySymbol: "Rs. ",
   jurisdictionLine: "SUBJECT TO JAIPUR JURISDICTION",
+  bankName: "ICICI BANK LIMITED",
+  bankAccount: "731405000083",
+  bankBranch: "SITAPURA",
+  bankIfsc: "ICIC0006748",
 });
 
 const round2 = (value) =>

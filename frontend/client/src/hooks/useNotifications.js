@@ -116,8 +116,8 @@ export const useNotifications = (options = {}) => {
         const unsubscribe = onMessage(messaging, (payload) => {
           console.log("Foreground message received:", payload);
           setForegroundMessage({
-            title: payload.notification?.title,
-            body: payload.notification?.body,
+            title: payload.notification?.title || payload.data?.title || "Notification",
+            body: payload.notification?.body || payload.data?.body || "",
             data: payload.data,
             timestamp: Date.now(),
           });

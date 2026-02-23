@@ -12,6 +12,15 @@ const purchaseOrderItemSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    variantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+    variantName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     quantity: {
       type: Number,
       required: true,

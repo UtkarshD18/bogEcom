@@ -36,12 +36,13 @@ if (isConfigured) {
   messaging.onBackgroundMessage((payload) => {
     console.log("[SW] Background message received:", payload);
 
-    const notificationTitle = payload.notification?.title || "New Notification";
+    const notificationTitle =
+      payload.notification?.title || payload.data?.title || "New Notification";
     const notificationOptions = {
-      body: payload.notification?.body || "",
-      icon: "/logo192.png",
-      badge: "/logo192.png",
-      tag: payload.data?.type || "default",
+      body: payload.notification?.body || payload.data?.body || "",
+      icon: "/logo.png",
+      badge: "/logo.png",
+      tag: payload.data?.notificationId || payload.data?.type || "default",
       data: payload.data || {},
       actions: [
         {

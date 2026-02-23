@@ -18,10 +18,29 @@ const INVALID_FCM_TOKEN_CODES = new Set([
   "messaging/invalid-argument",
 ]);
 
+const normalizeBaseUrl = (value) =>
+  String(value || "")
+    .split(",")[0]
+    .trim()
+    .replace(/\/+$/, "");
+
+const isLocalhostBaseUrl = (value) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
+    normalizeBaseUrl(value),
+  );
+
 const getFrontendBaseUrl = () => {
-  const raw = process.env.CLIENT_URL || process.env.ADMIN_URL || "";
-  const first = String(raw).split(",")[0].trim();
-  return first.replace(/\/+$/, "") || "https://healthyonegram.com";
+  const candidate =
+    normalizeBaseUrl(process.env.CLIENT_URL) ||
+    normalizeBaseUrl(process.env.NEXT_PUBLIC_SITE_URL) ||
+    normalizeBaseUrl(process.env.FRONTEND_URL) ||
+    normalizeBaseUrl(process.env.ADMIN_URL);
+
+  if (isProduction && isLocalhostBaseUrl(candidate)) {
+    return "https://healthyonegram.com";
+  }
+
+  return candidate || "https://healthyonegram.com";
 };
 
 /**
@@ -232,7 +251,14 @@ export const sendOfferNotification = async (coupon, options = {}) => {
       discountValue: String(coupon.discountValue),
       expiresAt: coupon.endDate?.toISOString() || "",
       url: "/",
+      notificationId: `offer:${coupon.code || "GEN"}:${Date.now()}`,
+      title: notification.title,
+      body: notification.body,
     };
+
+    const frontendBaseUrl = getFrontendBaseUrl();
+    const targetPath = String(data.url || "/").trim() || "/";
+    const targetUrl = `${frontendBaseUrl}${targetPath.startsWith("/") ? "" : "/"}${targetPath}`;
 
     // Send in batches of 500 (FCM limit)
     const batchSize = 500;
@@ -251,8 +277,18 @@ export const sendOfferNotification = async (coupon, options = {}) => {
           notification,
           data,
           webpush: {
+            headers: {
+              Urgency: "high",
+            },
+            notification: {
+              title: notification.title,
+              body: notification.body,
+              icon: `${frontendBaseUrl}/logo.png`,
+              badge: `${frontendBaseUrl}/logo.png`,
+              tag: data.notificationId || data.type || "offer",
+            },
             fcmOptions: {
-              link: getFrontendBaseUrl(),
+              link: targetUrl,
             },
           },
         });
@@ -396,7 +432,12 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
       orderId: order._id.toString(),
       orderStatus: newStatus,
       url: `/orders/${order._id}`,
+      notificationId: `order:${order._id}:${newStatus}:${Date.now()}`,
+      title: notification.title,
+      body: notification.body,
     };
+    const frontendBaseUrl = getFrontendBaseUrl();
+    const targetUrl = `${frontendBaseUrl}/orders/${order._id}`;
 
     // Send to all user tokens
     const response = await messaging.sendEachForMulticast({
@@ -404,8 +445,19 @@ export const sendOrderUpdateNotification = async (order, newStatus) => {
       notification,
       data,
       webpush: {
+        headers: {
+          Urgency: "high",
+        },
+        notification: {
+          title: notification.title,
+          body: notification.body,
+          icon: `${frontendBaseUrl}/logo.png`,
+          badge: `${frontendBaseUrl}/logo.png`,
+          tag: data.notificationId || "order_update",
+          requireInteraction: true,
+        },
         fcmOptions: {
-          link: `${getFrontendBaseUrl()}/orders/${order._id}`,
+          link: targetUrl,
         },
       },
     });

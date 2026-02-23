@@ -149,12 +149,25 @@ const fileExists = async (filePath) => {
   }
 };
 
-const resolveInvoiceLogoPath = () => {
+const resolveInvoiceLogoPath = (preferredPath = "") => {
+  const resolveLocalPath = (value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) return null;
+    if (/^https?:\/\//i.test(normalized)) return null;
+    return path.isAbsolute(normalized)
+      ? normalized
+      : path.resolve(SERVER_ROOT, normalized);
+  };
+
   const candidates = [
+    resolveLocalPath(preferredPath),
+    resolveLocalPath(process.env.INVOICE_LOGO_PATH || ""),
+    path.join(SERVER_ROOT, "assets", "invoice-logo.png"),
     path.join(SERVER_ROOT, "assets", "logo.png"),
     path.join(SERVER_ROOT, "..", "frontend", "client", "public", "logo.png"),
+    path.join(SERVER_ROOT, "..", "frontend", "client", "public", "logo-og-v2.png"),
     path.join(SERVER_ROOT, "..", "frontend", "client", "public", "logo.svg"),
-  ];
+  ].filter(Boolean);
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate)) return candidate;
@@ -692,12 +705,25 @@ const resolveSellerDetails = (sellerDetails = {}) => {
     fssai: FIXED_SELLER_PROFILE.fssai,
     phone: sellerDetails.phone || process.env.INVOICE_SELLER_PHONE || "",
     email: sellerDetails.email || process.env.INVOICE_SELLER_EMAIL || "",
+    logoPath: sellerDetails.logoPath || process.env.INVOICE_LOGO_PATH || "",
     currencySymbol: sellerDetails.currencySymbol || process.env.INVOICE_CURRENCY_SYMBOL || "Rs. ",
     placeOfSupplyStateCode: FIXED_SELLER_PROFILE.placeOfSupplyStateCode,
-    bankName: sellerDetails.bankName || process.env.INVOICE_BANK_NAME || "",
-    bankAccount: sellerDetails.bankAccount || process.env.INVOICE_BANK_ACCOUNT || "",
-    bankBranch: sellerDetails.bankBranch || process.env.INVOICE_BANK_BRANCH || "",
-    bankIfsc: sellerDetails.bankIfsc || process.env.INVOICE_BANK_IFSC || "",
+    bankName:
+      sellerDetails.bankName ||
+      process.env.INVOICE_BANK_NAME ||
+      "ICICI BANK LIMITED",
+    bankAccount:
+      sellerDetails.bankAccount ||
+      process.env.INVOICE_BANK_ACCOUNT ||
+      "731405000083",
+    bankBranch:
+      sellerDetails.bankBranch ||
+      process.env.INVOICE_BANK_BRANCH ||
+      "SITAPURA",
+    bankIfsc:
+      sellerDetails.bankIfsc ||
+      process.env.INVOICE_BANK_IFSC ||
+      "ICIC0006748",
     declaration:
       sellerDetails.declaration ||
       process.env.INVOICE_DECLARATION ||
@@ -1113,7 +1139,7 @@ export const generateInvoicePdf = async ({
     } = invoiceData;
     const { lineItems, summary, taxBreakup } = invoiceData;
     const currencySymbol = seller.currencySymbol || "Rs. ";
-    const logoPath = resolveInvoiceLogoPath();
+    const logoPath = resolveInvoiceLogoPath(seller.logoPath);
 
     doc.rect(margin, margin, contentWidth, pageHeight - margin * 2).stroke("#111827");
 
@@ -1433,7 +1459,7 @@ export const generateInvoicePdf = async ({
       ["Bank Name", seller.bankName],
       ["A/c No.", seller.bankAccount],
       ["Branch", seller.bankBranch],
-      ["IFS Code", seller.bankIfsc],
+      ["IFSC Code", seller.bankIfsc],
     ].filter(([, value]) => String(value || "").trim());
 
     if (bankRows.length === 0) {

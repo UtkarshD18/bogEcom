@@ -123,42 +123,6 @@ export default function DeliveryPage() {
             </p>
           </section>
 
-          {/* Returns & Exchanges */}
-          <section className="mb-12 bg-white rounded-lg shadow p-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">
-              Returns & Exchanges
-            </h2>
-            <div className="grid md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <div className="text-4xl mb-3">📅</div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                  7-Day Window
-                </h3>
-                <p className="text-gray-600">
-                  Return or exchange within 7 days of delivery
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="text-4xl mb-3">📦</div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                  Original Condition
-                </h3>
-                <p className="text-gray-600">
-                  Items must be unused with original packaging
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="text-4xl mb-3">⭐</div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                  Customer Satisfaction
-                </h3>
-                <p className="text-gray-600">
-                  Quality guaranteed on all orders
-                </p>
-              </div>
-            </div>
-          </section>
-
           {/* Support Section */}
           <section className="bg-blue-50 border-2 border-blue-200 rounded-lg p-8 text-center">
             <h3 className="text-2xl font-bold text-gray-900 mb-3">
