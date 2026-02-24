@@ -68,13 +68,15 @@ const normalizeOrigin = (origin) =>
   String(origin || "")
     .trim()
     .replace(/\/+$/, "");
+const isHttpOrigin = (origin) =>
+  /^https?:\/\/[^/\s]+$/i.test(normalizeOrigin(origin));
 const isDevLocalhostOrigin = (origin) =>
   /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalizeOrigin(origin));
 const parseOriginList = (value) =>
   String(normalizeEnvValue(value) || "")
     .split(",")
     .map(normalizeOrigin)
-    .filter(Boolean);
+    .filter((origin) => isHttpOrigin(origin));
 
 const requiredServerEnvVars = ["MONGO_URI"];
 
@@ -90,6 +92,12 @@ const configuredCorsOrigins = [
   ...parseOriginList(process.env.FRONTEND_URL),
   ...parseOriginList(process.env.CORS_ORIGINS),
 ];
+const defaultProductionCorsOrigins = [
+  "https://healthyonegram.com",
+  "https://www.healthyonegram.com",
+  "https://client-dot-healthy-one-gram.el.r.appspot.com",
+  "https://admin-dot-healthy-one-gram.el.r.appspot.com",
+].map(normalizeOrigin);
 const defaultDevCorsOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -99,7 +107,7 @@ const defaultDevCorsOrigins = [
 const allowedOrigins = [
   ...new Set([
     ...configuredCorsOrigins,
-    ...(isProductionEnv ? [] : defaultDevCorsOrigins),
+    ...(isProductionEnv ? defaultProductionCorsOrigins : defaultDevCorsOrigins),
   ]),
 ];
 
