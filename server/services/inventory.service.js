@@ -49,7 +49,7 @@ const syncParentStockFromVariants = async (productId) => {
   const product = await ProductModel.findById(productId)
     .select("hasVariants variants stock stock_quantity reserved_quantity")
     .lean();
-  if (!product?.hasVariants || !product.variants?.length) return;
+  if (!Array.isArray(product?.variants) || product.variants.length === 0) return;
 
   const totalStock = product.variants.reduce(
     (s, v) => s + Number(v.stock_quantity ?? v.stock ?? 0),
@@ -1105,6 +1105,29 @@ export const applyPurchaseOrderInventory = async (
         });
       }
 
+      if (variantObjectId) {
+        const resolvedVariant = getVariantFromDoc(productBefore, variantObjectId);
+        const derivedPacking = buildPackingFromWeightAndUnit(
+          resolvedVariant?.weight,
+          resolvedVariant?.unit,
+        );
+        const resolvedPacking = String(
+          item?.packing ||
+            item?.packSize ||
+            derivedPacking ||
+            item?.variantName ||
+            resolvedVariant?.name ||
+            "",
+        ).trim();
+        const resolvedVariantName = String(
+          item?.variantName || resolvedVariant?.name || resolvedPacking || "",
+        ).trim();
+
+        item.variantId = String(variantObjectId);
+        item.variantName = resolvedVariantName;
+        item.packing = resolvedPacking;
+      }
+
       const updateFilter = variantObjectId
         ? {
             _id: productId,
@@ -1202,11 +1225,10 @@ export const applyPurchaseOrderInventory = async (
               $inc: {
                 "variants.$.stock_quantity": -item.quantity,
                 "variants.$.stock": -item.quantity,
-                stock_quantity: -item.quantity,
-                stock: -item.quantity,
               },
             },
           );
+          await syncParentStockFromVariants(item.productId);
           continue;
         }
         await ProductModel.updateOne(
