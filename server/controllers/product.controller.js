@@ -976,10 +976,12 @@ export const updateStock = async (req, res) => {
         variant.stock = normalizedStock;
         variant.stock_quantity = normalizedStock;
       }
-    } else {
+      // Parent stock will be synced automatically by pre-save hook
+    } else if (!product.hasVariants || !product.variants.length) {
       product.stock = normalizedStock;
       product.stock_quantity = normalizedStock;
     }
+    // If hasVariants and no variantId, skip — parent is derived from variants
 
     await product.save();
 

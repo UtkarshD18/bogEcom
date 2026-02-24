@@ -41,6 +41,37 @@ const resolveVariantObjectId = (value) => {
   return objectId;
 };
 
+/**
+ * Recalculate parent stock/reserved from variant totals.
+ * Call after any atomic $inc on variant fields so the parent stays in sync.
+ */
+const syncParentStockFromVariants = async (productId) => {
+  const product = await ProductModel.findById(productId)
+    .select("hasVariants variants stock stock_quantity reserved_quantity")
+    .lean();
+  if (!product?.hasVariants || !product.variants?.length) return;
+
+  const totalStock = product.variants.reduce(
+    (s, v) => s + Number(v.stock_quantity ?? v.stock ?? 0),
+    0,
+  );
+  const totalReserved = product.variants.reduce(
+    (s, v) => s + Number(v.reserved_quantity ?? 0),
+    0,
+  );
+
+  if (
+    product.stock !== totalStock ||
+    product.stock_quantity !== totalStock ||
+    product.reserved_quantity !== totalReserved
+  ) {
+    await ProductModel.updateOne(
+      { _id: productId },
+      { $set: { stock: totalStock, stock_quantity: totalStock, reserved_quantity: totalReserved } },
+    );
+  }
+};
+
 const buildAvailableExpr = () => ({
   $subtract: [
     { $ifNull: ["$stock_quantity", "$stock"] },
@@ -531,6 +562,10 @@ export const reserveInventory = async (order, source = "ORDER_CREATE") => {
         }
       }
 
+      if (variantObjectId) {
+        await syncParentStockFromVariants(item.productId);
+      }
+
       const productAfter = await ProductModel.findById(item.productId)
         .select(
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
@@ -697,6 +732,10 @@ export const confirmInventory = async (order, source = "PAYMENT_SUCCESS") => {
         }
       }
 
+      if (variantObjectId) {
+        await syncParentStockFromVariants(item.productId);
+      }
+
       const productAfter = await ProductModel.findById(item.productId)
         .select(
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
@@ -814,6 +853,10 @@ export const releaseInventory = async (order, source = "PAYMENT_FAILURE") => {
         }
       }
 
+      if (variantObjectId) {
+        await syncParentStockFromVariants(item.productId);
+      }
+
       const productAfter = await ProductModel.findById(item.productId)
         .select(
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
@@ -911,6 +954,10 @@ export const restoreInventory = async (order, source = "ORDER_CANCELLED") => {
         if (result.modifiedCount !== 1) {
           throw new AppError("INTERNAL_ERROR");
         }
+      }
+
+      if (variantObjectId) {
+        await syncParentStockFromVariants(item.productId);
       }
 
       const productAfter = await ProductModel.findById(item.productId)
@@ -1070,8 +1117,6 @@ export const applyPurchaseOrderInventory = async (
             $inc: {
               "variants.$[v].stock_quantity": qty,
               "variants.$[v].stock": qty,
-              stock_quantity: qty,
-              stock: qty,
             },
           }
         : { $inc: { stock_quantity: qty, stock: qty } };
@@ -1087,6 +1132,11 @@ export const applyPurchaseOrderInventory = async (
 
       if (result.modifiedCount !== 1) {
         throw new AppError("INTERNAL_ERROR");
+      }
+
+      // Recalculate parent stock from variants after PO receive
+      if (variantObjectId) {
+        await syncParentStockFromVariants(productId);
       }
 
       const productAfter = await ProductModel.findById(productId)

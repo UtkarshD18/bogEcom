@@ -584,6 +584,21 @@ productSchema.pre("save", async function () {
     if (!hasDefault && this.variants.length > 0) {
       this.variants[0].isDefault = true;
     }
+
+    // Sync parent stock = sum of variant stocks when variants are enabled
+    if (this.hasVariants) {
+      const totalVariantStock = this.variants.reduce(
+        (sum, v) => sum + Number(v.stock_quantity ?? v.stock ?? 0),
+        0,
+      );
+      const totalVariantReserved = this.variants.reduce(
+        (sum, v) => sum + Number(v.reserved_quantity ?? 0),
+        0,
+      );
+      this.stock = totalVariantStock;
+      this.stock_quantity = totalVariantStock;
+      this.reserved_quantity = totalVariantReserved;
+    }
   }
 });
 
