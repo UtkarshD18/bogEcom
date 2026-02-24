@@ -19,6 +19,26 @@ import VerificationEmail from "../utils/verifyEmailTemplate.js";
 const ACCESS_TOKEN_MAX_AGE = 15 * 60 * 1000; // 15 minutes
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
 const COOKIE_DOMAIN = String(process.env.COOKIE_DOMAIN || "").trim();
+const COOKIE_DOMAIN_REGEX =
+  /^\.?([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))+$/i;
+
+const normalizeCookieDomain = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const withoutProtocol = raw.replace(/^https?:\/\//i, "");
+  const hostOnly = withoutProtocol.split("/")[0].trim();
+  return hostOnly;
+};
+
+const parsedCookieDomain = normalizeCookieDomain(COOKIE_DOMAIN);
+const isLocalCookieDomain = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(
+  parsedCookieDomain.replace(/^\./, ""),
+);
+const RESOLVED_COOKIE_DOMAIN =
+  COOKIE_DOMAIN_REGEX.test(parsedCookieDomain) && !isLocalCookieDomain
+    ? parsedCookieDomain
+    : "";
 
 const buildCookieOptions = (maxAge) => {
   const isProduction = process.env.NODE_ENV === "production";
@@ -30,8 +50,8 @@ const buildCookieOptions = (maxAge) => {
     path: "/",
   };
 
-  if (isProduction && COOKIE_DOMAIN) {
-    options.domain = COOKIE_DOMAIN;
+  if (isProduction && RESOLVED_COOKIE_DOMAIN) {
+    options.domain = RESOLVED_COOKIE_DOMAIN;
   }
 
   return options;
@@ -198,6 +218,10 @@ export async function registerUserController(req, res) {
       token: token,
     });
   } catch (error) {
+    console.error("Login controller error:", {
+      email: normalizeEmail(req.body?.email),
+      error: error?.message || error,
+    });
     return res.status(500).json({
       success: false,
       error: true,
@@ -300,7 +324,36 @@ export async function loginUserController(req, res) {
       });
     }
 
-    const checkPassword = await bcrypt.compare(password, user.password);
+    const storedPasswordHash =
+      typeof user?.password === "string" ? user.password.trim() : "";
+
+    if (!storedPasswordHash) {
+      const isGoogleOnlyAccount =
+        Boolean(user?.signUpWithGoogle) || user?.provider === "google";
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message: isGoogleOnlyAccount
+          ? "This account uses Google sign-in. Use Google login or set a backup password."
+          : "Password login is not available for this account. Please reset your password.",
+      });
+    }
+
+    let checkPassword = false;
+    try {
+      checkPassword = await bcrypt.compare(password, storedPasswordHash);
+    } catch (compareError) {
+      console.error("Password verification failed during login:", {
+        email: normalizedEmail,
+        error: compareError?.message || compareError,
+      });
+      return res.status(400).json({
+        success: false,
+        error: true,
+        message:
+          "Unable to verify password for this account. Please reset your password.",
+      });
+    }
 
     if (!checkPassword) {
       return res.status(400).json({
