@@ -76,7 +76,11 @@ export default function MembershipCheckoutPage() {
   );
   const planPrice = Number(plan?.price || 0);
 
-  const maxUsableCoins = usableCoins;
+  const maxCoinsByPlan =
+    redeemRate > 0
+      ? Math.max(Math.floor(Math.max(planPrice, 0) / redeemRate), 0)
+      : 0;
+  const maxUsableCoins = Math.min(usableCoins, maxCoinsByPlan);
 
   const effectiveCoins = useCoins
     ? Math.min(Math.max(Math.floor(Number(requestedCoins || 0)), 0), maxUsableCoins)
@@ -466,6 +470,9 @@ export default function MembershipCheckoutPage() {
 
           <div style={{ fontSize: "0.9rem", color: "#92400e" }}>
             Available: <strong>{usableCoins}</strong> coins
+          </div>
+          <div style={{ fontSize: "0.85rem", color: "#78350f", marginTop: 4 }}>
+            Max usable for this plan: <strong>{maxUsableCoins}</strong> coins
           </div>
           {useCoins && (
             <>
