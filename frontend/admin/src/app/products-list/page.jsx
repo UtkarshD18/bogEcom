@@ -329,6 +329,14 @@ const ProductsListContent = () => {
                             <span className="text-gray-700 text-[13px]">
                               {product.brand}
                             </span>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {product.isNewArrival && (
+                                <Chip label="New" size="small" color="success" />
+                              )}
+                              {product.isBestSeller && (
+                                <Chip label="Best Seller" size="small" color="warning" />
+                              )}
+                            </div>
                           </div>
                         </div>
                       </TableCell>

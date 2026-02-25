@@ -85,7 +85,7 @@ const BannerMedia = ({ banner, onMuteToggle, isMuted }) => {
 const Banners = () => {
   const [banners, setBanners] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mutedStates, setMutedStates] = useState({}); // { [bannerId]: boolean }
+  const [activeAudioBannerId, setActiveAudioBannerId] = useState(null);
   const context = useContext(MyContext);
   const flavor = context?.flavor || FLAVORS.creamy;
 
@@ -139,7 +139,7 @@ const Banners = () => {
                     >
                       <BannerMedia
                         banner={banner}
-                        isMuted={mutedStates[banner._id] !== false}
+                        isMuted={activeAudioBannerId !== banner._id}
                       />
 
                       {/* Gradient Overlay */}
@@ -181,20 +181,18 @@ const Banners = () => {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setMutedStates((prev) => ({
-                          ...prev,
-                          [banner._id]:
-                            prev[banner._id] !== false ? false : true,
-                        }));
+                        setActiveAudioBannerId((prev) =>
+                          prev === banner._id ? null : banner._id,
+                        );
                       }}
                       className="absolute bottom-20 right-4 z-20 rounded-full bg-black/50 p-2 text-white backdrop-blur-md hover:bg-black/70 transition-colors"
                       aria-label={
-                        mutedStates[banner._id] !== false
+                        activeAudioBannerId !== banner._id
                           ? "Unmute video"
                           : "Mute video"
                       }
                     >
-                      {mutedStates[banner._id] !== false ? (
+                      {activeAudioBannerId !== banner._id ? (
                         <FiVolumeX size={16} />
                       ) : (
                         <FiVolume2 size={16} />

@@ -43,6 +43,19 @@ export const initializeFirebaseAdmin = () => {
   }
 
   try {
+    const normalizeSecret = (value) => {
+      let normalized = String(value || "").trim();
+      const wrappedInQuotes =
+        (normalized.startsWith('"') && normalized.endsWith('"')) ||
+        (normalized.startsWith("'") && normalized.endsWith("'"));
+      if (wrappedInQuotes) {
+        normalized = normalized.slice(1, -1).trim();
+      }
+      return normalized;
+    };
+
+    privateKey = normalizeSecret(privateKey);
+
     // Handle private key formats
     // If base64 encoded
     if (privateKey.startsWith("LS0t")) {

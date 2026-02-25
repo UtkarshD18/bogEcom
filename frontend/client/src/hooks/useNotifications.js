@@ -7,6 +7,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import cookies from "js-cookie";
 
 const API_URL = API_BASE_URL;
+// Public VAPID key fallback for environments where env injection is missed.
+const FALLBACK_VAPID_KEY =
+  "BL22YBdvb5TkydQ5LsnePfUgLQsf61THj-Ja72oli6FMb1U7lh-GYJJ__gjIvf8nZjAJ7s8aBQzq1ahFBxpSTi8";
 
 /**
  * useNotifications Hook
@@ -82,6 +85,64 @@ export const useNotifications = (options = {}) => {
     },
     [getAuthToken, userId, userType],
   );
+
+  const getFirebasePublicConfig = useCallback(() => {
+    const appOptions = firebaseApp?.options || {};
+    return {
+      apiKey:
+        appOptions.apiKey || process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+      authDomain:
+        appOptions.authDomain ||
+        process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ||
+        "",
+      projectId:
+        appOptions.projectId || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
+      storageBucket:
+        appOptions.storageBucket ||
+        process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+        "",
+      messagingSenderId:
+        appOptions.messagingSenderId ||
+        process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ||
+        "",
+      appId: appOptions.appId || process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
+    };
+  }, []);
+
+  const buildServiceWorkerUrl = useCallback(() => {
+    if (typeof window === "undefined") return "/firebase-messaging-sw.js";
+    const url = new URL("/firebase-messaging-sw.js", window.location.origin);
+    const swConfig = getFirebasePublicConfig();
+
+    Object.entries(swConfig).forEach(([key, value]) => {
+      const cleaned = String(value || "").trim();
+      if (cleaned) url.searchParams.set(key, cleaned);
+    });
+
+    return url.toString();
+  }, [getFirebasePublicConfig]);
+
+  const normalizePushErrorMessage = useCallback((err) => {
+    const raw = String(err?.message || err || "Push registration failed");
+    const lowered = raw.toLowerCase();
+
+    if (lowered.includes("permission")) {
+      return "Notification permission is blocked. Allow notifications in browser settings and try again.";
+    }
+
+    if (
+      lowered.includes("push service error") ||
+      lowered.includes("token-subscribe-failed")
+    ) {
+      return "Registration failed - push service error. Please refresh once and try again.";
+    }
+
+    if (lowered.includes("failed-service-worker-registration")) {
+      return "Push service worker registration failed. Please refresh and try again.";
+    }
+
+    return raw;
+  }, []);
 
   // Check if notifications are supported
   useEffect(() => {
@@ -200,9 +261,17 @@ export const useNotifications = (options = {}) => {
       }
 
       // Register service worker
-      const registration = await navigator.serviceWorker.register(
-        "/firebase-messaging-sw.js",
-      );
+      const swUrl = buildServiceWorkerUrl();
+      const registration = await navigator.serviceWorker.register(swUrl, {
+        scope: "/",
+      });
+      // Keep registration fresh after deploys.
+      try {
+        await registration.update();
+      } catch {
+        // Best-effort only.
+      }
+      await navigator.serviceWorker.ready;
       console.log("Service Worker registered:", registration);
 
       // Get FCM token
@@ -210,7 +279,9 @@ export const useNotifications = (options = {}) => {
       const tokenOptions = {
         serviceWorkerRegistration: registration,
       };
-      const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+      const vapidKey = (
+        process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || FALLBACK_VAPID_KEY
+      ).trim();
       if (vapidKey) {
         tokenOptions.vapidKey = vapidKey;
       }
@@ -242,12 +313,18 @@ export const useNotifications = (options = {}) => {
       return true;
     } catch (err) {
       console.error("Error requesting permission:", err);
-      setError(err.message);
+      setError(normalizePushErrorMessage(err));
       return false;
     } finally {
       setIsRegistering(false);
     }
-  }, [isSupported, permission, registerTokenWithBackend]);
+  }, [
+    buildServiceWorkerUrl,
+    isSupported,
+    normalizePushErrorMessage,
+    permission,
+    registerTokenWithBackend,
+  ]);
 
   /**
    * Unregister from notifications

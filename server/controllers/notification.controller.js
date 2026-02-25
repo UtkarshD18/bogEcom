@@ -180,14 +180,13 @@ export const unregisterToken = async (req, res) => {
  * @returns {Object} - Result with success/failure counts
  */
 export const sendOfferNotification = async (coupon, options = {}) => {
-  if (!isFirebaseReady()) {
-    debugLog("Firebase not ready, skipping offer notification");
-    return { success: false, reason: "firebase_not_ready" };
-  }
-
   const messaging = getMessaging();
   if (!messaging) {
-    return { success: false, reason: "messaging_not_available" };
+    const reason = isFirebaseReady()
+      ? "messaging_not_available"
+      : "firebase_not_ready";
+    debugLog("Firebase messaging unavailable, skipping offer notification");
+    return { success: false, reason };
   }
 
   try {
@@ -369,14 +368,13 @@ export const sendOfferNotification = async (coupon, options = {}) => {
  * @returns {Object} - Result with success/failure counts
  */
 export const sendOrderUpdateNotification = async (order, newStatus) => {
-  if (!isFirebaseReady()) {
-    debugLog("Firebase not ready, skipping order notification");
-    return { success: false, reason: "firebase_not_ready" };
-  }
-
   const messaging = getMessaging();
   if (!messaging) {
-    return { success: false, reason: "messaging_not_available" };
+    const reason = isFirebaseReady()
+      ? "messaging_not_available"
+      : "firebase_not_ready";
+    debugLog("Firebase messaging unavailable, skipping order notification");
+    return { success: false, reason };
   }
 
   // Must have a user ID - guests don't get order notifications

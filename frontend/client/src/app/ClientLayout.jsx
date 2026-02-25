@@ -49,7 +49,7 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
     <>
       <Header />
       <CoinRewardLayer />
-      <main className="min-h-screen pt-[120px] md:pt-[100px] overflow-x-hidden w-full">
+      <main className="min-h-screen pt-[var(--header-height)] overflow-x-hidden w-full">
         {children}
       </main>
       <Footer />

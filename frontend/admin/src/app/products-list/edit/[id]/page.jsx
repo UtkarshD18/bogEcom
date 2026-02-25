@@ -27,6 +27,7 @@ const EditProduct = () => {
   const [oldPrice, setOldPrice] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
   const [isNewArrival, setIsNewArrival] = useState(false);
+  const [isBestSeller, setIsBestSeller] = useState(false);
   const [isExclusive, setIsExclusive] = useState(false);
   const [demandStatus, setDemandStatus] = useState("NORMAL");
   const [stock, setStock] = useState("");
@@ -136,6 +137,7 @@ const EditProduct = () => {
         setOldPrice(product.originalPrice || product.oldPrice || "");
         setIsFeatured(product.isFeatured || false);
         setIsNewArrival(product.isNewArrival || false);
+        setIsBestSeller(product.isBestSeller || false);
         setIsExclusive(Boolean(product.isExclusive));
         setDemandStatus(product.demandStatus || "NORMAL");
         setStock(product.stock || "");
@@ -308,6 +310,7 @@ const EditProduct = () => {
         originalPrice: oldPrice ? Number(oldPrice) : undefined,
         isFeatured,
         isNewArrival,
+        isBestSeller,
         isExclusive,
         demandStatus,
         stock: stock ? Number(stock) : 0,
@@ -618,6 +621,22 @@ const EditProduct = () => {
                 />
                 <span className="text-sm text-gray-600">
                   {isNewArrival ? "Yes" : "No"}
+                </span>
+              </div>
+            </div>
+
+            <div className="col flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                Best Seller
+              </span>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={isBestSeller}
+                  onChange={(e) => setIsBestSeller(e.target.checked)}
+                  color="primary"
+                />
+                <span className="text-sm text-gray-600">
+                  {isBestSeller ? "Yes" : "No"}
                 </span>
               </div>
             </div>

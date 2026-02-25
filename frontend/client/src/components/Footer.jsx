@@ -86,8 +86,8 @@ const Footer = () => {
   const features = [
     {
       icon: <LiaShippingFastSolid />,
-      title: "Free Shipping",
-      desc: "On Every Order",
+      title: "Free Delivery",
+      desc: "On every order, we've got it covered",
       gradient: "linear-gradient(135deg, var(--primary), var(--flavor-hover))",
     },
     {
@@ -98,14 +98,14 @@ const Footer = () => {
     },
     {
       icon: <BsWallet2 />,
-      title: "Secure Pay",
-      desc: "Cards Accepted",
+      title: "Secure Payment",
+      desc: "UPI, Credit Cards, Debit Cards",
       gradient: "linear-gradient(135deg, #3b82f6, #60a5fa)",
     },
     {
       icon: <LiaGiftSolid />,
       title: "Special Gifts",
-      desc: "First Order Perks",
+      desc: "For Selected lucky Users",
       gradient: "linear-gradient(135deg, #ff6b9d, #ff9ec0)",
     },
     {
@@ -198,14 +198,14 @@ const Footer = () => {
               Contact Us
             </h3>
             <p className="text-[13px] sm:text-[14px] leading-relaxed text-gray-400">
-              G-222, RIICO, sitapura industrial area, <br />
-              tonk road Jaipur, rajasthan 302019
+              G-220,225, RIICO, Sitapura Industrial Area, <br />
+              Jaipur, Rajasthan 302022
             </p>
             <a
-              href="mailto:support@healthyonegram.com"
+              href="mailto:healthyonegram@gmail.com"
               className="text-[14px] font-semibold text-gray-400 hover:text-primary transition-colors duration-300"
             >
-              support@healthyonegram.com
+              healthyonegram@gmail.com
             </a>
             <a
               href="tel:+918619641968"
@@ -273,12 +273,10 @@ const Footer = () => {
             </h3>
             <ul className="space-y-3.5">
               {[
-                { name: "Prices drop", link: "/products?sort=price-low" },
-                { name: "New products", link: "/products?filter=new" },
-                { name: "Best sales", link: "/products?filter=bestseller" },
+                { name: "Prices drop", link: "/products?priceDrop=true" },
+                { name: "New products", link: "/products?newArrivals=true" },
+                { name: "Best seller", link: "/products?bestSeller=true" },
                 { name: "All Products", link: "/products" },
-                { name: "Contact us", link: "/contact" },
-                { name: "Our Blogs", link: "/blogs" },
               ].map((item, i) => (
                 <li key={i}>
                   <Link
@@ -312,13 +310,15 @@ const Footer = () => {
             </h3>
             <ul className="space-y-3.5">
               {[
-                { name: "Login", link: "/login" },
                 { name: "Collaborator Portal", link: "/affiliate/login" },
                 { name: "Delivery", link: "/delivery" },
                 { name: "Secure payment", link: "/secure-payment" },
+                { name: "Privacy Policy", link: "/privacy-policy" },
                 policyLinks.terms,
                 { name: "Cancellation & Return", link: "/cancellation" },
                 { name: "About Us", link: "/about-us" },
+                { name: "Contact us", link: "/contact" },
+                { name: "Our Blogs", link: "/blogs" },
               ].map((item, i) => (
                 <li key={i}>
                   <Link

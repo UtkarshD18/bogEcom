@@ -147,18 +147,20 @@ const ProductSlider = ({ title, categorySlug, isFeatured, limit = 10 }) => {
         className="!px-1"
       >
         {products.map((product) => (
-          <SwiperSlide key={product._id}>
-            <ProductItem
-              id={product._id}
-              name={product.name}
-              brand={product.brand || "Buy One Gram"}
-              price={product.price}
-              originalPrice={product.originalPrice}
-              discount={product.discount}
-              rating={product.rating}
-              image={product.thumbnail || product.images?.[0]}
-              product={product}
-            />
+          <SwiperSlide key={product._id} className="!h-auto">
+            <div className="h-full">
+              <ProductItem
+                id={product._id}
+                name={product.name}
+                brand={product.brand || "Buy One Gram"}
+                price={product.price}
+                originalPrice={product.originalPrice}
+                discount={product.discount}
+                rating={product.rating}
+                image={product.thumbnail || product.images?.[0]}
+                product={product}
+              />
+            </div>
           </SwiperSlide>
         ))}
       </Swiper>
