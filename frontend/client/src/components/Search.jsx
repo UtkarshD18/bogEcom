@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IoSearchOutline } from "react-icons/io5";
 
 const Search = ({
-  placeholder = "Search for products...",
+  placeholder = "Weight Gainer Peanut Butter",
   width = "100%",
   onSearch = null,
 }) => {
@@ -114,12 +114,7 @@ const Search = ({
 
   // Dynamic Placeholder Logic
   const placeholders = [
-    "Search for 'Crunchy'...",
-    "Try 'Dark Chocolate'...",
-    "Find your favorite flavor...",
-    "Search for 'High Protein'...",
-    "Discover 'Sugar Free'...",
-    "Search for anything...",
+    placeholder,
   ];
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [fadeKey, setFadeKey] = useState(0);
@@ -149,6 +144,7 @@ const Search = ({
           <input
             type="text"
             value={searchTerm}
+            placeholder={placeholder}
             onChange={handleInputChange}
             onFocus={() => {
               setIsFocused(true);

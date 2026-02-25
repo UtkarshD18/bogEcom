@@ -3,8 +3,10 @@ import {
   createSetting,
   deleteSetting,
   getAllSettings,
+  getHeaderSettings,
   getPublicSettings,
   getSettingByKey,
+  updateHeaderSettings,
   updateSetting,
 } from "../controllers/settings.controller.js";
 import admin from "../middlewares/admin.js";
@@ -19,6 +21,9 @@ const router = express.Router();
  */
 
 // ==================== PUBLIC ROUTES ====================
+
+// Header appearance settings
+router.get("/header", getHeaderSettings);
 
 // Get all public settings
 router.get("/public", getPublicSettings);
@@ -36,6 +41,9 @@ router.post("/admin/create", auth, admin, createSetting);
 
 // Update setting
 router.put("/admin/:key", auth, admin, updateSetting);
+
+// Update header appearance setting
+router.put("/header", auth, admin, updateHeaderSettings);
 
 // Delete setting
 router.delete("/admin/:key", auth, admin, deleteSetting);

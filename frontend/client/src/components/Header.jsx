@@ -107,6 +107,20 @@ const normalizeCoinSummary = (summary) => ({
   },
 });
 
+const HEADER_COLOR_CACHE_KEY = "hog_header_background_color";
+const DEFAULT_HEADER_BACKGROUND_COLOR = "#fffbf5";
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+const normalizeHexColor = (value) => {
+  const raw = String(value || "").trim();
+  if (!HEX_COLOR_PATTERN.test(raw)) return "";
+  const normalized = raw.toLowerCase();
+  if (normalized.length === 4) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
+  }
+  return normalized;
+};
+
 const Header = () => {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
@@ -139,6 +153,19 @@ const Header = () => {
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
   const { isActiveMember } = useMembership({ autoFetch: true });
+
+  const applyHeaderBackgroundColor = useCallback((value) => {
+    const normalized = normalizeHexColor(value);
+    if (!normalized || typeof document === "undefined") return false;
+
+    document.documentElement.style.setProperty("--header-bg-color", normalized);
+    try {
+      localStorage.setItem(HEADER_COLOR_CACHE_KEY, normalized);
+    } catch {
+      // Storage access can fail in private mode or strict browser policies.
+    }
+    return true;
+  }, []);
 
   const open = Boolean(anchorEl);
   const isCoinPanelOpen = Boolean(coinPanelAnchor);
@@ -276,6 +303,48 @@ const Header = () => {
       window.removeEventListener("focus", checkLoginStatus);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let hasCachedColor = false;
+    try {
+      const cached = localStorage.getItem(HEADER_COLOR_CACHE_KEY);
+      hasCachedColor = applyHeaderBackgroundColor(cached);
+    } catch {
+      hasCachedColor = false;
+    }
+
+    if (!hasCachedColor && typeof document !== "undefined") {
+      document.documentElement.style.setProperty(
+        "--header-bg-color",
+        DEFAULT_HEADER_BACKGROUND_COLOR,
+      );
+    }
+
+    const loadHeaderColor = async () => {
+      try {
+        const response = await fetchDataFromApi("/api/settings/header");
+        const remoteColor = response?.data?.headerBackgroundColor;
+        const applied = applyHeaderBackgroundColor(remoteColor);
+        if (!applied && !hasCachedColor && typeof document !== "undefined") {
+          document.documentElement.style.setProperty(
+            "--header-bg-color",
+            DEFAULT_HEADER_BACKGROUND_COLOR,
+          );
+        }
+      } catch {
+        if (!hasCachedColor && typeof document !== "undefined") {
+          document.documentElement.style.setProperty(
+            "--header-bg-color",
+            DEFAULT_HEADER_BACKGROUND_COLOR,
+          );
+        }
+      }
+    };
+
+    loadHeaderColor();
+  }, [applyHeaderBackgroundColor]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -518,12 +587,12 @@ const Header = () => {
     <>
       {/* Main Header Container */}
       <div
-        className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 backdrop-blur-xl ${scrolled ? "shadow-md border-b" : "border-b border-transparent"
+        className={`site-header-root fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 backdrop-blur-xl ${scrolled ? "shadow-md border-b" : "border-b border-transparent"
           } ${hideHeader ? "-translate-y-full" : "translate-y-0"}`}
         style={{
           backgroundColor: scrolled
-            ? `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 85%, transparent)`
-            : `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)`,
+            ? "color-mix(in srgb, var(--header-bg-color, var(--flavor-card-bg, #fffbf5)) 85%, transparent)"
+            : "color-mix(in srgb, var(--header-bg-color, var(--flavor-card-bg, #fffbf5)) 70%, transparent)",
           borderColor: scrolled
             ? `color-mix(in srgb, var(--flavor-color, #a7f3d0) 20%, transparent)`
             : "transparent",
@@ -537,7 +606,7 @@ const Header = () => {
             }`}
         >
           {/* Removed Decorative Top Line Gradient */}
-          <div className="w-full px-3 sm:px-4 md:px-6 py-0.5">
+          <div className="site-header-shell w-full px-3 sm:px-4 md:px-6 py-0.5">
             {/* === MOBILE TOP BAR (3-column grid for centered logo) === */}
             <div className="grid grid-cols-3 items-center md:hidden">
               {/* Left: Hamburger */}
@@ -567,14 +636,15 @@ const Header = () => {
                     }
                   }}
                 >
-                  <div className="relative transition-transform duration-300 group-hover:scale-105 flex items-center">
+                  <div className="relative transition-transform duration-300 group-hover:scale-105 flex items-center justify-center">
+                    <div className="site-header-logo-circle-mobile pointer-events-none absolute inset-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.16)] sm:h-11 sm:w-11" />
                     <Image
                       src="/logo.png"
                       width={120}
                       height={36}
                       alt="Buy One Gram"
                       priority
-                      className="object-contain mix-blend-multiply w-[70px] sm:w-[90px]"
+                      className="site-header-logo-image-mobile relative object-contain mix-blend-multiply w-[70px] sm:w-[90px]"
                       style={{ background: "transparent" }}
                     />
                   </div>
@@ -617,7 +687,7 @@ const Header = () => {
             </div>
 
             {/* === DESKTOP TOP BAR (unchanged flex layout) === */}
-            <div className="hidden md:flex items-center justify-between gap-8">
+            <div className="site-header-desktop-row hidden md:flex items-center justify-between gap-8">
               {/* LOGO */}
               <div className="shrink-0 md:pr-6 flex items-center h-full">
                 <Link
@@ -630,21 +700,22 @@ const Header = () => {
                     }
                   }}
                 >
-                  <div className="relative transition-transform duration-300 group-hover:scale-105 flex items-center">
+                  <div className="relative transition-transform duration-300 group-hover:scale-105 flex items-center justify-center">
+                    <div className="site-header-logo-circle-desktop pointer-events-none absolute inset-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_4px_14px_rgba(0,0,0,0.18)]" />
                     <Image
                       src="/logo.png"
                       width={120}
                       height={36}
                       alt="Buy One Gram"
                       priority
-                      className="object-contain mix-blend-multiply w-[120px]"
+                      className="site-header-logo-image-desktop relative object-contain mix-blend-multiply w-[120px]"
                       style={{ background: "transparent" }}
                     />
                   </div>
                 </Link>
               </div>
               {/* NAVIGATION + SEARCHBAR in one line */}
-              <div className="hidden md:flex flex-1 items-center gap-6">
+              <div className="site-header-nav-search hidden md:flex flex-1 items-center gap-6">
                 <nav className="flex items-center gap-5">
                   {[
                     { name: "Home", href: "/" },
@@ -682,14 +753,14 @@ const Header = () => {
                         "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
                     }}
                   >
-                    <div className="h-12 flex items-center">
+                    <div className="site-header-desktop-search h-12 flex items-center">
                       <Search />
                     </div>
                   </div>
                 </div>
               </div>
               {/* ACTIONS (Icons + Login Button) */}
-              <div className="flex items-center justify-end shrink-0 gap-4">
+              <div className="site-header-actions flex items-center justify-end shrink-0 gap-4">
                 <div className="relative" ref={coinDesktopRef}>
                   <button
                     id="coin-balance-anchor"
@@ -809,7 +880,7 @@ const Header = () => {
                 {/* Login / Register OR User Profile */}
                 {!isMounted ? (
                   <div
-                    className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2"
+                    className="site-header-login-chip hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2"
                     style={{
                       backgroundColor:
                         "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)",
@@ -821,7 +892,7 @@ const Header = () => {
                   </div>
                 ) : !isLoggedIn ? (
                   <div
-                    className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2 hover:shadow-md transition-all"
+                    className="site-header-login-chip hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2 hover:shadow-md transition-all"
                     style={{
                       backgroundColor:
                         "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)",
@@ -847,7 +918,7 @@ const Header = () => {
                   <div className="relative">
                     <button
                       onClick={handleClick}
-                      className="hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full border hover:shadow-md transition-all duration-200 group"
+                      className="site-header-profile-chip hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full border hover:shadow-md transition-all duration-200 group"
                       style={{ background: `linear-gradient(to right, color-mix(in srgb, var(--flavor-color) 10%, transparent), color-mix(in srgb, var(--flavor-hover) 10%, transparent))`, borderColor: `color-mix(in srgb, var(--flavor-color) 30%, transparent)` }}
                     >
                       {userPhoto ? (

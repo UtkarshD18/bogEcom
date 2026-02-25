@@ -21,6 +21,73 @@ const toSafeNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const normalizeWeightUnit = (unit) => {
+  const normalized = String(unit || "g").trim().toLowerCase();
+  if (!normalized) return "g";
+  if (["kg", "kilogram", "kilograms"].includes(normalized)) return "kg";
+  if (["g", "gm", "gram", "grams"].includes(normalized)) return "g";
+  return normalized;
+};
+
+const convertWeightToGrams = (weight, unit = "g") => {
+  const numericWeight = Number(weight);
+  if (!Number.isFinite(numericWeight) || numericWeight <= 0) return 0;
+
+  const normalizedUnit = normalizeWeightUnit(unit);
+  if (normalizedUnit === "kg") return Math.round(numericWeight * 1000);
+  if (normalizedUnit === "g") return Math.round(numericWeight);
+  return 0;
+};
+
+const parseWeightFromText = (value) => {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return 0;
+
+  const match = text.match(/(\d+(?:\.\d+)?)\s*(kg|g)\b/);
+  if (!match) return 0;
+
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return match[2] === "kg" ? Math.round(parsed * 1000) : Math.round(parsed);
+};
+
+const resolveOrderItemWeightGrams = (item) => {
+  const explicitWeight = convertWeightToGrams(
+    item?.weightGrams,
+    "g",
+  );
+  if (explicitWeight > 0) return explicitWeight;
+
+  const legacyWeight = convertWeightToGrams(item?.weight, item?.unit || "g");
+  if (legacyWeight > 0) return legacyWeight;
+
+  const parsedVariantWeight = parseWeightFromText(item?.variantName || "");
+  if (parsedVariantWeight > 0) return parsedVariantWeight;
+
+  const parsedTitleWeight = parseWeightFromText(
+    item?.productTitle || item?.name || "",
+  );
+  if (parsedTitleWeight > 0) return parsedTitleWeight;
+
+  return DEFAULT_PRODUCT_WEIGHT_GRAMS;
+};
+
+const getWeightSlabGrams = (totalWeightGrams) => {
+  const safeWeight = Math.max(Number(totalWeightGrams || 0), 1);
+  return Math.ceil(safeWeight / 500) * 500;
+};
+
+const resolvePackageWeightForCarrier = (weightGrams) => {
+  const configuredUnit = normalizeWeightUnit(
+    process.env.XPRESSBEES_PACKAGE_WEIGHT_UNIT || "g",
+  );
+
+  if (configuredUnit === "kg") {
+    return Math.max(Math.ceil(Number(weightGrams || 0) / 1000), 1);
+  }
+  return Math.round(Number(weightGrams || 0));
+};
+
 const wait = (ms) =>
   new Promise((resolve) => {
     setTimeout(resolve, Math.max(Number(ms || 0), 0));
@@ -297,9 +364,16 @@ const buildShipmentPayload = (order, prepared) => {
   );
   const paymentType =
     String(order?.payment_status || "").toLowerCase() === "paid" ? "prepaid" : "cod";
-  const totalWeightGrams = prepared.orderItems.reduce(
-    (sum, item) => sum + Math.max(Number(item.qty || 0), 0) * DEFAULT_PRODUCT_WEIGHT_GRAMS,
+  const rawOrderProducts = Array.isArray(order?.products) ? order.products : [];
+  const totalWeightGrams = rawOrderProducts.reduce(
+    (sum, item) =>
+      sum +
+      Math.max(toSafeNumber(item?.quantity, 0), 0) *
+        Math.max(resolveOrderItemWeightGrams(item), 1),
     0,
+  );
+  const billedWeightGrams = getWeightSlabGrams(
+    Math.max(totalWeightGrams, DEFAULT_PRODUCT_WEIGHT_GRAMS),
   );
 
   return {
@@ -308,7 +382,7 @@ const buildShipmentPayload = (order, prepared) => {
     order_amount: totalAmount,
     collectable_amount: paymentType === "cod" ? totalAmount : 0,
     order_items: prepared.orderItems,
-    package_weight: Math.max(totalWeightGrams, DEFAULT_PRODUCT_WEIGHT_GRAMS),
+    package_weight: resolvePackageWeightForCarrier(billedWeightGrams),
     package_length: toSafeNumber(
       process.env.XPRESSBEES_PACKAGE_LENGTH_CM,
       DEFAULT_PACKAGE_DIMENSION_CM,
