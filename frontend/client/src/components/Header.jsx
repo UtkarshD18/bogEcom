@@ -504,6 +504,8 @@ const Header = () => {
 
   useEffect(() => {
     setCoinPanelAnchor(null);
+    setHideHeader(false);
+    setMobileMenuOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -886,9 +888,8 @@ const Header = () => {
                   <div
                     className="relative shadow-sm border rounded-full overflow-hidden transition-all duration-300 focus-within:shadow-md"
                     style={{
-                      backgroundColor: "var(--flavor-card-bg, #fffbf5)",
-                      borderColor:
-                        "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
+                      backgroundColor: "rgba(255,255,255,0.96)",
+                      borderColor: "rgba(15,23,42,0.14)",
                     }}
                   >
                     <div className="site-header-desktop-search h-12 flex items-center">
@@ -1453,20 +1454,16 @@ const Header = () => {
         <div
           className="backdrop-blur-xl shadow-lg border-b px-3 sm:px-4 md:px-6 py-2.5"
           style={{
-            backgroundColor:
-              "color-mix(in srgb, var(--header-bg-color, var(--flavor-card-bg, #fffbf5)) 92%, transparent)",
-            borderColor:
-              "color-mix(in srgb, var(--header-bg-color, #fffbf5) 60%, rgba(0,0,0,0.08))",
+            backgroundColor: "rgba(255, 255, 255, 0.92)",
+            borderColor: "rgba(15, 23, 42, 0.12)",
           }}
         >
           <div className="max-w-2xl mx-auto">
             <div
               className="rounded-full border overflow-hidden"
               style={{
-                backgroundColor:
-                  "color-mix(in srgb, var(--header-bg-color, var(--flavor-card-bg, #fffbf5)) 94%, white 6%)",
-                borderColor:
-                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 26%, transparent)",
+                backgroundColor: "rgba(255,255,255,0.98)",
+                borderColor: "rgba(15, 23, 42, 0.16)",
               }}
             >
               <div className="h-10 flex items-center">

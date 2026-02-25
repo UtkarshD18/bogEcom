@@ -7,9 +7,8 @@ import PopularProducts from "@/components/PopularProducts";
 export default function Home() {
   return (
     <>
-      {/* Negative margin cancels out the global pt-[120px] md:pt-[100px] from ClientLayout */}
       <div
-        className="sliderWrapper pb-0 -mt-[120px] md:-mt-[100px] w-full overflow-x-hidden"
+        className="sliderWrapper pb-0 w-full overflow-x-hidden"
         style={{
           background: "var(--flavor-gradient)",
           transition: "background 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
