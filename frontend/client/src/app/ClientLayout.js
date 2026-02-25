@@ -45,7 +45,10 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
   return (
     <>
       <Header />
-      <main className="min-h-screen pt-[var(--header-height)] overflow-x-hidden w-full">
+      <main
+        className="min-h-screen overflow-x-hidden w-full"
+        style={{ paddingTop: "var(--header-height, 128px)" }}
+      >
         {children}
       </main>
       <Footer />

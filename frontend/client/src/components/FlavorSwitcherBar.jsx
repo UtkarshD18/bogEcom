@@ -77,6 +77,11 @@ export default function FlavorSwitcherBar() {
           position: relative; 
           overflow: hidden; 
           white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          line-height: 1.1;
         }
         .flavor-btn:hover { 
           transform: translateY(-2px); 
@@ -104,7 +109,9 @@ export default function FlavorSwitcherBar() {
           .flavor-bar::-webkit-scrollbar { display: none; }
           .flavor-btn {
             font-size: 0.85rem !important;
-            padding: 8px 14px !important;
+            padding: 9px 12px !important;
+            min-width: 96px;
+            min-height: 40px;
           }
         }
       `}</style>
