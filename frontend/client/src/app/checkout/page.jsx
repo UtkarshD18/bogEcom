@@ -2184,6 +2184,7 @@ const Checkout = () => {
                 helperText={formErrors.pincode}
                 fullWidth
                 size="small"
+                InputLabelProps={{ shrink: true }}
                 InputProps={{ sx: { borderRadius: "12px" } }}
               />
             </div>
