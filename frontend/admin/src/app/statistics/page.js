@@ -210,7 +210,7 @@ export default function StatisticsPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               Sales Trend
             </h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={300} minWidth={0} minHeight={300}>
               <LineChart data={salesTrend}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
@@ -242,7 +242,7 @@ export default function StatisticsPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               Order Status
             </h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={300} minWidth={0} minHeight={300}>
               <PieChart>
                 <Pie
                   data={orderStatus}
@@ -271,7 +271,7 @@ export default function StatisticsPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               Top Selling Products
             </h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={300} minWidth={0} minHeight={300}>
               <BarChart data={topProducts}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -294,7 +294,7 @@ export default function StatisticsPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               Category Performance
             </h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={300} minWidth={0} minHeight={300}>
               <BarChart data={categoryPerformance}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="category" />
@@ -314,7 +314,7 @@ export default function StatisticsPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               User Growth
             </h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={300} minWidth={0} minHeight={300}>
               <LineChart data={userGrowth}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
@@ -336,7 +336,7 @@ export default function StatisticsPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               Payment Method Distribution
             </h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={300} minWidth={0} minHeight={300}>
               <BarChart data={paymentMethods}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="paymentMethod" />

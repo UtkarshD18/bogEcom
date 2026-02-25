@@ -1,5 +1,7 @@
 const { test, expect } = require("@playwright/test");
 
+const CONSISTENT_HEADER_COLOR = "#0a8f3c";
+
 const buildHeaderSettingsPayload = (color) => ({
   error: false,
   success: true,
@@ -23,22 +25,23 @@ const mockHeaderSettings = async (page, color) => {
   });
 };
 
-const readCircleVisualMetrics = async (locator) =>
+const readShieldVisualMetrics = async (locator) =>
   locator.evaluate((el) => {
     const style = window.getComputedStyle(el);
     const rect = el.getBoundingClientRect();
     return {
       backgroundColor: style.backgroundColor,
+      opacity: Number.parseFloat(style.opacity || "0"),
       borderRadius: Number.parseFloat(style.borderTopLeftRadius) || 0,
       width: rect.width,
       height: rect.height,
     };
   });
 
-test("desktop >=1600 keeps compact header and white logo circle on dark header color", async ({
+test("desktop >=1600 keeps compact header and logo shield on configured color", async ({
   page,
 }) => {
-  await mockHeaderSettings(page, "#000000");
+  await mockHeaderSettings(page, CONSISTENT_HEADER_COLOR);
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/login", { waitUntil: "domcontentloaded" });
 
@@ -55,21 +58,37 @@ test("desktop >=1600 keeps compact header and white logo circle on dark header c
           .toLowerCase(),
       );
     })
-    .toBe("#000000");
+    .toBe(CONSISTENT_HEADER_COLOR);
 
   const desktopLogoWidth = await page
     .locator(".site-header-logo-image-desktop")
     .evaluate((el) => el.getBoundingClientRect().width);
   expect(desktopLogoWidth).toBeLessThanOrEqual(110);
 
-  const desktopCircle = page.locator(".site-header-logo-circle-desktop");
+  const desktopCircle = page.locator(".site-header-logo-shield-desktop");
   await expect(desktopCircle).toBeVisible();
-  const desktopMetrics = await readCircleVisualMetrics(desktopCircle);
+  await expect
+    .poll(async () => {
+      const metrics = await readShieldVisualMetrics(desktopCircle);
+      return metrics.opacity;
+    })
+    .toBeGreaterThan(0.9);
+  const desktopMetrics = await readShieldVisualMetrics(desktopCircle);
   expect(desktopMetrics.backgroundColor).toBe("rgb(255, 255, 255)");
-  expect(Math.abs(desktopMetrics.width - desktopMetrics.height)).toBeLessThanOrEqual(1.5);
+  expect(desktopMetrics.opacity).toBeGreaterThan(0.9);
   expect(desktopMetrics.borderRadius).toBeGreaterThanOrEqual(
     Math.min(desktopMetrics.width, desktopMetrics.height) / 2 - 1,
   );
+
+  const desktopLogoMetrics = await page
+    .locator(".site-header-logo-image-desktop")
+    .evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+  expect(desktopMetrics.width).toBeGreaterThanOrEqual(64);
+  expect(desktopMetrics.height).toBeGreaterThanOrEqual(64);
+  expect(desktopLogoMetrics.width).toBeGreaterThanOrEqual(48);
 
   await expect(root).toHaveScreenshot("header-desktop-1600.png", {
     animations: "disabled",
@@ -78,10 +97,10 @@ test("desktop >=1600 keeps compact header and white logo circle on dark header c
   });
 });
 
-test("mobile header keeps white circular logo on green header color", async ({
+test("mobile header keeps logo shield behavior on same configured color", async ({
   page,
 }) => {
-  await mockHeaderSettings(page, "#0a8f3c");
+  await mockHeaderSettings(page, CONSISTENT_HEADER_COLOR);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/login", { waitUntil: "domcontentloaded" });
 
@@ -98,16 +117,32 @@ test("mobile header keeps white circular logo on green header color", async ({
           .toLowerCase(),
       );
     })
-    .toBe("#0a8f3c");
+    .toBe(CONSISTENT_HEADER_COLOR);
 
-  const mobileCircle = page.locator(".site-header-logo-circle-mobile");
+  const mobileCircle = page.locator(".site-header-logo-shield-mobile");
   await expect(mobileCircle).toBeVisible();
-  const mobileMetrics = await readCircleVisualMetrics(mobileCircle);
+  await expect
+    .poll(async () => {
+      const metrics = await readShieldVisualMetrics(mobileCircle);
+      return metrics.opacity;
+    })
+    .toBeGreaterThan(0.9);
+  const mobileMetrics = await readShieldVisualMetrics(mobileCircle);
   expect(mobileMetrics.backgroundColor).toBe("rgb(255, 255, 255)");
-  expect(Math.abs(mobileMetrics.width - mobileMetrics.height)).toBeLessThanOrEqual(1.5);
+  expect(mobileMetrics.opacity).toBeGreaterThan(0.9);
   expect(mobileMetrics.borderRadius).toBeGreaterThanOrEqual(
     Math.min(mobileMetrics.width, mobileMetrics.height) / 2 - 1,
   );
+
+  const mobileLogoMetrics = await page
+    .locator(".site-header-logo-image-mobile")
+    .evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+  expect(mobileMetrics.width).toBeGreaterThanOrEqual(52);
+  expect(mobileMetrics.height).toBeGreaterThanOrEqual(52);
+  expect(mobileLogoMetrics.width).toBeGreaterThanOrEqual(34);
 
   await expect(
     page.locator(
@@ -120,4 +155,16 @@ test("mobile header keeps white circular logo on green header color", async ({
     caret: "hide",
     maxDiffPixelRatio: 0.08,
   });
+});
+
+test("light header keeps logo shield hidden", async ({ page }) => {
+  await mockHeaderSettings(page, "#fffbf5");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/login", { waitUntil: "domcontentloaded" });
+
+  const desktopCircle = page.locator(".site-header-logo-shield-desktop");
+  await expect(desktopCircle).toBeVisible();
+  const shieldMetrics = await readShieldVisualMetrics(desktopCircle);
+
+  expect(shieldMetrics.opacity).toBeLessThan(0.05);
 });

@@ -73,7 +73,7 @@ export const SalesAndUsersCharts = () => {
       </div>
 
       <div className="w-full mt-5" style={{ height: "400px" }}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
           {isActiveChart === 0 ? (
             <AreaChart
               data={salesData}

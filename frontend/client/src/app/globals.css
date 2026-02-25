@@ -74,12 +74,13 @@ body {
   }
 
   .site-header-logo-image-desktop {
-    width: 108px !important;
+    width: 3.25rem !important;
+    height: 3.25rem !important;
   }
 
-  .site-header-logo-circle-desktop {
-    width: 2.8rem !important;
-    height: 2.8rem !important;
+  .site-header-logo-wrap-desktop {
+    width: 4rem !important;
+    height: 4rem !important;
   }
 
   .site-header-actions {
@@ -91,6 +92,55 @@ body {
     padding-top: 0.42rem !important;
     padding-bottom: 0.42rem !important;
   }
+}
+
+.site-header-logo-wrap {
+  overflow: visible;
+  transform-origin: center center;
+  transition: transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.site-header-logo-wrap-desktop {
+  width: 4.5rem;
+  height: 4.5rem;
+}
+
+.site-header-logo-wrap-mobile {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+.site-header-logo-image-desktop,
+.site-header-logo-image-mobile {
+  transition: transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    filter 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.site-header-logo-shield-desktop,
+.site-header-logo-shield-mobile {
+  transition: opacity 200ms ease, box-shadow 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .site-header-logo-link:hover .site-header-logo-wrap {
+    transform: translateY(-1px) scale(1.035);
+  }
+
+  .site-header-logo-link:hover .site-header-logo-image-desktop,
+  .site-header-logo-link:hover .site-header-logo-image-mobile {
+    transform: translateY(-0.5px);
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
+  }
+
+  .site-header-logo-link:hover .site-header-logo-shield-desktop,
+  .site-header-logo-link:hover .site-header-logo-shield-mobile {
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+  }
+}
+
+.site-header-logo-link:active .site-header-logo-wrap {
+  transform: scale(0.98);
+  transition-duration: 120ms;
 }
 
 /* Themed sections */

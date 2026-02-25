@@ -28,6 +28,11 @@ export default function MembershipAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(EMPTY_SUMMARY);
   const [growth, setGrowth] = useState([]);
+  const [isChartReady, setIsChartReady] = useState(false);
+
+  useEffect(() => {
+    setIsChartReady(true);
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -91,21 +96,25 @@ export default function MembershipAnalyticsPage() {
       <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Members Growth Over Time</h2>
         <div className="h-[360px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={growth}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="totalMembers"
-                stroke="#2563eb"
-                strokeWidth={3}
-                dot={{ r: 3 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {isChartReady ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={280}>
+              <LineChart data={growth}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Line
+                  type="monotone"
+                  dataKey="totalMembers"
+                  stroke="#2563eb"
+                  strokeWidth={3}
+                  dot={{ r: 3 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full w-full rounded-xl bg-gray-50" />
+          )}
         </div>
       </div>
     </div>
