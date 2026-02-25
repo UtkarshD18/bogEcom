@@ -18,6 +18,7 @@
   /* Header Height Variable */
   --header-height: 85px;
   --header-height-mobile: 100px;
+  --header-bg-color: #fffbf5;
 
   /* Flavor Theme Variables - Default: Creamy */
   --flavor-color: #f5c16c;
@@ -51,6 +52,44 @@ body {
 @media (max-width: 768px) {
   :root {
     --header-height: var(--header-height-mobile, 110px);
+  }
+}
+
+@media (min-width: 1600px) {
+  .site-header-shell {
+    padding-top: 0.125rem !important;
+    padding-bottom: 0.125rem !important;
+  }
+
+  .site-header-desktop-row {
+    gap: 1.35rem !important;
+  }
+
+  .site-header-nav-search {
+    gap: 1rem !important;
+  }
+
+  .site-header-desktop-search {
+    height: 2.7rem !important;
+  }
+
+  .site-header-logo-image-desktop {
+    width: 108px !important;
+  }
+
+  .site-header-logo-circle-desktop {
+    width: 2.8rem !important;
+    height: 2.8rem !important;
+  }
+
+  .site-header-actions {
+    gap: 0.8rem !important;
+  }
+
+  .site-header-login-chip,
+  .site-header-profile-chip {
+    padding-top: 0.42rem !important;
+    padding-bottom: 0.42rem !important;
   }
 }
 

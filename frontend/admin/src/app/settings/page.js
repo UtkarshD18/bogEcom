@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { useCallback, useEffect, useState } from "react";
 import {
+  MdFormatColorFill,
   MdLocalOffer,
   MdLocalShipping,
   MdPercent,
@@ -27,6 +28,18 @@ import {
 } from "react-icons/md";
 
 const API_URL = API_BASE_URL;
+const DEFAULT_HEADER_BACKGROUND_COLOR = "#fffbf5";
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+const normalizeHexColor = (value) => {
+  const raw = String(value || "").trim();
+  if (!HEX_COLOR_PATTERN.test(raw)) return "";
+  const normalized = raw.toLowerCase();
+  if (normalized.length === 4) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
+  }
+  return normalized;
+};
 
 /**
  * Store Settings Page
@@ -87,7 +100,9 @@ const SettingsPage = () => {
     currency: "INR",
     currencySymbol: "₹",
   });
-
+  const [headerSettings, setHeaderSettings] = useState({
+    headerBackgroundColor: DEFAULT_HEADER_BACKGROUND_COLOR,
+  });
   // Offer Popup Settings
   const [offerSettings, setOfferSettings] = useState({
     showOfferPopup: false,
@@ -184,8 +199,36 @@ const SettingsPage = () => {
             case "highTrafficNotice":
               setHighTrafficNotice(setting.value);
               break;
+            case "headerSettings":
+              setHeaderSettings((prev) => ({
+                ...prev,
+                ...setting.value,
+                headerBackgroundColor:
+                  normalizeHexColor(setting?.value?.headerBackgroundColor) ||
+                  DEFAULT_HEADER_BACKGROUND_COLOR,
+              }));
+              break;
           }
         });
+      }
+
+      try {
+        const headerResponse = await fetch(`${API_URL}/api/settings/header`, {
+          method: "GET",
+          credentials: "include",
+        });
+        const headerData = await headerResponse.json();
+        if (headerData?.success && headerData?.data) {
+          setHeaderSettings((prev) => ({
+            ...prev,
+            ...headerData.data,
+            headerBackgroundColor:
+              normalizeHexColor(headerData?.data?.headerBackgroundColor) ||
+              DEFAULT_HEADER_BACKGROUND_COLOR,
+          }));
+        }
+      } catch (headerError) {
+        console.warn("Header settings fetch fallback failed:", headerError);
       }
     } catch (error) {
       console.warn("Settings fetch failed:", error);
@@ -225,9 +268,60 @@ const SettingsPage = () => {
     }
   };
 
+  const saveHeaderSettings = async () => {
+    try {
+      const adminToken = token || localStorage.getItem("adminToken");
+      const normalizedColor = normalizeHexColor(
+        headerSettings?.headerBackgroundColor,
+      );
+      if (!adminToken || !normalizedColor) return false;
+
+      const response = await fetch(`${API_URL}/api/settings/header`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({ headerBackgroundColor: normalizedColor }),
+      });
+
+      const data = await response.json();
+      if (data?.success && data?.data?.headerBackgroundColor) {
+        setHeaderSettings((prev) => ({
+          ...prev,
+          headerBackgroundColor:
+            normalizeHexColor(data?.data?.headerBackgroundColor) ||
+            DEFAULT_HEADER_BACKGROUND_COLOR,
+        }));
+      }
+      return Boolean(data?.success);
+    } catch (error) {
+      console.error("Error saving header settings:", error);
+      return false;
+    }
+  };
+
   const handleSaveAll = async () => {
     setSaving(true);
     try {
+      const normalizedHeaderColor = normalizeHexColor(
+        headerSettings?.headerBackgroundColor,
+      );
+      if (!normalizedHeaderColor) {
+        setSnackbar({
+          open: true,
+          message: "Header background color must be a valid hex value.",
+          severity: "error",
+        });
+        return;
+      }
+
+      setHeaderSettings((prev) => ({
+        ...prev,
+        headerBackgroundColor: normalizedHeaderColor,
+      }));
+
       const results = await Promise.all([
         saveSetting("shippingSettings", shippingSettings),
         saveSetting("orderSettings", orderSettings),
@@ -244,6 +338,8 @@ const SettingsPage = () => {
         // Site controls
         saveSetting("paymentGatewayEnabled", siteControls.paymentGatewayEnabled),
         saveSetting("maintenanceMode", siteControls.maintenanceMode),
+        // Header appearance
+        saveHeaderSettings(),
       ]);
 
       if (results.every(Boolean)) {
@@ -277,6 +373,12 @@ const SettingsPage = () => {
       </div>
     );
   }
+
+  const normalizedHeaderColor = normalizeHexColor(
+    headerSettings?.headerBackgroundColor,
+  );
+  const previewHeaderColor =
+    normalizedHeaderColor || DEFAULT_HEADER_BACKGROUND_COLOR;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -716,6 +818,69 @@ const SettingsPage = () => {
         </p>
       </div>
 
+      {/* Header Appearance */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <MdFormatColorFill className="text-2xl text-sky-500" />
+          <h2 className="text-lg font-semibold text-gray-800">
+            Header Appearance
+          </h2>
+        </div>
+        <Divider className="mb-4" />
+
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-start">
+          <TextField
+            label="Header Background Color (Hex)"
+            value={headerSettings.headerBackgroundColor}
+            onChange={(e) =>
+              setHeaderSettings((prev) => ({
+                ...prev,
+                headerBackgroundColor: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+            placeholder="#fffbf5"
+            error={Boolean(headerSettings.headerBackgroundColor) && !normalizedHeaderColor}
+            helperText={
+              Boolean(headerSettings.headerBackgroundColor) &&
+              !normalizedHeaderColor
+                ? "Enter a valid hex color like #ffffff or #fff"
+                : "Used as header background on the client site"
+            }
+          />
+
+          <TextField
+            label="Pick Color"
+            type="color"
+            value={previewHeaderColor}
+            onChange={(e) =>
+              setHeaderSettings((prev) => ({
+                ...prev,
+                headerBackgroundColor: e.target.value,
+              }))
+            }
+            size="small"
+            sx={{ width: { xs: "100%", md: 140 } }}
+            InputLabelProps={{ shrink: true }}
+          />
+        </div>
+
+        <div className="mt-4 rounded-xl border border-gray-200 p-4 bg-gray-50">
+          <p className="text-xs font-semibold text-gray-600 mb-2">
+            Live Preview
+          </p>
+          <div
+            className="h-14 rounded-lg border border-gray-200 flex items-center px-4"
+            style={{ backgroundColor: previewHeaderColor }}
+          >
+            <div className="h-9 w-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-[11px] font-semibold text-gray-700">
+              LOGO
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Offer Popup Settings */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -971,3 +1136,4 @@ const SettingsPage = () => {
 };
 
 export default SettingsPage;
+
