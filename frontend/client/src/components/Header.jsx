@@ -798,7 +798,7 @@ const Header = () => {
               </div>
               {/* NAVIGATION + SEARCHBAR in one line */}
               <div className="site-header-nav-search hidden md:flex flex-1 items-center gap-6">
-                <nav className="flex items-center gap-5">
+                <nav className="site-header-desktop-nav flex items-center gap-5">
                   {[
                     { name: "Home", href: "/" },
                     { name: "Products", href: "/products" },
@@ -815,13 +815,13 @@ const Header = () => {
                         key={item.name}
                         href={item.href}
                         // Keep nav labels like "About Us" on one line under browser zoom
-                        className={`whitespace-nowrap flex-shrink-0 font-semibold text-base px-3 py-1.5 rounded-full border transition ${isActive
+                        className={`site-header-nav-pill whitespace-nowrap flex-shrink-0 font-semibold text-base px-3 py-1.5 rounded-full border transition ${isActive
                           ? useHighContrastNav
-                            ? "text-slate-900 bg-white/90 border-white/90 shadow-sm"
-                            : "text-[var(--flavor-color)] bg-[var(--flavor-glass)] border-transparent"
+                            ? "site-header-nav-pill-active site-header-nav-pill-contrast-active"
+                            : "site-header-nav-pill-active"
                           : useHighContrastNav
-                            ? "text-white border-white/40 bg-white/10 hover:bg-white/85 hover:text-slate-900 hover:border-white/90"
-                            : "text-gray-700 border-transparent hover:bg-[var(--flavor-glass)] hover:text-[var(--flavor-color)]"
+                            ? "site-header-nav-pill-contrast"
+                            : "site-header-nav-pill-idle"
                           }`}
                       >
                         {item.name}
