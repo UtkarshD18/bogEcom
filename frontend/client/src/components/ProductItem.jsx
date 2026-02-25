@@ -46,6 +46,7 @@ const ProductItem = (props) => {
             ? Math.round(((defaultVariant.originalPrice - defaultVariant.price) / defaultVariant.originalPrice) * 100)
             : 0))
         : productData.discount;
+    const showDiscountBadge = Number(displayDiscount) > 0 && !productData.isBestSeller;
     const displayWeight = defaultVariant ? defaultVariant.weight : productData.weight;
     const displayUnit = defaultVariant ? (defaultVariant.unit || "g") : (productData.unit && productData.unit !== "piece" ? productData.unit : "g");
     const isExclusiveProduct = Boolean(productData?.isExclusive);
@@ -119,13 +120,13 @@ const ProductItem = (props) => {
                 )}
 
                 {/* Discount Badge */}
-                {displayDiscount > 0 && (
+                {showDiscountBadge && (
                     <span className="absolute left-2 top-2 z-10 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
                         {displayDiscount}% OFF
                     </span>
                 )}
                 {isExclusiveProduct && (
-                    <span className={`absolute left-2 z-10 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm ${displayDiscount > 0 ? "top-8" : "top-2"}`}>
+                    <span className={`absolute left-2 z-10 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm ${showDiscountBadge ? "top-8" : "top-2"}`}>
                         Members Only
                     </span>
                 )}
