@@ -1612,12 +1612,21 @@ const Checkout = () => {
                           helperText={guestErrors.pincode}
                           variant="outlined"
                           fullWidth
+                          size="small"
+                          InputLabelProps={{ shrink: true }}
                           InputProps={{
                             sx: { borderRadius: "16px", bgcolor: "white" },
                           }}
                         />
-                        <FormControl fullWidth error={!!guestErrors.state}>
-                          <InputLabel>State *</InputLabel>
+                        <FormControl
+                          fullWidth
+                          size="small"
+                          variant="outlined"
+                          error={!!guestErrors.state}
+                        >
+                          <InputLabel shrink sx={{ bgcolor: "white", px: 0.5 }}>
+                            State *
+                          </InputLabel>
                           <Select
                             name="state"
                             value={guestDetails.state}
@@ -2176,13 +2185,16 @@ const Checkout = () => {
                 helperText={formErrors.pincode}
                 fullWidth
                 size="small"
+                InputLabelProps={{ shrink: true }}
                 InputProps={{ sx: { borderRadius: "12px" } }}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <FormControl fullWidth size="small" error={!!formErrors.state}>
-                <InputLabel>State</InputLabel>
+                <InputLabel shrink sx={{ bgcolor: "white", px: 0.5 }}>
+                  State
+                </InputLabel>
                 <Select
                   name="state"
                   value={formData.state}

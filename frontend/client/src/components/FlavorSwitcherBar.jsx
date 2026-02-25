@@ -117,13 +117,15 @@ export default function FlavorSwitcherBar() {
             style={{
               background:
                 selected === flavor.name ? flavor.color : flavor.glass,
-              color: selected === flavor.name ? "#fff" : flavor.color,
+              color: selected === flavor.name
+                ? (flavor.text || "#111111")
+                : (flavor.text || flavor.color),
               fontWeight: "600",
               fontSize: "0.95rem",
               border:
                 selected === flavor.name
-                  ? "2px solid rgba(255,255,255,0.5)"
-                  : "2px solid transparent",
+                  ? "2px solid rgba(255,255,255,0.65)"
+                  : `2px solid ${flavor.color}20`,
               borderRadius: "12px",
               padding: "10px 24px",
               boxShadow:

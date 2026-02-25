@@ -30,22 +30,17 @@ const Search = ({
 
     setIsLoading(true);
     try {
-      console.log("[Search] Searching for:", term);
       const response = await fetchDataFromApi(
         `/api/products?search=${encodeURIComponent(term)}&limit=8`,
       );
-      console.log("[Search] Response:", response);
-      if (response?.error !== true && response?.data) {
-        const safeSuggestions = Array.isArray(response.data)
-          ? response.data.filter((product) => product?.isExclusive !== true)
-          : [];
-        console.log("[Search] Found", safeSuggestions.length, "results");
-        setSuggestions(safeSuggestions);
-        setShowDropdown(true);
-      } else {
-        console.log("[Search] No results or error:", response?.message);
-        setSuggestions([]);
-      }
+      const payload = Array.isArray(response)
+        ? response
+        : response?.data || response?.products || response?.items || [];
+      const safeSuggestions = Array.isArray(payload)
+        ? payload.filter((product) => product?.isExclusive !== true)
+        : [];
+      setSuggestions(safeSuggestions);
+      setShowDropdown(safeSuggestions.length > 0);
     } catch (error) {
       console.error("[Search] Error:", error);
       setSuggestions([]);
