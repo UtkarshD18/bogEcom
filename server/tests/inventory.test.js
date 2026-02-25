@@ -304,3 +304,137 @@ test("confirmInventory deducts variant stock", async () => {
   assert.equal(updatedVariant.stock_quantity, 3);
   assert.equal(updatedVariant.reserved_quantity, 0);
 });
+
+test("applyPurchaseOrderInventory increments targeted variant by variantId", async () => {
+  const product = await ProductModel.create({
+    name: "PO Variant Product",
+    slug: "test-product-9",
+    price: 100,
+    category: new mongoose.Types.ObjectId(),
+    hasVariants: true,
+    stock: 12,
+    stock_quantity: 12,
+    variants: [
+      {
+        name: "500g",
+        sku: "SKU-PO-500",
+        price: 99,
+        weight: 500,
+        unit: "g",
+        stock: 6,
+        stock_quantity: 6,
+      },
+      {
+        name: "1kg",
+        sku: "SKU-PO-1KG",
+        price: 179,
+        weight: 1,
+        unit: "kg",
+        stock: 6,
+        stock_quantity: 6,
+      },
+    ],
+  });
+
+  const targetVariantId = String(product.variants[1]._id);
+  const po = await PurchaseOrderModel.create({
+    items: [
+      {
+        productId: product._id,
+        productTitle: "PO Variant Product",
+        variantId: targetVariantId,
+        quantity: 4,
+        price: 179,
+        subTotal: 716,
+      },
+    ],
+    subtotal: 716,
+    tax: 0,
+    shipping: 0,
+    total: 716,
+    status: "approved",
+  });
+
+  await applyPurchaseOrderInventory(po, { receivedItems: [] });
+
+  const updatedProduct = await ProductModel.findById(product._id).lean();
+  const variant500 = updatedProduct.variants.find(
+    (variant) => String(variant._id) === String(product.variants[0]._id),
+  );
+  const variant1kg = updatedProduct.variants.find(
+    (variant) => String(variant._id) === targetVariantId,
+  );
+  assert.equal(variant500.stock_quantity, 6);
+  assert.equal(variant1kg.stock_quantity, 10);
+  assert.equal(updatedProduct.stock_quantity, 16);
+
+  const updatedPo = await PurchaseOrderModel.findById(po._id).lean();
+  assert.equal(String(updatedPo.items[0].variantId), targetVariantId);
+  assert.equal(updatedPo.items[0].packing, "1kg");
+  assert.equal(updatedPo.items[0].variantName, "1kg");
+});
+
+test("applyPurchaseOrderInventory resolves variant from packing and syncs parent stock when hasVariants flag is false", async () => {
+  const product = await ProductModel.create({
+    name: "PO Variant Product Legacy",
+    slug: "test-product-10",
+    price: 100,
+    category: new mongoose.Types.ObjectId(),
+    hasVariants: false,
+    stock: 0,
+    stock_quantity: 0,
+    variants: [
+      {
+        name: "500g",
+        sku: "SKU-PO-LEGACY-500",
+        price: 99,
+        weight: 500,
+        unit: "g",
+        stock: 3,
+        stock_quantity: 3,
+      },
+      {
+        name: "Sprouts(Big)",
+        sku: "SKU-PO-LEGACY-1KG",
+        price: 179,
+        weight: 1,
+        unit: "kg",
+        stock: 3,
+        stock_quantity: 3,
+      },
+    ],
+  });
+
+  const po = await PurchaseOrderModel.create({
+    items: [
+      {
+        productId: product._id,
+        productTitle: "PO Variant Product Legacy",
+        packing: "1kg",
+        quantity: 2,
+        price: 179,
+        subTotal: 358,
+      },
+    ],
+    subtotal: 358,
+    tax: 0,
+    shipping: 0,
+    total: 358,
+    status: "approved",
+  });
+
+  await applyPurchaseOrderInventory(po, { receivedItems: [] });
+
+  const updatedProduct = await ProductModel.findById(product._id).lean();
+  const variant500 = updatedProduct.variants.find(
+    (variant) => String(variant._id) === String(product.variants[0]._id),
+  );
+  const variant1kg = updatedProduct.variants.find(
+    (variant) => String(variant._id) === String(product.variants[1]._id),
+  );
+
+  assert.equal(variant500.stock_quantity, 3);
+  assert.equal(variant1kg.stock_quantity, 5);
+  assert.equal(updatedProduct.stock_quantity, 8);
+  assert.equal(updatedProduct.stock, 8);
+});

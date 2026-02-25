@@ -504,6 +504,8 @@ export const toggleMembershipUserStatus = async ({
 
   if (safeAction === "cancel") {
     membershipUser.status = "cancelled";
+    // When admin cancels, show cancellation date as effective expiry date.
+    membershipUser.expiryDate = new Date();
   } else {
     const now = new Date();
     if (membershipUser.expiryDate <= now) {

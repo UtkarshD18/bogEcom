@@ -1121,6 +1121,36 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
         );
       }
 
+      const resolvedVariant = resolvedVariantId
+        ? (product.variants || []).find(
+            (variant) => String(variant?._id || "") === String(resolvedVariantId),
+          )
+        : null;
+      const resolvedPacking = String(
+        adjustment.packing ||
+          buildPackingFromWeightAndUnit(
+            resolvedVariant?.weight,
+            resolvedVariant?.unit,
+          ) ||
+          adjustment.variantName ||
+          resolvedVariant?.name ||
+          "",
+      ).trim();
+      const resolvedVariantName = String(
+        adjustment.variantName || resolvedVariant?.name || resolvedPacking || "",
+      ).trim();
+
+      if (
+        resolvedVariantId &&
+        Number.isInteger(Number(adjustment.lineIndex)) &&
+        po.items?.[Number(adjustment.lineIndex)]
+      ) {
+        const line = po.items[Number(adjustment.lineIndex)];
+        line.variantId = resolvedVariantId;
+        line.variantName = resolvedVariantName;
+        line.packing = resolvedPacking;
+      }
+
       if (resolvedVariantId) {
         await ProductModel.updateOne(
           { _id: adjustment.productId, "variants._id": resolvedVariantId },

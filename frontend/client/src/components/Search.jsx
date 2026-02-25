@@ -72,7 +72,7 @@ const Search = ({
 
   // Handle form submit
   const handleSubmit = (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     const normalizedTerm = searchTerm.trim();
 
     setShowDropdown(false);
@@ -190,7 +190,7 @@ const Search = ({
               if (suggestions.length > 0) setShowDropdown(true);
             }}
             onBlur={() => setIsFocused(false)}
-            className="w-full h-full py-3 pl-6 pr-14 text-base font-medium rounded-full outline-none bg-transparent border-none transition-all z-10 relative bg-transparent placeholder:text-transparent"
+            className="w-full h-full py-3 pl-6 pr-14 text-base font-medium rounded-full outline-none bg-transparent border-none transition-all relative bg-transparent placeholder:text-transparent"
             style={{
               fontFamily: "'Inter', system-ui, sans-serif",
             }}
@@ -207,23 +207,23 @@ const Search = ({
               </span>
             </div>
           )}
-        </div>
 
-        {/* Loading/Submit Button - Right side */}
-        <button
-          type="submit"
-          className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${searchTerm || isFocused
-            ? "bg-[var(--flavor-color)] text-white shadow-lg shadow-[var(--flavor-color)]/30 scale-100"
-            : "bg-gray-100 text-gray-400 scale-90"
-            } z-20 cursor-pointer`}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <IoSearchOutline size={18} strokeWidth={2.5} />
-          )}
-        </button>
+          {/* Loading/Submit Button - Right side */}
+          <button
+            type="submit"
+            className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${searchTerm || isFocused
+              ? "bg-[var(--flavor-color)] text-white shadow-lg shadow-[var(--flavor-color)]/30 scale-100"
+              : "bg-gray-100 text-gray-400 scale-90"
+              } z-20 cursor-pointer`}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <IoSearchOutline size={18} strokeWidth={2.5} />
+            )}
+          </button>
+        </div>
       </form>
 
       {/* Search Suggestions Dropdown */}
