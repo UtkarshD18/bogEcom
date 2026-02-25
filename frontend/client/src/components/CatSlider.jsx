@@ -87,7 +87,7 @@ const CatSlider = () => {
                     </div>
 
                     {/* Slider with custom arrows */}
-                    <div className="relative">
+                    <div className="relative overflow-visible">
                         {/* Custom Navigation Arrows — always visible, flavor-colored on hover */}
                         <button
                             ref={prevRef}
@@ -148,10 +148,10 @@ const CatSlider = () => {
                                 768: { slidesPerView: 5, spaceBetween: 24 },
                                 1024: { slidesPerView: 6, spaceBetween: 24 },
                             }}
-                            className="!px-1"
+                            className="!px-1 !pb-2 !overflow-visible"
                         >
                             {categories.map((category, index) => (
-                                <SwiperSlide key={category._id} className="!h-auto">
+                                <SwiperSlide key={category._id} className="!h-auto py-1">
                                     <motion.div
                                         initial={{ opacity: 0, scale: 0.8 }}
                                         whileInView={{ opacity: 1, scale: 1 }}
@@ -161,9 +161,9 @@ const CatSlider = () => {
                                     >
                                         <Link
                                             href={`/products?category=${category._id}`}
-                                            className="group block rounded-[2.5rem] p-6 text-center transition-all duration-500 hover:-translate-y-2 bg-white border border-gray-100 shadow-sm hover:shadow-2xl hover:shadow-primary/10 hover:border-primary/30 h-[220px] flex flex-col items-center justify-center w-full"
+                                            className="group block rounded-[2.5rem] p-6 text-center transition-all duration-500 hover:-translate-y-2 bg-white border border-gray-100 shadow-sm hover:shadow-2xl hover:shadow-primary/10 hover:border-primary/30 h-[230px] min-h-[230px] flex flex-col items-center justify-center w-full"
                                         >
-                                            <div className="aspect-square w-28 h-28 mb-6 rounded-[2rem] overflow-hidden bg-gray-50 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform duration-700 ring-8 ring-transparent group-hover:ring-primary/20">
+                                            <div className="aspect-square w-24 h-24 sm:w-28 sm:h-28 mb-6 rounded-[2rem] overflow-hidden bg-gray-50 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform duration-500 ring-8 ring-transparent group-hover:ring-primary/20">
                                                 {category.image ? (
                                                     <img
                                                         src={getImageUrl(category.image)}

@@ -1602,7 +1602,7 @@ const Checkout = () => {
                           sx: { borderRadius: "16px", bgcolor: "white" },
                         }}
                       />
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4 mt-1">
                         <TextField
                           label="Pincode *"
                           name="pincode"
@@ -1613,7 +1613,6 @@ const Checkout = () => {
                           variant="outlined"
                           fullWidth
                           size="small"
-                          InputLabelProps={{ shrink: true }}
                           InputProps={{
                             sx: { borderRadius: "16px", bgcolor: "white" },
                           }}
@@ -1624,7 +1623,7 @@ const Checkout = () => {
                           variant="outlined"
                           error={!!guestErrors.state}
                         >
-                          <InputLabel shrink sx={{ bgcolor: "white", px: 0.5 }}>
+                          <InputLabel sx={{ bgcolor: "white", px: 0.5 }}>
                             State *
                           </InputLabel>
                           <Select
@@ -2164,7 +2163,7 @@ const Checkout = () => {
               InputProps={{ sx: { borderRadius: "12px" } }}
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 mt-1">
               <TextField
                 name="city"
                 label="City"
@@ -2192,7 +2191,7 @@ const Checkout = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <FormControl fullWidth size="small" error={!!formErrors.state}>
-                <InputLabel shrink sx={{ bgcolor: "white", px: 0.5 }}>
+                <InputLabel sx={{ bgcolor: "white", px: 0.5 }}>
                   State
                 </InputLabel>
                 <Select

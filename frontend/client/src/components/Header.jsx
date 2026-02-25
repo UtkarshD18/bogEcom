@@ -212,6 +212,8 @@ const Header = () => {
   const [showLogoProtection, setShowLogoProtection] = useState(() =>
     shouldShowLogoProtection(DEFAULT_HEADER_BACKGROUND_COLOR),
   );
+  const headerRootRef = useRef(null);
+  const headerMeasuredHeightRef = useRef(0);
   const coinDesktopRef = useRef(null);
   const coinMobileRef = useRef(null);
   const coinAnimationRef = useRef(0);
@@ -504,6 +506,55 @@ const Header = () => {
     setCoinPanelAnchor(null);
   }, [pathname]);
 
+  useEffect(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") return;
+    const headerNode = headerRootRef.current;
+    if (!headerNode) return;
+
+    let animationFrame = 0;
+    headerMeasuredHeightRef.current = 0;
+    const applyHeaderHeight = () => {
+      const measuredHeight = Math.ceil(
+        headerNode.getBoundingClientRect().height || 0,
+      );
+      if (measuredHeight > 0) {
+        const stableHeight = Math.max(
+          headerMeasuredHeightRef.current,
+          measuredHeight,
+        );
+        headerMeasuredHeightRef.current = stableHeight;
+        document.documentElement.style.setProperty(
+          "--header-height",
+          `${stableHeight}px`,
+        );
+      }
+    };
+    const scheduleMeasurement = () => {
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(applyHeaderHeight);
+    };
+
+    const handleResize = () => {
+      headerMeasuredHeightRef.current = 0;
+      scheduleMeasurement();
+    };
+
+    scheduleMeasurement();
+    window.addEventListener("resize", handleResize);
+
+    let observer;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(scheduleMeasurement);
+      observer.observe(headerNode);
+    }
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (observer) observer.disconnect();
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    };
+  }, [mobileMenuOpen, pathname]);
+
   // Scroll detection
   useEffect(() => {
     let lastScrollY = window.scrollY;
@@ -663,6 +714,7 @@ const Header = () => {
     <>
       {/* Main Header Container */}
       <div
+        ref={headerRootRef}
         className={`site-header-root fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 backdrop-blur-xl ${scrolled ? "shadow-md border-b" : "border-b border-transparent"
           } ${hideHeader ? "-translate-y-full" : "translate-y-0"}`}
         style={{
