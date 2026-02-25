@@ -67,6 +67,14 @@ settingsSchema.statics.defaultSettings = [
     category: "general",
   },
   {
+    key: "headerSettings",
+    value: {
+      headerBackgroundColor: "#fffbf5",
+    },
+    description: "Header appearance settings",
+    category: "display",
+  },
+  {
     key: "showOfferPopup",
     value: true,
     description: "Show offer popup to guests/users",

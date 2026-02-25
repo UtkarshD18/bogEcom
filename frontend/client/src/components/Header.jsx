@@ -107,6 +107,91 @@ const normalizeCoinSummary = (summary) => ({
   },
 });
 
+const HEADER_COLOR_CACHE_KEY = "hog_header_background_color";
+const DEFAULT_HEADER_BACKGROUND_COLOR = "#fffbf5";
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const LOGO_GREEN_HUE_MIN = 85;
+const LOGO_GREEN_HUE_MAX = 165;
+const LOGO_PROTECTION_LUMINANCE_THRESHOLD = 0.34;
+
+const normalizeHexColor = (value) => {
+  const raw = String(value || "").trim();
+  if (!HEX_COLOR_PATTERN.test(raw)) return "";
+  const normalized = raw.toLowerCase();
+  if (normalized.length === 4) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
+  }
+  return normalized;
+};
+
+const hexToRgb = (hex) => {
+  const normalized = normalizeHexColor(hex);
+  if (!normalized) return null;
+
+  return {
+    r: Number.parseInt(normalized.slice(1, 3), 16),
+    g: Number.parseInt(normalized.slice(3, 5), 16),
+    b: Number.parseInt(normalized.slice(5, 7), 16),
+  };
+};
+
+const toLinearChannel = (value) => {
+  const channel = Number(value) / 255;
+  if (channel <= 0.03928) return channel / 12.92;
+  return ((channel + 0.055) / 1.055) ** 2.4;
+};
+
+const relativeLuminance = (rgb) => {
+  if (!rgb) return 1;
+  const r = toLinearChannel(rgb.r);
+  const g = toLinearChannel(rgb.g);
+  const b = toLinearChannel(rgb.b);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+const rgbToHsl = (rgb) => {
+  const r = Number(rgb.r) / 255;
+  const g = Number(rgb.g) / 255;
+  const b = Number(rgb.b) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+
+  let hue = 0;
+  if (delta > 0) {
+    if (max === r) {
+      hue = ((g - b) / delta + (g < b ? 6 : 0)) * 60;
+    } else if (max === g) {
+      hue = ((b - r) / delta + 2) * 60;
+    } else {
+      hue = ((r - g) / delta + 4) * 60;
+    }
+  }
+
+  const lightness = (max + min) / 2;
+  const saturation =
+    delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+
+  return { h: hue, s: saturation, l: lightness };
+};
+
+const shouldShowLogoProtection = (headerHexColor) => {
+  const rgb = hexToRgb(headerHexColor);
+  if (!rgb) return false;
+
+  const luminance = relativeLuminance(rgb);
+  const hsl = rgbToHsl(rgb);
+
+  const isDarkBackground = luminance <= LOGO_PROTECTION_LUMINANCE_THRESHOLD;
+  const isGreenBandBackground =
+    hsl.h >= LOGO_GREEN_HUE_MIN &&
+    hsl.h <= LOGO_GREEN_HUE_MAX &&
+    hsl.s >= 0.2 &&
+    hsl.l <= 0.72;
+
+  return isDarkBackground || isGreenBandBackground;
+};
+
 const Header = () => {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
@@ -124,6 +209,9 @@ const Header = () => {
   const [coinPanelAnchor, setCoinPanelAnchor] = useState(null);
   const [coinInfoOpen, setCoinInfoOpen] = useState(false);
   const [coinLoading, setCoinLoading] = useState(false);
+  const [showLogoProtection, setShowLogoProtection] = useState(() =>
+    shouldShowLogoProtection(DEFAULT_HEADER_BACKGROUND_COLOR),
+  );
   const coinDesktopRef = useRef(null);
   const coinMobileRef = useRef(null);
   const coinAnimationRef = useRef(0);
@@ -139,6 +227,20 @@ const Header = () => {
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
   const { isActiveMember } = useMembership({ autoFetch: true });
+
+  const applyHeaderBackgroundColor = useCallback((value) => {
+    const normalized = normalizeHexColor(value);
+    if (!normalized || typeof document === "undefined") return false;
+
+    document.documentElement.style.setProperty("--header-bg-color", normalized);
+    setShowLogoProtection(shouldShowLogoProtection(normalized));
+    try {
+      localStorage.setItem(HEADER_COLOR_CACHE_KEY, normalized);
+    } catch {
+      // Storage access can fail in private mode or strict browser policies.
+    }
+    return true;
+  }, []);
 
   const open = Boolean(anchorEl);
   const isCoinPanelOpen = Boolean(coinPanelAnchor);
@@ -276,6 +378,48 @@ const Header = () => {
       window.removeEventListener("focus", checkLoginStatus);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let hasCachedColor = false;
+    try {
+      const cached = localStorage.getItem(HEADER_COLOR_CACHE_KEY);
+      hasCachedColor = applyHeaderBackgroundColor(cached);
+    } catch {
+      hasCachedColor = false;
+    }
+
+    if (!hasCachedColor && typeof document !== "undefined") {
+      document.documentElement.style.setProperty(
+        "--header-bg-color",
+        DEFAULT_HEADER_BACKGROUND_COLOR,
+      );
+    }
+
+    const loadHeaderColor = async () => {
+      try {
+        const response = await fetchDataFromApi("/api/settings/header");
+        const remoteColor = response?.data?.headerBackgroundColor;
+        const applied = applyHeaderBackgroundColor(remoteColor);
+        if (!applied && !hasCachedColor && typeof document !== "undefined") {
+          document.documentElement.style.setProperty(
+            "--header-bg-color",
+            DEFAULT_HEADER_BACKGROUND_COLOR,
+          );
+        }
+      } catch {
+        if (!hasCachedColor && typeof document !== "undefined") {
+          document.documentElement.style.setProperty(
+            "--header-bg-color",
+            DEFAULT_HEADER_BACKGROUND_COLOR,
+          );
+        }
+      }
+    };
+
+    loadHeaderColor();
+  }, [applyHeaderBackgroundColor]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -451,6 +595,7 @@ const Header = () => {
   const coinTooltip = isLoggedIn
     ? `You have ${coinCount} coins`
     : "Login to earn coins";
+  const useHighContrastNav = showLogoProtection;
 
   const renderCoinDropdown = (anchor) => (
     <div
@@ -518,12 +663,12 @@ const Header = () => {
     <>
       {/* Main Header Container */}
       <div
-        className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 backdrop-blur-xl ${scrolled ? "shadow-md border-b" : "border-b border-transparent"
+        className={`site-header-root fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 backdrop-blur-xl ${scrolled ? "shadow-md border-b" : "border-b border-transparent"
           } ${hideHeader ? "-translate-y-full" : "translate-y-0"}`}
         style={{
           backgroundColor: scrolled
-            ? `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 85%, transparent)`
-            : `color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)`,
+            ? "color-mix(in srgb, var(--header-bg-color, var(--flavor-card-bg, #fffbf5)) 85%, transparent)"
+            : "color-mix(in srgb, var(--header-bg-color, var(--flavor-card-bg, #fffbf5)) 70%, transparent)",
           borderColor: scrolled
             ? `color-mix(in srgb, var(--flavor-color, #a7f3d0) 20%, transparent)`
             : "transparent",
@@ -537,7 +682,7 @@ const Header = () => {
             }`}
         >
           {/* Removed Decorative Top Line Gradient */}
-          <div className="w-full px-3 sm:px-4 md:px-6 py-0.5">
+          <div className="site-header-shell w-full px-3 sm:px-4 md:px-6 py-0.5">
             {/* === MOBILE TOP BAR (3-column grid for centered logo) === */}
             <div className="grid grid-cols-3 items-center md:hidden">
               {/* Left: Hamburger */}
@@ -559,7 +704,7 @@ const Header = () => {
               <div className="flex justify-center">
                 <Link
                   href="/"
-                  className="block group"
+                  className="site-header-logo-link block group"
                   onClick={(e) => {
                     if (window.location.pathname === "/") {
                       e.preventDefault();
@@ -567,14 +712,18 @@ const Header = () => {
                     }
                   }}
                 >
-                  <div className="relative transition-transform duration-300 group-hover:scale-105 flex items-center">
+                  <div className="site-header-logo-wrap site-header-logo-wrap-mobile relative flex items-center justify-center">
+                    <div
+                      className={`site-header-logo-shield-mobile pointer-events-none absolute inset-0 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.16)] transition-opacity duration-200 ${showLogoProtection ? "opacity-100" : "opacity-0"
+                        }`}
+                    />
                     <Image
-                      src="/logo.png"
-                      width={120}
-                      height={36}
+                      src="/logo-header.png"
+                      width={407}
+                      height={347}
                       alt="Buy One Gram"
                       priority
-                      className="object-contain mix-blend-multiply w-[70px] sm:w-[90px]"
+                      className="site-header-logo-image-mobile relative object-contain w-[42px] h-[42px] sm:w-[46px] sm:h-[46px]"
                       style={{ background: "transparent" }}
                     />
                   </div>
@@ -617,12 +766,12 @@ const Header = () => {
             </div>
 
             {/* === DESKTOP TOP BAR (unchanged flex layout) === */}
-            <div className="hidden md:flex items-center justify-between gap-8">
+            <div className="site-header-desktop-row hidden md:flex items-center justify-between gap-8">
               {/* LOGO */}
               <div className="shrink-0 md:pr-6 flex items-center h-full">
                 <Link
                   href="/"
-                  className="block group"
+                  className="site-header-logo-link block group"
                   onClick={(e) => {
                     if (window.location.pathname === "/") {
                       e.preventDefault();
@@ -630,22 +779,26 @@ const Header = () => {
                     }
                   }}
                 >
-                  <div className="relative transition-transform duration-300 group-hover:scale-105 flex items-center">
+                  <div className="site-header-logo-wrap site-header-logo-wrap-desktop relative flex items-center justify-center">
+                    <div
+                      className={`site-header-logo-shield-desktop pointer-events-none absolute inset-0 rounded-full bg-white shadow-[0_4px_14px_rgba(0,0,0,0.18)] transition-opacity duration-200 ${showLogoProtection ? "opacity-100" : "opacity-0"
+                        }`}
+                    />
                     <Image
-                      src="/logo.png"
-                      width={120}
-                      height={36}
+                      src="/logo-header.png"
+                      width={407}
+                      height={347}
                       alt="Buy One Gram"
                       priority
-                      className="object-contain mix-blend-multiply w-[120px]"
+                      className="site-header-logo-image-desktop relative object-contain w-[62px] h-[62px]"
                       style={{ background: "transparent" }}
                     />
                   </div>
                 </Link>
               </div>
               {/* NAVIGATION + SEARCHBAR in one line */}
-              <div className="hidden md:flex flex-1 items-center gap-6">
-                <nav className="flex items-center gap-5">
+              <div className="site-header-nav-search hidden md:flex flex-1 items-center gap-6">
+                <nav className="site-header-desktop-nav flex items-center gap-5">
                   {[
                     { name: "Home", href: "/" },
                     { name: "Products", href: "/products" },
@@ -662,9 +815,13 @@ const Header = () => {
                         key={item.name}
                         href={item.href}
                         // Keep nav labels like "About Us" on one line under browser zoom
-                        className={`whitespace-nowrap flex-shrink-0 font-semibold text-base px-2 py-1 rounded-lg transition ${isActive
-                          ? "text-[var(--flavor-color)] bg-[var(--flavor-glass)]"
-                          : "text-gray-700 hover:bg-[var(--flavor-glass)] hover:text-[var(--flavor-color)]"
+                        className={`site-header-nav-pill whitespace-nowrap flex-shrink-0 font-semibold text-base px-3 py-1.5 rounded-full border transition ${isActive
+                          ? useHighContrastNav
+                            ? "site-header-nav-pill-active site-header-nav-pill-contrast-active"
+                            : "site-header-nav-pill-active"
+                          : useHighContrastNav
+                            ? "site-header-nav-pill-contrast"
+                            : "site-header-nav-pill-idle"
                           }`}
                       >
                         {item.name}
@@ -682,14 +839,14 @@ const Header = () => {
                         "color-mix(in srgb, var(--flavor-color, #a7f3d0) 30%, transparent)",
                     }}
                   >
-                    <div className="h-12 flex items-center">
+                    <div className="site-header-desktop-search h-12 flex items-center">
                       <Search />
                     </div>
                   </div>
                 </div>
               </div>
               {/* ACTIONS (Icons + Login Button) */}
-              <div className="flex items-center justify-end shrink-0 gap-4">
+              <div className="site-header-actions flex items-center justify-end shrink-0 gap-4">
                 <div className="relative" ref={coinDesktopRef}>
                   <button
                     id="coin-balance-anchor"
@@ -809,7 +966,7 @@ const Header = () => {
                 {/* Login / Register OR User Profile */}
                 {!isMounted ? (
                   <div
-                    className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2"
+                    className="site-header-login-chip hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2"
                     style={{
                       backgroundColor:
                         "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)",
@@ -821,7 +978,7 @@ const Header = () => {
                   </div>
                 ) : !isLoggedIn ? (
                   <div
-                    className="hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2 hover:shadow-md transition-all"
+                    className="site-header-login-chip hidden md:flex items-center gap-1 text-sm font-semibold text-neutral-700 px-5 py-2.5 rounded-full shadow-sm ml-2 hover:shadow-md transition-all"
                     style={{
                       backgroundColor:
                         "color-mix(in srgb, var(--flavor-card-bg, #fffbf5) 70%, transparent)",
@@ -847,7 +1004,7 @@ const Header = () => {
                   <div className="relative">
                     <button
                       onClick={handleClick}
-                      className="hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full border hover:shadow-md transition-all duration-200 group"
+                      className="site-header-profile-chip hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full border hover:shadow-md transition-all duration-200 group"
                       style={{ background: `linear-gradient(to right, color-mix(in srgb, var(--flavor-color) 10%, transparent), color-mix(in srgb, var(--flavor-hover) 10%, transparent))`, borderColor: `color-mix(in srgb, var(--flavor-color) 30%, transparent)` }}
                     >
                       {userPhoto ? (
@@ -1241,13 +1398,23 @@ const Header = () => {
           }`}
         style={{ top: 0 }}
       >
-        <div className="backdrop-blur-xl bg-white/95 shadow-lg border-b border-gray-200/50 px-3 sm:px-4 md:px-6 py-2.5">
+        <div
+          className="backdrop-blur-xl shadow-lg border-b px-3 sm:px-4 md:px-6 py-2.5"
+          style={{
+            backgroundColor:
+              "color-mix(in srgb, var(--header-bg-color, var(--flavor-card-bg, #fffbf5)) 92%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--header-bg-color, #fffbf5) 60%, rgba(0,0,0,0.08))",
+          }}
+        >
           <div className="max-w-2xl mx-auto">
             <div
               className="rounded-full border overflow-hidden"
               style={{
-                backgroundColor: "#fff",
-                borderColor: "#e5e5e5",
+                backgroundColor:
+                  "color-mix(in srgb, var(--header-bg-color, var(--flavor-card-bg, #fffbf5)) 94%, white 6%)",
+                borderColor:
+                  "color-mix(in srgb, var(--flavor-color, #a7f3d0) 26%, transparent)",
               }}
             >
               <div className="h-10 flex items-center">

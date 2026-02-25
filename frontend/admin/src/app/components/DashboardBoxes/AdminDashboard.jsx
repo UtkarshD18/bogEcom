@@ -97,7 +97,7 @@ export default function AdminDashboard() {
       {chartData.length > 0 && (
         <div className="bg-white p-4 rounded shadow mb-6">
           <h2 className="text-lg font-bold mb-4">Monthly Sales & Orders</h2>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} minWidth={0} minHeight={300}>
             <BarChart data={chartData}>
               <XAxis dataKey="name" />
               <YAxis />
