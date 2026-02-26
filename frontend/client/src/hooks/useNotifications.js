@@ -191,12 +191,28 @@ export const useNotifications = (options = {}) => {
         // Listen for foreground messages
         const unsubscribe = onMessage(messaging, (payload) => {
           console.log("Foreground message received:", payload);
-          setForegroundMessage({
+          const nextMessage = {
             title: payload.notification?.title || payload.data?.title || "Notification",
             body: payload.notification?.body || payload.data?.body || "",
             data: payload.data,
             timestamp: Date.now(),
-          });
+          };
+
+          // Show native browser notification in foreground so users see a real popup.
+          if (typeof window !== "undefined" && Notification.permission === "granted") {
+            try {
+              new Notification(nextMessage.title, {
+                body: nextMessage.body,
+                icon: "/logo.png",
+                badge: "/logo.png",
+                tag: nextMessage.data?.notificationId || nextMessage.data?.type || "foreground",
+              });
+            } catch (nativeError) {
+              // Best-effort only; toast fallback still runs.
+            }
+          }
+
+          setForegroundMessage(nextMessage);
         });
 
         return () => unsubscribe();
