@@ -96,8 +96,9 @@ const NotificationHandler = () => {
     };
   }, [isSupported, isRegistered, permission, requestPermission]);
 
-  // Only render toast if registered
-  if (!isRegistered || !foregroundMessage) return null;
+  // Show toast for any received foreground message.
+  // Do not gate on isRegistered because token/localStorage can temporarily desync.
+  if (!foregroundMessage) return null;
 
   return (
     <NotificationToast

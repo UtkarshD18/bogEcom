@@ -237,6 +237,58 @@ export const useNotifications = (options = {}) => {
     }
   }, [permission, token]);
 
+  // Self-heal token state when permission is granted but local token is missing.
+  // This can happen after storage clear / profile reset while browser push subscription still exists.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isSupported || permission !== "granted" || !firebaseApp) return;
+    if (token || localStorage.getItem("fcmToken")) return;
+
+    let cancelled = false;
+
+    const restoreToken = async () => {
+      try {
+        const swUrl = buildServiceWorkerUrl();
+        const registration = await navigator.serviceWorker.register(swUrl, {
+          scope: "/",
+        });
+        await navigator.serviceWorker.ready;
+
+        const messaging = getMessaging(firebaseApp);
+        const tokenOptions = { serviceWorkerRegistration: registration };
+        const vapidKey = (
+          process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || FALLBACK_VAPID_KEY
+        ).trim();
+        if (vapidKey) {
+          tokenOptions.vapidKey = vapidKey;
+        }
+
+        const recoveredToken = await getToken(messaging, tokenOptions);
+        if (!recoveredToken || cancelled) return;
+
+        setToken(recoveredToken);
+        localStorage.setItem("fcmToken", recoveredToken);
+        localStorage.setItem("notificationPermission", "granted");
+
+        await registerTokenWithBackend(recoveredToken);
+      } catch (restoreError) {
+        console.error("Error restoring FCM token:", restoreError);
+      }
+    };
+
+    void restoreToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    buildServiceWorkerUrl,
+    isSupported,
+    permission,
+    registerTokenWithBackend,
+    token,
+  ]);
+
   // Keep backend registration in sync (e.g., login/logout changes)
   useEffect(() => {
     if (typeof window === "undefined") return;
