@@ -32,28 +32,26 @@ export const initSocket = (httpServer, { origins = [], jwtSecret } = {}) => {
       socket.handshake.auth?.token ||
       null;
 
-    if (!token) {
-      return next(new Error("UNAUTHORIZED"));
-    }
-
-    if (!jwtSecret) {
-      return next(new Error("AUTH_NOT_CONFIGURED"));
+    if (!token || !jwtSecret) {
+      return next();
     }
 
     try {
       const decoded = jwt.verify(token, jwtSecret);
-      if (!decoded?.id) {
-        return next(new Error("INVALID_TOKEN"));
+      if (decoded?.id) {
+        socket.userId = decoded.id;
       }
-      socket.userId = decoded.id;
-      return next();
-    } catch (error) {
-      return next(new Error("INVALID_TOKEN"));
+    } catch {
+      // Treat invalid/expired auth as a guest connection.
     }
+    return next();
   });
 
   ioInstance.on("connection", async (socket) => {
+    socket.join("audience:all");
+
     if (socket.userId) {
+      socket.join("audience:user");
       socket.join(`user:${socket.userId}`);
       try {
         const user = await UserModel.findById(socket.userId).select("role status");
@@ -63,7 +61,10 @@ export const initSocket = (httpServer, { origins = [], jwtSecret } = {}) => {
       } catch {
         // Ignore role lookup failures for socket connections.
       }
+      return;
     }
+
+    socket.join("audience:guest");
   });
 
   return ioInstance;

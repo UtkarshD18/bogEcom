@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { getMessaging, isFirebaseReady } from "../config/firebaseAdmin.js";
 import NotificationTokenModel from "../models/notificationToken.model.js";
 import UserModel from "../models/user.model.js";
+import { emitLiveOfferNotification } from "../realtime/offerEvents.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 // Debug-only logging to keep production output clean
@@ -240,22 +241,76 @@ export const unregisterToken = async (req, res) => {
  * @returns {Object} - Result with success/failure counts
  */
 export const sendOfferNotification = async (coupon, options = {}) => {
+  const includeUsers = options.includeUsers !== false;
+  const discountText =
+    coupon.discountType === "percentage"
+      ? `${coupon.discountValue}% OFF`
+      : `INR ${coupon.discountValue} OFF`;
+
+  const customTitle = String(options.title || "").trim();
+  const customBody = String(options.body || "").trim();
+
+  const notification = {
+    title: customTitle || `New Offer: ${discountText}`,
+    body:
+      customBody ||
+      coupon.description ||
+      `Use code ${coupon.code} to get ${discountText} on your order!`,
+  };
+
+  const data = {
+    type: "offer",
+    couponCode: coupon.code,
+    discountType: coupon.discountType,
+    discountValue: String(coupon.discountValue),
+    expiresAt: coupon.endDate?.toISOString() || "",
+    url: "/",
+    notificationId: `offer:${coupon.code || "GEN"}:${Date.now()}`,
+    title: notification.title,
+    body: notification.body,
+  };
+
+  const liveDelivery = emitLiveOfferNotification(
+    {
+      type: "offer",
+      title: notification.title,
+      body: notification.body,
+      notificationId: data.notificationId,
+      data,
+      source: "socket",
+      sentAt: new Date().toISOString(),
+    },
+    { includeUsers },
+  );
+
+  const liveSummary = {
+    liveDelivered: liveDelivery.delivered || 0,
+    liveGuestDelivered: liveDelivery.guestDelivered || 0,
+    liveUserDelivered: liveDelivery.userDelivered || 0,
+  };
+
   const messaging = getMessaging();
   if (!messaging) {
     const reason = isFirebaseReady()
       ? "messaging_not_available"
       : "firebase_not_ready";
     debugLog("Firebase messaging unavailable, skipping offer notification");
-    return { success: false, reason };
+    return {
+      success: false,
+      reason,
+      sent: 0,
+      failed: 0,
+      totalTokens: 0,
+      failureCodes: {},
+      ...liveSummary,
+    };
   }
 
   try {
     // Get all active tokens (both guests and users for offers)
     const [guestTokens, userTokens] = await Promise.all([
       NotificationTokenModel.getGuestTokens(),
-      options.includeUsers !== false
-        ? NotificationTokenModel.getUserTokens()
-        : Promise.resolve([]),
+      includeUsers ? NotificationTokenModel.getUserTokens() : Promise.resolve([]),
     ]);
 
     let allowedUserTokens = userTokens;
@@ -283,37 +338,16 @@ export const sendOfferNotification = async (coupon, options = {}) => {
 
     if (allTokens.length === 0) {
       debugLog("No tokens to send offer notification to");
-      return { success: true, sent: 0, reason: "no_tokens" };
+      return {
+        success: true,
+        sent: 0,
+        failed: 0,
+        totalTokens: 0,
+        failureCodes: {},
+        reason: "no_tokens",
+        ...liveSummary,
+      };
     }
-
-    // Format notification
-    const discountText =
-      coupon.discountType === "percentage"
-        ? `${coupon.discountValue}% OFF`
-        : `₹${coupon.discountValue} OFF`;
-
-    const customTitle = String(options.title || "").trim();
-    const customBody = String(options.body || "").trim();
-
-    const notification = {
-      title: customTitle || `🎉 New Offer: ${discountText}`,
-      body:
-        customBody ||
-        coupon.description ||
-        `Use code ${coupon.code} to get ${discountText} on your order!`,
-    };
-
-    const data = {
-      type: "offer",
-      couponCode: coupon.code,
-      discountType: coupon.discountType,
-      discountValue: String(coupon.discountValue),
-      expiresAt: coupon.endDate?.toISOString() || "",
-      url: "/",
-      notificationId: `offer:${coupon.code || "GEN"}:${Date.now()}`,
-      title: notification.title,
-      body: notification.body,
-    };
 
     const frontendBaseUrl = getFrontendBaseUrl();
     const targetPath = String(data.url || "/").trim() || "/";
@@ -375,6 +409,11 @@ export const sendOfferNotification = async (coupon, options = {}) => {
         return {
           success: false,
           reason: batchError.code || batchError.message || "batch_send_error",
+          sent: successCount,
+          failed: failureCount,
+          totalTokens: allTokens.length,
+          failureCodes,
+          ...liveSummary,
         };
       }
     }
@@ -412,10 +451,19 @@ export const sendOfferNotification = async (coupon, options = {}) => {
       failed: failureCount,
       totalTokens: allTokens.length,
       failureCodes,
+      ...liveSummary,
     };
   } catch (error) {
     console.error("Error sending offer notification:", error);
-    return { success: false, reason: error.message };
+    return {
+      success: false,
+      reason: error.message,
+      sent: 0,
+      failed: 0,
+      totalTokens: 0,
+      failureCodes: {},
+      ...liveSummary,
+    };
   }
 };
 
@@ -640,7 +688,11 @@ export const manualSendOffer = async (req, res) => {
       body,
     });
 
-    if (result.success && (result.reason === "no_tokens" || result.totalTokens === 0)) {
+    const liveDelivered = Number(result.liveDelivered || 0);
+    const noPushTokens =
+      result.success && (result.reason === "no_tokens" || result.totalTokens === 0);
+
+    if (noPushTokens && liveDelivered === 0) {
       return res.status(409).json({
         error: true,
         success: false,
@@ -652,18 +704,24 @@ export const manualSendOffer = async (req, res) => {
 
     if (!result.success) {
       const reason = result.reason || "unknown_error";
-      const baseMessage =
-        reason === "firebase_not_ready" || reason === "messaging_not_available"
-          ? "Push notifications are not configured on the server. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in server/.env and restart the server."
-          : "Failed to send offer notification";
+      const pushConfigMissing =
+        reason === "firebase_not_ready" || reason === "messaging_not_available";
+      const baseMessage = pushConfigMissing
+        ? "Push notifications are not configured on the server. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in server/.env and restart the server."
+        : "Failed to send offer notification";
+
+      if (liveDelivered > 0) {
+        return res.status(200).json({
+          error: false,
+          success: true,
+          message: `${baseMessage} Live in-app alert delivered to ${liveDelivered} active visitor${liveDelivered === 1 ? "" : "s"}.`,
+          data: result,
+        });
+      }
 
       const message =
         baseMessage +
-        (reason &&
-        reason !== "firebase_not_ready" &&
-        reason !== "messaging_not_available"
-          ? ` (${reason})`
-          : "");
+        (reason && !pushConfigMissing ? ` (${reason})` : "");
 
       return res.status(503).json({
         error: true,
@@ -673,10 +731,14 @@ export const manualSendOffer = async (req, res) => {
       });
     }
 
+    const successMessage = noPushTokens
+      ? `Offer notification delivered to ${liveDelivered} live visitor${liveDelivered === 1 ? "" : "s"} (push tokens unavailable).`
+      : "Offer notification sent";
+
     res.status(200).json({
       error: false,
       success: true,
-      message: "Offer notification sent",
+      message: successMessage,
       data: result,
     });
   } catch (error) {
@@ -723,3 +785,4 @@ export const cleanupRateLimitMap = () => {
 
 // Cleanup every 10 minutes
 setInterval(cleanupRateLimitMap, 10 * 60 * 1000);
+
