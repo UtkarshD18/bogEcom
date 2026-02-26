@@ -87,9 +87,20 @@ const PAYMENT_PROVIDER =
     : DEFAULT_PAYMENT_PROVIDER;
 const PAYTM_MERCHANT_ID = process.env.PAYTM_MERCHANT_ID || "";
 const PAYTM_MERCHANT_KEY = process.env.PAYTM_MERCHANT_KEY || "";
+const isTruthyEnv = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
+};
 const PAYTM_ENV_ENABLED = Boolean(
   PAYMENT_PROVIDER === "PAYTM" &&
-    process.env.PAYTM_ENABLED === "true" &&
+    isTruthyEnv(process.env.PAYTM_ENABLED) &&
     PAYTM_MERCHANT_ID &&
     PAYTM_MERCHANT_KEY,
 );

@@ -5,9 +5,18 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MdClose, MdLocalOffer, MdNotifications } from "react-icons/md";
 
-// Stable key for localStorage - change version to reset for all users
-const POPUP_SHOWN_KEY = "welcome_coupon_shown_v2"; // Updated version to reset
-const POPUP_DISMISSED_KEY = "offer_popup_dismissed_v2"; // Updated version to reset
+const POPUP_STORAGE_VERSION = "v3";
+const POPUP_COOLDOWN_HOURS = 24;
+
+const normalizeCouponCode = (value) => {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized || "GENERIC";
+};
+
+const getPopupShownKey = (couponCode) =>
+  `welcome_coupon_shown_${POPUP_STORAGE_VERSION}_${normalizeCouponCode(couponCode)}`;
+const getPopupDismissedKey = (couponCode) =>
+  `offer_popup_dismissed_${POPUP_STORAGE_VERSION}_${normalizeCouponCode(couponCode)}`;
 
 /**
  * OfferPopup Component
@@ -35,9 +44,11 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Ref to ensure we only initialize once
-  const hasInitialized = useRef(false);
   const timeoutRef = useRef(null);
+  const storageKeysRef = useRef({
+    shownKey: getPopupShownKey(""),
+    dismissedKey: getPopupDismissedKey(""),
+  });
 
   // Get settings from context
   const {
@@ -63,18 +74,10 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
 
   // Check and show offer from settings context
   useEffect(() => {
-    // Wait for settings to load
     if (settingsLoading) {
       console.log("[OfferPopup] Settings still loading...");
       return;
     }
-
-    // Prevent multiple initializations (handles strict mode double-mount)
-    if (hasInitialized.current) {
-      console.log("[OfferPopup] Already initialized, skipping...");
-      return;
-    }
-    hasInitialized.current = true;
 
     console.log("[OfferPopup] Checking offer settings:", {
       showOfferPopup,
@@ -82,65 +85,63 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
       offerTitle,
     });
 
-    const checkAndShowOffer = () => {
-      // Check if popup was already shown in this session
-      const alreadyShown = sessionStorage.getItem(POPUP_SHOWN_KEY);
-      if (alreadyShown === "true") {
-        console.log("[OfferPopup] Already shown in this session");
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    if (!(showOfferPopup && offerCouponCode)) {
+      console.log("[OfferPopup] Popup not enabled or no coupon code:", {
+        showOfferPopup,
+        offerCouponCode,
+      });
+      return;
+    }
+
+    const shownKey = getPopupShownKey(offerCouponCode);
+    const dismissedKey = getPopupDismissedKey(offerCouponCode);
+    storageKeysRef.current = { shownKey, dismissedKey };
+
+    const alreadyShown = sessionStorage.getItem(shownKey);
+    if (alreadyShown === "true") {
+      console.log("[OfferPopup] Already shown in this session");
+      return;
+    }
+
+    const dismissedRaw = localStorage.getItem(dismissedKey);
+    if (dismissedRaw) {
+      const dismissedTime = Number.parseInt(dismissedRaw, 10);
+      const hoursSinceDismissed = (Date.now() - dismissedTime) / (1000 * 60 * 60);
+      if (
+        Number.isFinite(hoursSinceDismissed) &&
+        hoursSinceDismissed < POPUP_COOLDOWN_HOURS
+      ) {
+        console.log(
+          "[OfferPopup] Dismissed recently, hours since:",
+          hoursSinceDismissed,
+        );
         return;
       }
+    }
 
-      // Check if popup was dismissed recently (24-hour cooldown)
-      const lastDismissed = localStorage.getItem(POPUP_DISMISSED_KEY);
-      if (lastDismissed) {
-        const dismissedTime = parseInt(lastDismissed, 10);
-        const hoursSinceDismissed =
-          (Date.now() - dismissedTime) / (1000 * 60 * 60);
-        // Don't show again for 24 hours
-        if (hoursSinceDismissed < 24) {
-          console.log(
-            "[OfferPopup] Dismissed recently, hours since:",
-            hoursSinceDismissed,
-          );
-          return;
-        }
-      }
+    console.log("[OfferPopup] Showing offer popup with code:", offerCouponCode);
+    setOffer({
+      couponCode: offerCouponCode,
+      title: offerTitle || "Special Offer!",
+      description:
+        offerDescription || "Use this code to get a discount on your order!",
+      discountText: offerDiscountText || "Get Discount",
+    });
 
-      // Check if offer popup is enabled (from context)
-      if (showOfferPopup && offerCouponCode) {
-        console.log(
-          "[OfferPopup] Showing offer popup with code:",
-          offerCouponCode,
-        );
-        setOffer({
-          couponCode: offerCouponCode,
-          title: offerTitle || "Special Offer!",
-          description:
-            offerDescription ||
-            "Use this code to get a discount on your order!",
-          discountText: offerDiscountText || "Get Discount",
-        });
+    timeoutRef.current = setTimeout(() => {
+      setIsVisible(true);
+      sessionStorage.setItem(shownKey, "true");
+    }, 3000);
 
-        // Show popup after delay (3-5 seconds for better UX)
-        timeoutRef.current = setTimeout(() => {
-          setIsVisible(true);
-          // Mark as shown for this session
-          sessionStorage.setItem(POPUP_SHOWN_KEY, "true");
-        }, 3000);
-      } else {
-        console.log("[OfferPopup] Popup not enabled or no coupon code:", {
-          showOfferPopup,
-          offerCouponCode,
-        });
-      }
-    };
-
-    checkAndShowOffer();
-
-    // Cleanup timeout on unmount
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
     };
   }, [
@@ -164,10 +165,9 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
   // Handle dismiss
   const handleDismiss = useCallback(() => {
     setIsVisible(false);
-    // Store dismissal time for 24-hour cooldown
-    localStorage.setItem(POPUP_DISMISSED_KEY, Date.now().toString());
-    // Also mark as shown in session to prevent re-showing
-    sessionStorage.setItem(POPUP_SHOWN_KEY, "true");
+    const { shownKey, dismissedKey } = storageKeysRef.current;
+    localStorage.setItem(dismissedKey, Date.now().toString());
+    sessionStorage.setItem(shownKey, "true");
   }, []);
 
   // Handle "Get Notified" click
