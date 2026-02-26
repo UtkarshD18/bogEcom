@@ -112,8 +112,17 @@ body {
 
 .site-header-logo-image-desktop,
 .site-header-logo-image-mobile {
+  transform-origin: center center;
   transition: transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
     filter 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.site-header-logo-image-mobile {
+  transform: translate(1.8px, 0.9px);
+}
+
+.site-header-logo-image-desktop {
+  transform: translate(2.6px, 1.2px);
 }
 
 .site-header-logo-shield-desktop,
@@ -126,9 +135,13 @@ body {
     transform: translateY(-1px) scale(1.035);
   }
 
-  .site-header-logo-link:hover .site-header-logo-image-desktop,
   .site-header-logo-link:hover .site-header-logo-image-mobile {
-    transform: translateY(-0.5px);
+    transform: translate(1.8px, 0.4px);
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
+  }
+
+  .site-header-logo-link:hover .site-header-logo-image-desktop {
+    transform: translate(2.6px, 0.7px);
     filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
   }
 

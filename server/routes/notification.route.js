@@ -29,7 +29,7 @@ const router = express.Router();
 router.post("/register", authOptional, registerToken);
 
 // Unregister notification token
-router.delete("/unregister", unregisterToken);
+router.delete("/unregister", authOptional, unregisterToken);
 
 // ==================== ADMIN ROUTES ====================
 

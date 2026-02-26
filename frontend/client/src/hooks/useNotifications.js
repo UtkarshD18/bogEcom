@@ -47,6 +47,18 @@ export const useNotifications = (options = {}) => {
     );
   }, []);
 
+  const getSessionId = useCallback(() => {
+    if (typeof window === "undefined") return null;
+
+    let sessionId = localStorage.getItem("cartSessionId");
+    if (!sessionId) {
+      sessionId = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      localStorage.setItem("cartSessionId", sessionId);
+    }
+
+    return sessionId;
+  }, []);
+
   const registerTokenWithBackend = useCallback(
     async (fcmToken) => {
       const headers = {
@@ -54,8 +66,12 @@ export const useNotifications = (options = {}) => {
       };
 
       const authToken = getAuthToken();
+      const sessionId = getSessionId();
       if (authToken) {
         headers["Authorization"] = `Bearer ${authToken}`;
+      }
+      if (sessionId) {
+        headers["X-Session-Id"] = sessionId;
       }
 
       const response = await fetch(`${API_URL}/api/notifications/register`, {
@@ -64,9 +80,8 @@ export const useNotifications = (options = {}) => {
         credentials: "include",
         body: JSON.stringify({
           token: fcmToken,
-          userType,
-          userId: userType === "user" ? userId : null,
           platform: "web",
+          sessionId,
         }),
       });
 
@@ -83,7 +98,7 @@ export const useNotifications = (options = {}) => {
 
       return true;
     },
-    [getAuthToken, userId, userType],
+    [getAuthToken, getSessionId],
   );
 
   const getFirebasePublicConfig = useCallback(() => {
@@ -215,9 +230,10 @@ export const useNotifications = (options = {}) => {
     if (!storedToken) return;
 
     const authToken = getAuthToken();
+    const sessionId = getSessionId();
     const registerKey = `${storedToken}|${userType}|${userId || ""}|${
       authToken ? "auth" : "guest"
-    }`;
+    }|${sessionId || ""}`;
 
     if (lastRegisterKeyRef.current === registerKey) return;
     lastRegisterKeyRef.current = registerKey;
@@ -225,7 +241,15 @@ export const useNotifications = (options = {}) => {
     registerTokenWithBackend(storedToken).catch((err) => {
       console.error("Error syncing notification token:", err);
     });
-  }, [getAuthToken, permission, registerTokenWithBackend, token, userId, userType]);
+  }, [
+    getAuthToken,
+    getSessionId,
+    permission,
+    registerTokenWithBackend,
+    token,
+    userId,
+    userType,
+  ]);
 
   /**
    * Request notification permission and register token
@@ -331,6 +355,8 @@ export const useNotifications = (options = {}) => {
    */
   const unregister = useCallback(async () => {
     const storedToken = token || localStorage.getItem("fcmToken");
+    const authToken = getAuthToken();
+    const sessionId = getSessionId();
 
     if (!storedToken) return;
 
@@ -348,12 +374,21 @@ export const useNotifications = (options = {}) => {
         }
       }
 
+      const headers = {
+        "Content-Type": "application/json",
+      };
+      if (authToken) {
+        headers.Authorization = `Bearer ${authToken}`;
+      }
+      if (sessionId) {
+        headers["X-Session-Id"] = sessionId;
+      }
+
       await fetch(`${API_URL}/api/notifications/unregister`, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ token: storedToken }),
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ token: storedToken, sessionId }),
       });
 
       localStorage.removeItem("fcmToken");
@@ -362,7 +397,7 @@ export const useNotifications = (options = {}) => {
     } catch (err) {
       console.error("Error unregistering:", err);
     }
-  }, [token]);
+  }, [getAuthToken, getSessionId, token]);
 
   /**
    * Check if already registered
