@@ -171,6 +171,9 @@ const NotificationsPage = () => {
               <p>Guest Tokens: {stats?.guestTokens || 0}</p>
               <p>User Tokens: {stats?.userTokens || 0}</p>
               <p>Inactive Tokens: {stats?.inactiveTokens || 0}</p>
+              <p>Live Guests: {stats?.liveGuestConnections || 0}</p>
+              <p>Live Users: {stats?.liveUserConnections || 0}</p>
+              <p>Live Total: {stats?.liveAllConnections || 0}</p>
 
               {(stats?.totalActive || 0) === 0 && (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">

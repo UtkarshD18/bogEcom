@@ -58,7 +58,7 @@ const buildAuthHeaders = (extraHeaders = {}) => {
  * Checkout Page
  *
  * Mobile-first, production-ready checkout with:
- * - PhonePe payment modal (payments temporarily unavailable)
+ * - Paytm payment modal (payments temporarily unavailable)
  * - Coupon validation (backend)
  * - Influencer/Referral tracking (automatic discount)
  * - Affiliate tracking
@@ -1011,7 +1011,7 @@ const Checkout = () => {
     return null;
   };
 
-  // Handle Pay Now click - PhonePe redirect flow
+  // Handle Pay Now click - Paytm redirect flow
   const handlePayNow = async () => {
     if (isPayButtonDisabled) return;
 
@@ -2255,3 +2255,4 @@ const Checkout = () => {
 };
 
 export default Checkout;
+

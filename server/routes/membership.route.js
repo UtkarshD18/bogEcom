@@ -8,7 +8,7 @@ import {
   getAllPlans,
   getMembershipStats,
   getMembershipStatus,
-  handleMembershipPhonePeCallback,
+  handleMembershipPaytmCallback,
   updatePlan,
   verifyMembershipPayment,
 } from "../controllers/membership.controller.js";
@@ -26,7 +26,7 @@ const router = express.Router();
 router.get("/active", getActivePlan);
 
 // Public - Payment provider callback target (server-to-server)
-router.post("/webhook/phonepe", handleMembershipPhonePeCallback);
+router.post("/webhook/paytm", handleMembershipPaytmCallback);
 
 // User - Get own membership status (requires login)
 router.get("/status", auth, getMembershipStatus);

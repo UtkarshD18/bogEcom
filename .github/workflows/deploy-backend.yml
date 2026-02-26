@@ -60,20 +60,15 @@ jobs:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           PAYMENT_PROVIDER: ${{ secrets.PAYMENT_PROVIDER }}
-          PHONEPE_ENABLED: ${{ secrets.PHONEPE_ENABLED }}
-          PHONEPE_MERCHANT_ID: ${{ secrets.PHONEPE_MERCHANT_ID }}
-          PHONEPE_SALT_KEY: ${{ secrets.PHONEPE_SALT_KEY }}
-          PHONEPE_SALT_INDEX: ${{ secrets.PHONEPE_SALT_INDEX }}
-          PHONEPE_ENV: ${{ secrets.PHONEPE_ENV }}
-          PHONEPE_REDIRECT_URL: ${{ secrets.PHONEPE_REDIRECT_URL }}
-          PHONEPE_CALLBACK_URL: ${{ secrets.PHONEPE_CALLBACK_URL }}
-          PHONEPE_ORDER_REDIRECT_URL: ${{ secrets.PHONEPE_ORDER_REDIRECT_URL }}
-          PHONEPE_ORDER_CALLBACK_URL: ${{ secrets.PHONEPE_ORDER_CALLBACK_URL }}
-          PHONEPE_MEMBERSHIP_REDIRECT_URL: ${{ secrets.PHONEPE_MEMBERSHIP_REDIRECT_URL }}
-          PHONEPE_MEMBERSHIP_CALLBACK_URL: ${{ secrets.PHONEPE_MEMBERSHIP_CALLBACK_URL }}
-          PHONEPE_BASE_URL: ${{ secrets.PHONEPE_BASE_URL }}
-          PHONEPE_PAY_PATH: ${{ secrets.PHONEPE_PAY_PATH }}
-          PHONEPE_STATUS_PATH: ${{ secrets.PHONEPE_STATUS_PATH }}
+          PAYTM_ENABLED: ${{ secrets.PAYTM_ENABLED }}
+          PAYTM_MERCHANT_ID: ${{ secrets.PAYTM_MERCHANT_ID }}
+          PAYTM_MERCHANT_KEY: ${{ secrets.PAYTM_MERCHANT_KEY }}
+          PAYTM_ENV: ${{ secrets.PAYTM_ENV }}
+          PAYTM_WEBSITE: ${{ secrets.PAYTM_WEBSITE }}
+          PAYTM_CHANNEL_ID_WEB: ${{ secrets.PAYTM_CHANNEL_ID_WEB }}
+          PAYTM_BASE_URL: ${{ secrets.PAYTM_BASE_URL }}
+          PAYTM_ORDER_CALLBACK_URL: ${{ secrets.PAYTM_ORDER_CALLBACK_URL }}
+          PAYTM_MEMBERSHIP_CALLBACK_URL: ${{ secrets.PAYTM_MEMBERSHIP_CALLBACK_URL }}
           XPRESSBEES_TOKEN: ${{ secrets.XPRESSBEES_TOKEN }}
           XPRESSBEES_EMAIL: ${{ secrets.XPRESSBEES_EMAIL }}
           XPRESSBEES_PASSWORD: ${{ secrets.XPRESSBEES_PASSWORD }}
@@ -124,10 +119,9 @@ jobs:
                   "FIREBASE_CLIENT_EMAIL",
                   "FIREBASE_PRIVATE_KEY",
               ],
-              "PhonePe Credentials": [
-                  "PHONEPE_MERCHANT_ID",
-                  "PHONEPE_SALT_KEY",
-                  "PHONEPE_SALT_INDEX",
+              "Paytm Credentials": [
+                  "PAYTM_MERCHANT_ID",
+                  "PAYTM_MERCHANT_KEY",
               ],
               "Xpressbees Login": [
                   "XPRESSBEES_EMAIL",
@@ -175,20 +169,15 @@ jobs:
               "BACKEND_URL",
               "API_BASE_URL",
               "PAYMENT_PROVIDER",
-              "PHONEPE_ENABLED",
-              "PHONEPE_MERCHANT_ID",
-              "PHONEPE_SALT_KEY",
-              "PHONEPE_SALT_INDEX",
-              "PHONEPE_ENV",
-              "PHONEPE_REDIRECT_URL",
-              "PHONEPE_CALLBACK_URL",
-              "PHONEPE_ORDER_REDIRECT_URL",
-              "PHONEPE_ORDER_CALLBACK_URL",
-              "PHONEPE_MEMBERSHIP_REDIRECT_URL",
-              "PHONEPE_MEMBERSHIP_CALLBACK_URL",
-              "PHONEPE_BASE_URL",
-              "PHONEPE_PAY_PATH",
-              "PHONEPE_STATUS_PATH",
+              "PAYTM_ENABLED",
+              "PAYTM_MERCHANT_ID",
+              "PAYTM_MERCHANT_KEY",
+              "PAYTM_ENV",
+              "PAYTM_WEBSITE",
+              "PAYTM_CHANNEL_ID_WEB",
+              "PAYTM_BASE_URL",
+              "PAYTM_ORDER_CALLBACK_URL",
+              "PAYTM_MEMBERSHIP_CALLBACK_URL",
               "XPRESSBEES_TOKEN",
               "XPRESSBEES_EMAIL",
               "XPRESSBEES_PASSWORD",

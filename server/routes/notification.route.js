@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  getLiveOfferFeed,
   getNotificationStats,
   manualSendOffer,
   registerToken,
@@ -30,6 +31,9 @@ router.post("/register", authOptional, registerToken);
 
 // Unregister notification token
 router.delete("/unregister", authOptional, unregisterToken);
+
+// Pollable fallback feed for live offer notifications
+router.get("/offers/live-feed", authOptional, getLiveOfferFeed);
 
 // ==================== ADMIN ROUTES ====================
 

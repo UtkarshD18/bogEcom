@@ -1,8 +1,10 @@
 import mongoose from "mongoose";
 import { getMessaging, isFirebaseReady } from "../config/firebaseAdmin.js";
+import LiveOfferEventModel from "../models/liveOfferEvent.model.js";
 import NotificationTokenModel from "../models/notificationToken.model.js";
 import UserModel from "../models/user.model.js";
 import { emitLiveOfferNotification } from "../realtime/offerEvents.js";
+import { getIO } from "../realtime/socket.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 // Debug-only logging to keep production output clean
@@ -56,6 +58,76 @@ const resolveSessionIdFromRequest = (req) => {
   return normalizeSessionId(
     req.body?.sessionId || headerSessionId || req.cookies?.sessionId,
   );
+};
+
+const LIVE_OFFER_RETENTION_MS = 30 * 60 * 1000;
+const LIVE_OFFER_DB_RETENTION_MS = 24 * 60 * 60 * 1000;
+const LIVE_OFFER_CACHE_LIMIT = 100;
+const liveOfferFeed = [];
+
+const pruneLiveOfferFeed = () => {
+  const cutoff = Date.now() - LIVE_OFFER_RETENTION_MS;
+  while (
+    liveOfferFeed.length > 0 &&
+    Number(liveOfferFeed[0]?.sentAtMs || 0) < cutoff
+  ) {
+    liveOfferFeed.shift();
+  }
+  if (liveOfferFeed.length > LIVE_OFFER_CACHE_LIMIT) {
+    liveOfferFeed.splice(0, liveOfferFeed.length - LIVE_OFFER_CACHE_LIMIT);
+  }
+};
+
+const cacheLiveOffer = async (payload) => {
+  const sentAtMs = Number(payload?.sentAtMs || Date.now()) || Date.now();
+  const notificationId = String(payload?.notificationId || "").trim();
+  if (!notificationId) return;
+
+  const normalizedPayload = {
+    ...payload,
+    notificationId,
+    sentAtMs,
+    sentAt: payload?.sentAt || new Date(sentAtMs).toISOString(),
+  };
+
+  // Fast local fallback for same-instance delivery.
+  liveOfferFeed.push(normalizedPayload);
+  pruneLiveOfferFeed();
+
+  // Shared persistence so multi-instance deployments can poll the same feed.
+  try {
+    await LiveOfferEventModel.findOneAndUpdate(
+      { notificationId },
+      {
+        $set: {
+          notificationId,
+          type: String(normalizedPayload.type || "offer"),
+          title: String(normalizedPayload.title || ""),
+          body: String(normalizedPayload.body || ""),
+          audience: normalizedPayload.audience === "guest" ? "guest" : "all",
+          data:
+            normalizedPayload.data &&
+            typeof normalizedPayload.data === "object"
+              ? normalizedPayload.data
+              : {},
+          source: String(normalizedPayload.source || "socket"),
+          sentAt: new Date(sentAtMs),
+          sentAtMs,
+        },
+      },
+      {
+        upsert: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+  } catch (persistError) {
+    console.error("Failed to persist live offer event:", persistError);
+  }
+
+  const oldCutoff = Date.now() - LIVE_OFFER_DB_RETENTION_MS;
+  void LiveOfferEventModel.deleteMany({
+    sentAtMs: { $lt: oldCutoff },
+  }).catch(() => {});
 };
 
 /**
@@ -270,18 +342,21 @@ export const sendOfferNotification = async (coupon, options = {}) => {
     body: notification.body,
   };
 
-  const liveDelivery = emitLiveOfferNotification(
-    {
-      type: "offer",
-      title: notification.title,
-      body: notification.body,
-      notificationId: data.notificationId,
-      data,
-      source: "socket",
-      sentAt: new Date().toISOString(),
-    },
-    { includeUsers },
-  );
+  const livePayload = {
+    type: "offer",
+    title: notification.title,
+    body: notification.body,
+    notificationId: data.notificationId,
+    data,
+    source: "socket",
+    audience: includeUsers ? "all" : "guest",
+    sentAt: new Date().toISOString(),
+    sentAtMs: Date.now(),
+  };
+
+  await cacheLiveOffer(livePayload);
+
+  const liveDelivery = emitLiveOfferNotification(livePayload, { includeUsers });
 
   const liveSummary = {
     liveDelivered: liveDelivery.delivered || 0,
@@ -634,6 +709,17 @@ export const getNotificationStats = async (req, res) => {
       NotificationTokenModel.countDocuments({ isActive: false }),
     ]);
 
+    const io = getIO();
+    const liveGuestConnections = Number(
+      io?.sockets?.adapter?.rooms?.get("audience:guest")?.size || 0,
+    );
+    const liveUserConnections = Number(
+      io?.sockets?.adapter?.rooms?.get("audience:user")?.size || 0,
+    );
+    const liveAllConnections = Number(
+      io?.sockets?.adapter?.rooms?.get("audience:all")?.size || 0,
+    );
+
     res.status(200).json({
       error: false,
       success: true,
@@ -643,6 +729,9 @@ export const getNotificationStats = async (req, res) => {
         userTokens: userCount,
         inactiveTokens: inactiveCount,
         totalActive: guestCount + userCount,
+        liveGuestConnections,
+        liveUserConnections,
+        liveAllConnections,
       },
     });
   } catch (error) {
@@ -651,6 +740,66 @@ export const getNotificationStats = async (req, res) => {
       error: true,
       success: false,
       message: "Failed to get notification stats",
+    });
+  }
+};
+
+/**
+ * Public live-offer feed fallback for browsers that miss socket delivery.
+ * @route GET /api/notifications/offers/live-feed?since=<timestamp>&limit=<n>
+ */
+export const getLiveOfferFeed = async (req, res) => {
+  try {
+    const sinceRaw = Number(req.query?.since || 0);
+    const since = Number.isFinite(sinceRaw) && sinceRaw > 0 ? sinceRaw : 0;
+
+    const limitRaw = Number(req.query?.limit || 10);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(Math.floor(limitRaw), 1), 20)
+      : 10;
+
+    const isAuthenticated = Boolean(req.user);
+    const audienceFilter = isAuthenticated
+      ? { audience: "all" }
+      : { audience: { $in: ["all", "guest"] } };
+
+    let offers = [];
+
+    try {
+      offers = await LiveOfferEventModel.find({
+        sentAtMs: { $gt: since },
+        ...audienceFilter,
+      })
+        .sort({ sentAtMs: 1 })
+        .limit(limit)
+        .lean();
+    } catch (dbError) {
+      // Fallback for transient DB issues: serve in-memory recent events.
+      pruneLiveOfferFeed();
+      offers = liveOfferFeed
+        .filter((offer) => {
+          const sentAtMs = Number(offer?.sentAtMs || 0);
+          if (!sentAtMs || sentAtMs <= since) return false;
+          if (offer?.audience === "guest" && isAuthenticated) return false;
+          return true;
+        })
+        .slice(-limit);
+    }
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      data: {
+        offers,
+        serverTime: Date.now(),
+      },
+    });
+  } catch (error) {
+    console.error("Error getting live offer feed:", error);
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to get live offer feed",
     });
   }
 };

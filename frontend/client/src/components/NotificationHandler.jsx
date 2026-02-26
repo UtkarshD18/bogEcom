@@ -7,9 +7,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import NotificationToast from "./NotificationToast";
 
-const SOCKET_URL = API_BASE_URL.endsWith("/api")
-  ? API_BASE_URL.slice(0, -4)
-  : API_BASE_URL;
+const normalizeBaseUrl = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/\/+$/, "");
+
+const resolveSocketUrl = () => {
+  const explicitApiUrl =
+    normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_API_URL) ||
+    normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
+  const fallbackApiUrl = normalizeBaseUrl(API_BASE_URL);
+  const base = explicitApiUrl || fallbackApiUrl;
+  return base.replace(/\/api$/i, "");
+};
+
+const SOCKET_URL = resolveSocketUrl();
+const API_ROOT = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL
+  : `${API_BASE_URL}/api`;
+const LIVE_FEED_URL = `${API_ROOT}/notifications/offers/live-feed`;
 const MAX_DEDUPED_NOTIFICATION_IDS = 100;
 const AUTO_PROMPT_KEY = "push_prompt_last_shown_at";
 const AUTO_PROMPT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -26,6 +42,7 @@ const NotificationHandler = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeMessage, setActiveMessage] = useState(null);
   const seenNotificationIdsRef = useRef(new Set());
+  const lastSeenOfferTimestampRef = useRef(0);
 
   const rememberNotification = useCallback((notificationId) => {
     if (!notificationId) return false;
@@ -135,6 +152,8 @@ const NotificationHandler = () => {
     const socket = io(SOCKET_URL, {
       withCredentials: true,
       transports: ["websocket", "polling"],
+      reconnection: true,
+      timeout: 8000,
     });
 
     const handleLiveOffer = (payload) => {
@@ -184,6 +203,73 @@ const NotificationHandler = () => {
     return () => {
       socket.off("offer:live", handleLiveOffer);
       socket.disconnect();
+    };
+  }, [rememberNotification]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let pollInterval = null;
+    let isDisposed = false;
+
+    const pollLiveFeed = async () => {
+      const since = Number(lastSeenOfferTimestampRef.current || 0);
+      const query = `?since=${since}&limit=10`;
+
+      try {
+        const response = await fetch(`${LIVE_FEED_URL}${query}`, {
+          method: "GET",
+          credentials: "include",
+        });
+        if (!response.ok) return;
+
+        const payload = await response.json();
+        const offers = Array.isArray(payload?.data?.offers) ? payload.data.offers : [];
+
+        for (const offer of offers) {
+          if (isDisposed) return;
+          const liveData =
+            offer?.data && typeof offer.data === "object" ? offer.data : {};
+          const notificationId =
+            offer?.notificationId || liveData.notificationId || null;
+          const offerTimestamp =
+            Number(offer?.sentAtMs || Date.parse(offer?.sentAt || "") || 0) || 0;
+
+          if (offerTimestamp > lastSeenOfferTimestampRef.current) {
+            lastSeenOfferTimestampRef.current = offerTimestamp;
+          }
+
+          if (rememberNotification(notificationId)) {
+            continue;
+          }
+
+          const title = String(offer?.title || liveData.title || "New Offer");
+          const body = String(offer?.body || liveData.body || "");
+          const normalizedMessage = {
+            title,
+            body,
+            data: {
+              ...liveData,
+              notificationId: notificationId || `offer-feed:${Date.now()}`,
+            },
+            timestamp: Date.now(),
+          };
+
+          setActiveMessage(normalizedMessage);
+        }
+      } catch {
+        // Best-effort polling fallback only.
+      }
+    };
+
+    void pollLiveFeed();
+    pollInterval = window.setInterval(pollLiveFeed, 10000);
+
+    return () => {
+      isDisposed = true;
+      if (pollInterval) {
+        window.clearInterval(pollInterval);
+      }
     };
   }, [rememberNotification]);
 

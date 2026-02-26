@@ -701,27 +701,15 @@ const Orders = () => {
                       </div>
 
                       {/* Payment Details */}
-                      {(order.phonepeMerchantTransactionId ||
-                        order.phonepeTransactionId ||
-                        order.paymentId) && (
+                      {order.paymentId && (
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
                           <p className="text-sm font-semibold text-gray-900 mb-2">
                             Payment Details
                           </p>
                           <div className="text-xs text-gray-600 space-y-1">
                             <p>
-                              PhonePe Transaction ID:{" "}
-                              <span className="font-mono">
-                                {order.phonepeTransactionId ||
-                                  order.paymentId ||
-                                  "N/A"}
-                              </span>
-                            </p>
-                            <p>
-                              PhonePe Merchant Txn ID:{" "}
-                              <span className="font-mono">
-                                {order.phonepeMerchantTransactionId || "N/A"}
-                              </span>
+                              Transaction ID:{" "}
+                              <span className="font-mono">{order.paymentId || "N/A"}</span>
                             </p>
                           </div>
                         </div>
@@ -829,3 +817,4 @@ const Orders = () => {
   );
 };
 export default Orders;
+

@@ -10,7 +10,7 @@ import {
   getPaymentGatewayStatus,
   getUserOrderById,
   getUserOrders,
-  handlePhonePeWebhook,
+  handlePaytmWebhook,
   saveClientTestInvoiceToDisk,
   saveOrderForLater,
   updateOrderStatus,
@@ -34,7 +34,7 @@ const router = express.Router();
  *
  * Admin routes for managing orders
  * User routes for creating and viewing orders
- * Payment integration (PhonePe)
+ * Payment integration (Paytm)
  *
  * Route Structure:
  * - Public routes: Payment status, webhooks
@@ -44,8 +44,8 @@ const router = express.Router();
 
 // ==================== WEBHOOKS (Public) ====================
 
-// PhonePe webhook (state verified server-side against PhonePe status API)
-router.post("/webhook/phonepe", handlePhonePeWebhook);
+// Paytm webhook (state verified server-side against Paytm status API)
+router.post("/webhook/paytm", handlePaytmWebhook);
 
 // ==================== PUBLIC ROUTES ====================
 

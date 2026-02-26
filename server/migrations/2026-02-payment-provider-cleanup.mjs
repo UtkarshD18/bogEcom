@@ -14,7 +14,7 @@ if (!MONGO_URI) {
 const LEGACY_METHOD = String.fromCharCode(82, 65, 90, 79, 82, 80, 65, 89);
 const LEGACY_ORDER_ID_FIELD = ["razor", "pay", "OrderId"].join("");
 const LEGACY_SIGNATURE_FIELD = ["razor", "pay", "Signature"].join("");
-const TARGET_METHOD = "PHONEPE";
+const TARGET_METHOD = "PAYTM";
 
 const run = async () => {
   await mongoose.connect(MONGO_URI);

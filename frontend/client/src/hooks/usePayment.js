@@ -9,7 +9,7 @@ const API_URL = API_BASE_URL;
 
 /**
  * Custom Hook for Payment Processing
- * PhonePe-first flow with backend integration
+ * Paytm-first flow with backend integration
  */
 export const usePayment = () => {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -80,11 +80,11 @@ export const usePayment = () => {
       const { orderId, paymentUrl } = orderResponse.data || {};
 
       if (!paymentUrl) {
-        throw new Error("PhonePe payment URL not received.");
+        throw new Error("Paytm payment URL not received.");
       }
 
       console.log("✅ Order created:", orderId);
-      console.log("🔁 Redirecting to PhonePe...");
+      console.log("🔁 Redirecting to Paytm...");
 
       window.location.href = paymentUrl;
     } catch (error) {
@@ -102,3 +102,4 @@ export const usePayment = () => {
     error,
   };
 };
+
