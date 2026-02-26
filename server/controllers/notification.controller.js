@@ -43,6 +43,20 @@ const getFrontendBaseUrl = () => {
   return candidate || "https://healthyonegram.com";
 };
 
+const normalizeSessionId = (value) =>
+  String(value || "")
+    .trim()
+    .slice(0, 128);
+
+const resolveSessionIdFromRequest = (req) => {
+  const rawHeader = req.headers?.["x-session-id"];
+  const headerSessionId = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
+  return normalizeSessionId(
+    req.body?.sessionId || headerSessionId || req.cookies?.sessionId,
+  );
+};
+
 /**
  * Notification Controller
  *
@@ -67,7 +81,7 @@ const getFrontendBaseUrl = () => {
 export const registerToken = async (req, res) => {
   try {
     const { token, platform } = req.body;
-
+    const sessionId = resolveSessionIdFromRequest(req) || null;
     const resolvedUserId = req.user || null;
     const resolvedUserType = resolvedUserId ? "user" : "guest";
 
@@ -89,20 +103,50 @@ export const registerToken = async (req, res) => {
       });
     }
 
+    if (!resolvedUserId && !sessionId) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Session ID is required for guest notification registration",
+      });
+    }
+
+    const updatePayload = {
+      token,
+      userType: resolvedUserType,
+      userId: resolvedUserId,
+      sessionId,
+      platform: platform || "web",
+      isActive: true,
+      failureCount: 0,
+      lastUsedAt: new Date(),
+    };
+
     // Upsert token (update if exists, create if not)
     const tokenDoc = await NotificationTokenModel.findOneAndUpdate(
       { token },
-      {
-        token,
-        userType: resolvedUserType,
-        userId: resolvedUserId,
-        platform: platform || "web",
-        isActive: true,
-        failureCount: 0,
-        lastUsedAt: new Date(),
-      },
+      { $set: updatePayload },
       { upsert: true, new: true },
     );
+
+    // Promote all guest tokens from the same browser session once user logs in.
+    if (resolvedUserId && sessionId) {
+      await NotificationTokenModel.updateMany(
+        {
+          sessionId,
+          userType: "guest",
+        },
+        {
+          $set: {
+            userType: "user",
+            userId: resolvedUserId,
+            isActive: true,
+            failureCount: 0,
+            lastUsedAt: new Date(),
+          },
+        },
+      );
+    }
 
     res.status(200).json({
       error: false,
@@ -111,6 +155,7 @@ export const registerToken = async (req, res) => {
       data: {
         id: tokenDoc._id,
         userType: tokenDoc.userType,
+        sessionId: tokenDoc.sessionId,
       },
     });
   } catch (error) {
@@ -140,6 +185,8 @@ export const registerToken = async (req, res) => {
 export const unregisterToken = async (req, res) => {
   try {
     const { token } = req.body;
+    const sessionId = resolveSessionIdFromRequest(req) || null;
+    const resolvedUserId = req.user || null;
 
     if (!token) {
       return res.status(400).json({
@@ -149,10 +196,23 @@ export const unregisterToken = async (req, res) => {
       });
     }
 
-    await NotificationTokenModel.findOneAndUpdate(
-      { token },
-      { isActive: false },
-    );
+    const scopedFilters = [];
+    if (resolvedUserId && mongoose.Types.ObjectId.isValid(resolvedUserId)) {
+      scopedFilters.push({ userId: resolvedUserId });
+    }
+    if (sessionId) {
+      scopedFilters.push({ sessionId });
+    }
+
+    const query =
+      scopedFilters.length > 0
+        ? { token, $or: scopedFilters }
+        : { token };
+
+    await NotificationTokenModel.findOneAndUpdate(query, {
+      isActive: false,
+      lastUsedAt: new Date(),
+    });
 
     res.status(200).json({
       error: false,

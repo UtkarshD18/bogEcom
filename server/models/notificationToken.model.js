@@ -26,6 +26,13 @@ const notificationTokenSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    sessionId: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 128,
+      index: true,
+    },
     userType: {
       type: String,
       enum: ["guest", "user"],
@@ -56,6 +63,7 @@ const notificationTokenSchema = new mongoose.Schema(
 // Compound indexes for efficient queries
 notificationTokenSchema.index({ userType: 1, isActive: 1 });
 notificationTokenSchema.index({ userId: 1, isActive: 1 });
+notificationTokenSchema.index({ sessionId: 1, isActive: 1 });
 notificationTokenSchema.index({ lastUsedAt: 1 });
 
 // Pre-save middleware to update lastUsedAt

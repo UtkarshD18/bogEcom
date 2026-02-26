@@ -315,7 +315,7 @@ const Footer = () => {
                 { name: "Secure payment", link: "/secure-payment" },
                 { name: "Privacy Policy", link: "/privacy-policy" },
                 policyLinks.terms,
-                { name: "Cancellation & Return", link: "/cancellation" },
+                { name: "Refund/Cancellation", link: "/cancellation" },
                 { name: "About Us", link: "/about-us" },
                 { name: "Contact us", link: "/contact" },
                 { name: "Our Blogs", link: "/blogs" },
