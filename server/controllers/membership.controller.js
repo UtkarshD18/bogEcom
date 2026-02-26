@@ -14,6 +14,17 @@ import { activateMembershipForUser } from "../services/membershipUser.service.js
 const PAYMENT_PROVIDER = "PAYTM";
 const PAYTM_MERCHANT_ID = String(process.env.PAYTM_MERCHANT_ID || "").trim();
 const PAYTM_MERCHANT_KEY = String(process.env.PAYTM_MERCHANT_KEY || "").trim();
+const isTruthyEnv = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
+};
 
 /**
  * Check if payment gateway is enabled
@@ -21,7 +32,7 @@ const PAYTM_MERCHANT_KEY = String(process.env.PAYTM_MERCHANT_KEY || "").trim();
  */
 const isPaymentEnabled = () => {
   return Boolean(
-    process.env.PAYTM_ENABLED === "true" &&
+    isTruthyEnv(process.env.PAYTM_ENABLED) &&
       PAYTM_MERCHANT_ID &&
       PAYTM_MERCHANT_KEY,
   );

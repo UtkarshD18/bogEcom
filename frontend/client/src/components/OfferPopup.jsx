@@ -5,9 +5,18 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MdClose, MdLocalOffer, MdNotifications } from "react-icons/md";
 
-// Stable key for localStorage - change version to reset for all users
-const POPUP_SHOWN_KEY = "welcome_coupon_shown_v2"; // Updated version to reset
-const POPUP_DISMISSED_KEY = "offer_popup_dismissed_v2"; // Updated version to reset
+const POPUP_STORAGE_VERSION = "v3";
+const POPUP_COOLDOWN_HOURS = 24;
+
+const normalizeCouponCode = (value) => {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized || "GENERIC";
+};
+
+const getPopupShownKey = (couponCode) =>
+  `welcome_coupon_shown_${POPUP_STORAGE_VERSION}_${normalizeCouponCode(couponCode)}`;
+const getPopupDismissedKey = (couponCode) =>
+  `offer_popup_dismissed_${POPUP_STORAGE_VERSION}_${normalizeCouponCode(couponCode)}`;
 
 /**
  * OfferPopup Component
@@ -35,9 +44,11 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Ref to ensure we only initialize once
-  const hasInitialized = useRef(false);
   const timeoutRef = useRef(null);
+  const storageKeysRef = useRef({
+    shownKey: getPopupShownKey(""),
+    dismissedKey: getPopupDismissedKey(""),
+  });
 
   // Get settings from context
   const {
@@ -63,18 +74,10 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
 
   // Check and show offer from settings context
   useEffect(() => {
-    // Wait for settings to load
     if (settingsLoading) {
       console.log("[OfferPopup] Settings still loading...");
       return;
     }
-
-    // Prevent multiple initializations (handles strict mode double-mount)
-    if (hasInitialized.current) {
-      console.log("[OfferPopup] Already initialized, skipping...");
-      return;
-    }
-    hasInitialized.current = true;
 
     console.log("[OfferPopup] Checking offer settings:", {
       showOfferPopup,
@@ -82,65 +85,63 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
       offerTitle,
     });
 
-    const checkAndShowOffer = () => {
-      // Check if popup was already shown in this session
-      const alreadyShown = sessionStorage.getItem(POPUP_SHOWN_KEY);
-      if (alreadyShown === "true") {
-        console.log("[OfferPopup] Already shown in this session");
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    if (!(showOfferPopup && offerCouponCode)) {
+      console.log("[OfferPopup] Popup not enabled or no coupon code:", {
+        showOfferPopup,
+        offerCouponCode,
+      });
+      return;
+    }
+
+    const shownKey = getPopupShownKey(offerCouponCode);
+    const dismissedKey = getPopupDismissedKey(offerCouponCode);
+    storageKeysRef.current = { shownKey, dismissedKey };
+
+    const alreadyShown = sessionStorage.getItem(shownKey);
+    if (alreadyShown === "true") {
+      console.log("[OfferPopup] Already shown in this session");
+      return;
+    }
+
+    const dismissedRaw = localStorage.getItem(dismissedKey);
+    if (dismissedRaw) {
+      const dismissedTime = Number.parseInt(dismissedRaw, 10);
+      const hoursSinceDismissed = (Date.now() - dismissedTime) / (1000 * 60 * 60);
+      if (
+        Number.isFinite(hoursSinceDismissed) &&
+        hoursSinceDismissed < POPUP_COOLDOWN_HOURS
+      ) {
+        console.log(
+          "[OfferPopup] Dismissed recently, hours since:",
+          hoursSinceDismissed,
+        );
         return;
       }
+    }
 
-      // Check if popup was dismissed recently (24-hour cooldown)
-      const lastDismissed = localStorage.getItem(POPUP_DISMISSED_KEY);
-      if (lastDismissed) {
-        const dismissedTime = parseInt(lastDismissed, 10);
-        const hoursSinceDismissed =
-          (Date.now() - dismissedTime) / (1000 * 60 * 60);
-        // Don't show again for 24 hours
-        if (hoursSinceDismissed < 24) {
-          console.log(
-            "[OfferPopup] Dismissed recently, hours since:",
-            hoursSinceDismissed,
-          );
-          return;
-        }
-      }
+    console.log("[OfferPopup] Showing offer popup with code:", offerCouponCode);
+    setOffer({
+      couponCode: offerCouponCode,
+      title: offerTitle || "Special Offer!",
+      description:
+        offerDescription || "Use this code to get a discount on your order!",
+      discountText: offerDiscountText || "Get Discount",
+    });
 
-      // Check if offer popup is enabled (from context)
-      if (showOfferPopup && offerCouponCode) {
-        console.log(
-          "[OfferPopup] Showing offer popup with code:",
-          offerCouponCode,
-        );
-        setOffer({
-          couponCode: offerCouponCode,
-          title: offerTitle || "Special Offer!",
-          description:
-            offerDescription ||
-            "Use this code to get a discount on your order!",
-          discountText: offerDiscountText || "Get Discount",
-        });
+    timeoutRef.current = setTimeout(() => {
+      setIsVisible(true);
+      sessionStorage.setItem(shownKey, "true");
+    }, 3000);
 
-        // Show popup after delay (3-5 seconds for better UX)
-        timeoutRef.current = setTimeout(() => {
-          setIsVisible(true);
-          // Mark as shown for this session
-          sessionStorage.setItem(POPUP_SHOWN_KEY, "true");
-        }, 3000);
-      } else {
-        console.log("[OfferPopup] Popup not enabled or no coupon code:", {
-          showOfferPopup,
-          offerCouponCode,
-        });
-      }
-    };
-
-    checkAndShowOffer();
-
-    // Cleanup timeout on unmount
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
     };
   }, [
@@ -164,10 +165,9 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
   // Handle dismiss
   const handleDismiss = useCallback(() => {
     setIsVisible(false);
-    // Store dismissal time for 24-hour cooldown
-    localStorage.setItem(POPUP_DISMISSED_KEY, Date.now().toString());
-    // Also mark as shown in session to prevent re-showing
-    sessionStorage.setItem(POPUP_SHOWN_KEY, "true");
+    const { shownKey, dismissedKey } = storageKeysRef.current;
+    localStorage.setItem(dismissedKey, Date.now().toString());
+    sessionStorage.setItem(shownKey, "true");
   }, []);
 
   // Handle "Get Notified" click
@@ -204,78 +204,83 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
 
   return (
     <>
-      {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 z-[9998] transition-opacity"
+        className="fixed inset-0 z-[9998] bg-[#130f0a]/65 backdrop-blur-[3px] transition-opacity"
         onClick={handleDismiss}
       />
 
-      {/* Popup */}
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[9999] w-[90%] max-w-md">
-        <div className="bg-[var(--flavor-card-bg)] rounded-2xl shadow-2xl overflow-hidden border border-primary/20">
-          {/* Header */}
-          <div className="bg-linear-to-r from-[var(--flavor-light)] to-white px-6 py-4 relative border-b border-primary/20">
+      <div className="fixed left-1/2 top-1/2 z-[9999] w-[92%] max-w-[460px] -translate-x-1/2 -translate-y-1/2 animate-[offerPopupIn_300ms_cubic-bezier(0.16,1,0.3,1)]">
+        <div className="relative overflow-hidden rounded-[28px] border border-[#ead7bd] bg-gradient-to-b from-[#fff9ed] via-[#fffdf8] to-[#fffefb] shadow-[0_35px_80px_-32px_rgba(57,32,10,0.65)]">
+          <div className="relative overflow-hidden px-6 pb-5 pt-6 text-white bg-gradient-to-br from-[#3c220e] via-[#6e3f14] to-[#9d6220]">
+            <div className="absolute -left-8 -top-10 h-24 w-24 rounded-full bg-white/18 blur-xl" />
+            <div className="absolute -right-6 bottom-0 h-20 w-20 rounded-full bg-amber-100/20 blur-lg" />
             <button
               onClick={handleDismiss}
-              className="absolute top-3 right-3 text-primary/70 hover:text-primary transition-colors"
+              className="absolute right-4 top-4 rounded-full border border-white/25 bg-white/10 p-1.5 text-white/90 transition hover:bg-white/20"
               aria-label="Close"
             >
-              <MdClose size={24} />
+              <MdClose size={18} />
             </button>
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center">
-                <MdLocalOffer size={28} className="text-primary" />
+            <div className="flex items-start gap-3 pr-8">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/18 ring-1 ring-white/30">
+                <MdLocalOffer size={24} className="text-white" />
               </div>
-              <div>
-                <h2 className="text-xl font-bold text-primary">
+              <div className="min-w-0">
+                <p className="mb-2 inline-flex rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/90">
+                  Limited Time
+                </p>
+                <h2 className="text-[1.3rem] font-extrabold leading-tight drop-shadow-sm">
                   {offer.title}
                 </h2>
-                <p className="text-primary/80 text-sm">
+                <p className="mt-1 text-sm font-medium text-amber-50/95">
                   {offer.discountText}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Body */}
-          <div className="p-6 bg-linear-to-b from-[var(--flavor-light)] to-white">
-            <p className="text-primary/70 mb-4">{offer.description}</p>
+          <div className="space-y-4 px-6 pb-4 pt-5">
+            <p className="text-[15px] leading-relaxed text-[#5b4636]">
+              {offer.description}
+            </p>
 
-            {/* Coupon Code */}
-            <div className="bg-white border-2 border-dashed border-primary/40 rounded-lg p-4 mb-4 shadow-sm">
-              <p className="text-xs text-primary/80 mb-1">Your coupon code:</p>
-              <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold text-primary tracking-wider">
+            <div className="rounded-2xl border border-[#f0ddc3] bg-white p-4 shadow-[0_16px_32px_-24px_rgba(90,52,22,0.75)]">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a07443]">
+                Your Coupon Code
+              </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span className="truncate text-[1.85rem] font-black tracking-[0.15em] text-[#603512]">
                   {offer.couponCode}
                 </span>
                 <button
                   onClick={handleOfferAccept}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${copied
-                    ? "bg-primary text-white"
-                    : "bg-primary text-white hover:brightness-110 shadow-md"
+                  className={`relative inline-flex h-11 min-w-[130px] items-center justify-center overflow-hidden rounded-xl px-4 text-sm font-bold transition-all duration-200 ${copied
+                    ? "border border-[#b7f0cd] bg-gradient-to-br from-[#56bd7c]/75 via-[#3ea969]/72 to-[#2e9258]/78 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_24px_-16px_rgba(27,90,52,0.85)]"
+                    : "border border-white/65 bg-gradient-to-br from-white/70 via-[#fff4dd]/55 to-white/45 text-[#4d2e15] backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(255,255,255,0.3),0_12px_24px_-16px_rgba(120,74,10,0.8)] hover:from-white/78 hover:via-[#fff7e8]/62 hover:to-white/55"
                     }`}
                 >
-                  {copied ? "Copied!" : "Copy Code"}
+                  {copied ? "Copied" : "Copy Code"}
                 </button>
               </div>
             </div>
 
-            {/* Notification Prompt */}
             {showNotificationPrompt && !isRegistered && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div className="rounded-2xl border border-[#c9d9fb] bg-gradient-to-br from-[#eef4ff] to-[#f7faff] p-4">
                 <div className="flex items-start gap-3">
-                  <MdNotifications size={24} className="text-blue-600 mt-0.5" />
+                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-[#d9e7ff]">
+                    <MdNotifications size={18} className="text-[#2555b0]" />
+                  </div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-800 mb-2">
+                    <p className="mb-1 text-sm font-semibold text-[#223255]">
                       Never miss a deal!
                     </p>
-                    <p className="text-xs text-gray-600 mb-3">
+                    <p className="mb-3 text-xs leading-relaxed text-[#435274]">
                       Get notified about exclusive offers and discounts.
                     </p>
                     <button
                       onClick={handleNotifyClick}
                       disabled={isRegistering}
-                      className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      className="h-10 w-full rounded-xl bg-[#2e62c9] px-4 text-sm font-semibold text-white transition hover:bg-[#234d9f] disabled:opacity-50"
                     >
                       {isRegistering ? "Enabling..." : "Enable Notifications"}
                     </button>
@@ -289,26 +294,37 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
               </div>
             )}
 
-            {/* Already registered message */}
             {isRegistered && (
-              <div className="flex items-center gap-2 text-primary text-sm">
-                <MdNotifications size={18} />
+              <div className="flex items-center gap-2 rounded-xl border border-[#c7e8d5] bg-[#ecfbf1] px-3 py-2 text-sm font-medium text-[#1f7a4a]">
+                <MdNotifications size={16} />
                 <span>You&apos;ll be notified about new offers!</span>
               </div>
             )}
           </div>
 
-          {/* Footer */}
-          <div className="px-6 pb-6 bg-green-50">
+          <div className="bg-[#f7f0e1] px-6 pb-5 pt-3">
             <button
               onClick={handleDismiss}
-              className="w-full py-3 text-primary hover:text-primary/80 text-sm transition-colors font-medium"
+              className="relative h-11 w-full overflow-hidden rounded-xl border border-white/70 bg-gradient-to-br from-white/62 via-[#fff8ef]/45 to-white/32 text-sm font-semibold text-[#5f4328] backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-1px_0_rgba(255,255,255,0.35),0_10px_20px_-16px_rgba(97,63,28,0.75)] transition-all duration-200 hover:from-white/72 hover:via-[#fffaf3]/55 hover:to-white/4"
             >
               Maybe later
             </button>
           </div>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes offerPopupIn {
+          from {
+            opacity: 0;
+            transform: translate(-50%, -46%) scale(0.96);
+          }
+          to {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+          }
+        }
+      `}</style>
     </>
   );
 };
