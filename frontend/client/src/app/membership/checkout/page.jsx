@@ -619,7 +619,7 @@ export default function MembershipCheckoutPage() {
             marginTop: 16,
           }}
         >
-          Secure payment powered by PhonePe
+          Secure payment powered by Paytm
         </p>
       </div>
 
@@ -641,3 +641,4 @@ export default function MembershipCheckoutPage() {
     </main>
   );
 }
+

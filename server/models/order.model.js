@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const LEGACY_GATEWAY_METHOD = String.fromCharCode(82, 65, 90, 79, 82, 80, 65, 89);
 const ORDER_PAYMENT_METHODS = [
   LEGACY_GATEWAY_METHOD,
-  "PHONEPE",
+  "PAYTM",
   "COD",
   "PENDING",
   "TEST",
@@ -67,7 +67,7 @@ const orderSchema = new mongoose.Schema(
     // Payment Information
     paymentId: {
       type: String,
-      default: null, // Payment identifier (PhonePe transaction ID)
+      default: null, // Payment identifier from the active provider
       // Note: index is defined in compound indexes below
     },
 
@@ -83,14 +83,14 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
-    // PhonePe identifiers
-    phonepeMerchantTransactionId: {
+    // Paytm identifiers
+    paytmOrderId: {
       type: String,
       default: null,
       index: true,
     },
 
-    phonepeTransactionId: {
+    paytmTransactionId: {
       type: String,
       default: null,
       index: true,
@@ -251,7 +251,7 @@ const orderSchema = new mongoose.Schema(
       default: "",
     },
 
-    // ==================== NEW FIELDS FOR PHONEPE INTEGRATION ====================
+    // ==================== PAYMENT INTEGRATION FIELDS ====================
 
     // Payment method tracking.
     // Keep `LEGACY_GATEWAY_METHOD` temporarily to allow safe rollouts

@@ -23,9 +23,9 @@ import {
   awardCoinsToUser,
 } from "../services/coin.service.js";
 import {
-  createPhonePePayment,
-  getPhonePeStatus,
-} from "../services/phonepe.service.js";
+  createPaytmPayment,
+  getPaytmStatus,
+} from "../services/paytm.service.js";
 import {
   getShippingQuote,
   validateIndianPincode,
@@ -77,24 +77,22 @@ import { autoCreateShipmentForPaidOrder } from "../services/automatedShipping.se
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
-const DEFAULT_PAYMENT_PROVIDER = "PHONEPE";
+const DEFAULT_PAYMENT_PROVIDER = "PAYTM";
 const configuredPaymentProvider = String(
   process.env.PAYMENT_PROVIDER || DEFAULT_PAYMENT_PROVIDER,
 ).toUpperCase();
-// Unsupported providers are coerced to PhonePe to keep runtime deterministic.
 const PAYMENT_PROVIDER =
-  configuredPaymentProvider === "PHONEPE"
+  configuredPaymentProvider === "PAYTM"
     ? configuredPaymentProvider
     : DEFAULT_PAYMENT_PROVIDER;
-const PHONEPE_MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || "";
-const PHONEPE_SALT_KEY = process.env.PHONEPE_SALT_KEY || "";
-const PHONEPE_SALT_INDEX = process.env.PHONEPE_SALT_INDEX || "";
-const PAYMENT_ENV_ENABLED =
-  PAYMENT_PROVIDER === "PHONEPE" &&
-  process.env.PHONEPE_ENABLED === "true" &&
-  PHONEPE_MERCHANT_ID &&
-  PHONEPE_SALT_KEY &&
-  PHONEPE_SALT_INDEX;
+const PAYTM_MERCHANT_ID = process.env.PAYTM_MERCHANT_ID || "";
+const PAYTM_MERCHANT_KEY = process.env.PAYTM_MERCHANT_KEY || "";
+const PAYTM_ENV_ENABLED =
+  PAYMENT_PROVIDER === "PAYTM" &&
+  process.env.PAYTM_ENABLED === "true" &&
+  PAYTM_MERCHANT_ID &&
+  PAYTM_MERCHANT_KEY;
+const PAYMENT_ENV_ENABLED = PAYTM_ENV_ENABLED;
 
 const SETTINGS_CACHE_TTL_MS = 30 * 1000;
 const settingsCache = new Map();
@@ -594,71 +592,96 @@ const toObjectIdOrNull = (value) => {
   return mongoose.Types.ObjectId.isValid(asString) ? candidate : null;
 };
 
-const decodePhonePeWebhookEnvelope = (body = {}) => {
-  if (!body || typeof body !== "object") return {};
+const decodePaytmWebhookEnvelope = (body = {}) => {
+  if (!body) return {};
 
-  const base64Candidates = [];
-  if (typeof body.response === "string") {
-    base64Candidates.push(body.response);
-  }
-  if (typeof body.data === "string") {
-    base64Candidates.push(body.data);
-  }
-
-  for (const candidate of base64Candidates) {
+  if (typeof body === "string") {
     try {
-      const decoded = JSON.parse(
-        Buffer.from(candidate, "base64").toString("utf8"),
-      );
-      if (decoded && typeof decoded === "object") {
-        return decoded;
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
       }
     } catch {
-      // Continue with next shape candidate.
+      return {};
     }
   }
 
-  if (body.data && typeof body.data === "object") {
-    return body.data;
+  if (body.BODY && typeof body.BODY === "string") {
+    try {
+      const parsed = JSON.parse(body.BODY);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    } catch {
+      // fallback to raw payload
+    }
+  }
+
+  if (body.body && typeof body.body === "string") {
+    try {
+      const parsed = JSON.parse(body.body);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    } catch {
+      // fallback to raw payload
+    }
+  }
+
+  if (body.body && typeof body.body === "object") {
+    return body.body;
   }
 
   return body;
 };
 
-const extractPhonePeWebhookFields = (payload = {}) => {
+const extractPaytmWebhookFields = (payload = {}) => {
+  const resultInfo =
+    payload?.resultInfo && typeof payload.resultInfo === "object"
+      ? payload.resultInfo
+      : payload?.RESULTINFO && typeof payload.RESULTINFO === "object"
+        ? payload.RESULTINFO
+        : {};
+
   const merchantTransactionId =
     payload?.merchantTransactionId ||
-    payload?.merchant_transaction_id ||
-    payload?.merchantOrderId ||
+    payload?.merchant_order_id ||
+    payload?.ORDERID ||
     payload?.orderId ||
+    payload?.orderid ||
+    payload?.order_id ||
     null;
+
   const transactionId =
     payload?.transactionId ||
-    payload?.transaction_id ||
+    payload?.TXNID ||
+    payload?.txnId ||
+    payload?.txn_id ||
     payload?.providerReferenceId ||
-    payload?.paymentTransactionId ||
+    payload?.BANKTXNID ||
     null;
+
   const state =
-    payload?.state ||
-    payload?.code ||
+    resultInfo?.resultStatus ||
+    payload?.STATUS ||
     payload?.status ||
-    payload?.paymentState ||
+    payload?.state ||
+    payload?.resultStatus ||
     null;
 
   return { merchantTransactionId, transactionId, state };
 };
 
-const verifyPhonePeWebhookState = async (merchantTransactionId) => {
+const verifyPaytmWebhookState = async (merchantTransactionId) => {
   try {
-    const statusResponse = await getPhonePeStatus({ merchantTransactionId });
+    const statusResponse = await getPaytmStatus({ orderId: merchantTransactionId });
     const payload =
-      statusResponse?.data && typeof statusResponse.data === "object"
-        ? statusResponse.data
-        : statusResponse || {};
-
-    return extractPhonePeWebhookFields(payload);
+      statusResponse && typeof statusResponse === "object"
+        ? statusResponse
+        : {};
+    return extractPaytmWebhookFields(payload);
   } catch (error) {
-    logger.warn("handlePhonePeWebhook", "PhonePe status verification failed", {
+    logger.warn("handlePaytmWebhook", "Paytm status verification failed", {
       merchantTransactionId,
       error: error?.message || String(error),
     });
@@ -1419,12 +1442,12 @@ export const getAllOrders = asyncHandler(async (req, res) => {
       }
     }
 
-    // Search by paymentId, PhonePe IDs, or user email
+    // Search by payment identifiers or user email
     if (search) {
       filter.$or = [
         { paymentId: { $regex: search, $options: "i" } },
-        { phonepeTransactionId: { $regex: search, $options: "i" } },
-        { phonepeMerchantTransactionId: { $regex: search, $options: "i" } },
+        { paytmTransactionId: { $regex: search, $options: "i" } },
+        { paytmOrderId: { $regex: search, $options: "i" } },
         { "user.email": { $regex: search, $options: "i" } },
       ];
     }
@@ -2083,7 +2106,7 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
 // ==================== ORDER CREATION & PAYMENT ENDPOINTS ====================
 
 /**
- * Create order (Checkout) - PhonePe Integration
+ * Create order (Checkout) - Paytm Integration
  * @route POST /api/orders
  * @access User (authenticated) / Guest
  * @param {Array} products - Product array with details
@@ -2367,7 +2390,7 @@ export const createOrder = asyncHandler(async (req, res) => {
 
     await sendOrderConfirmationEmail(order);
 
-    if (PAYMENT_PROVIDER === "PHONEPE") {
+    if (PAYMENT_PROVIDER === "PAYTM") {
       const primaryOrigin = String(process.env.CLIENT_URL || "")
         .split(",")[0]
         .trim()
@@ -2383,52 +2406,58 @@ export const createOrder = asyncHandler(async (req, res) => {
         .replace(/\/+$/, "");
 
       const merchantTransactionId = `BOG_${order._id}`;
-      const merchantUserId = userId ? String(userId) : "guest";
-      const amount = payableAmount;
-      const redirectUrl =
-        process.env.PHONEPE_ORDER_REDIRECT_URL ||
-        process.env.PHONEPE_REDIRECT_URL ||
-        `${primaryOrigin}/payment/phonepe`;
       const callbackUrl =
-        process.env.PHONEPE_ORDER_CALLBACK_URL ||
-        process.env.PHONEPE_CALLBACK_URL ||
-        `${backendUrl}/api/orders/webhook/phonepe`;
+        process.env.PAYTM_ORDER_CALLBACK_URL ||
+        process.env.PAYTM_CALLBACK_URL ||
+        `${backendUrl}/api/orders/webhook/paytm`;
 
-      const phonepeResponse = await createPhonePePayment({
-        amount,
-        merchantTransactionId,
-        merchantUserId,
-        redirectUrl,
+      const paytmResponse = await createPaytmPayment({
+        amount: payableAmount,
+        orderId: merchantTransactionId,
         callbackUrl,
+        customerId: userId ? String(userId) : "guest",
         mobileNumber:
           checkoutContact.contact.phone ||
           req.body?.shippingAddress?.mobile ||
           null,
+        email:
+          checkoutContact.contact.email ||
+          req.body?.billingDetails?.email ||
+          req.body?.guestDetails?.email ||
+          null,
       });
+      const gatewayBase = (() => {
+        try {
+          return new URL(String(paytmResponse.gatewayUrl || "")).origin;
+        } catch {
+          return "";
+        }
+      })();
 
-      const paymentUrl =
-        phonepeResponse?.data?.instrumentResponse?.redirectInfo?.url ||
-        phonepeResponse?.data?.redirectInfo?.url ||
-        null;
+      const paymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
+        paytmResponse.mid,
+      )}&orderId=${encodeURIComponent(
+        paytmResponse.orderId,
+      )}&txnToken=${encodeURIComponent(
+        paytmResponse.txnToken,
+      )}&amount=${encodeURIComponent(Number(payableAmount).toFixed(2))}`;
+      const paymentUrlWithGateway = gatewayBase
+        ? `${paymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
+        : paymentUrl;
 
-      if (!paymentUrl) {
-        throw new AppError("PAYMENT_GATEWAY_ERROR", {
-          message: "PhonePe payment URL not received",
-        });
-      }
-
-      order.phonepeMerchantTransactionId = merchantTransactionId;
       order.paymentId = merchantTransactionId;
-      order.phonepeTransactionId = phonepeResponse?.data?.transactionId || null;
+      order.paytmOrderId = merchantTransactionId;
       await order.save();
 
       return sendSuccess(
         res,
         {
           orderId: order._id,
-          paymentProvider: "PHONEPE",
-          paymentUrl,
+          paymentProvider: "PAYTM",
+          paymentUrl: paymentUrlWithGateway,
           merchantTransactionId,
+          txnToken: paytmResponse.txnToken,
+          paytmGatewayUrl: paytmResponse.gatewayUrl,
         },
         "Order created successfully",
         201,
@@ -2932,7 +2961,7 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
         ? `${PAYMENT_PROVIDER} payment gateway is active`
         : `${PAYMENT_PROVIDER} is currently unavailable. You can still save orders for later.`,
       canSaveOrder: true,
-      onboardingStatus: paymentEnabled ? "complete" : "in_progress",
+      configurationStatus: paymentEnabled ? "configured" : "not_configured",
     });
   } catch (error) {
     logger.error("getPaymentGatewayStatus", "Error checking payment status", {
@@ -2945,30 +2974,30 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
 // ==================== WEBHOOK HANDLERS ====================
 
 /**
- * PhonePe Webhook Handler
- * @route POST /api/orders/webhook/phonepe
- * @access Public (payment state verified via PhonePe status API)
+ * Paytm Webhook Handler
+ * @route POST /api/orders/webhook/paytm
+ * @access Public (payment state verified via Paytm status API)
  */
-export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
+export const handlePaytmWebhook = asyncHandler(async (req, res) => {
   try {
-    logger.debug("handlePhonePeWebhook", "Webhook received");
+    logger.debug("handlePaytmWebhook", "Webhook received");
 
     if (!(await isPaymentEnabled())) {
-      logger.warn("handlePhonePeWebhook", "PhonePe not enabled");
+      logger.warn("handlePaytmWebhook", "Paytm not enabled");
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    const payload = decodePhonePeWebhookEnvelope(req.body || {});
-    const webhookData = extractPhonePeWebhookFields(payload);
+    const payload = decodePaytmWebhookEnvelope(req.body || {});
+    const webhookData = extractPaytmWebhookFields(payload);
     const merchantTransactionId = webhookData.merchantTransactionId;
 
     if (!merchantTransactionId) {
-      logger.warn("handlePhonePeWebhook", "Missing merchantTransactionId");
+      logger.warn("handlePaytmWebhook", "Missing merchantTransactionId");
       return sendSuccess(res, {}, "Webhook received");
     }
 
     if (!String(merchantTransactionId).startsWith("BOG_")) {
-      logger.warn("handlePhonePeWebhook", "Ignoring non-order transaction", {
+      logger.warn("handlePaytmWebhook", "Ignoring non-order transaction", {
         merchantTransactionId,
       });
       return sendSuccess(res, {}, "Webhook received");
@@ -2976,7 +3005,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     const orderId = String(merchantTransactionId).replace("BOG_", "");
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      logger.warn("handlePhonePeWebhook", "Invalid orderId in transaction", {
+      logger.warn("handlePaytmWebhook", "Invalid orderId in transaction", {
         merchantTransactionId,
         orderId,
       });
@@ -2986,27 +3015,22 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     const order = await OrderModel.findById(orderId);
 
     if (!order) {
-      logger.warn("handlePhonePeWebhook", "Order not found", {
+      logger.warn("handlePaytmWebhook", "Order not found", {
         merchantTransactionId,
       });
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    if (
-      order.phonepeMerchantTransactionId &&
-      String(order.phonepeMerchantTransactionId) !== String(merchantTransactionId)
-    ) {
-      logger.warn("handlePhonePeWebhook", "Transaction/order mismatch", {
+    if (order.paytmOrderId && String(order.paytmOrderId) !== String(merchantTransactionId)) {
+      logger.warn("handlePaytmWebhook", "Transaction/order mismatch", {
         orderId: order._id,
         merchantTransactionId,
-        expected: order.phonepeMerchantTransactionId,
+        expected: order.paytmOrderId,
       });
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    const verifiedStatus = await verifyPhonePeWebhookState(
-      merchantTransactionId,
-    );
+    const verifiedStatus = await verifyPaytmWebhookState(merchantTransactionId);
     if (!verifiedStatus) {
       return sendSuccess(res, {}, "Webhook acknowledged");
     }
@@ -3015,12 +3039,19 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
       verifiedStatus.transactionId || webhookData.transactionId || null;
     const normalizedState = String(
       verifiedStatus.state || webhookData.state || "",
-    ).toLowerCase();
+    )
+      .toLowerCase()
+      .trim();
     const wasPaid = order.payment_status === "paid";
     let orderMutated = false;
 
-    if (transactionId && String(order.phonepeTransactionId || "") !== String(transactionId)) {
-      order.phonepeTransactionId = transactionId;
+    if (String(order.paytmOrderId || "") !== String(merchantTransactionId)) {
+      order.paytmOrderId = merchantTransactionId;
+      orderMutated = true;
+    }
+
+    if (transactionId && String(order.paytmTransactionId || "") !== String(transactionId)) {
+      order.paytmTransactionId = transactionId;
       order.paymentId = transactionId;
       orderMutated = true;
     }
@@ -3037,7 +3068,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     } else if (normalizedState.includes("fail")) {
       if (!wasPaid) {
         order.payment_status = "failed";
-        order.failureReason = "PhonePe payment failed";
+        order.failureReason = "Paytm payment failed";
         await releaseInventory(order, "PAYMENT_WEBHOOK");
         orderMutated = true;
       }
@@ -3047,7 +3078,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         orderMutated = true;
       }
     } else {
-      logger.warn("handlePhonePeWebhook", "Unknown payment state", {
+      logger.warn("handlePaytmWebhook", "Unknown payment state", {
         merchantTransactionId,
         state: verifiedStatus.state || webhookData.state || null,
       });
@@ -3063,7 +3094,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     if (isInvoiceEligible(order)) {
       ensureOrderInvoice(order).catch((err) =>
-        logger.error("handlePhonePeWebhook", "Failed to generate invoice", {
+        logger.error("handlePaytmWebhook", "Failed to generate invoice", {
           orderId: order._id,
           error: err.message,
         }),
@@ -3071,7 +3102,6 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     }
 
     if (!wasPaid && order.payment_status === "paid") {
-      // Deduct redeemed coins only after payment is successful.
       if (order.user && Number(order.coinRedemption?.coinsUsed || 0) > 0) {
         try {
           await applyRedemptionToUser({
@@ -3086,7 +3116,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           });
         } catch (coinError) {
           logger.error(
-            "handlePhonePeWebhook",
+            "handlePaytmWebhook",
             "Failed to deduct redeemed coins",
             {
               orderId: order._id,
@@ -3096,21 +3126,15 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         }
       }
 
-      // Record coupon usage (idempotent)
       if (order.couponCode) {
         recordCouponUsage(order).catch((err) =>
-          logger.error(
-            "handlePhonePeWebhook",
-            "Failed to record coupon usage",
-            {
-              orderId: order._id,
-              error: err.message,
-            },
-          ),
+          logger.error("handlePaytmWebhook", "Failed to record coupon usage", {
+            orderId: order._id,
+            error: err.message,
+          }),
         );
       }
 
-      // Update influencer stats if applicable (idempotent per order).
       if (order.influencerId && !order.influencerStatsSynced) {
         const effectiveAmount =
           order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
@@ -3135,7 +3159,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
             await order.save();
           }
         } catch (err) {
-          logger.error("handlePhonePeWebhook", "Failed to update influencer stats", {
+          logger.error("handlePaytmWebhook", "Failed to update influencer stats", {
             orderId: order._id,
             error: err.message,
           });
@@ -3159,7 +3183,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
             await order.save();
           }
         } catch (coinError) {
-          logger.error("handlePhonePeWebhook", "Failed to award coins", {
+          logger.error("handlePaytmWebhook", "Failed to award coins", {
             orderId: order._id,
             error: coinError.message,
           });
@@ -3171,7 +3195,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         source: "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
       });
       if (!autoShipmentResult.ok && !autoShipmentResult.skipped) {
-        logger.error("handlePhonePeWebhook", "Automatic shipment booking failed", {
+        logger.error("handlePaytmWebhook", "Automatic shipment booking failed", {
           orderId: order._id,
           reason: autoShipmentResult.reason || "SHIPMENT_CREATION_FAILED",
           error: autoShipmentResult.error?.message || null,
@@ -3192,7 +3216,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     }
 
     syncOrderToFirestore(order, "update").catch((err) =>
-      logger.error("handlePhonePeWebhook", "Failed to sync to Firestore", {
+      logger.error("handlePaytmWebhook", "Failed to sync to Firestore", {
         orderId: order._id,
         error: err.message,
       }),
@@ -3202,7 +3226,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     return sendSuccess(res, {}, "Webhook processed");
   } catch (error) {
-    logger.error("handlePhonePeWebhook", "Webhook processing error", {
+    logger.error("handlePaytmWebhook", "Webhook processing error", {
       error: error.message,
     });
     return sendError(res, error);

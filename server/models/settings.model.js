@@ -57,7 +57,7 @@ settingsSchema.statics.defaultSettings = [
   {
     key: "paymentGatewayEnabled",
     value: true,
-    description: "Enable/disable payment gateway (PhonePe)",
+    description: "Enable/disable payment gateway (Paytm)",
     category: "payment",
   },
   {

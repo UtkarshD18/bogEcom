@@ -1,6 +1,6 @@
 /**
  * Production-Grade Payment Hook
- * PhonePe-first flow with safe fallbacks and logging.
+ * Paytm-first flow with safe fallbacks and logging.
  */
 
 import { useCallback, useState } from "react";
@@ -84,7 +84,7 @@ export const usePayment = () => {
     [],
   );
 
-  const initiatePhonePePayment = useCallback(
+  const initiatePaytmPayment = useCallback(
     async (products, totalAmount, deliveryAddress = null) => {
       try {
         if (!products || products.length === 0) {
@@ -125,7 +125,7 @@ export const usePayment = () => {
       } catch (err) {
         setPaymentStatus("failed");
         setError(err.message);
-        logPaymentEvent("PHONEPE_PAYMENT_ERROR", { error: err.message });
+        logPaymentEvent("PAYTM_PAYMENT_ERROR", { error: err.message });
         return { success: false, error: err.message };
       } finally {
         setLoading(false);
@@ -207,7 +207,7 @@ export const usePayment = () => {
 
   const retryPayment = useCallback(
     async () => {
-      setError("Retry payment is not available until PhonePe is enabled.");
+      setError("Retry payment is not available until Paytm is enabled.");
       return { success: false, error: "Payment retry unavailable" };
     },
     [],
@@ -225,7 +225,7 @@ export const usePayment = () => {
     paymentStatus,
 
     checkPaymentGateway,
-    initiatePhonePePayment,
+    initiatePaytmPayment,
     handleSaveOrderForLater,
     retryPayment,
     clearPaymentState,
@@ -235,3 +235,4 @@ export const usePayment = () => {
 };
 
 export default usePayment;
+

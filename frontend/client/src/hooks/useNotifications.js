@@ -56,6 +56,10 @@ export const useNotifications = (options = {}) => {
       localStorage.setItem("cartSessionId", sessionId);
     }
 
+    if (sessionId) {
+      document.cookie = `sessionId=${encodeURIComponent(sessionId)}; path=/; max-age=31536000; samesite=lax`;
+    }
+
     return sessionId;
   }, []);
 
@@ -178,6 +182,12 @@ export const useNotifications = (options = {}) => {
 
     checkSupport();
   }, []);
+
+  // Ensure every visitor gets a stable guest session ID from first load.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    getSessionId();
+  }, [getSessionId]);
 
   // Initialize messaging and set up foreground listener
   useEffect(() => {

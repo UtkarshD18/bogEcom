@@ -162,15 +162,15 @@ Security gain:
 - `adminLimiter`: admin-heavy workflows
 - `uploadLimiter`, `supportLimiter`: targeted abuse protection
 
-## 7. Payment Logic (PhonePe)
+## 7. Payment Logic (Paytm)
 
 Primary files:
-- `server/services/phonepe.service.js`
+- `server/services/paytm.service.js`
 - `server/controllers/order.controller.js`
 - `server/controllers/membership.controller.js`
 
 Core behavior:
-- Payment provider flag controls readiness (`PHONEPE_ENABLED`)
+- Payment provider flag controls readiness (`PAYTM_ENABLED`)
 - Order and membership payment initialization are guarded by feature flag + credentials
 - Webhook-driven reconciliation updates payment and order status
 
