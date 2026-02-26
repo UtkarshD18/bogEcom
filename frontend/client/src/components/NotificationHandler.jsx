@@ -1,22 +1,46 @@
 "use client";
 
 import { useNotifications } from "@/hooks/useNotifications";
+import { API_BASE_URL } from "@/utils/api";
 import cookies from "js-cookie";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { io } from "socket.io-client";
 import NotificationToast from "./NotificationToast";
+
+const SOCKET_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.slice(0, -4)
+  : API_BASE_URL;
+const MAX_DEDUPED_NOTIFICATION_IDS = 100;
+const AUTO_PROMPT_KEY = "push_prompt_last_shown_at";
+const AUTO_PROMPT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * NotificationHandler Component
  *
- * Global handler for foreground push notifications.
- * Displays toast for incoming notifications.
+ * Global handler for push + live in-app offer notifications.
+ * Displays toast for incoming notifications across the app.
  *
  * Place this in the main layout to handle notifications app-wide.
  */
 const NotificationHandler = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const AUTO_PROMPT_KEY = "push_prompt_last_shown_at";
-  const AUTO_PROMPT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+  const [activeMessage, setActiveMessage] = useState(null);
+  const seenNotificationIdsRef = useRef(new Set());
+
+  const rememberNotification = useCallback((notificationId) => {
+    if (!notificationId) return false;
+    const seen = seenNotificationIdsRef.current;
+    if (seen.has(notificationId)) return true;
+
+    seen.add(notificationId);
+    if (seen.size > MAX_DEDUPED_NOTIFICATION_IDS) {
+      const oldest = seen.values().next().value;
+      if (oldest) {
+        seen.delete(oldest);
+      }
+    }
+    return false;
+  }, []);
 
   // Check login status
   useEffect(() => {
@@ -96,14 +120,85 @@ const NotificationHandler = () => {
     };
   }, [isSupported, isRegistered, permission, requestPermission]);
 
-  // Show toast for any received foreground message.
-  // Do not gate on isRegistered because token/localStorage can temporarily desync.
-  if (!foregroundMessage) return null;
+  useEffect(() => {
+    const notificationId =
+      foregroundMessage?.data?.notificationId ||
+      foregroundMessage?.data?.type ||
+      null;
+    if (!notificationId) return;
+    rememberNotification(notificationId);
+  }, [foregroundMessage, rememberNotification]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const socket = io(SOCKET_URL, {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+    });
+
+    const handleLiveOffer = (payload) => {
+      const liveData =
+        payload?.data && typeof payload.data === "object" ? payload.data : {};
+      const notificationId =
+        payload?.notificationId || liveData.notificationId || null;
+
+      if (rememberNotification(notificationId)) return;
+
+      const title = String(payload?.title || liveData.title || "New Offer");
+      const body = String(payload?.body || liveData.body || "");
+      const normalizedMessage = {
+        title,
+        body,
+        data: {
+          ...liveData,
+          notificationId: notificationId || `offer-live:${Date.now()}`,
+        },
+        timestamp: Date.now(),
+      };
+
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          new Notification(title, {
+            body,
+            icon: "/logo.png",
+            badge: "/logo.png",
+            tag:
+              normalizedMessage.data?.notificationId ||
+              normalizedMessage.data?.type ||
+              "offer_live",
+          });
+        } catch {
+          // Best-effort only; toast fallback still runs.
+        }
+      }
+
+      setActiveMessage(normalizedMessage);
+    };
+
+    socket.on("offer:live", handleLiveOffer);
+
+    return () => {
+      socket.off("offer:live", handleLiveOffer);
+      socket.disconnect();
+    };
+  }, [rememberNotification]);
+
+  const handleDismiss = useCallback(() => {
+    clearForegroundMessage();
+    setActiveMessage(null);
+  }, [clearForegroundMessage]);
+
+  const messageToDisplay = activeMessage || foregroundMessage;
+  if (!messageToDisplay) return null;
 
   return (
     <NotificationToast
-      message={foregroundMessage}
-      onDismiss={clearForegroundMessage}
+      message={messageToDisplay}
+      onDismiss={handleDismiss}
       duration={6000}
     />
   );

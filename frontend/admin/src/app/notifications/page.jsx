@@ -94,6 +94,7 @@ const NotificationsPage = () => {
         const sent = response.data?.sent ?? 0;
         const failed = response.data?.failed ?? 0;
         const totalTokens = response.data?.totalTokens ?? sent + failed;
+        const liveDelivered = response.data?.liveDelivered ?? 0;
         const failureCodes = response.data?.failureCodes || {};
         const codeEntries = Object.entries(failureCodes);
         const codesLabel =
@@ -104,15 +105,17 @@ const NotificationsPage = () => {
                 .join(", ")}${codeEntries.length > 2 ? ", ..." : ""})`
             : "";
 
-        if (sent === 0 && failed > 0) {
+        if (sent === 0 && failed > 0 && liveDelivered === 0) {
           toast.error(
             `No devices received the notification (${failed} failed)${codesLabel}`,
           );
         } else {
+          const liveLabel =
+            liveDelivered > 0 ? `, live ${liveDelivered} active` : "";
           toast.success(
             `Notification sent (${sent}/${totalTokens} delivered${
               failed ? `, ${failed} failed` : ""
-            })${codesLabel}`,
+            }${liveLabel})${codesLabel}`,
           );
         }
         fetchStats();
