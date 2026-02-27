@@ -9,6 +9,12 @@ const ORDER_PAYMENT_METHODS = [
   "TEST",
 ];
 
+const deriveDisplayOrderNumber = (orderId) => {
+  const rawOrderId = String(orderId || "").trim();
+  if (!rawOrderId) return "";
+  return `BOG-${rawOrderId.slice(-8).toUpperCase()}`;
+};
+
 /**
  * Order Schema
  * Stores all order information including payment details
@@ -21,6 +27,20 @@ const orderSchema = new mongoose.Schema(
       type: mongoose.Schema.ObjectId,
       ref: "User",
       default: null, // Allow guest checkout
+    },
+
+    // Persisted user-facing order number (separate from Mongo _id)
+    orderNumber: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // Backward-compatible alias used by some legacy consumers
+    displayOrderId: {
+      type: String,
+      default: null,
+      trim: true,
     },
 
     // Products in Order
@@ -564,6 +584,8 @@ shipment_status: {
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ payment_status: 1, order_status: 1 });
 orderSchema.index({ paymentId: 1 });
+orderSchema.index({ orderNumber: 1 }, { sparse: true });
+orderSchema.index({ displayOrderId: 1 }, { sparse: true });
 orderSchema.index({ invoiceNumber: 1 }, { sparse: true });
 orderSchema.index({ "gst.state": 1, createdAt: -1 });
 orderSchema.index({ purchaseOrder: 1 }, { sparse: true });
@@ -578,6 +600,27 @@ orderSchema.index({ deliveryDate: -1 }, { sparse: true });
 orderSchema.pre("validate", function () {
   if (this.payment_status === "confirmed") {
     this.payment_status = "paid";
+  }
+
+  const normalizedOrderNumber = String(this.orderNumber || "")
+    .trim()
+    .toUpperCase();
+  if (!normalizedOrderNumber) {
+    const generatedOrderNumber = deriveDisplayOrderNumber(this._id);
+    if (generatedOrderNumber) {
+      this.orderNumber = generatedOrderNumber;
+    }
+  } else if (normalizedOrderNumber !== this.orderNumber) {
+    this.orderNumber = normalizedOrderNumber;
+  }
+
+  const normalizedDisplayOrderId = String(this.displayOrderId || "")
+    .trim()
+    .toUpperCase();
+  if (!normalizedDisplayOrderId) {
+    this.displayOrderId = String(this.orderNumber || "").trim().toUpperCase() || null;
+  } else if (normalizedDisplayOrderId !== this.displayOrderId) {
+    this.displayOrderId = normalizedDisplayOrderId;
   }
 });
 
