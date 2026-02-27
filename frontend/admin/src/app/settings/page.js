@@ -124,7 +124,7 @@ const SettingsPage = () => {
 
   const [storeInfo, setStoreInfo] = useState({
     name: "BuyOneGram",
-    email: "support@buyonegram.com",
+    email: "healthyonegram.com",
     phone: "+91 9876541234",
     address: "",
     gstNumber: "",

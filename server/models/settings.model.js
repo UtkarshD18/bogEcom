@@ -184,7 +184,7 @@ settingsSchema.statics.defaultSettings = [
     key: "storeInfo",
     value: {
       name: "BuyOneGram",
-      email: "support@buyonegram.com",
+      email: "healthyonegram.com",
       phone: "+91 9876541234",
       address: "Sitapura Industrial Area, Jaipur, Rajasthan 302019",
       gstNumber: "",

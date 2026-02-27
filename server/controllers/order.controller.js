@@ -474,6 +474,41 @@ const persistInvoiceSnapshotToDisk = async ({
 
 const formatInr = (value) => `Rs. ${round2(value).toFixed(2)}`;
 
+const resolveDisplayOrderNumber = (order = {}) => {
+  const explicitDisplayId =
+    order?.displayOrderId ||
+    order?.orderNumber ||
+    order?.order_id ||
+    order?.orderId ||
+    "";
+  if (String(explicitDisplayId || "").trim()) {
+    return String(explicitDisplayId).trim().toUpperCase();
+  }
+
+  const rawOrderId = String(order?._id || "").trim();
+  if (!rawOrderId) return "N/A";
+  return `BOG-${rawOrderId.slice(-8).toUpperCase()}`;
+};
+
+const formatOrderDateForEmail = (value) => {
+  const parsed = new Date(value || Date.now());
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toLocaleString("en-IN");
+  }
+
+  return parsed
+    .toLocaleString("en-IN", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .replace(/\bam\b/g, "AM")
+    .replace(/\bpm\b/g, "PM");
+};
+
 const stringifyOrderItemsForEmail = (order) => {
   const items = Array.isArray(order?.products) ? order.products : [];
   if (items.length === 0) return "No items found for this order.";
@@ -510,6 +545,14 @@ const sendOrderConfirmationEmail = async (order) => {
           order?.guestDetails?.fullName ||
           "Customer",
       ).trim() || "Customer";
+    const rawOrderId = String(order?._id || "").trim();
+    const displayOrderNumber = resolveDisplayOrderNumber(order);
+    const supportContact = "healthyonegram.com";
+    const supportUrl = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportContact)
+      ? `mailto:${supportContact}`
+      : /^https?:\/\//i.test(supportContact)
+        ? supportContact
+        : `https://${supportContact.replace(/^\/+/, "")}`;
 
     const originalSubtotal = round2(
       Number(
@@ -528,29 +571,24 @@ const sendOrderConfirmationEmail = async (order) => {
     const finalAmount = round2(Number(order?.finalAmount || order?.totalAmt || 0));
 
     const text = [
-      `Order ${order?._id} created successfully.`,
+      `Order No: ${displayOrderNumber}`,
+      `Order ID: ${rawOrderId || "N/A"}`,
+      `Order created successfully.`,
       `Status: ${order?.order_status || "pending"}`,
       `Payment: ${order?.payment_status || "pending"}`,
       `Final Amount: ${formatInr(finalAmount)}`,
+      `Support: ${supportContact}`,
     ].join("\n");
 
     const result = await sendTemplatedEmail({
       to: recipientEmail,
-      subject: `Order Confirmation - ${order?._id}`,
+      subject: `Order Confirmation - ${displayOrderNumber}`,
       templateFile: "orderConfirmation.html",
       templateData: {
         customer_name: customerName,
-        order_id: String(order?._id || ""),
-        order_date: new Date(order?.createdAt || Date.now()).toLocaleString(
-          "en-IN",
-          {
-            year: "numeric",
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          },
-        ),
+        order_number: displayOrderNumber,
+        order_id: rawOrderId || "N/A",
+        order_date: formatOrderDateForEmail(order?.createdAt),
         order_status: String(order?.order_status || "pending"),
         payment_status: String(order?.payment_status || "pending"),
         items_text: stringifyOrderItemsForEmail(order),
@@ -561,13 +599,8 @@ const sendOrderConfirmationEmail = async (order) => {
         shipping_amount: formatInr(shippingAmount),
         final_amount: formatInr(finalAmount),
         site_url: getPrimaryStoreUrl(),
-        support_email: String(
-          process.env.SUPPORT_EMAIL ||
-            process.env.EMAIL_FROM_ADDRESS ||
-            process.env.SMTP_USER ||
-            process.env.EMAIL ||
-            "support@healthyonegram.com",
-        ).trim(),
+        support_contact: supportContact,
+        support_url: supportUrl,
         year: String(new Date().getFullYear()),
       },
       text,
@@ -1456,12 +1489,23 @@ export const getAllOrders = asyncHandler(async (req, res) => {
 
     // Search by payment identifiers or user email
     if (search) {
-      filter.$or = [
-        { paymentId: { $regex: search, $options: "i" } },
-        { paytmTransactionId: { $regex: search, $options: "i" } },
-        { paytmOrderId: { $regex: search, $options: "i" } },
-        { "user.email": { $regex: search, $options: "i" } },
+      const normalizedSearch = String(search || "").trim();
+      const searchFilters = [
+        { paymentId: { $regex: normalizedSearch, $options: "i" } },
+        { paytmTransactionId: { $regex: normalizedSearch, $options: "i" } },
+        { paytmOrderId: { $regex: normalizedSearch, $options: "i" } },
+        { orderNumber: { $regex: normalizedSearch, $options: "i" } },
+        { displayOrderId: { $regex: normalizedSearch, $options: "i" } },
+        { "billingDetails.email": { $regex: normalizedSearch, $options: "i" } },
+        { "guestDetails.email": { $regex: normalizedSearch, $options: "i" } },
+        { "user.email": { $regex: normalizedSearch, $options: "i" } },
       ];
+
+      if (mongoose.Types.ObjectId.isValid(normalizedSearch)) {
+        searchFilters.push({ _id: new mongoose.Types.ObjectId(normalizedSearch) });
+      }
+
+      filter.$or = searchFilters;
     }
 
     logger.debug("getAllOrders", "Fetching orders", {

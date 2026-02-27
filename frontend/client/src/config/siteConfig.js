@@ -18,7 +18,7 @@ export const siteConfig = {
 
   // Contact Information
   contact: {
-    email: "support@buyonegram.com",
+    email: "healthyonegram.com",
     phone: "+91 8619-641-968",
     whatsapp: "+918619641968",
     address: "Rajasthan Centre of Advanced Technology (R-CAT)",
