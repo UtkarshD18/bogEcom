@@ -424,7 +424,7 @@ const sendTicketUpdateEmail = async (ticket) => {
       status,
       updated_at: updatedAt,
       admin_reply: safeReply,
-      support_url: `${SUPPORT_STORE_URL}/customer-care`,
+      support_url: `${SUPPORT_STORE_URL}/contact`,
       year: String(new Date().getFullYear()),
     },
     text,

@@ -308,6 +308,7 @@ export const deleteSetting = async (req, res) => {
       "orderSettings",
       "storeInfo",
       "discountSettings",
+      "popupSettings",
     ];
     if (protectedKeys.includes(key)) {
       return res.status(400).json({

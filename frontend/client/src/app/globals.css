@@ -64,6 +64,18 @@ body {
   margin-bottom: 0 !important;
 }
 
+@supports selector(article:has(> .premium-glow)) {
+  article:has(> .premium-glow) {
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 1.5rem;
+  }
+
+  article:has(> .premium-glow):hover {
+    transform: none !important;
+  }
+}
+
 .site-footer {
   margin-top: 0 !important;
 }

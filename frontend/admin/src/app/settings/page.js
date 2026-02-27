@@ -1,6 +1,7 @@
 "use client";
 
-import { API_BASE_URL } from "@/utils/api";
+import { getImageUrl } from "@/utils/imageUtils";
+import { API_BASE_URL, uploadFile } from "@/utils/api";
 
 import { useAdmin } from "@/context/AdminContext";
 import {
@@ -8,8 +9,12 @@ import {
   Button,
   CircularProgress,
   Divider,
+  FormControl,
   FormControlLabel,
+  InputLabel,
   InputAdornment,
+  MenuItem,
+  Select,
   Snackbar,
   Switch,
   TextField,
@@ -27,6 +32,45 @@ import {
 } from "react-icons/md";
 
 const API_URL = API_BASE_URL;
+const POPUP_REDIRECT_TYPES = {
+  product: "product",
+  category: "category",
+  custom: "custom",
+};
+const defaultPopupSettings = {
+  id: "",
+  title: "Limited Time Offer",
+  description: "Discover our latest products and exclusive offers.",
+  imageUrl: "",
+  redirectType: POPUP_REDIRECT_TYPES.custom,
+  redirectValue: "",
+  startDate: "",
+  expiryDate: "",
+  isActive: false,
+  showOncePerSession: true,
+  backgroundColor: "#fff7ed",
+  buttonText: "Shop Now",
+};
+
+const toDateTimeLocal = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (num) => String(num).padStart(2, "0");
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hour = pad(date.getHours());
+  const minute = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+};
+
+const toIsoIfPresent = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString();
+};
 
 /**
  * Store Settings Page
@@ -88,14 +132,10 @@ const SettingsPage = () => {
     currencySymbol: "₹",
   });
 
-  // Offer Popup Settings
-  const [offerSettings, setOfferSettings] = useState({
-    showOfferPopup: false,
-    offerCouponCode: "",
-    offerTitle: "Special Offer!",
-    offerDescription: "Use this code to get a discount on your order!",
-    offerDiscountText: "Get Discount",
-  });
+  const [popupSettings, setPopupSettings] = useState(defaultPopupSettings);
+  const [popupProducts, setPopupProducts] = useState([]);
+  const [popupCategories, setPopupCategories] = useState([]);
+  const [popupImageUploading, setPopupImageUploading] = useState(false);
 
   // High Traffic Notice
   const [highTrafficNotice, setHighTrafficNotice] = useState({
@@ -103,6 +143,234 @@ const SettingsPage = () => {
     message:
       "High traffic — availability may vary. Your order will be processed once confirmed.",
   });
+
+  const setToast = useCallback((message, severity = "success") => {
+    setSnackbar({
+      open: true,
+      message,
+      severity,
+    });
+  }, []);
+
+  const validatePopupConfig = useCallback((value) => {
+    if (!String(value.title || "").trim()) {
+      return { valid: false, message: "Popup title is required." };
+    }
+
+    if (!String(value.description || "").trim()) {
+      return { valid: false, message: "Popup description is required." };
+    }
+
+    if (!String(value.buttonText || "").trim()) {
+      return { valid: false, message: "CTA button text is required." };
+    }
+
+    if (!value.startDate || !value.expiryDate) {
+      return {
+        valid: false,
+        message: "Start date and expiry date are required.",
+      };
+    }
+
+    const startDate = new Date(value.startDate);
+    const expiryDate = new Date(value.expiryDate);
+    if (
+      Number.isNaN(startDate.getTime()) ||
+      Number.isNaN(expiryDate.getTime()) ||
+      expiryDate <= startDate
+    ) {
+      return {
+        valid: false,
+        message: "Expiry date must be greater than start date.",
+      };
+    }
+
+    const requiresRedirect =
+      value.redirectType === POPUP_REDIRECT_TYPES.product ||
+      value.redirectType === POPUP_REDIRECT_TYPES.category;
+    if (requiresRedirect && !String(value.redirectValue || "").trim()) {
+      return {
+        valid: false,
+        message: "Please select a redirect target for product/category popup.",
+      };
+    }
+
+    if (
+      value.redirectType === POPUP_REDIRECT_TYPES.custom &&
+      value.isActive &&
+      !String(value.redirectValue || "").trim()
+    ) {
+      return {
+        valid: false,
+        message: "Custom redirect URL is required when popup is active.",
+      };
+    }
+
+    if (
+      !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
+        String(value.backgroundColor || "").trim(),
+      )
+    ) {
+      return {
+        valid: false,
+        message: "Background color must be a valid hex color (e.g. #fff7ed).",
+      };
+    }
+
+    return { valid: true, message: "" };
+  }, []);
+
+  const mapPopupPayloadToState = useCallback((popupData) => {
+    if (!popupData) return defaultPopupSettings;
+    return {
+      ...defaultPopupSettings,
+      ...popupData,
+      startDate: toDateTimeLocal(popupData.startDate),
+      expiryDate: toDateTimeLocal(popupData.expiryDate),
+    };
+  }, []);
+
+  const fetchPopupResources = useCallback(
+    async (adminToken) => {
+      try {
+        const popupResponse = await fetch(`${API_URL}/api/admin/popup`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${adminToken}`,
+          },
+          credentials: "include",
+        });
+        const popupData = await popupResponse.json();
+        if (popupData?.success && popupData?.data) {
+          setPopupSettings(mapPopupPayloadToState(popupData.data));
+        }
+      } catch (error) {
+        console.warn("Popup settings fetch failed:", error);
+      }
+
+      try {
+        const [productResponse, categoryResponse] = await Promise.all([
+          fetch(`${API_URL}/api/products?limit=250&sortBy=name&order=asc`, {
+            method: "GET",
+            credentials: "include",
+          }),
+          fetch(`${API_URL}/api/categories?flat=true&active=true`, {
+            method: "GET",
+            credentials: "include",
+          }),
+        ]);
+
+        const [productData, categoryData] = await Promise.all([
+          productResponse.json(),
+          categoryResponse.json(),
+        ]);
+
+        if (productData?.success && Array.isArray(productData?.data)) {
+          const productOptions = productData.data
+            .filter((product) => product?._id)
+            .map((product) => ({
+              value: product._id,
+              label: product.name || product._id,
+            }));
+          setPopupProducts(productOptions);
+        }
+
+        if (categoryData?.success && Array.isArray(categoryData?.data)) {
+          const categoryOptions = categoryData.data
+            .filter((category) => category?.slug)
+            .map((category) => ({
+              value: category.slug,
+              label: category.name || category.slug,
+            }));
+          setPopupCategories(categoryOptions);
+        }
+      } catch (error) {
+        console.warn("Popup redirect options fetch failed:", error);
+      }
+    },
+    [mapPopupPayloadToState],
+  );
+
+  const savePopupConfig = useCallback(
+    async (value) => {
+      const adminToken = token || localStorage.getItem("adminToken");
+      if (!adminToken) {
+        return {
+          success: false,
+          message: "Admin session expired. Please login again.",
+        };
+      }
+
+      const response = await fetch(`${API_URL}/api/admin/popup`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          title: String(value.title || "").trim(),
+          description: String(value.description || "").trim(),
+          imageUrl: String(value.imageUrl || "").trim(),
+          redirectType: value.redirectType,
+          redirectValue: String(value.redirectValue || "").trim(),
+          startDate: toIsoIfPresent(value.startDate),
+          expiryDate: toIsoIfPresent(value.expiryDate),
+          isActive: !!value.isActive,
+          showOncePerSession: !!value.showOncePerSession,
+          backgroundColor: String(value.backgroundColor || "").trim(),
+          buttonText: String(value.buttonText || "").trim(),
+        }),
+      });
+
+      const data = await response.json();
+      if (data?.success && data?.data) {
+        setPopupSettings(mapPopupPayloadToState(data.data));
+        return { success: true, message: data?.message || "Popup saved." };
+      }
+
+      return {
+        success: false,
+        message: data?.message || "Failed to save popup settings",
+      };
+    },
+    [mapPopupPayloadToState, token],
+  );
+
+  const handlePopupImageUpload = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const adminToken = token || localStorage.getItem("adminToken");
+      if (!adminToken) {
+        setToast("Admin session expired. Please login again.", "error");
+        event.target.value = "";
+        return;
+      }
+
+      try {
+        setPopupImageUploading(true);
+        const uploadResponse = await uploadFile(file, adminToken);
+        if (uploadResponse?.success && uploadResponse?.data?.url) {
+          setPopupSettings((prev) => ({
+            ...prev,
+            imageUrl: uploadResponse.data.url,
+          }));
+          setToast("Popup image uploaded.");
+        } else {
+          setToast(uploadResponse?.message || "Image upload failed", "error");
+        }
+      } catch (error) {
+        console.error("Popup image upload failed:", error);
+        setToast("Image upload failed", "error");
+      } finally {
+        setPopupImageUploading(false);
+        event.target.value = "";
+      }
+    },
+    [setToast, token],
+  );
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -151,42 +419,14 @@ const SettingsPage = () => {
                 maintenanceMode: !!setting.value,
               }));
               break;
-            case "showOfferPopup":
-              setOfferSettings((prev) => ({
-                ...prev,
-                showOfferPopup: setting.value,
-              }));
-              break;
-            case "offerCouponCode":
-              setOfferSettings((prev) => ({
-                ...prev,
-                offerCouponCode: setting.value,
-              }));
-              break;
-            case "offerTitle":
-              setOfferSettings((prev) => ({
-                ...prev,
-                offerTitle: setting.value,
-              }));
-              break;
-            case "offerDescription":
-              setOfferSettings((prev) => ({
-                ...prev,
-                offerDescription: setting.value,
-              }));
-              break;
-            case "offerDiscountText":
-              setOfferSettings((prev) => ({
-                ...prev,
-                offerDiscountText: setting.value,
-              }));
-              break;
             case "highTrafficNotice":
               setHighTrafficNotice(setting.value);
               break;
           }
         });
       }
+
+      await fetchPopupResources(adminToken);
     } catch (error) {
       console.warn("Settings fetch failed:", error);
       setSnackbar({
@@ -197,7 +437,7 @@ const SettingsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [fetchPopupResources, token]);
 
   // Fetch settings on mount
   useEffect(() => {
@@ -226,45 +466,55 @@ const SettingsPage = () => {
   };
 
   const handleSaveAll = async () => {
+    const popupValidation = validatePopupConfig(popupSettings);
+    if (!popupValidation.valid) {
+      setToast(popupValidation.message, "error");
+      return;
+    }
+
     setSaving(true);
     try {
-      const results = await Promise.all([
+      const [
+        popupSaveResult,
+        shippingSaved,
+        orderSaved,
+        discountSaved,
+        storeSaved,
+        trafficSaved,
+        paymentSaved,
+        maintenanceSaved,
+      ] = await Promise.all([
+        savePopupConfig(popupSettings),
         saveSetting("shippingSettings", shippingSettings),
         saveSetting("orderSettings", orderSettings),
         saveSetting("discountSettings", discountSettings),
         saveSetting("storeInfo", storeInfo),
-        // Offer popup settings
-        saveSetting("showOfferPopup", offerSettings.showOfferPopup),
-        saveSetting("offerCouponCode", offerSettings.offerCouponCode),
-        saveSetting("offerTitle", offerSettings.offerTitle),
-        saveSetting("offerDescription", offerSettings.offerDescription),
-        saveSetting("offerDiscountText", offerSettings.offerDiscountText),
-        // High traffic notice
         saveSetting("highTrafficNotice", highTrafficNotice),
-        // Site controls
         saveSetting("paymentGatewayEnabled", siteControls.paymentGatewayEnabled),
         saveSetting("maintenanceMode", siteControls.maintenanceMode),
       ]);
 
-      if (results.every(Boolean)) {
-        setSnackbar({
-          open: true,
-          message: "All settings saved successfully!",
-          severity: "success",
-        });
+      const coreSettingsSaved =
+        shippingSaved &&
+        orderSaved &&
+        discountSaved &&
+        storeSaved &&
+        trafficSaved &&
+        paymentSaved &&
+        maintenanceSaved;
+
+      if (popupSaveResult.success && coreSettingsSaved) {
+        setToast("All settings saved successfully!", "success");
       } else {
-        setSnackbar({
-          open: true,
-          message: "Some settings failed to save",
-          severity: "warning",
-        });
+        setToast(
+          popupSaveResult.success
+            ? "Some settings failed to save"
+            : popupSaveResult.message || "Popup settings failed to save",
+          popupSaveResult.success ? "warning" : "error",
+        );
       }
     } catch (error) {
-      setSnackbar({
-        open: true,
-        message: "Failed to save settings",
-        severity: "error",
-      });
+      setToast("Failed to save settings", "error");
     } finally {
       setSaving(false);
     }
@@ -716,12 +966,12 @@ const SettingsPage = () => {
         </p>
       </div>
 
-      {/* Offer Popup Settings */}
+      {/* Popup Management */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
           <MdLocalOffer className="text-2xl text-pink-500" />
           <h2 className="text-lg font-semibold text-gray-800">
-            Offer Popup Settings
+            Popup Management
           </h2>
         </div>
         <Divider className="mb-4" />
@@ -730,89 +980,295 @@ const SettingsPage = () => {
           <FormControlLabel
             control={
               <Switch
-                checked={offerSettings.showOfferPopup}
+                checked={popupSettings.isActive}
                 onChange={(e) =>
-                  setOfferSettings({
-                    ...offerSettings,
-                    showOfferPopup: e.target.checked,
-                  })
+                  setPopupSettings((prev) => ({
+                    ...prev,
+                    isActive: e.target.checked,
+                  }))
                 }
                 color="warning"
               />
             }
-            label="Show Offer Popup on Homepage"
+            label="Popup Active"
           />
 
-          <TextField
-            label="Coupon Code"
-            value={offerSettings.offerCouponCode}
-            onChange={(e) =>
-              setOfferSettings({
-                ...offerSettings,
-                offerCouponCode: e.target.value,
-              })
+          <FormControlLabel
+            control={
+              <Switch
+                checked={popupSettings.showOncePerSession}
+                onChange={(e) =>
+                  setPopupSettings((prev) => ({
+                    ...prev,
+                    showOncePerSession: e.target.checked,
+                  }))
+                }
+                color="warning"
+              />
             }
-            size="small"
-            fullWidth
-            placeholder="e.g., SAVE10"
-            disabled={!offerSettings.showOfferPopup}
+            label="Show Once Per Session"
           />
 
           <TextField
             label="Popup Title"
-            value={offerSettings.offerTitle}
+            value={popupSettings.title}
             onChange={(e) =>
-              setOfferSettings({
-                ...offerSettings,
-                offerTitle: e.target.value,
-              })
+              setPopupSettings((prev) => ({
+                ...prev,
+                title: e.target.value,
+              }))
             }
             size="small"
             fullWidth
-            placeholder="e.g., Special Offer!"
-            disabled={!offerSettings.showOfferPopup}
+            required
           />
 
           <TextField
-            label="Button Text"
-            value={offerSettings.offerDiscountText}
+            label="CTA Button Text"
+            value={popupSettings.buttonText}
             onChange={(e) =>
-              setOfferSettings({
-                ...offerSettings,
-                offerDiscountText: e.target.value,
-              })
+              setPopupSettings((prev) => ({
+                ...prev,
+                buttonText: e.target.value,
+              }))
             }
             size="small"
             fullWidth
-            placeholder="e.g., Get Discount"
-            disabled={!offerSettings.showOfferPopup}
+            required
           />
 
           <TextField
             label="Description"
-            value={offerSettings.offerDescription}
+            value={popupSettings.description}
             onChange={(e) =>
-              setOfferSettings({
-                ...offerSettings,
-                offerDescription: e.target.value,
-              })
+              setPopupSettings((prev) => ({
+                ...prev,
+                description: e.target.value,
+              }))
             }
             size="small"
             fullWidth
             multiline
-            rows={2}
+            rows={3}
             className="md:col-span-2"
-            placeholder="e.g., Use this code to get a discount on your order!"
-            disabled={!offerSettings.showOfferPopup}
+            required
           />
+
+          <div className="md:col-span-2 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outlined"
+                component="label"
+                disabled={popupImageUploading}
+              >
+                {popupImageUploading ? "Uploading..." : "Upload Popup Image"}
+                <input
+                  type="file"
+                  hidden
+                  accept="image/*"
+                  onChange={handlePopupImageUpload}
+                />
+              </Button>
+              {popupImageUploading && <CircularProgress size={20} />}
+            </div>
+            <TextField
+              label="Image URL"
+              value={popupSettings.imageUrl}
+              onChange={(e) =>
+                setPopupSettings((prev) => ({
+                  ...prev,
+                  imageUrl: e.target.value,
+                }))
+              }
+              size="small"
+              fullWidth
+              placeholder="https://..."
+            />
+          </div>
+
+          <FormControl size="small" fullWidth>
+            <InputLabel id="popup-redirect-type-label">Redirect Type</InputLabel>
+            <Select
+              labelId="popup-redirect-type-label"
+              value={popupSettings.redirectType}
+              label="Redirect Type"
+              onChange={(e) =>
+                setPopupSettings((prev) => ({
+                  ...prev,
+                  redirectType: e.target.value,
+                  redirectValue: "",
+                }))
+              }
+            >
+              <MenuItem value={POPUP_REDIRECT_TYPES.product}>Product</MenuItem>
+              <MenuItem value={POPUP_REDIRECT_TYPES.category}>
+                Category
+              </MenuItem>
+              <MenuItem value={POPUP_REDIRECT_TYPES.custom}>Custom</MenuItem>
+            </Select>
+          </FormControl>
+
+          {popupSettings.redirectType === POPUP_REDIRECT_TYPES.product ? (
+            <FormControl size="small" fullWidth>
+              <InputLabel id="popup-product-label">Product</InputLabel>
+              <Select
+                labelId="popup-product-label"
+                value={popupSettings.redirectValue}
+                label="Product"
+                onChange={(e) =>
+                  setPopupSettings((prev) => ({
+                    ...prev,
+                    redirectValue: e.target.value,
+                  }))
+                }
+              >
+                {popupProducts.map((product) => (
+                  <MenuItem key={product.value} value={product.value}>
+                    {product.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          ) : null}
+
+          {popupSettings.redirectType === POPUP_REDIRECT_TYPES.category ? (
+            <FormControl size="small" fullWidth>
+              <InputLabel id="popup-category-label">Category</InputLabel>
+              <Select
+                labelId="popup-category-label"
+                value={popupSettings.redirectValue}
+                label="Category"
+                onChange={(e) =>
+                  setPopupSettings((prev) => ({
+                    ...prev,
+                    redirectValue: e.target.value,
+                  }))
+                }
+              >
+                {popupCategories.map((category) => (
+                  <MenuItem key={category.value} value={category.value}>
+                    {category.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          ) : null}
+
+          {popupSettings.redirectType === POPUP_REDIRECT_TYPES.custom ? (
+            <TextField
+              label="Custom URL"
+              value={popupSettings.redirectValue}
+              onChange={(e) =>
+                setPopupSettings((prev) => ({
+                  ...prev,
+                  redirectValue: e.target.value,
+                }))
+              }
+              size="small"
+              fullWidth
+              placeholder="https://example.com or /products"
+            />
+          ) : null}
+
+          <TextField
+            label="Start Date"
+            type="datetime-local"
+            value={popupSettings.startDate}
+            onChange={(e) =>
+              setPopupSettings((prev) => ({
+                ...prev,
+                startDate: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+            required
+          />
+
+          <TextField
+            label="Expiry Date"
+            type="datetime-local"
+            value={popupSettings.expiryDate}
+            onChange={(e) =>
+              setPopupSettings((prev) => ({
+                ...prev,
+                expiryDate: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+            required
+          />
+
+          <div className="flex items-center gap-3">
+            <TextField
+              label="Background Color"
+              value={popupSettings.backgroundColor}
+              onChange={(e) =>
+                setPopupSettings((prev) => ({
+                  ...prev,
+                  backgroundColor: e.target.value,
+                }))
+              }
+              size="small"
+              sx={{ flex: 1 }}
+            />
+            <input
+              type="color"
+              value={popupSettings.backgroundColor}
+              onChange={(e) =>
+                setPopupSettings((prev) => ({
+                  ...prev,
+                  backgroundColor: e.target.value,
+                }))
+              }
+              className="h-10 w-16 border border-gray-300 rounded cursor-pointer"
+              aria-label="Popup background color"
+            />
+          </div>
         </div>
 
-        {offerSettings.showOfferPopup && (
-          <p className="text-sm text-gray-500 mt-3">
-            A popup will appear on the homepage offering customers the coupon
-            code &quot;{offerSettings.offerCouponCode || "COUPON"}&quot;.
-          </p>
-        )}
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">
+            Live Preview
+          </h3>
+          <div
+            className="rounded-2xl border overflow-hidden"
+            style={{
+              backgroundColor: popupSettings.backgroundColor || "#fff7ed",
+              borderColor: "rgba(17, 24, 39, 0.1)",
+            }}
+          >
+            {popupSettings.imageUrl ? (
+              <img
+                src={getImageUrl(popupSettings.imageUrl, popupSettings.imageUrl)}
+                alt="Popup preview"
+                className="w-full h-[140px] object-cover"
+              />
+            ) : null}
+            <div className="p-4">
+              <h4 className="text-lg font-bold text-gray-900">
+                {popupSettings.title || "Popup title"}
+              </h4>
+              <p className="text-sm text-gray-700 mt-1">
+                {popupSettings.description || "Popup description"}
+              </p>
+              <Button
+                variant="contained"
+                size="small"
+                sx={{
+                  mt: 2,
+                  bgcolor: "#111827",
+                  "&:hover": { bgcolor: "#1f2937" },
+                }}
+              >
+                {popupSettings.buttonText || "Shop Now"}
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* High Traffic Notice */}

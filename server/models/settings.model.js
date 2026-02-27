@@ -96,6 +96,24 @@ settingsSchema.statics.defaultSettings = [
     description: "Discount text for offer popup header",
     category: "notification",
   },
+  {
+    key: "popupSettings",
+    value: {
+      title: "Limited Time Offer",
+      description: "Discover our latest products and exclusive offers.",
+      imageUrl: "",
+      redirectType: "custom",
+      redirectValue: "",
+      startDate: new Date(),
+      expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      isActive: false,
+      showOncePerSession: true,
+      backgroundColor: "#fff7ed",
+      buttonText: "Shop Now",
+    },
+    description: "Homepage popup configuration",
+    category: "display",
+  },
   // ========== SHIPPING SETTINGS ==========
   {
     key: "shippingSettings",
