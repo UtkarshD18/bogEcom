@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { stashPendingCouponCode } from "@/utils/couponIntent";
 import {
   MdClose,
   MdLocalOffer,
@@ -21,6 +22,7 @@ import {
  */
 const NotificationToast = ({ message, onDismiss, duration = 5000 }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [couponCopied, setCouponCopied] = useState(false);
 
   useEffect(() => {
     if (message) {
@@ -41,10 +43,119 @@ const NotificationToast = ({ message, onDismiss, duration = 5000 }) => {
     setTimeout(() => onDismiss?.(), 300);
   };
 
-  const handleClick = () => {
-    if (message?.data?.url) {
-      window.location.href = message.data.url;
+  const normalizeTarget = (value, fallback = "") => {
+    const raw = String(value || "").trim();
+    if (!raw) return fallback;
+    if (/^javascript:/i.test(raw)) return fallback;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    return raw.startsWith("/") ? raw : `/${raw}`;
+  };
+
+  const resolveOpenTarget = () => {
+    const explicitTarget = normalizeTarget(message?.data?.url, "");
+    if (explicitTarget) {
+      return { explicitTarget, resolvedTarget: explicitTarget };
     }
+
+    const type = String(message?.data?.type || "").trim().toLowerCase();
+    if (type === "order_update") {
+      const orderId = String(message?.data?.orderId || "").trim();
+      if (orderId) {
+        return {
+          explicitTarget: "",
+          resolvedTarget: `/orders/${encodeURIComponent(orderId)}`,
+        };
+      }
+    }
+
+    if (type === "offer") {
+      return { explicitTarget: "", resolvedTarget: "/products" };
+    }
+
+    return { explicitTarget: "", resolvedTarget: "/" };
+  };
+
+  const openTarget = (target) => {
+    const normalized = normalizeTarget(target, "");
+    if (!normalized) return false;
+
+    if (typeof window !== "undefined") {
+      window.location.assign(normalized);
+      return true;
+    }
+
+    return false;
+  };
+
+  const copyText = async (text) => {
+    const safeText = String(text || "").trim();
+    if (!safeText) return false;
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(safeText);
+        return true;
+      }
+    } catch {
+      // Fall back to document.execCommand below.
+    }
+
+    try {
+      const textArea = document.createElement("textarea");
+      textArea.value = safeText;
+      textArea.setAttribute("readonly", "");
+      textArea.style.position = "absolute";
+      textArea.style.left = "-9999px";
+      document.body.appendChild(textArea);
+      textArea.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textArea);
+      return copied;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleClick = () => {
+    const { explicitTarget } = resolveOpenTarget();
+    if (explicitTarget) {
+      openTarget(explicitTarget);
+    }
+    handleDismiss();
+  };
+
+  const handleCouponClick = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const couponCode = String(message?.data?.couponCode || "").trim();
+    if (!couponCode) return;
+
+    const copied = await copyText(couponCode);
+    if (copied) {
+      setCouponCopied(true);
+      window.setTimeout(() => setCouponCopied(false), 1500);
+    }
+
+    stashPendingCouponCode(couponCode, {
+      source: "notification_toast",
+      notificationId: message?.data?.notificationId || "",
+    });
+  };
+
+  const handleOpenClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isOffer && message?.data?.couponCode) {
+      stashPendingCouponCode(message.data.couponCode, {
+        source: "notification_toast_open",
+        notificationId: message?.data?.notificationId || "",
+      });
+    }
+
+    const { resolvedTarget } = resolveOpenTarget();
+    openTarget(resolvedTarget);
     handleDismiss();
   };
 
@@ -52,7 +163,10 @@ const NotificationToast = ({ message, onDismiss, duration = 5000 }) => {
 
   const isOffer = message.data?.type === "offer";
   const isOrder = message.data?.type === "order_update";
-  const hasTargetUrl = Boolean(message?.data?.url);
+  const { explicitTarget, resolvedTarget } = resolveOpenTarget();
+  const hasTargetUrl = Boolean(explicitTarget);
+  const hasOpenAction = Boolean(resolvedTarget);
+  const hasCouponCode = Boolean(String(message?.data?.couponCode || "").trim());
 
   const Icon = isOffer
     ? MdLocalOffer
@@ -165,20 +279,26 @@ const NotificationToast = ({ message, onDismiss, duration = 5000 }) => {
                 {message.body}
               </p>
               <div className="mt-3 flex items-center gap-2 flex-wrap">
-                {isOffer && message.data?.couponCode && (
-                  <div
+                {isOffer && hasCouponCode && (
+                  <button
+                    type="button"
+                    onClick={handleCouponClick}
                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${theme.chip}`}
                   >
-                    Coupon: {message.data.couponCode}
-                  </div>
+                    {couponCopied
+                      ? "Copied"
+                      : `Coupon: ${String(message.data.couponCode).trim().toUpperCase()}`}
+                  </button>
                 )}
-                {hasTargetUrl && (
-                  <div
+                {hasOpenAction && (
+                  <button
+                    type="button"
+                    onClick={handleOpenClick}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${theme.chip}`}
                   >
                     Open
                     <MdNorthEast size={14} />
-                  </div>
+                  </button>
                 )}
               </div>
             </div>

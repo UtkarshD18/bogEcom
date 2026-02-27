@@ -46,6 +46,28 @@ const getFrontendBaseUrl = () => {
   return candidate || "https://healthyonegram.com";
 };
 
+const normalizeNotificationTargetPath = (value, fallbackPath = "/products") => {
+  const raw = String(value || "").trim();
+  if (!raw) return fallbackPath;
+
+  if (/^javascript:/i.test(raw)) {
+    return fallbackPath;
+  }
+
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+
+  return raw.startsWith("/") ? raw : `/${raw}`;
+};
+
+const resolveAbsoluteTargetUrl = (frontendBaseUrl, targetPathOrUrl) => {
+  const target = normalizeNotificationTargetPath(targetPathOrUrl, "/products");
+  if (/^https?:\/\//i.test(target)) return target;
+
+  return `${frontendBaseUrl}${target.startsWith("/") ? "" : "/"}${target}`;
+};
+
 const normalizeSessionId = (value) =>
   String(value || "")
     .trim()
@@ -314,6 +336,7 @@ export const unregisterToken = async (req, res) => {
  */
 export const sendOfferNotification = async (coupon, options = {}) => {
   const includeUsers = options.includeUsers !== false;
+  const targetPath = normalizeNotificationTargetPath(options.targetUrl, "/products");
   const discountText =
     coupon.discountType === "percentage"
       ? `${coupon.discountValue}% OFF`
@@ -336,7 +359,7 @@ export const sendOfferNotification = async (coupon, options = {}) => {
     discountType: coupon.discountType,
     discountValue: String(coupon.discountValue),
     expiresAt: coupon.endDate?.toISOString() || "",
-    url: "/",
+    url: targetPath,
     notificationId: `offer:${coupon.code || "GEN"}:${Date.now()}`,
     title: notification.title,
     body: notification.body,
@@ -425,8 +448,7 @@ export const sendOfferNotification = async (coupon, options = {}) => {
     }
 
     const frontendBaseUrl = getFrontendBaseUrl();
-    const targetPath = String(data.url || "/").trim() || "/";
-    const targetUrl = `${frontendBaseUrl}${targetPath.startsWith("/") ? "" : "/"}${targetPath}`;
+    const targetUrl = resolveAbsoluteTargetUrl(frontendBaseUrl, data.url);
 
     // Send in batches of 500 (FCM limit)
     const batchSize = 500;
@@ -835,6 +857,7 @@ export const manualSendOffer = async (req, res) => {
       includeUsers: includeUsers !== false,
       title,
       body,
+      targetUrl: data?.url || "/products",
     });
 
     const liveDelivered = Number(result.liveDelivered || 0);
