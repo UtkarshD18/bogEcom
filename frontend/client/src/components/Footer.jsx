@@ -10,7 +10,7 @@ import { BiSupport } from "react-icons/bi";
 import { BsWallet2 } from "react-icons/bs";
 import { FaFacebook, FaInstagram, FaLinkedin } from "react-icons/fa";
 import { FaXTwitter } from "react-icons/fa6";
-import { IoChatboxOutline, IoLocationSharp } from "react-icons/io5";
+import { IoLocationSharp } from "react-icons/io5";
 import { LiaGiftSolid, LiaShippingFastSolid } from "react-icons/lia";
 
 const API_URL = API_BASE_URL;
@@ -86,8 +86,8 @@ const Footer = () => {
   const features = [
     {
       icon: <LiaShippingFastSolid />,
-      title: "Free Shipping",
-      desc: "On Every Order",
+      title: "Free Delivery",
+      desc: "On every order, we've got it covered",
       gradient: "linear-gradient(135deg, var(--primary), var(--flavor-hover))",
     },
     {
@@ -98,14 +98,14 @@ const Footer = () => {
     },
     {
       icon: <BsWallet2 />,
-      title: "Secure Pay",
-      desc: "Cards Accepted",
+      title: "Secure Payment",
+      desc: "UPI, Credit Cards, Debit Cards",
       gradient: "linear-gradient(135deg, #3b82f6, #60a5fa)",
     },
     {
       icon: <LiaGiftSolid />,
       title: "Special Gifts",
-      desc: "First Order Perks",
+      desc: "For Selected lucky Users",
       gradient: "linear-gradient(135deg, #ff6b9d, #ff9ec0)",
     },
     {
@@ -198,14 +198,14 @@ const Footer = () => {
               Contact Us
             </h3>
             <p className="text-[13px] sm:text-[14px] leading-relaxed text-gray-400">
-              G-222, RIICO, sitapura industrial area, <br />
-              tonk road Jaipur, rajasthan 302019
+              G-220,225, RIICO, Sitapura Industrial Area, <br />
+              Jaipur, Rajasthan 302022
             </p>
             <a
-              href="mailto:support@healthyonegram.com"
+              href="mailto:healthyonegram@gmail.com"
               className="text-[14px] font-semibold text-gray-400 hover:text-primary transition-colors duration-300"
             >
-              support@healthyonegram.com
+              healthyonegram@gmail.com
             </a>
             <a
               href="tel:+918619641968"
@@ -238,24 +238,23 @@ const Footer = () => {
               </span>
             </Link>
 
-            {/* WhatsApp Card */}
+            {/* Contact Card */}
             <Link
-              href="https://wa.me/918619641968?text=Hello%20Healthy%20One%20Gram,%20I%20need%20help%20with..."
-              target="_blank"
+              href="/contact"
               className="group flex items-center gap-4 p-3.5 rounded-2xl transition-all duration-300 hover:-translate-y-1 active:-translate-y-0.5 active:bg-white/[0.08]"
               style={{
                 background: "rgba(255, 255, 255, 0.04)",
                 border: "1px solid rgba(255, 255, 255, 0.06)",
               }}
             >
-              <IoChatboxOutline
+              <BiSupport
                 className="text-[28px] transition-transform group-hover:scale-110 group-active:scale-110"
                 style={{ color: "var(--primary)" }}
               />
               <span className="text-[13px] font-bold text-gray-300 leading-tight">
-                Online Chat <br />
+                Contact Us <br />
                 <span className="font-normal text-gray-500 group-hover:text-primary group-active:text-primary transition-colors">
-                  Chat on WhatsApp
+                  Open contact page
                 </span>
               </span>
             </Link>
@@ -274,12 +273,10 @@ const Footer = () => {
             </h3>
             <ul className="space-y-3.5">
               {[
-                { name: "Prices drop", link: "/products?sort=price-low" },
-                { name: "New products", link: "/products?filter=new" },
-                { name: "Best sales", link: "/products?filter=bestseller" },
+                { name: "Prices drop", link: "/products?priceDrop=true" },
+                { name: "New products", link: "/products?newArrivals=true" },
+                { name: "Best seller", link: "/products?bestSeller=true" },
                 { name: "All Products", link: "/products" },
-                { name: "Contact us", link: "/contact" },
-                { name: "Our Blogs", link: "/blogs" },
               ].map((item, i) => (
                 <li key={i}>
                   <Link
@@ -313,13 +310,15 @@ const Footer = () => {
             </h3>
             <ul className="space-y-3.5">
               {[
-                { name: "Login", link: "/login" },
                 { name: "Collaborator Portal", link: "/affiliate/login" },
                 { name: "Delivery", link: "/delivery" },
                 { name: "Secure payment", link: "/secure-payment" },
+                { name: "Privacy Policy", link: "/privacy-policy" },
                 policyLinks.terms,
-                { name: "Cancellation & Return", link: "/cancellation" },
+                { name: "Refund/Cancellation", link: "/cancellation" },
                 { name: "About Us", link: "/about-us" },
+                { name: "Contact us", link: "/contact" },
+                { name: "Our Blogs", link: "/blogs" },
               ].map((item, i) => (
                 <li key={i}>
                   <Link

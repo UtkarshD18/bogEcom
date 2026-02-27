@@ -3,7 +3,7 @@ export const MEMBERSHIP_THEME_PRESETS = {
     bg: "from-emerald-50/80 via-white to-teal-50/80",
     glowA: "bg-emerald-200/40",
     glowB: "bg-teal-200/30",
-    glowC: "bg-[var(--flavor-glass)]",
+    glowC: "bg-emerald-200/30",
     accent: "from-emerald-600 via-teal-600 to-green-600",
     badge: "from-emerald-500 to-teal-500",
     badgeRich: "from-emerald-600 via-teal-600 to-green-600",
@@ -91,12 +91,24 @@ export const MEMBERSHIP_THEME_PRESETS = {
   },
 };
 
-export const resolveMembershipTheme = (style) => {
-  const normalizedStyle = String(style || "")
+const normalizeMembershipStyleKey = (style) => {
+  const normalized = String(style || "")
     .trim()
-    .toLowerCase();
-  return (
-    MEMBERSHIP_THEME_PRESETS[normalizedStyle] || MEMBERSHIP_THEME_PRESETS.mint
-  );
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-");
+
+  if (!normalized) return "mint";
+  if (normalized.endsWith("-glass")) {
+    return normalized.replace(/-glass$/, "");
+  }
+  if (normalized.endsWith("glass")) {
+    return normalized.replace(/glass$/, "").replace(/-+$/, "");
+  }
+  return normalized;
+};
+
+export const resolveMembershipTheme = (style) => {
+  const normalizedStyle = normalizeMembershipStyleKey(style);
+  return MEMBERSHIP_THEME_PRESETS[normalizedStyle] || MEMBERSHIP_THEME_PRESETS.mint;
 };
 

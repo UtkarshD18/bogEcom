@@ -1,10 +1,70 @@
 import axios from "axios";
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
+const HEALTHY_ONE_GRAM_HOSTS = new Set([
+  "healthyonegram.com",
+  "www.healthyonegram.com",
+]);
 
-if (!API_BASE_URL) {
-  throw new Error("NEXT_PUBLIC_API_URL is not defined");
-}
+const LOCAL_API_FALLBACK = "http://localhost:8000";
+
+const sanitizeBaseUrl = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/\/+$/, "");
+
+const isHttpUrl = (value) => /^https?:\/\//i.test(String(value || ""));
+
+const isLocalhostUrl = (value) => {
+  try {
+    const parsed = new URL(String(value || ""));
+    return (
+      parsed.hostname.toLowerCase() === "localhost" ||
+      parsed.hostname === "127.0.0.1"
+    );
+  } catch {
+    return false;
+  }
+};
+
+const resolveApiBaseUrl = () => {
+  const envBaseUrl = sanitizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
+
+  if (typeof window !== "undefined") {
+    const hostname = String(window.location.hostname || "").toLowerCase();
+    const origin = sanitizeBaseUrl(window.location.origin);
+    const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+
+    if (isLocalhost) {
+      if (isHttpUrl(envBaseUrl) && isLocalhostUrl(envBaseUrl)) {
+        return envBaseUrl;
+      }
+      return LOCAL_API_FALLBACK;
+    }
+
+    if (HEALTHY_ONE_GRAM_HOSTS.has(hostname)) {
+      return origin;
+    }
+
+    if (isHttpUrl(envBaseUrl)) {
+      return envBaseUrl;
+    }
+
+    return origin || LOCAL_API_FALLBACK;
+  }
+
+  if (isHttpUrl(envBaseUrl)) {
+    return envBaseUrl;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return "https://healthyonegram.com";
+  }
+
+  return LOCAL_API_FALLBACK;
+};
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 export const axiosClient = axios.create({
   baseURL: API_BASE_URL,
@@ -14,7 +74,16 @@ export const axiosClient = axios.create({
   },
 });
 
-const normalizePath = (url) => (url?.startsWith("/") ? url : `/${url}`);
+const BASE_HAS_API_SUFFIX = /\/api$/i.test(String(API_BASE_URL || ""));
+
+const normalizePath = (url) => {
+  const normalized = url?.startsWith("/") ? url : `/${url}`;
+  if (!BASE_HAS_API_SUFFIX) return normalized;
+  if (/^\/api(\/|$)/i.test(normalized)) {
+    return normalized.replace(/^\/api/i, "");
+  }
+  return normalized;
+};
 
 let refreshPromise = null;
 
@@ -36,10 +105,9 @@ const refreshAdminToken = async () => {
 
   refreshPromise = (async () => {
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/api/user/refresh-token`,
+      const response = await axiosClient.post(
+        normalizePath("/api/user/refresh-token"),
         {},
-        { withCredentials: true },
       );
       const token = response?.data?.data?.accessToken || null;
       setStoredAdminToken(token);

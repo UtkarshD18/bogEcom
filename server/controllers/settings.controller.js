@@ -17,6 +17,27 @@ const FIXED_TAX_SETTINGS = Object.freeze({
   taxIncludedInPrice: true,
 });
 
+const HEADER_SETTINGS_KEY = "headerSettings";
+const DEFAULT_HEADER_BACKGROUND_COLOR = "#fffbf5";
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+const normalizeHexColor = (value) => {
+  const raw = String(value || "").trim();
+  if (!HEX_COLOR_PATTERN.test(raw)) return "";
+  const normalized = raw.toLowerCase();
+  if (normalized.length === 4) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
+  }
+  return normalized;
+};
+
+const getSafeHeaderSettings = (value) => {
+  const normalized = normalizeHexColor(value?.headerBackgroundColor);
+  return {
+    headerBackgroundColor: normalized || DEFAULT_HEADER_BACKGROUND_COLOR,
+  };
+};
+
 /**
  * Settings Controller
  * Manages site-wide configuration settings
@@ -47,6 +68,7 @@ export const getPublicSettings = async (req, res) => {
       "orderSettings",
       "discountSettings",
       "storeInfo",
+      "headerSettings",
     ];
 
     const settings = await SettingsModel.find({
@@ -79,6 +101,36 @@ export const getPublicSettings = async (req, res) => {
       error: true,
       success: false,
       message: "Failed to fetch settings",
+    });
+  }
+};
+
+/**
+ * Get header settings (public)
+ * @route GET /api/settings/header
+ */
+export const getHeaderSettings = async (_req, res) => {
+  try {
+    const setting = await SettingsModel.findOne({
+      key: HEADER_SETTINGS_KEY,
+      isActive: true,
+    })
+      .select("value -_id")
+      .lean();
+
+    const data = getSafeHeaderSettings(setting?.value);
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching header settings:", error);
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to fetch header settings",
     });
   }
 };
@@ -309,6 +361,7 @@ export const deleteSetting = async (req, res) => {
       "storeInfo",
       "discountSettings",
       "popupSettings",
+      "headerSettings",
     ];
     if (protectedKeys.includes(key)) {
       return res.status(400).json({
@@ -341,6 +394,60 @@ export const deleteSetting = async (req, res) => {
       error: true,
       success: false,
       message: "Failed to delete setting",
+    });
+  }
+};
+
+/**
+ * Update header settings (Admin)
+ * @route PUT /api/settings/header
+ */
+export const updateHeaderSettings = async (req, res) => {
+  try {
+    const adminId = req.user?.id || req.user;
+    const colorCandidate =
+      req.body?.headerBackgroundColor ?? req.body?.value?.headerBackgroundColor;
+    const normalizedColor = normalizeHexColor(colorCandidate);
+
+    if (!normalizedColor) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "headerBackgroundColor must be a valid hex color",
+      });
+    }
+
+    const setting = await SettingsModel.findOneAndUpdate(
+      { key: HEADER_SETTINGS_KEY },
+      {
+        $set: {
+          value: { headerBackgroundColor: normalizedColor },
+          updatedBy: adminId,
+          isActive: true,
+          category: "display",
+          description: "Header appearance settings",
+        },
+        $setOnInsert: { key: HEADER_SETTINGS_KEY },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+      },
+    );
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Header settings updated successfully",
+      data: getSafeHeaderSettings(setting?.value),
+    });
+  } catch (error) {
+    console.error("Error updating header settings:", error);
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to update header settings",
     });
   }
 };

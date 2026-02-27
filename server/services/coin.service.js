@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import CoinSettingsModel from "../models/coinSettings.model.js";
 import CoinTransactionModel from "../models/coinTransaction.model.js";
+import MembershipUserModel from "../models/membershipUser.model.js";
 import UserModel from "../models/user.model.js";
 
 const round2 = (value) =>
@@ -33,6 +34,149 @@ const getCoinExpiryDate = (days) => {
   const expiry = new Date();
   expiry.setDate(expiry.getDate() + safeDays);
   return expiry;
+};
+
+const backfillMembershipPointDebitsFromRedemptions = async (userId) => {
+  const safeUserId = toObjectId(userId);
+  if (!safeUserId) return { debited: 0 };
+  const userObjectId = toMongoObjectId(safeUserId);
+  if (!userObjectId) return { debited: 0 };
+
+  const membershipUser = await MembershipUserModel.findOne({ user: safeUserId })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .select("_id pointsBalance")
+    .lean();
+  if (!membershipUser?._id) return { debited: 0 };
+
+  const pendingMatch = {
+    user: safeUserId,
+    type: "redeem",
+    source: "membership",
+    coins: { $gt: 0 },
+    "meta.pointsBalanceDebited": { $ne: true },
+  };
+
+  const [pendingRow] = await CoinTransactionModel.aggregate([
+    {
+      $match: {
+        ...pendingMatch,
+        user: userObjectId,
+      },
+    },
+    { $group: { _id: null, coins: { $sum: "$coins" } } },
+  ]);
+
+  const pendingDebit = floorInt(pendingRow?.coins || 0);
+  if (pendingDebit <= 0) return { debited: 0 };
+
+  const currentPoints = floorInt(membershipUser.pointsBalance || 0);
+  const nextPoints = Math.max(currentPoints - pendingDebit, 0);
+
+  await Promise.all([
+    MembershipUserModel.updateOne(
+      { _id: membershipUser._id },
+      { $set: { pointsBalance: nextPoints } },
+    ),
+    CoinTransactionModel.updateMany(
+      pendingMatch,
+      { $set: { "meta.pointsBalanceDebited": true } },
+    ),
+  ]);
+
+  return { debited: pendingDebit, pointsBalance: nextPoints };
+};
+
+const pruneStaleMembershipPointSyncCredits = async (userId) => {
+  const safeUserId = toObjectId(userId);
+  if (!safeUserId) return { pruned: 0 };
+
+  const membershipUser = await MembershipUserModel.findOne({ user: safeUserId })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .select("_id pointsBalance")
+    .lean();
+  if (!membershipUser?._id) return { pruned: 0 };
+
+  const targetPoints = floorInt(membershipUser.pointsBalance || 0);
+  const now = new Date();
+  const usableCoins = await getUsableCoinBalanceFromLedger(safeUserId, now);
+  const excess = Math.max(usableCoins - targetPoints, 0);
+  if (excess <= 0) return { pruned: 0 };
+
+  const syncBuckets = await CoinTransactionModel.find({
+    user: safeUserId,
+    type: "bonus",
+    source: "membership",
+    referenceId: /^membership-points-sync:/,
+    remainingCoins: { $gt: 0 },
+    $or: [{ expiryDate: null }, { expiryDate: { $gt: now } }],
+  })
+    .sort({ createdAt: 1, _id: 1 })
+    .select("_id remainingCoins")
+    .lean();
+
+  if (!syncBuckets.length) return { pruned: 0 };
+
+  let pending = excess;
+  let pruned = 0;
+  const ops = [];
+
+  for (const bucket of syncBuckets) {
+    if (pending <= 0) break;
+    const available = floorInt(bucket.remainingCoins);
+    if (available <= 0) continue;
+    const consume = Math.min(available, pending);
+    pending -= consume;
+    pruned += consume;
+    ops.push({
+      updateOne: {
+        filter: { _id: bucket._id },
+        update: { $set: { remainingCoins: available - consume } },
+      },
+    });
+  }
+
+  if (!pruned) return { pruned: 0 };
+
+  await CoinTransactionModel.bulkWrite(ops, { ordered: true });
+  await CoinTransactionModel.create({
+    user: safeUserId,
+    coins: pruned,
+    remainingCoins: 0,
+    type: "redeem",
+    source: "system",
+    referenceId: `membership-sync-cleanup:${membershipUser._id}:${Date.now()}`,
+    expiryDate: null,
+    meta: {
+      note: "Removed stale membership-points-sync balance after redemption",
+      membershipUserId: membershipUser._id,
+    },
+  });
+
+  return { pruned };
+};
+
+const applyMembershipRedeemToPointsBalance = async ({
+  userId,
+  coinsUsed = 0,
+  idempotent = false,
+}) => {
+  const safeUserId = toObjectId(userId);
+  const safeCoins = floorInt(coinsUsed);
+  if (!safeUserId || safeCoins <= 0 || idempotent) return { updated: false };
+
+  const membershipUser = await MembershipUserModel.findOne({ user: safeUserId }).sort({
+    updatedAt: -1,
+    createdAt: -1,
+  });
+  if (!membershipUser) return { updated: false };
+
+  const currentPoints = floorInt(membershipUser.pointsBalance || 0);
+  const nextPoints = Math.max(currentPoints - safeCoins, 0);
+  if (nextPoints === currentPoints) return { updated: false };
+
+  membershipUser.pointsBalance = nextPoints;
+  await membershipUser.save();
+  return { updated: true, pointsBalance: nextPoints };
 };
 
 const isMembershipActive = (user) => {
@@ -73,6 +217,83 @@ const getNetLedgerBalance = async (userId) => {
   return floorInt(Number(row?.credit || 0) - Number(row?.debit || 0));
 };
 
+const reduceUsableLedgerCoins = async ({
+  userId,
+  coinsToReduce = 0,
+  source = "admin",
+  referencePrefix = "legacy-sync",
+  note = "Legacy coin balance downward sync",
+}) => {
+  const safeUserId = toObjectId(userId);
+  const targetReduction = floorInt(coinsToReduce);
+  if (!safeUserId || targetReduction <= 0) {
+    return { reduced: 0 };
+  }
+
+  const now = new Date();
+  const buckets = await CoinTransactionModel.find({
+    user: safeUserId,
+    type: { $in: ["earn", "bonus"] },
+    remainingCoins: { $gt: 0 },
+    $or: [{ expiryDate: null }, { expiryDate: { $gt: now } }],
+  })
+    .sort({ createdAt: 1, _id: 1 })
+    .select("_id remainingCoins createdAt expiryDate referenceId")
+    .lean();
+
+  let remaining = targetReduction;
+  let reduced = 0;
+  const allocations = [];
+  const updateOps = [];
+
+  for (const bucket of buckets) {
+    if (remaining <= 0) break;
+    const available = floorInt(bucket?.remainingCoins);
+    if (available <= 0) continue;
+
+    const consume = Math.min(available, remaining);
+    remaining -= consume;
+    reduced += consume;
+
+    allocations.push({
+      transactionId: bucket._id,
+      coins: consume,
+      createdAt: bucket.createdAt,
+      expiryDate: bucket.expiryDate,
+      referenceId: bucket.referenceId || null,
+    });
+
+    updateOps.push({
+      updateOne: {
+        filter: { _id: bucket._id },
+        update: { $set: { remainingCoins: available - consume } },
+      },
+    });
+  }
+
+  if (updateOps.length) {
+    await CoinTransactionModel.bulkWrite(updateOps, { ordered: true });
+  }
+
+  if (reduced > 0) {
+    await CoinTransactionModel.create({
+      user: safeUserId,
+      coins: reduced,
+      remainingCoins: 0,
+      type: "redeem",
+      source,
+      referenceId: `${referencePrefix}:debit:${Date.now()}`,
+      expiryDate: null,
+      meta: {
+        note,
+        allocations,
+      },
+    });
+  }
+
+  return { reduced };
+};
+
 const syncLegacyBalanceToLedger = async (userId) => {
   const safeUserId = toObjectId(userId);
   if (!safeUserId) return { syncedDiff: 0 };
@@ -83,6 +304,8 @@ const syncLegacyBalanceToLedger = async (userId) => {
   const userBalance = floorInt(user.coinBalance);
   const ledgerBalance = await getNetLedgerBalance(safeUserId);
   const diff = userBalance - ledgerBalance;
+  let syncedDiff = 0;
+  let finalLedgerBalance = ledgerBalance;
 
   if (diff > 0) {
     await CoinTransactionModel.create({
@@ -97,13 +320,83 @@ const syncLegacyBalanceToLedger = async (userId) => {
         note: "Legacy coin balance sync",
       },
     });
+    syncedDiff = diff;
+    finalLedgerBalance = ledgerBalance + diff;
+  } else if (diff < 0) {
+    const { reduced } = await reduceUsableLedgerCoins({
+      userId: safeUserId,
+      coinsToReduce: Math.abs(diff),
+      source: "admin",
+      referencePrefix: "legacy-sync",
+      note: "Legacy coin balance downward sync",
+    });
+    syncedDiff = -floorInt(reduced);
+    finalLedgerBalance = Math.max(ledgerBalance - floorInt(reduced), 0);
   }
 
   return {
-    syncedDiff: Math.max(diff, 0),
+    syncedDiff,
     userBalance,
-    ledgerBalance: ledgerBalance + Math.max(diff, 0),
+    ledgerBalance: finalLedgerBalance,
   };
+};
+
+const bootstrapMembershipPointsToLedger = async (userId) => {
+  const safeUserId = toObjectId(userId);
+  if (!safeUserId) return { syncedDiff: 0 };
+
+  const membershipUser = await MembershipUserModel.findOne({ user: safeUserId })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .select("_id pointsBalance")
+    .lean();
+  const pointsBalance = floorInt(membershipUser?.pointsBalance);
+  if (pointsBalance <= 0) {
+    return { syncedDiff: 0 };
+  }
+
+  const now = new Date();
+  const [usableRow] = await CoinTransactionModel.aggregate([
+    {
+      $match: {
+        user: toMongoObjectId(safeUserId),
+        type: { $in: ["earn", "bonus"] },
+        remainingCoins: { $gt: 0 },
+        $or: [{ expiryDate: null }, { expiryDate: { $gt: now } }],
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        usableCoins: { $sum: "$remainingCoins" },
+      },
+    },
+  ]);
+
+  const usableFromLedger = floorInt(usableRow?.usableCoins || 0);
+  const syncDiff = Math.max(pointsBalance - usableFromLedger, 0);
+  if (syncDiff <= 0) {
+    return { syncedDiff: 0 };
+  }
+
+  await CoinTransactionModel.create({
+    user: safeUserId,
+    coins: syncDiff,
+    remainingCoins: syncDiff,
+    type: "bonus",
+    source: "membership",
+    referenceId: `membership-points-sync:${
+      membershipUser?._id || safeUserId
+    }:${pointsBalance}`,
+    expiryDate: null,
+    meta: {
+      note: "Membership points bootstrap sync",
+      membershipUserId: membershipUser?._id || null,
+      pointsBalance,
+      usableFromLedger,
+    },
+  });
+
+  return { syncedDiff: syncDiff };
 };
 
 const expireCoinsForUser = async (userId, now = new Date()) => {
@@ -228,11 +521,19 @@ const syncUserCoinBalanceFromLedger = async (userId) => {
   return usable;
 };
 
-const ensureCoinLedgerState = async (userId) => {
+const ensureCoinLedgerState = async (
+  userId,
+  { includeMembershipBootstrap = false } = {},
+) => {
   const safeUserId = toObjectId(userId);
   if (!safeUserId) return { usableCoins: 0 };
 
   await syncLegacyBalanceToLedger(safeUserId);
+  if (includeMembershipBootstrap) {
+    await backfillMembershipPointDebitsFromRedemptions(safeUserId);
+    await bootstrapMembershipPointsToLedger(safeUserId);
+    await pruneStaleMembershipPointSyncCredits(safeUserId);
+  }
   await expireCoinsForUser(safeUserId, new Date());
   const usableCoins = await syncUserCoinBalanceFromLedger(safeUserId);
   return { usableCoins };
@@ -586,7 +887,10 @@ export const adjustCoinsByAdmin = async ({
     };
   }
 
-  await ensureCoinLedgerState(safeUserId);
+  // Admin manual credit/debit must not auto-bootstrap membership points.
+  await ensureCoinLedgerState(safeUserId, {
+    includeMembershipBootstrap: false,
+  });
   const noteMeta = {
     ...meta,
     reason: meta?.reason || "admin-manual-coin-adjustment",
@@ -668,7 +972,9 @@ export const redeemCoins = async ({
     };
   }
 
-  await ensureCoinLedgerState(safeUserId);
+  await ensureCoinLedgerState(safeUserId, {
+    includeMembershipBootstrap: true,
+  });
   const usableCoins = await getUsableCoinBalanceFromLedger(safeUserId, new Date());
 
   const applyPercentageCap = source !== "membership";
@@ -702,6 +1008,7 @@ export const redeemCoins = async ({
       orderTotal: safeOrderTotal,
       maxRedeemRupees,
       redeemRate: Number(settings.redeemRate || 0),
+      pointsBalanceDebited: source === "membership",
     },
     allowPartial: false,
   });
@@ -709,6 +1016,14 @@ export const redeemCoins = async ({
   const coinsUsed = floorInt(consumeResult?.coinsUsed || 0);
   const redeemAmount = round2(coinsUsed * Number(settings.redeemRate || 0));
   const remainingBalance = floorInt(consumeResult?.user?.coinBalance || 0);
+
+  if (source === "membership" && coinsUsed > 0) {
+    await applyMembershipRedeemToPointsBalance({
+      userId: safeUserId,
+      coinsUsed,
+      idempotent: Boolean(consumeResult?.idempotent),
+    });
+  }
 
   return {
     settings,
@@ -742,7 +1057,9 @@ export const getUserCoinSummary = async ({ userId }) => {
     };
   }
 
-  await ensureCoinLedgerState(safeUserId);
+  await ensureCoinLedgerState(safeUserId, {
+    includeMembershipBootstrap: true,
+  });
 
   const usableCoins = await getUsableCoinBalanceFromLedger(safeUserId, new Date());
   const expiringSoon = await getExpiringSoonCoinsFromLedger(

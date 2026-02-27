@@ -58,6 +58,17 @@ const ProductDetailPage = () => {
         0,
       )
     : null;
+  const defaultVariant =
+    product?.hasVariants && Array.isArray(product?.variants)
+      ? product.variants.find((variant) => variant?.isDefault) ||
+        product.variants[0] ||
+        null
+      : null;
+  const displaySku =
+    selectedVariant?.sku ||
+    defaultVariant?.sku ||
+    product?.sku ||
+    "";
 
   const availableQty =
     activeStock !== null
@@ -210,8 +221,17 @@ const ProductDetailPage = () => {
     try {
       if (!product) return;
       const productId = product._id || product.id;
-      const wasWishlisted = productId ? isInWishlist(productId) : false;
-      await toggleWishlist(product);
+      const variantPayload = selectedVariant
+        ? {
+            variantId: selectedVariant?._id || null,
+            variantName: selectedVariant?.name || "",
+            quantity,
+          }
+        : { quantity };
+      const wasWishlisted = productId
+        ? isInWishlist(productId, variantPayload?.variantId || null)
+        : false;
+      await toggleWishlist(product, variantPayload);
 
       setSnackbar({
         open: true,
@@ -333,7 +353,7 @@ const ProductDetailPage = () => {
                   {discount}% OFF
                 </span>
               )}
-              <ProductZoom images={images} />
+              <ProductZoom images={images} productId={productId} />
             </div>
 
             {/* Product Info */}
@@ -589,7 +609,7 @@ const ProductDetailPage = () => {
                     <p className="font-semibold text-gray-800 text-sm">
                       Free Delivery
                     </p>
-                    <p className="text-xs text-gray-500">Orders above ₹499</p>
+                    <p className="text-xs text-gray-500">On all orders (₹0 shipping)</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -627,9 +647,9 @@ const ProductDetailPage = () => {
 
               {/* SKU & Category */}
               <div className="mt-6 text-sm text-gray-500">
-                {product.sku && (
+                {displaySku && (
                   <p>
-                    <span className="font-medium">SKU:</span> {product.sku}
+                    <span className="font-medium">SKU:</span> {displaySku}
                   </p>
                 )}
                 {product.category && (
@@ -732,7 +752,7 @@ const ProductDetailPage = () => {
                   business days.
                 </p>
                 <p>
-                  <strong>Free Shipping:</strong> On orders above ₹499.
+                  <strong>Shipping Charges:</strong> ₹0 on all orders.
                 </p>
                 <p>
                   <strong>Packaging:</strong> Eco-friendly packaging to ensure

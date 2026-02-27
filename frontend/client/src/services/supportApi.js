@@ -1,6 +1,22 @@
 "use client";
 
-import { axiosClient, fetchDataFromApi, getStoredAccessToken } from "@/utils/api";
+import {
+  API_BASE_URL,
+  axiosClient,
+  fetchDataFromApi,
+  getStoredAccessToken,
+} from "@/utils/api";
+
+const BASE_HAS_API_SUFFIX = /\/api$/i.test(String(API_BASE_URL || ""));
+
+const normalizeApiPath = (url) => {
+  const normalized = url?.startsWith("/") ? url : `/${url}`;
+  if (!BASE_HAS_API_SUFFIX) return normalized;
+  if (/^\/api(\/|$)/i.test(normalized)) {
+    return normalized.replace(/^\/api/i, "");
+  }
+  return normalized;
+};
 
 const toErrorPayload = (error, fallbackMessage) => ({
   success: false,
@@ -22,24 +38,27 @@ export const fetchSupportOrderOptions = async () => {
 
   const orders = Array.isArray(response.data) ? response.data : [];
   return orders
-    .filter(
-      (order) =>
-        String(order?.order_status || "").trim().toLowerCase() === "delivered",
-    )
+    .filter((order) => {
+      const normalizedStatus = String(order?.order_status || "")
+        .trim()
+        .toLowerCase();
+      return normalizedStatus === "delivered" || normalizedStatus === "completed";
+    })
     .map((order) => ({
-      id: order?._id,
+      id: order?._id || order?.id || "",
       displayId:
         order?.displayOrderId ||
-        String(order?._id || "")
+        String(order?._id || order?.id || "")
           .slice(0, 8)
           .toUpperCase(),
       createdAt: order?.createdAt,
-    }));
+    }))
+    .filter((order) => Boolean(String(order.id || "").trim()));
 };
 
 export const createSupportTicket = async (formData) => {
   try {
-    const response = await axiosClient.post("/api/support/create", formData, {
+    const response = await axiosClient.post(normalizeApiPath("/api/support/create"), formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
     return response.data;

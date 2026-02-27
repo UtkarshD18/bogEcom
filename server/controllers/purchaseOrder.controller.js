@@ -72,9 +72,128 @@ const ensureExclusiveAccessForProducts = async ({
   }
 };
 
+const normalizeUnitForPacking = (unit) => {
+  const normalized = String(unit || "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return "";
+  if (["g", "gm", "gram", "grams"].includes(normalized)) return "g";
+  if (["kg", "kgs", "kilogram", "kilograms"].includes(normalized)) return "kg";
+  if (["ml", "millilitre", "milliliter", "millilitres", "milliliters"].includes(normalized)) {
+    return "ml";
+  }
+  if (["l", "lt", "ltr", "liter", "litre", "liters", "litres"].includes(normalized)) {
+    return "l";
+  }
+  return normalized;
+};
+
+const normalizePackingKey = (value) => {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/(\d)\.0+(?=[a-z]|$)/g, "$1");
+};
+
+const buildPackingFromWeightAndUnit = (weightValue, unitValue) => {
+  const weight = Number(weightValue || 0);
+  if (!Number.isFinite(weight) || weight <= 0) return "";
+
+  const unit = normalizeUnitForPacking(unitValue);
+  if (unit === "g") {
+    return weight >= 1000 ? `${weight / 1000}kg` : `${weight}g`;
+  }
+  if (unit === "kg") {
+    return `${weight}kg`;
+  }
+  if (unit === "ml" || unit === "l") {
+    return `${weight}${unit}`;
+  }
+
+  return `${weight}${unit || ""}`;
+};
+
+const resolveVariantForPacking = ({
+  product,
+  variantId = "",
+  variantName = "",
+  packing = "",
+}) => {
+  if (!Array.isArray(product?.variants) || product.variants.length === 0) {
+    return null;
+  }
+
+  const normalizedVariantId = String(variantId || "").trim();
+  if (normalizedVariantId) {
+    const byId = product.variants.find(
+      (variant) => String(variant?._id || "") === normalizedVariantId,
+    );
+    if (byId) return byId;
+  }
+
+  const candidateKeys = new Set(
+    [variantName, packing]
+      .map((value) => normalizePackingKey(value))
+      .filter(Boolean),
+  );
+  if (candidateKeys.size === 0) return null;
+
+  return (
+    product.variants.find((variant) => {
+      const variantNameKey = normalizePackingKey(variant?.name || "");
+      const variantWeightKey = normalizePackingKey(
+        buildPackingFromWeightAndUnit(variant?.weight, variant?.unit),
+      );
+      return candidateKeys.has(variantNameKey) || candidateKeys.has(variantWeightKey);
+    }) || null
+  );
+};
+
+const resolvePreferredVariantIdForProduct = ({
+  product,
+  variantId = "",
+  variantName = "",
+  packing = "",
+}) => {
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  const explicitVariantId = String(variantId || "").trim();
+  if (explicitVariantId) {
+    const explicitVariant = variants.find(
+      (variant) => String(variant?._id || "") === explicitVariantId,
+    );
+    if (explicitVariant?._id) {
+      return String(explicitVariant._id);
+    }
+  }
+
+  const resolvedVariant = resolveVariantForPacking({
+    product,
+    variantId,
+    variantName,
+    packing,
+  });
+  return resolvedVariant?._id ? String(resolvedVariant._id) : "";
+};
+
 const resolvePackingFromProduct = (item, product) => {
   if (item?.packing) return String(item.packing);
   if (item?.packSize) return String(item.packSize);
+  if (item?.variantName) return String(item.variantName);
+
+  const resolvedVariant = resolveVariantForPacking({
+    product,
+    variantId: item?.variantId,
+    variantName: item?.variantName,
+    packing: item?.packing || item?.packSize,
+  });
+  if (resolvedVariant) {
+    return (
+      buildPackingFromWeightAndUnit(resolvedVariant?.weight, resolvedVariant?.unit) ||
+      String(resolvedVariant?.name || "")
+    );
+  }
+
   if (!product) return "";
 
   const weight = Number(product.weight || 0);
@@ -192,7 +311,7 @@ const validateAndNormalizeItems = async (itemsInput = []) => {
 
   const uniqueIds = extractPurchaseOrderProductIds(itemsInput);
   const products = await ProductModel.find({ _id: { $in: uniqueIds } })
-    .select("_id name price images")
+    .select("_id name price images hasVariants variants._id variants.name variants.weight variants.unit weight unit")
     .lean();
   const productMap = new Map(products.map((p) => [String(p._id), p]));
 
@@ -208,15 +327,43 @@ const validateAndNormalizeItems = async (itemsInput = []) => {
     const subTotal = round2(price * quantity);
     const receivedQuantity = Math.max(Number(item.receivedQuantity || 0), 0);
     const packing = resolvePackingFromProduct(item, product);
+    const resolvedVariant = resolveVariantForPacking({
+      product,
+      variantId: item?.variantId,
+      variantName: item?.variantName,
+      packing,
+    });
+    const hasVariantOptions =
+      Array.isArray(product?.variants) && product.variants.length > 0;
+    if (hasVariantOptions && !resolvedVariant) {
+      throw new Error(`Select a valid packing variant for ${product.name}`);
+    }
+    const normalizedPacking = String(
+      (resolvedVariant &&
+        (buildPackingFromWeightAndUnit(
+          resolvedVariant?.weight,
+          resolvedVariant?.unit,
+        ) ||
+          resolvedVariant?.name)) ||
+        packing ||
+        item?.variantName ||
+        "",
+    ).trim();
+    const variantName = String(
+      resolvedVariant?.name || item?.variantName || normalizedPacking || "",
+    ).trim();
+    const variantId = resolvedVariant?._id ? String(resolvedVariant._id) : null;
 
     return {
       productId,
       productTitle: item.productTitle || product.name,
+      variantId,
+      variantName,
       quantity,
       receivedQuantity: Math.min(receivedQuantity, quantity),
       price,
       subTotal,
-      packing,
+      packing: normalizedPacking,
       image: item.image || product.images?.[0] || "",
     };
   });
@@ -834,6 +981,7 @@ export const getAllPurchaseOrdersAdmin = async (req, res) => {
 };
 
 export const updatePurchaseOrderReceipt = async (req, res) => {
+  const appliedAdjustments = [];
   try {
     const { id } = req.params;
     const { items = [], invoiceNumber, vehicleNumber, notes } = req.body || {};
@@ -848,21 +996,76 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
     }
 
     const normalizedItems = Array.isArray(items) ? items : [];
-    normalizedItems.forEach((item) => {
-      const productId = String(item.productId || item._id || item.id || "");
+    const inventoryAdjustments = [];
+    const consumedLineIndexes = new Set();
+
+    normalizedItems.forEach((item, payloadIndex) => {
+      const productId = String(item.productId || item._id || item.id || "").trim();
       if (!productId) return;
       const receivedNow = Math.max(Number(item.receivedQuantity || 0), 0);
       if (!receivedNow) return;
 
-      const line = po.items.find(
-        (poItem) => String(poItem.productId) === productId,
-      );
-      if (!line) return;
+      const requestedLineIndex = Number(item.lineIndex);
+      const payloadPacking = normalizePackingKey(item.packing || item.packSize || "");
+      const payloadVariantId = String(item.variantId || "").trim();
+      let matchedIndex = -1;
+      let line = null;
+
+      if (
+        Number.isInteger(requestedLineIndex) &&
+        requestedLineIndex >= 0 &&
+        requestedLineIndex < po.items.length
+      ) {
+        const requestedLine = po.items[requestedLineIndex];
+        if (requestedLine && String(requestedLine.productId || "") === productId) {
+          matchedIndex = requestedLineIndex;
+          line = requestedLine;
+        }
+      }
+
+      if (!line) {
+        matchedIndex = po.items.findIndex((poItem, idx) => {
+          if (consumedLineIndexes.has(idx)) return false;
+          if (String(poItem.productId || "") !== productId) return false;
+
+          const poVariantId = String(poItem.variantId || "").trim();
+          if (payloadVariantId && poVariantId) {
+            return payloadVariantId === poVariantId;
+          }
+
+          const poPacking = normalizePackingKey(poItem.packing || "");
+          if (payloadPacking && poPacking) {
+            return payloadPacking === poPacking;
+          }
+
+          return true;
+        });
+
+        if (matchedIndex >= 0) {
+          line = po.items[matchedIndex];
+        }
+      }
+
+      if (!line || matchedIndex < 0) return;
+      consumedLineIndexes.add(matchedIndex);
 
       const orderedQty = Math.max(Number(line.quantity || 0), 0);
       const currentReceived = Math.max(Number(line.receivedQuantity || 0), 0);
       const nextReceived = Math.min(orderedQty, currentReceived + receivedNow);
+      const incrementBy = Math.max(nextReceived - currentReceived, 0);
       line.receivedQuantity = nextReceived;
+      line.qty_received = nextReceived;
+      if (incrementBy > 0) {
+        inventoryAdjustments.push({
+          productId,
+          quantity: incrementBy,
+          lineIndex: matchedIndex,
+          payloadIndex,
+          packing: String(line.packing || item.packing || "").trim(),
+          variantId: String(line.variantId || item.variantId || "").trim() || null,
+          variantName: String(line.variantName || item.variantName || "").trim(),
+        });
+      }
     });
 
     if (!po.receipt) po.receipt = {};
@@ -887,6 +1090,105 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
       po.status = "received";
     }
 
+    for (const adjustment of inventoryAdjustments) {
+      const product = await ProductModel.findById(adjustment.productId)
+        .select(
+          "track_inventory trackInventory hasVariants variants._id variants.name variants.weight variants.unit",
+        )
+        .lean();
+      if (!product) continue;
+
+      const trackInventory =
+        typeof product.track_inventory === "boolean"
+          ? product.track_inventory
+          : typeof product.trackInventory === "boolean"
+            ? product.trackInventory
+            : true;
+
+      if (!trackInventory) continue;
+
+      const resolvedVariantId = resolvePreferredVariantIdForProduct({
+        product,
+        variantId: adjustment.variantId,
+        variantName: adjustment.variantName,
+        packing: adjustment.packing,
+      });
+      const hasVariantOptions =
+        Array.isArray(product?.variants) && product.variants.length > 0;
+      if (hasVariantOptions && !resolvedVariantId) {
+        throw new Error(
+          `Unable to resolve variant for received item (${adjustment.productId})`,
+        );
+      }
+
+      const resolvedVariant = resolvedVariantId
+        ? (product.variants || []).find(
+            (variant) => String(variant?._id || "") === String(resolvedVariantId),
+          )
+        : null;
+      const resolvedPacking = String(
+        adjustment.packing ||
+          buildPackingFromWeightAndUnit(
+            resolvedVariant?.weight,
+            resolvedVariant?.unit,
+          ) ||
+          adjustment.variantName ||
+          resolvedVariant?.name ||
+          "",
+      ).trim();
+      const resolvedVariantName = String(
+        adjustment.variantName || resolvedVariant?.name || resolvedPacking || "",
+      ).trim();
+
+      if (
+        resolvedVariantId &&
+        Number.isInteger(Number(adjustment.lineIndex)) &&
+        po.items?.[Number(adjustment.lineIndex)]
+      ) {
+        const line = po.items[Number(adjustment.lineIndex)];
+        line.variantId = resolvedVariantId;
+        line.variantName = resolvedVariantName;
+        line.packing = resolvedPacking;
+      }
+
+      if (resolvedVariantId) {
+        await ProductModel.updateOne(
+          { _id: adjustment.productId, "variants._id": resolvedVariantId },
+          {
+            $inc: {
+              "variants.$.stock_quantity": Number(adjustment.quantity || 0),
+              "variants.$.stock": Number(adjustment.quantity || 0),
+              stock_quantity: Number(adjustment.quantity || 0),
+              stock: Number(adjustment.quantity || 0),
+            },
+          },
+        );
+        appliedAdjustments.push({
+          ...adjustment,
+          variantId: resolvedVariantId,
+        });
+      } else {
+        await ProductModel.updateOne(
+          { _id: adjustment.productId },
+          {
+            $inc: {
+              stock_quantity: Number(adjustment.quantity || 0),
+              stock: Number(adjustment.quantity || 0),
+            },
+          },
+        );
+        appliedAdjustments.push(adjustment);
+      }
+    }
+
+    if (appliedAdjustments.length > 0) {
+      po.inventory_applied = true;
+      po.receivedAt = new Date();
+      if (req.user) {
+        po.receivedBy = req.user?._id || req.user?.id || req.user;
+      }
+    }
+
     await po.save();
 
     const normalizedPo = normalizePurchaseOrderTotals(
@@ -900,6 +1202,33 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
       data: normalizedPo,
     });
   } catch (error) {
+    if (appliedAdjustments.length) {
+      for (const adjustment of appliedAdjustments) {
+        if (adjustment.variantId) {
+          await ProductModel.updateOne(
+            { _id: adjustment.productId, "variants._id": adjustment.variantId },
+            {
+              $inc: {
+                "variants.$.stock_quantity": -Number(adjustment.quantity || 0),
+                "variants.$.stock": -Number(adjustment.quantity || 0),
+                stock_quantity: -Number(adjustment.quantity || 0),
+                stock: -Number(adjustment.quantity || 0),
+              },
+            },
+          ).catch(() => {});
+          continue;
+        }
+        await ProductModel.updateOne(
+          { _id: adjustment.productId },
+          {
+            $inc: {
+              stock_quantity: -Number(adjustment.quantity || 0),
+              stock: -Number(adjustment.quantity || 0),
+            },
+          },
+        ).catch(() => {});
+      }
+    }
     return res.status(500).json({
       error: true,
       success: false,
@@ -975,6 +1304,8 @@ export const convertPurchaseOrderToOrder = async (req, res) => {
       products: po.items.map((item) => ({
         productId: String(item.productId),
         productTitle: item.productTitle,
+        variantId: item.variantId ? String(item.variantId) : null,
+        variantName: String(item.variantName || "").trim(),
         quantity: item.quantity,
         price: item.price,
         image: item.image,

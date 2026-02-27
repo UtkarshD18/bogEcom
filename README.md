@@ -15,7 +15,7 @@ flowchart LR
   B --> M[(MongoDB)]
   B --> F[(Firebase Admin / FCM)]
   B --> X[(Xpressbees)]
-  B --> P[(PhonePe)]
+  B --> P[(Paytm)]
   B --> U[(Cloudinary/Uploads)]
   GH[GitHub Actions] --> GAE[Google App Engine]
   GAE --> C
@@ -108,7 +108,7 @@ sequenceDiagram
 
 ### Membership
 - Admin-managed plans (`MembershipPlan`)
-- Payment integration path via PhonePe (feature-flagged)
+- Payment integration path via Paytm (feature-flagged)
 - Membership activation and expiry tracked in DB
 - Membership discount dynamically applied during checkout calculations
 
@@ -180,7 +180,7 @@ All deploy workflows:
 | `CORS_ORIGINS` | No | Extra comma-separated CORS origins |
 | `COOKIE_DOMAIN` | No | Cookie domain override in production |
 | `EMAIL`, `EMAIL_PASSWORD` | No | SMTP for OTP/support |
-| `PHONEPE_*` | Conditional | PhonePe integration |
+| `PAYTM_*` | Conditional | Paytm integration |
 | `XPRESSBEES_*` | Conditional | Xpressbees integration |
 | `FIREBASE_*` | Conditional | Firebase Admin/FCM |
 | `CLOUDINARY_*` | Optional | Media storage integration |
@@ -278,7 +278,7 @@ docker run --env-file .env -p 8080:8080 bogecom-api
 - `POST /api/orders`
 - `POST /api/orders/save-for-later`
 - `GET /api/orders/payment-status`
-- `POST /api/orders/webhook/phonepe`
+- `POST /api/orders/webhook/paytm`
 
 ### Membership/Coins
 - `GET /api/membership/active`

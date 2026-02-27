@@ -2,11 +2,11 @@
 
 import { fetchDataFromApi } from "@/utils/api";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IoSearchOutline } from "react-icons/io5";
 
 const Search = ({
-  placeholder = "Search for products...",
+  placeholder = "Weight Gainer Peanut Butter",
   width = "100%",
   onSearch = null,
 }) => {
@@ -30,19 +30,17 @@ const Search = ({
 
     setIsLoading(true);
     try {
-      console.log("[Search] Searching for:", term);
       const response = await fetchDataFromApi(
         `/api/products?search=${encodeURIComponent(term)}&limit=8`,
       );
-      console.log("[Search] Response:", response);
-      if (response?.error !== true && response?.data) {
-        console.log("[Search] Found", response.data.length, "results");
-        setSuggestions(response.data);
-        setShowDropdown(true);
-      } else {
-        console.log("[Search] No results or error:", response?.message);
-        setSuggestions([]);
-      }
+      const payload = Array.isArray(response)
+        ? response
+        : response?.data || response?.products || response?.items || [];
+      const safeSuggestions = Array.isArray(payload)
+        ? payload.filter((product) => product?.isExclusive !== true)
+        : [];
+      setSuggestions(safeSuggestions);
+      setShowDropdown(safeSuggestions.length > 0);
     } catch (error) {
       console.error("[Search] Error:", error);
       setSuggestions([]);
@@ -69,14 +67,24 @@ const Search = ({
 
   // Handle form submit
   const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!searchTerm.trim()) return;
+    if (e && e.preventDefault) e.preventDefault();
+    const normalizedTerm = searchTerm.trim();
 
     setShowDropdown(false);
+
+    if (!normalizedTerm) {
+      if (onSearch) {
+        onSearch("");
+      } else {
+        router.push("/products");
+      }
+      return;
+    }
+
     if (onSearch) {
-      onSearch(searchTerm);
+      onSearch(normalizedTerm);
     } else {
-      router.push(`/products?search=${encodeURIComponent(searchTerm)}`);
+      router.push(`/products?search=${encodeURIComponent(normalizedTerm)}`);
     }
   };
 
@@ -110,24 +118,44 @@ const Search = ({
   }, []);
 
   // Dynamic Placeholder Logic
-  const placeholders = [
-    "Search for 'Crunchy'...",
-    "Try 'Dark Chocolate'...",
-    "Find your favorite flavor...",
-    "Search for 'High Protein'...",
-    "Discover 'Sugar Free'...",
-    "Search for anything...",
-  ];
+  const placeholders = useMemo(() => {
+    const seen = new Set();
+    const candidates = [
+      placeholder,
+      "Search for 'High Protein'...",
+      "Try 'Dark Chocolate'...",
+      "Find your favorite flavor...",
+      "Discover 'Sugar Free'...",
+      "Search for anything...",
+    ];
+
+    return candidates.filter((value) => {
+      const normalized = String(value || "").trim();
+      if (!normalized) return false;
+      const key = normalized.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [placeholder]);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [fadeKey, setFadeKey] = useState(0);
 
   useEffect(() => {
+    if (placeholders.length <= 1) return undefined;
+
     const interval = setInterval(() => {
       setPlaceholderIndex((prev) => (prev + 1) % placeholders.length);
       setFadeKey((prev) => prev + 1);
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [placeholders.length]);
+
+  useEffect(() => {
+    if (placeholderIndex >= placeholders.length) {
+      setPlaceholderIndex(0);
+    }
+  }, [placeholderIndex, placeholders.length]);
 
   return (
     <div
@@ -136,6 +164,8 @@ const Search = ({
       style={{ maxWidth: width }}
     >
       <form
+        action="/products"
+        method="get"
         onSubmit={handleSubmit}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -145,14 +175,17 @@ const Search = ({
         <div className="relative w-full h-full">
           <input
             type="text"
+            name="search"
             value={searchTerm}
+            placeholder={placeholder}
+            aria-label={placeholder}
             onChange={handleInputChange}
             onFocus={() => {
               setIsFocused(true);
               if (suggestions.length > 0) setShowDropdown(true);
             }}
             onBlur={() => setIsFocused(false)}
-            className="w-full h-full py-3 pl-6 pr-14 text-base font-medium rounded-full outline-none bg-transparent border-none transition-all z-10 relative bg-transparent"
+            className="w-full h-full py-3 pl-6 pr-14 text-base font-medium rounded-full outline-none bg-transparent border-none transition-all relative bg-transparent placeholder:text-transparent"
             style={{
               fontFamily: "'Inter', system-ui, sans-serif",
             }}
@@ -165,27 +198,27 @@ const Search = ({
               className="absolute top-0 left-0 w-full h-full flex items-center pl-6 pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-500"
             >
               <span className="text-gray-400 text-base font-medium truncate">
-                {placeholders[placeholderIndex]}
+                {placeholders[placeholderIndex] || placeholder}
               </span>
             </div>
           )}
-        </div>
 
-        {/* Loading/Submit Button - Right side */}
-        <button
-          type="submit"
-          className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${searchTerm || isFocused
-            ? "bg-[var(--flavor-color)] text-white shadow-lg shadow-[var(--flavor-color)]/30 scale-100"
-            : "bg-gray-100 text-gray-400 scale-90"
-            }`}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <IoSearchOutline size={18} strokeWidth={2.5} />
-          )}
-        </button>
+          {/* Loading/Submit Button - Right side */}
+          <button
+            type="submit"
+            className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${searchTerm || isFocused
+              ? "bg-[var(--flavor-color)] text-white shadow-lg shadow-[var(--flavor-color)]/30 scale-100"
+              : "bg-gray-100 text-gray-400 scale-90"
+              } z-20 cursor-pointer`}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <IoSearchOutline size={18} strokeWidth={2.5} />
+            )}
+          </button>
+        </div>
       </form>
 
       {/* Search Suggestions Dropdown */}

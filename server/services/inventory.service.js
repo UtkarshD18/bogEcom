@@ -41,6 +41,37 @@ const resolveVariantObjectId = (value) => {
   return objectId;
 };
 
+/**
+ * Recalculate parent stock/reserved from variant totals.
+ * Call after any atomic $inc on variant fields so the parent stays in sync.
+ */
+const syncParentStockFromVariants = async (productId) => {
+  const product = await ProductModel.findById(productId)
+    .select("hasVariants variants stock stock_quantity reserved_quantity")
+    .lean();
+  if (!Array.isArray(product?.variants) || product.variants.length === 0) return;
+
+  const totalStock = product.variants.reduce(
+    (s, v) => s + Number(v.stock_quantity ?? v.stock ?? 0),
+    0,
+  );
+  const totalReserved = product.variants.reduce(
+    (s, v) => s + Number(v.reserved_quantity ?? 0),
+    0,
+  );
+
+  if (
+    product.stock !== totalStock ||
+    product.stock_quantity !== totalStock ||
+    product.reserved_quantity !== totalReserved
+  ) {
+    await ProductModel.updateOne(
+      { _id: productId },
+      { $set: { stock: totalStock, stock_quantity: totalStock, reserved_quantity: totalReserved } },
+    );
+  }
+};
+
 const buildAvailableExpr = () => ({
   $subtract: [
     { $ifNull: ["$stock_quantity", "$stock"] },
@@ -119,6 +150,148 @@ const getVariantFromDoc = (product, variantId) => {
   if (!product || !variantId) return null;
   const variants = Array.isArray(product.variants) ? product.variants : [];
   return variants.find((variant) => String(variant?._id) === String(variantId)) || null;
+};
+
+const normalizeUnitForPacking = (unit) => {
+  const normalized = String(unit || "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return "";
+  if (["g", "gm", "gram", "grams"].includes(normalized)) return "g";
+  if (["kg", "kgs", "kilogram", "kilograms"].includes(normalized)) return "kg";
+  if (
+    ["ml", "millilitre", "milliliter", "millilitres", "milliliters"].includes(
+      normalized,
+    )
+  ) {
+    return "ml";
+  }
+  if (["l", "lt", "ltr", "liter", "litre", "liters", "litres"].includes(normalized)) {
+    return "l";
+  }
+  return normalized;
+};
+
+const normalizePackingKey = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/(\d)\.0+(?=[a-z]|$)/g, "$1");
+
+const buildPackingFromWeightAndUnit = (weightValue, unitValue) => {
+  const weight = Number(weightValue || 0);
+  if (!Number.isFinite(weight) || weight <= 0) return "";
+  const unit = normalizeUnitForPacking(unitValue);
+  if (unit === "g") return weight >= 1000 ? `${weight / 1000}kg` : `${weight}g`;
+  if (unit === "kg") return `${weight}kg`;
+  if (unit === "ml" || unit === "l") return `${weight}${unit}`;
+  return `${weight}${unit || ""}`;
+};
+
+const normalizeVariantRef = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized || normalized === "null" || normalized === "undefined") {
+    return "";
+  }
+  return normalized;
+};
+
+const resolveVariantForPacking = ({
+  product,
+  variantId = "",
+  variantName = "",
+  packing = "",
+}) => {
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  if (variants.length === 0) return null;
+
+  const normalizedVariantId = normalizeVariantRef(variantId);
+  if (normalizedVariantId) {
+    const byId = variants.find(
+      (variant) => String(variant?._id || "") === normalizedVariantId,
+    );
+    if (byId) return byId;
+  }
+
+  const candidateKeys = new Set(
+    [variantName, packing].map((value) => normalizePackingKey(value)).filter(Boolean),
+  );
+  if (candidateKeys.size === 0) return null;
+
+  return (
+    variants.find((variant) => {
+      const variantNameKey = normalizePackingKey(variant?.name || "");
+      const variantWeightKey = normalizePackingKey(
+        buildPackingFromWeightAndUnit(variant?.weight, variant?.unit),
+      );
+      return candidateKeys.has(variantNameKey) || candidateKeys.has(variantWeightKey);
+    }) || null
+  );
+};
+
+const resolvePreferredVariantObjectId = ({
+  product,
+  variantId = "",
+  variantName = "",
+  packing = "",
+}) => {
+  const explicitVariantId = normalizeVariantRef(variantId);
+  if (explicitVariantId) {
+    const explicitObjectId = toObjectId(explicitVariantId);
+    if (explicitObjectId && getVariantFromDoc(product, explicitObjectId)) {
+      return explicitObjectId;
+    }
+  }
+
+  const resolvedVariant = resolveVariantForPacking({
+    product,
+    variantId,
+    variantName,
+    packing,
+  });
+  const resolvedVariantId = resolvedVariant?._id ? String(resolvedVariant._id) : "";
+  return toObjectId(resolvedVariantId);
+};
+
+const buildReceivedItemKey = ({
+  lineIndex = null,
+  productId = "",
+  variantId = "",
+  variantName = "",
+  packing = "",
+} = {}) => {
+  const numericLineIndex = Number(lineIndex);
+  if (Number.isInteger(numericLineIndex) && numericLineIndex >= 0) {
+    return `line:${numericLineIndex}`;
+  }
+
+  const normalizedProductId = String(productId || "").trim();
+  if (!normalizedProductId) return "";
+
+  const normalizedVariantId = normalizeVariantRef(variantId);
+  const variantKey =
+    normalizedVariantId || normalizePackingKey(variantName || packing || "") || "base";
+  return `product:${normalizedProductId}::${variantKey}`;
+};
+
+const resolveReceivedQuantity = (item = {}) => {
+  const qtyReceived = Number(item?.qty_received);
+  if (Number.isFinite(qtyReceived) && qtyReceived > 0) {
+    return qtyReceived;
+  }
+
+  const receivedQuantity = Number(item?.receivedQuantity);
+  if (Number.isFinite(receivedQuantity) && receivedQuantity > 0) {
+    return receivedQuantity;
+  }
+
+  const quantity = Number(item?.quantity);
+  if (Number.isFinite(quantity) && quantity > 0) {
+    return quantity;
+  }
+
+  return 0;
 };
 
 const aggregateItems = (items = []) => {
@@ -389,6 +562,10 @@ export const reserveInventory = async (order, source = "ORDER_CREATE") => {
         }
       }
 
+      if (variantObjectId) {
+        await syncParentStockFromVariants(item.productId);
+      }
+
       const productAfter = await ProductModel.findById(item.productId)
         .select(
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
@@ -555,6 +732,10 @@ export const confirmInventory = async (order, source = "PAYMENT_SUCCESS") => {
         }
       }
 
+      if (variantObjectId) {
+        await syncParentStockFromVariants(item.productId);
+      }
+
       const productAfter = await ProductModel.findById(item.productId)
         .select(
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
@@ -672,6 +853,10 @@ export const releaseInventory = async (order, source = "PAYMENT_FAILURE") => {
         }
       }
 
+      if (variantObjectId) {
+        await syncParentStockFromVariants(item.productId);
+      }
+
       const productAfter = await ProductModel.findById(item.productId)
         .select(
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
@@ -771,6 +956,10 @@ export const restoreInventory = async (order, source = "ORDER_CANCELLED") => {
         }
       }
 
+      if (variantObjectId) {
+        await syncParentStockFromVariants(item.productId);
+      }
+
       const productAfter = await ProductModel.findById(item.productId)
         .select(
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
@@ -833,22 +1022,56 @@ export const applyPurchaseOrderInventory = async (
     return { status: "noop", reason: "already_applied", purchaseOrder: po };
   }
 
-  const receivedMap = new Map(
-    receivedItems.map((item) => [
-      String(item.productId || ""),
-      Number(item.qty_received ?? item.quantity ?? 0),
-    ]),
-  );
+  const receivedMap = new Map();
+  for (const receivedItem of receivedItems) {
+    const key = buildReceivedItemKey({
+      lineIndex: receivedItem?.lineIndex,
+      productId: receivedItem?.productId || receivedItem?._id || receivedItem?.id,
+      variantId: receivedItem?.variantId,
+      variantName: receivedItem?.variantName,
+      packing: receivedItem?.packing || receivedItem?.packSize,
+    });
+    if (!key) continue;
+    const qty = resolveReceivedQuantity(receivedItem);
+    if (qty <= 0) continue;
+    const existing = Number(receivedMap.get(key) || 0);
+    receivedMap.set(key, Math.max(existing + qty, 0));
+  }
 
   const applied = [];
+  const consumedReceivedKeys = new Set();
   try {
-    for (const item of po.items) {
+    for (const [lineIndex, item] of (po.items || []).entries()) {
       const productId = String(item.productId || "");
       if (!productId) continue;
-      const qty =
-        receivedMap.has(productId) && Number.isFinite(receivedMap.get(productId))
-          ? Math.max(receivedMap.get(productId), 0)
-          : Math.max(Number(item.qty_received ?? item.quantity ?? 0), 0);
+
+      const lineKey = buildReceivedItemKey({ lineIndex });
+      const variantKey = buildReceivedItemKey({
+        productId,
+        variantId: item?.variantId,
+        variantName: item?.variantName,
+        packing: item?.packing || item?.packSize,
+      });
+      const productOnlyKey = buildReceivedItemKey({ productId });
+      const preferredKeys = [lineKey, variantKey, productOnlyKey];
+
+      let matchedKey = "";
+      for (const key of preferredKeys) {
+        if (!key) continue;
+        if (!receivedMap.has(key)) continue;
+        if (consumedReceivedKeys.has(key)) continue;
+        matchedKey = key;
+        break;
+      }
+
+      const fallbackQty = resolveReceivedQuantity(item);
+      const qty = matchedKey
+        ? Math.max(Number(receivedMap.get(matchedKey) || 0), 0)
+        : fallbackQty;
+
+      if (matchedKey) {
+        consumedReceivedKeys.add(matchedKey);
+      }
 
       if (qty <= 0) continue;
 
@@ -864,13 +1087,79 @@ export const applyPurchaseOrderInventory = async (
         continue;
       }
 
+      const variantObjectId = resolvePreferredVariantObjectId({
+        product: productBefore,
+        variantId: item?.variantId,
+        variantName: item?.variantName,
+        packing: item?.packing || item?.packSize,
+      });
+      const hasVariantOptions =
+        Array.isArray(productBefore?.variants) && productBefore.variants.length > 0;
+      if (hasVariantOptions && !variantObjectId) {
+        throw new AppError("INVALID_INPUT", {
+          message: "Unable to resolve variant for purchase-order receive item",
+          productId,
+          packing: String(item?.packing || item?.packSize || ""),
+          variantId: normalizeVariantRef(item?.variantId),
+          variantName: String(item?.variantName || ""),
+        });
+      }
+
+      if (variantObjectId) {
+        const resolvedVariant = getVariantFromDoc(productBefore, variantObjectId);
+        const derivedPacking = buildPackingFromWeightAndUnit(
+          resolvedVariant?.weight,
+          resolvedVariant?.unit,
+        );
+        const resolvedPacking = String(
+          item?.packing ||
+            item?.packSize ||
+            derivedPacking ||
+            item?.variantName ||
+            resolvedVariant?.name ||
+            "",
+        ).trim();
+        const resolvedVariantName = String(
+          item?.variantName || resolvedVariant?.name || resolvedPacking || "",
+        ).trim();
+
+        item.variantId = String(variantObjectId);
+        item.variantName = resolvedVariantName;
+        item.packing = resolvedPacking;
+      }
+
+      const updateFilter = variantObjectId
+        ? {
+            _id: productId,
+            ...TRACK_INVENTORY_FILTER,
+            "variants._id": variantObjectId,
+          }
+        : { _id: productId, ...TRACK_INVENTORY_FILTER };
+      const updateOperation = variantObjectId
+        ? {
+            $inc: {
+              "variants.$[v].stock_quantity": qty,
+              "variants.$[v].stock": qty,
+            },
+          }
+        : { $inc: { stock_quantity: qty, stock: qty } };
+      const updateOptions = variantObjectId
+        ? { arrayFilters: [{ "v._id": variantObjectId }] }
+        : undefined;
+
       const result = await ProductModel.updateOne(
-        { _id: productId, ...TRACK_INVENTORY_FILTER },
-        { $inc: { stock_quantity: qty, stock: qty } },
+        updateFilter,
+        updateOperation,
+        updateOptions,
       );
 
       if (result.modifiedCount !== 1) {
         throw new AppError("INTERNAL_ERROR");
+      }
+
+      // Recalculate parent stock from variants after PO receive
+      if (variantObjectId) {
+        await syncParentStockFromVariants(productId);
       }
 
       const productAfter = await ProductModel.findById(productId)
@@ -879,24 +1168,37 @@ export const applyPurchaseOrderInventory = async (
         )
         .lean();
 
+      const auditBefore = variantObjectId
+        ? getVariantFromDoc(productBefore, variantObjectId) || {}
+        : productBefore;
+      const auditAfter = variantObjectId
+        ? getVariantFromDoc(productAfter, variantObjectId) || {}
+        : productAfter;
+
       await logInventoryAudit({
         productId,
+        variantId: variantObjectId || null,
         action: "PO_RECEIVE",
         quantity: qty,
         before: {
-          stock_quantity: Number(productBefore?.stock_quantity ?? productBefore?.stock ?? 0),
-          reserved_quantity: Number(productBefore?.reserved_quantity ?? 0),
+          stock_quantity: Number(auditBefore?.stock_quantity ?? auditBefore?.stock ?? 0),
+          reserved_quantity: Number(auditBefore?.reserved_quantity ?? 0),
         },
         after: {
-          stock_quantity: Number(productAfter?.stock_quantity ?? productAfter?.stock ?? 0),
-          reserved_quantity: Number(productAfter?.reserved_quantity ?? 0),
+          stock_quantity: Number(auditAfter?.stock_quantity ?? auditAfter?.stock ?? 0),
+          reserved_quantity: Number(auditAfter?.reserved_quantity ?? 0),
         },
         source: "PO",
         referenceId: String(po._id || ""),
       });
 
       item.qty_received = qty;
-      applied.push({ productId, quantity: qty });
+      item.receivedQuantity = qty;
+      applied.push({
+        productId,
+        quantity: qty,
+        variantId: variantObjectId ? String(variantObjectId) : null,
+      });
     }
 
     po.status = "received";
@@ -916,6 +1218,19 @@ export const applyPurchaseOrderInventory = async (
   } catch (error) {
     if (applied.length > 0) {
       for (const item of applied) {
+        if (item.variantId) {
+          await ProductModel.updateOne(
+            { _id: item.productId, "variants._id": item.variantId },
+            {
+              $inc: {
+                "variants.$.stock_quantity": -item.quantity,
+                "variants.$.stock": -item.quantity,
+              },
+            },
+          );
+          await syncParentStockFromVariants(item.productId);
+          continue;
+        }
         await ProductModel.updateOne(
           { _id: item.productId },
           { $inc: { stock_quantity: -item.quantity, stock: -item.quantity } },

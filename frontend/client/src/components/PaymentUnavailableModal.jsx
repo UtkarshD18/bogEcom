@@ -1,19 +1,22 @@
 "use client";
 
 import { Button } from "@mui/material";
-import { MdClose, MdPayment, MdSave } from "react-icons/md";
+import { MdBugReport, MdClose, MdPayment, MdSave } from "react-icons/md";
 
 /**
  * Payment Unavailable Modal
  *
- * Displays when user clicks "Pay Now" during PhonePe onboarding phase.
+ * Displays when user clicks "Pay Now" while payments are disabled.
  * Provides option to save order for later payment.
  */
 const PaymentUnavailableModal = ({
   isOpen,
   onClose,
   onSaveOrder,
+  onCreateDemoOrder,
   isSaving = false,
+  isCreatingDemoOrder = false,
+  showDemoOrderAction = false,
   orderTotal = 0,
 }) => {
   if (!isOpen) return null;
@@ -46,9 +49,8 @@ const PaymentUnavailableModal = ({
         <div className="p-6 space-y-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <p className="text-gray-700 text-base leading-relaxed">
-              Payments are temporarily unavailable due to high traffic. We are
-              currently onboarding <strong>PhonePe</strong> as our payment
-              partner.
+              Payments are temporarily unavailable due to high traffic or
+              maintenance.
             </p>
             <p className="text-gray-600 text-sm mt-2">
               Please try again later.
@@ -103,6 +105,44 @@ const PaymentUnavailableModal = ({
               )}
             </Button>
 
+            {showDemoOrderAction && typeof onCreateDemoOrder === "function" && (
+              <Button
+                onClick={onCreateDemoOrder}
+                disabled={isCreatingDemoOrder}
+                fullWidth
+                variant="outlined"
+                sx={{
+                  borderColor: "#f59e0b",
+                  color: "#b45309",
+                  padding: "14px 24px",
+                  borderRadius: "12px",
+                  fontWeight: 600,
+                  fontSize: "15px",
+                  textTransform: "none",
+                  "&:hover": {
+                    borderColor: "#d97706",
+                    backgroundColor: "#fff7ed",
+                  },
+                  "&:disabled": {
+                    borderColor: "#fde68a",
+                    color: "#92400e",
+                  },
+                }}
+              >
+                {isCreatingDemoOrder ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin">⏳</span>
+                    Creating Demo Influencer Order...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <MdBugReport size={20} />
+                    Demo Influencer Order (No Shipping)
+                  </span>
+                )}
+              </Button>
+            )}
+
             <Button
               onClick={onClose}
               fullWidth
@@ -137,3 +177,4 @@ const PaymentUnavailableModal = ({
 };
 
 export default PaymentUnavailableModal;
+

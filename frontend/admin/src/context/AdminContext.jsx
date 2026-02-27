@@ -22,12 +22,37 @@ const debugWarn = (...args) => {
     console.warn(...args);
   }
 };
+const normalizeAdminPayload = (input) => {
+  if (!input || typeof input !== "object") return null;
+  const email = String(input.email || "").trim();
+  const explicitName = String(
+    input.name || input.userName || input.username || input.fullName || "",
+  ).trim();
+  const fallbackName = email ? email.split("@")[0] : "Admin";
+  return {
+    ...input,
+    name: explicitName || fallbackName,
+  };
+};
 
 export const AdminProvider = ({ children }) => {
   const [admin, setAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(null);
   const router = useRouter();
+
+  const updateAdminProfile = useCallback((updates = {}) => {
+    setAdmin((prev) => {
+      const normalized = normalizeAdminPayload({
+        ...(prev || {}),
+        ...(updates || {}),
+      });
+      if (normalized) {
+        localStorage.setItem("adminUser", JSON.stringify(normalized));
+      }
+      return normalized;
+    });
+  }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem("adminToken");
@@ -50,7 +75,11 @@ export const AdminProvider = ({ children }) => {
 
       if (storedToken && storedAdmin) {
         try {
-          const adminData = JSON.parse(storedAdmin);
+          const adminData = normalizeAdminPayload(JSON.parse(storedAdmin));
+          if (!adminData) {
+            logout();
+            return;
+          }
 
           // ALWAYS set token and admin from localStorage
           // Don't wait for verification - token should be immediately available
@@ -119,6 +148,7 @@ export const AdminProvider = ({ children }) => {
 
       if (response.error === false) {
         const { data } = response;
+        const normalizedAdmin = normalizeAdminPayload(data) || data;
 
         // Check if user is an admin
         if (data.role !== "Admin") {
@@ -149,9 +179,9 @@ export const AdminProvider = ({ children }) => {
         }
 
         localStorage.setItem("adminToken", accessToken);
-        localStorage.setItem("adminUser", JSON.stringify(data));
+        localStorage.setItem("adminUser", JSON.stringify(normalizedAdmin));
 
-        setAdmin(data);
+        setAdmin(normalizedAdmin);
         setToken(accessToken);
 
         return { error: false, message: "Login successful" };
@@ -170,6 +200,7 @@ export const AdminProvider = ({ children }) => {
     loading,
     login,
     logout,
+    updateAdminProfile,
     isAuthenticated: !!admin,
   };
 

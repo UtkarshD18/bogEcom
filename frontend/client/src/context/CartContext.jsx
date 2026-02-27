@@ -77,6 +77,9 @@ const getSessionId = () => {
     sessionId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     localStorage.setItem("cartSessionId", sessionId);
   }
+  if (sessionId) {
+    document.cookie = `sessionId=${encodeURIComponent(sessionId)}; path=/; max-age=31536000; samesite=lax`;
+  }
   return sessionId;
 };
 

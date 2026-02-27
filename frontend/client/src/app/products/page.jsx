@@ -21,7 +21,12 @@ function ProductsPageContent() {
     const router = useRouter();
 
     // Get search term from URL
-    const urlSearchTerm = searchParams.get("search") || "";
+    const urlSearchTerm = searchParams.get("search") || searchParams.get("q") || "";
+    const urlCategory = searchParams.get("category") || "";
+    const urlBestSeller = searchParams.get("bestSeller") === "true";
+    const urlNewArrivals = searchParams.get("newArrivals") === "true";
+    const urlPriceDrop = searchParams.get("priceDrop") === "true";
+    const urlMinDiscount = searchParams.get("minDiscount") || "";
     const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
 
     // Sync state with URL when URL changes (e.g. from header search)
@@ -29,12 +34,36 @@ function ProductsPageContent() {
         setSearchTerm(urlSearchTerm);
     }, [urlSearchTerm]);
 
+    // Keep URL search param in sync with input (debounced).
+    useEffect(() => {
+        const currentSearch = String(urlSearchTerm || "").trim();
+        const nextSearch = String(searchTerm || "").trim();
+        if (currentSearch === nextSearch) return;
+
+        const timeoutId = setTimeout(() => {
+            const params = new URLSearchParams(searchParams.toString());
+            if (nextSearch) params.set("search", nextSearch);
+            else params.delete("search");
+            const query = params.toString();
+            router.replace(query ? `/products?${query}` : "/products");
+        }, 350);
+
+        return () => clearTimeout(timeoutId);
+    }, [searchTerm, searchParams, router, urlSearchTerm]);
+
     useEffect(() => {
         const loadProducts = async () => {
             setLoading(true);
             try {
-                // Construct API URL with search param
-                const query = urlSearchTerm ? `?search=${encodeURIComponent(urlSearchTerm)}` : "";
+                const queryParams = new URLSearchParams();
+                if (urlSearchTerm) queryParams.set("search", urlSearchTerm);
+                if (urlCategory) queryParams.set("category", urlCategory);
+                if (urlBestSeller) queryParams.set("bestSeller", "true");
+                if (urlNewArrivals) queryParams.set("newArrivals", "true");
+                if (urlPriceDrop) queryParams.set("priceDrop", "true");
+                if (urlMinDiscount) queryParams.set("minDiscount", urlMinDiscount);
+                const queryString = queryParams.toString();
+                const query = queryString ? `?${queryString}` : "";
                 const res = await fetchDataFromApi(`/api/products${query}`);
 
                 // Handle various API response structures (arrays, nested products, nested data)
@@ -48,23 +77,16 @@ function ProductsPageContent() {
             }
         };
         loadProducts();
-    }, [urlSearchTerm]);
+    }, [urlSearchTerm, urlCategory, urlBestSeller, urlNewArrivals, urlPriceDrop, urlMinDiscount]);
 
-    // Handle search input change
-    const handleSearchChange = (e) => {
-        const value = e.target.value;
-        setSearchTerm(value);
-
-        // Debounce URL update
-        const timeoutId = setTimeout(() => {
-            if (value) {
-                router.push(`/products?search=${encodeURIComponent(value)}`);
-            } else {
-                router.push("/products");
-            }
-        }, 500);
-
-        return () => clearTimeout(timeoutId);
+    const handleSearchSubmit = (event) => {
+        event.preventDefault();
+        const nextSearch = String(searchTerm || "").trim();
+        const params = new URLSearchParams(searchParams.toString());
+        if (nextSearch) params.set("search", nextSearch);
+        else params.delete("search");
+        const query = params.toString();
+        router.push(query ? `/products?${query}` : "/products");
     };
 
     return (
@@ -81,16 +103,19 @@ function ProductsPageContent() {
 
                     <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
                         {/* Search Bar */}
-                        <div className="w-full max-w-2xl relative group transition-all duration-500">
+                        <form
+                            onSubmit={handleSearchSubmit}
+                            className="w-full max-w-2xl relative group transition-all duration-500"
+                        >
                             <FiSearch className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary transition-colors text-xl" />
                             <input
                                 type="text"
                                 placeholder="Search products..."
                                 value={searchTerm}
-                                onChange={handleSearchChange}
+                                onChange={(e) => setSearchTerm(e.target.value)}
                                 className="pl-14 pr-8 py-5 bg-white/70 backdrop-blur-md border border-gray-100 rounded-3xl outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all w-full font-bold text-base shadow-sm"
                             />
-                        </div>
+                        </form>
                     </div>
                 </div>
 

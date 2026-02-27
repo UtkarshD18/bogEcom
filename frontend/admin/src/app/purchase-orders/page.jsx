@@ -38,13 +38,67 @@ const EMPTY_ITEM = {
   quantity: 1,
   price: "",
   packing: "",
+  variantId: "",
+  variantName: "",
+  packWeight: "",
+  packUnit: "g",
+};
+
+const PACK_UNIT_OPTIONS = [
+  { value: "g", label: "Gram" },
+  { value: "kg", label: "Kg" },
+];
+
+const formatPackingNumber = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "";
+  const asString = String(numeric);
+  if (!asString.includes(".")) return asString;
+  return asString.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+};
+
+const normalizePackingUnit = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (["g", "gm", "gram", "grams"].includes(normalized)) return "g";
+  if (["kg", "kgs", "kilogram", "kilograms"].includes(normalized)) return "kg";
+  return normalized || "g";
+};
+
+const buildPackingFromWeightAndUnit = (weightValue, unitValue) => {
+  const weight = Number(weightValue || 0);
+  if (!Number.isFinite(weight) || weight <= 0) return "";
+  const safeWeight = formatPackingNumber(weight);
+  const unit = normalizePackingUnit(unitValue);
+  if (unit === "g") {
+    return weight >= 1000
+      ? `${formatPackingNumber(weight / 1000)}kg`
+      : `${safeWeight}g`;
+  }
+  if (unit === "kg") return `${safeWeight}kg`;
+  return `${safeWeight}${unit}`;
+};
+
+const buildVariantPackingMeta = (variant) => {
+  const weightPacking = buildPackingFromWeightAndUnit(
+    variant?.weight,
+    variant?.unit || "g",
+  );
+  const variantName = String(variant?.name || "").trim();
+  const packing = weightPacking || variantName;
+  return {
+    packing,
+    variantName: variantName || packing,
+    label: packing || variantName || "Variant",
+  };
 };
 
 export default function PurchaseOrdersPage() {
   const { token } = useAdmin();
   const [activeTab, setActiveTab] = useState("create");
   const [products, setProducts] = useState([]);
-  const [items, setItems] = useState([EMPTY_ITEM]);
+  const [items, setItems] = useState([{ ...EMPTY_ITEM }]);
   const [paymentType, setPaymentType] = useState("prepaid");
   const [guestDetails, setGuestDetails] = useState({
     fullName: "",
@@ -218,20 +272,145 @@ export default function PurchaseOrdersPage() {
   const updateItem = (index, field, value) => {
     setItems((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index], [field]: value };
+      const current = { ...(next[index] || EMPTY_ITEM) };
+      const selectedProduct = products.find(
+        (product) => String(product._id) === String(current.productId || ""),
+      );
+      const hasVariantOptions =
+        Array.isArray(selectedProduct?.variants) &&
+        selectedProduct.variants.length > 0;
+
+      if (field === "productId") {
+        const product = products.find(
+          (candidate) => String(candidate._id) === String(value || ""),
+        );
+        const updated = {
+          ...current,
+          productId: value,
+          variantId: "",
+          variantName: "",
+          packing: "",
+          packWeight: "",
+          packUnit: "g",
+        };
+
+        const variantList = Array.isArray(product?.variants)
+          ? product.variants
+          : [];
+        if (variantList.length > 0) {
+          const defaultVariant =
+            variantList.find((variant) => variant?.isDefault) || variantList[0];
+          const variantMeta = buildVariantPackingMeta(defaultVariant);
+          updated.variantId = String(defaultVariant?._id || "");
+          updated.variantName = variantMeta.variantName;
+          updated.packing = variantMeta.packing;
+          updated.packWeight =
+            Number(defaultVariant?.weight || 0) > 0
+              ? String(defaultVariant.weight)
+              : "";
+          updated.packUnit = normalizePackingUnit(defaultVariant?.unit || "g");
+        } else if (product) {
+          const baseUnit = normalizePackingUnit(product?.unit || "g");
+          const basePackUnit = baseUnit === "kg" ? "kg" : "g";
+          const baseWeight = Number(product?.weight || 0);
+          updated.packWeight =
+            Number.isFinite(baseWeight) && baseWeight > 0
+              ? String(baseWeight)
+              : "";
+          updated.packUnit = basePackUnit;
+          updated.packing = buildPackingFromWeightAndUnit(
+            updated.packWeight,
+            updated.packUnit,
+          );
+        }
+
+        next[index] = updated;
+        return next;
+      }
+
+      if (field === "variantId") {
+        const variantList = Array.isArray(selectedProduct?.variants)
+          ? selectedProduct.variants
+          : [];
+        const selectedVariant = variantList.find(
+          (variant) => String(variant?._id || "") === String(value || ""),
+        );
+        if (!selectedVariant) {
+          next[index] = {
+            ...current,
+            variantId: "",
+            variantName: "",
+            packing: "",
+          };
+          return next;
+        }
+        const variantMeta = buildVariantPackingMeta(selectedVariant);
+        next[index] = {
+          ...current,
+          variantId: String(selectedVariant._id || ""),
+          variantName: variantMeta.variantName,
+          packing: variantMeta.packing,
+          packWeight:
+            Number(selectedVariant?.weight || 0) > 0
+              ? String(selectedVariant.weight)
+              : current.packWeight,
+          packUnit: normalizePackingUnit(
+            selectedVariant?.unit || current.packUnit || "g",
+          ) === "kg"
+            ? "kg"
+            : "g",
+        };
+        return next;
+      }
+
+      if (field === "packWeight" || field === "packUnit") {
+        const updated = { ...current, [field]: value };
+        if (!hasVariantOptions) {
+          updated.variantId = "";
+          updated.variantName = "";
+          updated.packing = buildPackingFromWeightAndUnit(
+            updated.packWeight,
+            updated.packUnit,
+          );
+        }
+        next[index] = updated;
+        return next;
+      }
+
+      next[index] = { ...current, [field]: value };
       return next;
     });
   };
 
   const itemRows = useMemo(() => {
     return items.map((item, index) => {
-      const product = products.find((p) => p._id === item.productId);
+      const product = products.find(
+        (p) => String(p._id) === String(item.productId || ""),
+      );
       const quantity = Number(item.quantity || 0);
       const priceInput = item.price ?? "";
       const parsedPrice = Number(priceInput);
       const price = Number.isFinite(parsedPrice) ? parsedPrice : 0;
       const amount = quantity * price;
-      const packing = item.packing || "";
+      const variantOptions = Array.isArray(product?.variants)
+        ? product.variants
+            .map((variant) => {
+              const meta = buildVariantPackingMeta(variant);
+              return {
+                id: String(variant?._id || ""),
+                label: meta.label,
+                packing: meta.packing,
+                variantName: meta.variantName,
+              };
+            })
+            .filter((option) => option.id && option.packing)
+        : [];
+      const packing =
+        item.packing ||
+        buildPackingFromWeightAndUnit(item.packWeight, item.packUnit);
+      const normalizedPackUnit = normalizePackingUnit(
+        item.packUnit || product?.unit || "g",
+      );
       return {
         ...item,
         product,
@@ -240,6 +419,12 @@ export default function PurchaseOrdersPage() {
         priceInput,
         amount,
         packing,
+        variantId: String(item.variantId || ""),
+        variantName: String(item.variantName || ""),
+        packWeight: item.packWeight ?? "",
+        packUnit: normalizedPackUnit === "kg" ? "kg" : "g",
+        variantOptions,
+        hasVariantOptions: variantOptions.length > 0,
         index,
       };
     });
@@ -279,6 +464,7 @@ export default function PurchaseOrdersPage() {
     if (!item) return "-";
     if (item.packing) return item.packing;
     if (item.packSize) return item.packSize;
+    if (item.variantName) return item.variantName;
     const product = productLookup.get(String(item.productId || ""));
     const weight = Number(product?.weight || 0);
     const unit = String(product?.unit || "").toLowerCase();
@@ -306,6 +492,14 @@ export default function PurchaseOrdersPage() {
       toast.error("Enter rate for each selected item");
       return;
     }
+    if (validItems.some((row) => row.hasVariantOptions && !row.variantId)) {
+      toast.error("Select packing variant for each product");
+      return;
+    }
+    if (validItems.some((row) => String(row.packing || "").trim() === "")) {
+      toast.error("Select packing for each product");
+      return;
+    }
     if (
       !guestDetails.fullName ||
       !guestDetails.phone ||
@@ -321,7 +515,9 @@ export default function PurchaseOrdersPage() {
         productId: row.product._id,
         productTitle: row.product.name,
         quantity: row.quantity,
-        packing: row.packing,
+        packing: String(row.packing || "").trim(),
+        variantId: row.variantId || "",
+        variantName: row.variantName || "",
         price: row.price,
         subTotal: row.amount,
         image: row.product.thumbnail || row.product.images?.[0] || "",
@@ -333,7 +529,7 @@ export default function PurchaseOrdersPage() {
     const res = await postData("/api/purchase-orders", payload, token);
     if (res.success) {
       toast.success("Purchase order created");
-      setItems([EMPTY_ITEM]);
+      setItems([{ ...EMPTY_ITEM }]);
       setGuestDetails({
         fullName: "",
         phone: "",
@@ -445,9 +641,13 @@ export default function PurchaseOrdersPage() {
       invoiceNumber: order.receipt?.invoiceNumber || "",
       vehicleNumber: order.receipt?.vehicleNumber || "",
       notes: order.receipt?.notes || "",
-      items: (order.items || []).map((item) => ({
+      items: (order.items || []).map((item, index) => ({
+        lineIndex: index,
         productId: item.productId,
         productTitle: item.productTitle,
+        packing: item.packing || item.packSize || item.variantName || "",
+        variantId: item.variantId || "",
+        variantName: item.variantName || "",
         orderedQty: Number(item.quantity || 0),
         receivedQty: Number(item.receivedQuantity || 0),
         receiveNow: "",
@@ -473,7 +673,11 @@ export default function PurchaseOrdersPage() {
       items: (receiveForm.items || [])
         .filter((item) => Number(item.receiveNow || 0) > 0)
         .map((item) => ({
+          lineIndex: Number(item.lineIndex),
           productId: item.productId,
+          packing: item.packing || item.variantName || "",
+          variantId: item.variantId || "",
+          variantName: item.variantName || "",
           receivedQuantity: Number(item.receiveNow || 0),
         })),
     };
@@ -683,14 +887,52 @@ export default function PurchaseOrdersPage() {
                     updateItem(row.index, "quantity", e.target.value)
                   }
                 />
-                <TextField
-                  size="small"
-                  placeholder="e.g. 1kg"
-                  value={row.packing}
-                  onChange={(e) =>
-                    updateItem(row.index, "packing", e.target.value)
-                  }
-                />
+                <div>
+                  {row.hasVariantOptions ? (
+                    <select
+                      className="w-full px-3 py-2 rounded-lg border border-sky-100 bg-white"
+                      value={row.variantId}
+                      onChange={(e) =>
+                        updateItem(row.index, "variantId", e.target.value)
+                      }
+                    >
+                      <option value="">Select packing</option>
+                      {row.variantOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <TextField
+                        size="small"
+                        type="number"
+                        placeholder="Weight"
+                        value={row.packWeight}
+                        onChange={(e) =>
+                          updateItem(row.index, "packWeight", e.target.value)
+                        }
+                        disabled={!row.productId}
+                        inputProps={{ min: 0, step: "any" }}
+                      />
+                      <select
+                        className="w-full px-3 py-2 rounded-lg border border-sky-100 bg-white disabled:bg-gray-100 disabled:text-gray-500"
+                        value={row.packUnit}
+                        onChange={(e) =>
+                          updateItem(row.index, "packUnit", e.target.value)
+                        }
+                        disabled={!row.productId}
+                      >
+                        {PACK_UNIT_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
                 <TextField
                   size="small"
                   value={row.priceInput}
@@ -1002,14 +1244,24 @@ export default function PurchaseOrdersPage() {
               const orderedQty = Number(item.orderedQty || 0);
               const receivedQty = Number(item.receivedQty || 0);
               const remaining = Math.max(orderedQty - receivedQty, 0);
+              const rowKey = [
+                item.productId || "product",
+                item.variantId || item.variantName || item.packing || "base",
+                Number.isFinite(Number(item.lineIndex)) ? Number(item.lineIndex) : index,
+              ].join(":");
               return (
                 <div
-                  key={item.productId || index}
+                  key={rowKey}
                   className="border rounded-lg p-4 bg-gray-50"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="font-semibold text-gray-800">
                       {item.productTitle || "Product"}
+                      {item.packing ? (
+                        <span className="ml-2 text-xs font-medium text-gray-500">
+                          ({item.packing})
+                        </span>
+                      ) : null}
                     </div>
                     <div className="text-xs text-gray-500">
                       Ordered: {orderedQty} | Received: {receivedQty} |

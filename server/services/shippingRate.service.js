@@ -129,38 +129,37 @@ export const getShippingDisplayMetrics = async () => {
   const cached = getCached(DISPLAY_METRICS_CACHE_KEY);
   if (cached) return cached;
 
-  const rateChart = await resolveDisplayRateChart();
-  const rajasthanCandidates = resolveRajasthanLocalCandidate(rateChart);
-
-  const maxLocalBaseCharge = round2(
-    Math.max(
-      0,
-      ...rajasthanCandidates.map((candidate) => getMaxConfiguredCharge(candidate)),
-    ),
-  );
-  const maxIndiaBaseCharge = round2(getMaxConfiguredCharge(rateChart));
-  const markupMultiplier = 1 + DISPLAY_MARKUP_PERCENT / 100;
-
   const metrics = {
     markupPercent: DISPLAY_MARKUP_PERCENT,
-    maxLocalBaseCharge,
-    maxIndiaBaseCharge,
-    maxLocalDisplayCharge: round2(maxLocalBaseCharge * markupMultiplier),
-    maxIndiaDisplayCharge: round2(maxIndiaBaseCharge * markupMultiplier),
+    maxLocalBaseCharge: 0,
+    maxIndiaBaseCharge: 0,
+    maxLocalDisplayCharge: 0,
+    maxIndiaDisplayCharge: 0,
   };
 
   setCached(DISPLAY_METRICS_CACHE_KEY, metrics);
   return metrics;
 };
 
+const resolveEstimatedWeight = ({ subtotal = 0, totalWeightGrams = 0 }) => {
+  const explicitWeight = Number(totalWeightGrams);
+  if (Number.isFinite(explicitWeight) && explicitWeight > 0) {
+    return getWeightSlab(explicitWeight);
+  }
+
+  const subtotalNumber = Number(subtotal || 0);
+  const subtotalDerivedWeight =
+    subtotalNumber <= 500 ? 500 : Math.ceil(subtotalNumber / 500) * 500;
+  return getWeightSlab(subtotalDerivedWeight);
+};
+
 export const getShippingQuote = async ({
   destinationPincode,
   subtotal = 0,
+  totalWeightGrams = 0,
   paymentType = "prepaid",
 }) => {
-  const estimatedWeight =
-    subtotal <= 500 ? 500 : Math.ceil(Number(subtotal || 0) / 500) * 500;
-  const weight = getWeightSlab(estimatedWeight);
+  const weight = resolveEstimatedWeight({ subtotal, totalWeightGrams });
   const zone = detectZoneByPincode(destinationPincode);
 
   // Business rule: free delivery for every order.

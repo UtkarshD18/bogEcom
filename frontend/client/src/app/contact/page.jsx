@@ -451,27 +451,8 @@ const Contact = () => {
                   <FiClock className="text-primary text-xl" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-800 mb-3">
-                    Business Hours
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Monday - Friday</span>
-                      <span className="text-gray-800 font-medium">
-                        9:00 AM - 6:00 PM
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Saturday</span>
-                      <span className="text-gray-800 font-medium">
-                        10:00 AM - 4:00 PM
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Sunday</span>
-                      <span className="text-red-500 font-medium">Closed</span>
-                    </div>
-                  </div>
+                  <h3 className="font-bold text-gray-800 mb-1">Business Hours</h3>
+                  <p className="text-primary font-semibold text-base">We Are Open 24/7</p>
                 </div>
               </div>
             </div>
@@ -572,14 +553,10 @@ const Contact = () => {
                   <MenuItem value="">No order selected</MenuItem>
                   {orders.map((order) => (
                     <MenuItem key={order.id} value={order.id}>
-                      #{String(order.id || "").slice(-8).toUpperCase()} -{" "}
-                      {order.createdAt
-                        ? new Date(order.createdAt).toLocaleDateString("en-IN", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })
-                        : "Unknown date"}
+                      #{String(order.displayId || order.id || "")
+                        .slice(-8)
+                        .toUpperCase()} -{" "}
+                      {order.createdAt || "Unknown date"}
                     </MenuItem>
                   ))}
                 </TextField>

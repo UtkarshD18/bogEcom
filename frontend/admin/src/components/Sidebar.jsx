@@ -10,7 +10,6 @@ import { IoBagCheckOutline } from "react-icons/io5";
 import { LiaImageSolid } from "react-icons/lia";
 import {
   MdInfoOutline,
-  MdLocalShipping,
   MdMailOutline,
   MdNotificationsActive,
   MdOutlineArticle,
@@ -105,11 +104,6 @@ const Sidebar = () => {
       icon: <MdSupportAgent size={22} />,
       href: "/customer-care",
       badgeCount: openTicketCount,
-    },
-    {
-      name: "Shipping",
-      icon: <MdLocalShipping size={22} />,
-      href: "/shipping",
     },
     {
       name: "Coupons",
@@ -222,7 +216,7 @@ const Sidebar = () => {
           </p>
         </button>
         <p className="text-sm font-medium text-gray-800 truncate">
-          {admin?.name || "Admin"}
+          {admin?.name || admin?.userName || "Admin"}
         </p>
         <p className="text-xs text-gray-500 truncate">{admin?.email || ""}</p>
       </div>

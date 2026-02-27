@@ -1,6 +1,7 @@
 import FlavorThemeProvider from "@/context/ThemeContext";
 import ThemeProvider from "@/context/theme-provider";
 import { Inter, Poppins } from "next/font/google";
+import Script from "next/script";
 import ClientLayout from "./ClientLayout";
 import "./globals.css";
 import "../styles/themes.css";
@@ -74,6 +75,26 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={`${inter.variable} ${poppins.variable} ${inter.className}`}>
+        <Script id="header-bg-bootstrap" strategy="beforeInteractive">
+          {`(function () {
+            try {
+              var key = "hog_header_background_color";
+              var color = localStorage.getItem(key) || "";
+              var valid = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color);
+              if (valid) {
+                var normalized = color.toLowerCase();
+                if (normalized.length === 4) {
+                  normalized =
+                    "#" +
+                    normalized[1] + normalized[1] +
+                    normalized[2] + normalized[2] +
+                    normalized[3] + normalized[3];
+                }
+                document.documentElement.style.setProperty("--header-bg-color", normalized);
+              }
+            } catch (e) {}
+          })();`}
+        </Script>
         <FlavorThemeProvider>
           <ThemeProvider>
             <ClientLayout inter={inter}>{children}</ClientLayout>

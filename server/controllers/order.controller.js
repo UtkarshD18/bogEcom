@@ -5,7 +5,9 @@
  */
 
 import fsPromises from "fs/promises";
+import path from "path";
 import mongoose from "mongoose";
+import { fileURLToPath } from "url";
 import AddressModel from "../models/address.model.js";
 import CategoryModel from "../models/category.model.js";
 import CouponModel from "../models/coupon.model.js";
@@ -20,11 +22,10 @@ import {
   applyRedemptionToUser,
   awardCoinsToUser,
 } from "../services/coin.service.js";
-import { applyMembershipDiscount } from "../services/membership.service.js";
 import {
-  createPhonePePayment,
-  getPhonePeStatus,
-} from "../services/phonepe.service.js";
+  createPaytmPayment,
+  getPaytmStatus,
+} from "../services/paytm.service.js";
 import {
   getShippingQuote,
   validateIndianPincode,
@@ -72,27 +73,38 @@ import {
   reserveInventory,
   restoreInventory,
 } from "../services/inventory.service.js";
+import { autoCreateShipmentForPaidOrder } from "../services/automatedShipping.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
-const DEFAULT_PAYMENT_PROVIDER = "PHONEPE";
+const DEFAULT_PAYMENT_PROVIDER = "PAYTM";
 const configuredPaymentProvider = String(
   process.env.PAYMENT_PROVIDER || DEFAULT_PAYMENT_PROVIDER,
 ).toUpperCase();
-// Unsupported providers are coerced to PhonePe to keep runtime deterministic.
 const PAYMENT_PROVIDER =
-  configuredPaymentProvider === "PHONEPE"
+  configuredPaymentProvider === "PAYTM"
     ? configuredPaymentProvider
     : DEFAULT_PAYMENT_PROVIDER;
-const PHONEPE_MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || "";
-const PHONEPE_SALT_KEY = process.env.PHONEPE_SALT_KEY || "";
-const PHONEPE_SALT_INDEX = process.env.PHONEPE_SALT_INDEX || "";
-const PAYMENT_ENV_ENABLED =
-  PAYMENT_PROVIDER === "PHONEPE" &&
-  process.env.PHONEPE_ENABLED === "true" &&
-  PHONEPE_MERCHANT_ID &&
-  PHONEPE_SALT_KEY &&
-  PHONEPE_SALT_INDEX;
+const PAYTM_MERCHANT_ID = process.env.PAYTM_MERCHANT_ID || "";
+const PAYTM_MERCHANT_KEY = process.env.PAYTM_MERCHANT_KEY || "";
+const isTruthyEnv = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
+};
+const PAYTM_ENV_ENABLED = Boolean(
+  PAYMENT_PROVIDER === "PAYTM" &&
+    isTruthyEnv(process.env.PAYTM_ENABLED) &&
+    PAYTM_MERCHANT_ID &&
+    PAYTM_MERCHANT_KEY,
+);
+const PAYMENT_ENV_ENABLED = PAYTM_ENV_ENABLED;
 
 const SETTINGS_CACHE_TTL_MS = 30 * 1000;
 const settingsCache = new Map();
@@ -381,6 +393,85 @@ const getPrimaryStoreUrl = () =>
     .trim()
     .replace(/\/+$/, "");
 
+const CONTROLLER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const TEST_INVOICE_EXPORT_DIR = path.resolve(
+  CONTROLLER_DIR,
+  "../invoices/local-test-invoices",
+);
+
+const sanitizeFileComponent = (value, fallback = "test_invoice") => {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || fallback;
+};
+
+const normalizePathForResponse = (absolutePath) => {
+  if (!absolutePath) return "";
+  const relative = path.relative(process.cwd(), absolutePath);
+  if (!relative || relative.startsWith("..")) {
+    return absolutePath.replace(/\\/g, "/");
+  }
+  return relative.replace(/\\/g, "/");
+};
+
+const persistInvoiceSnapshotToDisk = async ({
+  filenameSeed,
+  payload,
+  invoicePath = "",
+  context = "persistInvoiceSnapshotToDisk",
+}) => {
+  const safeName = sanitizeFileComponent(
+    filenameSeed,
+    `test_invoice_${Date.now()}`,
+  );
+  const jsonAbsolutePath = path.join(TEST_INVOICE_EXPORT_DIR, `${safeName}.json`);
+
+  try {
+    await fsPromises.mkdir(TEST_INVOICE_EXPORT_DIR, { recursive: true });
+    await fsPromises.writeFile(
+      jsonAbsolutePath,
+      JSON.stringify(payload, null, 2),
+      "utf8",
+    );
+
+    let pdfAbsolutePath = "";
+    const sourcePdfPath = invoicePath
+      ? getAbsolutePathFromStoredInvoicePath(invoicePath)
+      : null;
+    if (sourcePdfPath) {
+      const pdfExt = path.extname(sourcePdfPath) || ".pdf";
+      pdfAbsolutePath = path.join(TEST_INVOICE_EXPORT_DIR, `${safeName}${pdfExt}`);
+      const sourceResolved = path.resolve(sourcePdfPath);
+      const destinationResolved = path.resolve(pdfAbsolutePath);
+      if (sourceResolved !== destinationResolved) {
+        await fsPromises.copyFile(sourceResolved, destinationResolved);
+      }
+    }
+
+    return {
+      ok: true,
+      folder: normalizePathForResponse(TEST_INVOICE_EXPORT_DIR),
+      jsonPath: normalizePathForResponse(jsonAbsolutePath),
+      pdfPath: normalizePathForResponse(pdfAbsolutePath),
+    };
+  } catch (error) {
+    logger.error(context, "Failed to persist invoice snapshot on disk", {
+      error: error?.message || String(error),
+      folder: TEST_INVOICE_EXPORT_DIR,
+      invoicePath,
+    });
+    return {
+      ok: false,
+      folder: normalizePathForResponse(TEST_INVOICE_EXPORT_DIR),
+      jsonPath: normalizePathForResponse(jsonAbsolutePath),
+      pdfPath: "",
+      error: error?.message || "Failed to persist invoice snapshot",
+    };
+  }
+};
+
 const formatInr = (value) => `Rs. ${round2(value).toFixed(2)}`;
 
 const stringifyOrderItemsForEmail = (order) => {
@@ -513,71 +604,96 @@ const toObjectIdOrNull = (value) => {
   return mongoose.Types.ObjectId.isValid(asString) ? candidate : null;
 };
 
-const decodePhonePeWebhookEnvelope = (body = {}) => {
-  if (!body || typeof body !== "object") return {};
+const decodePaytmWebhookEnvelope = (body = {}) => {
+  if (!body) return {};
 
-  const base64Candidates = [];
-  if (typeof body.response === "string") {
-    base64Candidates.push(body.response);
-  }
-  if (typeof body.data === "string") {
-    base64Candidates.push(body.data);
-  }
-
-  for (const candidate of base64Candidates) {
+  if (typeof body === "string") {
     try {
-      const decoded = JSON.parse(
-        Buffer.from(candidate, "base64").toString("utf8"),
-      );
-      if (decoded && typeof decoded === "object") {
-        return decoded;
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
       }
     } catch {
-      // Continue with next shape candidate.
+      return {};
     }
   }
 
-  if (body.data && typeof body.data === "object") {
-    return body.data;
+  if (body.BODY && typeof body.BODY === "string") {
+    try {
+      const parsed = JSON.parse(body.BODY);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    } catch {
+      // fallback to raw payload
+    }
+  }
+
+  if (body.body && typeof body.body === "string") {
+    try {
+      const parsed = JSON.parse(body.body);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    } catch {
+      // fallback to raw payload
+    }
+  }
+
+  if (body.body && typeof body.body === "object") {
+    return body.body;
   }
 
   return body;
 };
 
-const extractPhonePeWebhookFields = (payload = {}) => {
+const extractPaytmWebhookFields = (payload = {}) => {
+  const resultInfo =
+    payload?.resultInfo && typeof payload.resultInfo === "object"
+      ? payload.resultInfo
+      : payload?.RESULTINFO && typeof payload.RESULTINFO === "object"
+        ? payload.RESULTINFO
+        : {};
+
   const merchantTransactionId =
     payload?.merchantTransactionId ||
-    payload?.merchant_transaction_id ||
-    payload?.merchantOrderId ||
+    payload?.merchant_order_id ||
+    payload?.ORDERID ||
     payload?.orderId ||
+    payload?.orderid ||
+    payload?.order_id ||
     null;
+
   const transactionId =
     payload?.transactionId ||
-    payload?.transaction_id ||
+    payload?.TXNID ||
+    payload?.txnId ||
+    payload?.txn_id ||
     payload?.providerReferenceId ||
-    payload?.paymentTransactionId ||
+    payload?.BANKTXNID ||
     null;
+
   const state =
-    payload?.state ||
-    payload?.code ||
+    resultInfo?.resultStatus ||
+    payload?.STATUS ||
     payload?.status ||
-    payload?.paymentState ||
+    payload?.state ||
+    payload?.resultStatus ||
     null;
 
   return { merchantTransactionId, transactionId, state };
 };
 
-const verifyPhonePeWebhookState = async (merchantTransactionId) => {
+const verifyPaytmWebhookState = async (merchantTransactionId) => {
   try {
-    const statusResponse = await getPhonePeStatus({ merchantTransactionId });
+    const statusResponse = await getPaytmStatus({ orderId: merchantTransactionId });
     const payload =
-      statusResponse?.data && typeof statusResponse.data === "object"
-        ? statusResponse.data
-        : statusResponse || {};
-
-    return extractPhonePeWebhookFields(payload);
+      statusResponse && typeof statusResponse === "object"
+        ? statusResponse
+        : {};
+    return extractPaytmWebhookFields(payload);
   } catch (error) {
-    logger.warn("handlePhonePeWebhook", "PhonePe status verification failed", {
+    logger.warn("handlePaytmWebhook", "Paytm status verification failed", {
       merchantTransactionId,
       error: error?.message || String(error),
     });
@@ -765,14 +881,37 @@ logger.info(
 
 const isInvoiceEligible = (order) => {
   if (!order) return false;
-  if (normalizeOrderStatus(order.order_status) === ORDER_STATUS.CANCELLED) {
-    return false;
+
+  const hasExistingInvoice = Boolean(
+    order.invoicePath ||
+      order.invoiceNumber ||
+      order.invoiceGeneratedAt ||
+      order.isInvoiceGenerated ||
+      order.invoiceUrl,
+  );
+  if (hasExistingInvoice) {
+    return true;
   }
   const normalizedStatus = normalizeOrderStatus(order.order_status);
-  return (
-    order.payment_status === "paid" ||
-    [ORDER_STATUS.ACCEPTED, ORDER_STATUS.IN_WAREHOUSE, ORDER_STATUS.SHIPPED, ORDER_STATUS.OUT_FOR_DELIVERY, ORDER_STATUS.DELIVERED].includes(normalizedStatus)
-  );
+  if (normalizedStatus === ORDER_STATUS.CANCELLED) {
+    return false;
+  }
+
+  if ([ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(normalizedStatus)) {
+    return true;
+  }
+
+  if (Array.isArray(order.statusTimeline)) {
+    return order.statusTimeline.some((entry) => {
+      const timelineStatus = normalizeOrderStatus(entry?.status);
+      return (
+        timelineStatus === ORDER_STATUS.DELIVERED ||
+        timelineStatus === ORDER_STATUS.COMPLETED
+      );
+    });
+  }
+
+  return false;
 };
 
 const getInvoiceEligibilityMessage = (order) => {
@@ -781,7 +920,7 @@ const getInvoiceEligibilityMessage = (order) => {
     return "Invoice is not available for cancelled orders.";
   }
   if (!isInvoiceEligible(order)) {
-    return "Invoice is available after order is paid or accepted.";
+    return "Invoice will be available after delivery is completed.";
   }
   return null;
 };
@@ -841,21 +980,22 @@ const getInvoiceSellerDetails = async () => {
   const storeInfo = (await getCachedSetting("storeInfo"))?.value || {};
 
   return {
-    name: process.env.INVOICE_SELLER_NAME || storeInfo.name || "HealthyOneGram",
-    gstin: process.env.INVOICE_SELLER_GSTIN || storeInfo.gstNumber || "",
-    address:
-      process.env.INVOICE_SELLER_ADDRESS ||
-      storeInfo.address ||
-      "Address not configured",
-    state: process.env.INVOICE_SELLER_STATE || "Rajasthan",
-    placeOfSupplyStateCode:
-      process.env.INVOICE_SELLER_STATE_CODE || storeInfo.stateGstCode || "",
-    cin: process.env.INVOICE_SELLER_CIN || storeInfo.cinNumber || "",
-    msme: process.env.INVOICE_SELLER_MSME || storeInfo.msmeNumber || "",
-    fssai: process.env.INVOICE_SELLER_FSSAI || storeInfo.fssaiNumber || "",
+    name: "BUY ONE GRAM PRIVATE LIMITED",
+    gstin: "08AAJCB3889Q1ZO",
+    address: "G-225, RIICO INDUSTRIAL AREA SITAPURA, TONK ROAD, JAIPUR-302022",
+    state: "Rajasthan",
+    placeOfSupplyStateCode: "08",
+    cin: "U51909RJ2020PTC071817",
+    msme: "UDYAM-RJ-17-0154669",
+    fssai: "12224027000921",
     phone: process.env.INVOICE_SELLER_PHONE || storeInfo.phone || "",
     email: process.env.INVOICE_SELLER_EMAIL || storeInfo.email || "",
     currencySymbol: storeInfo.currencySymbol || "Rs. ",
+    logoPath: process.env.INVOICE_LOGO_PATH || "",
+    bankName: process.env.INVOICE_BANK_NAME || "ICICI BANK LIMITED",
+    bankAccount: process.env.INVOICE_BANK_ACCOUNT || "731405000083",
+    bankBranch: process.env.INVOICE_BANK_BRANCH || "SITAPURA",
+    bankIfsc: process.env.INVOICE_BANK_IFSC || "ICIC0006748",
   };
 };
 
@@ -906,12 +1046,9 @@ const calculateCheckoutPricing = async ({
   );
   const baseSubtotal = round2(baseSplit.taxableAmount || 0);
 
-  const membershipResult = userId
-    ? await applyMembershipDiscount(baseSubtotal, userId)
-    : { membership: null, discount: 0, netSubtotal: baseSubtotal };
-  const membershipDiscount = round2(membershipResult.discount || 0);
+  const membershipDiscount = 0;
 
-  let workingTaxableAmount = round2(membershipResult.netSubtotal || baseSubtotal);
+  let workingTaxableAmount = baseSubtotal;
 
   let influencerDiscount = 0;
   let influencerData = null;
@@ -1024,7 +1161,7 @@ const calculateCheckoutPricing = async ({
     influencerCode:
       influencerData?.code || (influencerDiscount > 0 ? influencerCode : null),
     influencerCommission,
-    membershipPlan: membershipResult.membership || null,
+    membershipPlan: null,
     taxData: {
       ...taxData,
       taxableAmount,
@@ -1034,8 +1171,10 @@ const calculateCheckoutPricing = async ({
   };
 };
 
-const ensureOrderInvoice = async (orderDoc) => {
+export const ensureOrderInvoice = async (orderDoc, options = {}) => {
   try {
+    const forceRegenerate = Boolean(options?.forceRegenerate);
+
     if (!orderDoc?._id) {
       return { ok: false, reason: "Order not found" };
     }
@@ -1069,7 +1208,16 @@ const ensureOrderInvoice = async (orderDoc) => {
     let absolutePath = existingAbsolutePath;
     let generatedNewFile = false;
 
-    if (orderDoc.invoicePath && existingAbsolutePath) {
+    if (forceRegenerate) {
+      generated = await generateInvoicePdf({
+        order: populatedOrder,
+        sellerDetails,
+        productMetaById,
+        forceRegenerate: true,
+      });
+      generatedNewFile = true;
+      absolutePath = generated.absolutePath;
+    } else if (orderDoc.invoicePath && existingAbsolutePath) {
       try {
         await fsPromises.access(existingAbsolutePath);
       } catch {
@@ -1077,6 +1225,7 @@ const ensureOrderInvoice = async (orderDoc) => {
           order: populatedOrder,
           sellerDetails,
           productMetaById,
+          forceRegenerate: false,
         });
         generatedNewFile = true;
         absolutePath = generated.absolutePath;
@@ -1086,6 +1235,7 @@ const ensureOrderInvoice = async (orderDoc) => {
         order: populatedOrder,
         sellerDetails,
         productMetaById,
+        forceRegenerate: false,
       });
       generatedNewFile = true;
       absolutePath = generated.absolutePath;
@@ -1095,31 +1245,6 @@ const ensureOrderInvoice = async (orderDoc) => {
       orderDoc.invoiceNumber = generated.invoiceNumber;
       orderDoc.invoicePath = generated.invoicePath;
       orderDoc.invoiceGeneratedAt = generated.invoiceGeneratedAt;
-
-      // Avoid validating legacy fields while persisting generated invoice refs.
-      try {
-        await OrderModel.updateOne(
-          { _id: orderDoc._id },
-          {
-            $set: {
-              invoiceNumber: generated.invoiceNumber,
-              invoicePath: generated.invoicePath,
-              invoiceGeneratedAt: generated.invoiceGeneratedAt,
-            },
-          },
-        );
-      } catch (persistError) {
-        logger.warn(
-          "ensureOrderInvoice",
-          "Failed to persist order invoice metadata; continuing with generated PDF",
-          {
-            orderId: orderDoc._id,
-            invoiceNumber: generated.invoiceNumber,
-            invoicePath: generated.invoicePath,
-            error: persistError?.message || String(persistError),
-          },
-        );
-      }
     }
 
     if (!absolutePath) {
@@ -1181,11 +1306,67 @@ const ensureOrderInvoice = async (orderDoc) => {
       orderDoc._id.toString();
     const invoicePath = orderDoc.invoicePath || generated?.invoicePath || "";
 
+    orderDoc.invoiceNumber = invoiceNumber;
+    orderDoc.invoicePath = invoicePath;
+    orderDoc.invoiceGeneratedAt =
+      orderDoc.invoiceGeneratedAt || generated?.invoiceGeneratedAt || new Date();
+    orderDoc.isInvoiceGenerated = Boolean(invoicePath);
+    orderDoc.invoiceUrl = invoicePath || null;
+
+    const normalizedStatus = normalizeOrderStatus(orderDoc.order_status);
+    if (normalizedStatus === ORDER_STATUS.DELIVERED) {
+      orderDoc.deliveryDate = orderDoc.deliveryDate || new Date();
+    }
+    if (orderDoc.isInvoiceGenerated) {
+      applyOrderStatusTransition(orderDoc, ORDER_STATUS.COMPLETED, {
+        source: "INVOICE_AUTOGENERATION",
+      });
+    }
+
     const createdBy = toObjectIdOrNull(
       orderDoc.user || orderDoc.user?._id || populatedOrder.user || populatedOrder.user?._id,
     );
 
+    const orderSetPayload = {
+      invoiceNumber: orderDoc.invoiceNumber,
+      invoicePath: orderDoc.invoicePath,
+      invoiceGeneratedAt: orderDoc.invoiceGeneratedAt,
+      isInvoiceGenerated: orderDoc.isInvoiceGenerated,
+      invoiceUrl: orderDoc.invoiceUrl,
+      deliveryDate: orderDoc.deliveryDate || null,
+    };
+    if (orderDoc.order_status) {
+      orderSetPayload.order_status = orderDoc.order_status;
+    }
+    if (Array.isArray(orderDoc.statusTimeline)) {
+      orderSetPayload.statusTimeline = orderDoc.statusTimeline;
+    }
+
+    // Avoid validating legacy fields while persisting generated invoice refs.
     try {
+      await OrderModel.updateOne(
+        { _id: orderDoc._id },
+        {
+          $set: orderSetPayload,
+        },
+      );
+    } catch (persistError) {
+      logger.warn(
+        "ensureOrderInvoice",
+        "Failed to persist order invoice metadata; continuing with generated PDF",
+        {
+          orderId: orderDoc._id,
+          invoiceNumber: orderDoc.invoiceNumber,
+          invoicePath: orderDoc.invoicePath,
+          error: persistError?.message || String(persistError),
+        },
+      );
+    }
+
+    try {
+      const invoiceTotalExcludingShipping = round2(
+        Math.max(Number(pricing.total || 0) - Number(pricing.shipping || 0), 0),
+      );
       await InvoiceModel.findOneAndUpdate(
         { orderId: orderDoc._id },
         {
@@ -1193,8 +1374,8 @@ const ensureOrderInvoice = async (orderDoc) => {
           invoiceNumber,
           subtotal: pricing.subtotal,
           taxBreakdown,
-          shipping: pricing.shipping,
-          total: pricing.total,
+          shipping: 0,
+          total: invoiceTotalExcludingShipping,
           gstNumber:
             populatedOrder.gstNumber ||
             populatedOrder.guestDetails?.gst ||
@@ -1256,7 +1437,10 @@ export const getAllOrders = asyncHandler(async (req, res) => {
     const { page = 1, limit = 20, search, status } = req.pagination;
 
     const skip = (page - 1) * limit;
-    const filter = {};
+    const filter = {
+      // Keep purchase orders out of the regular orders listing.
+      purchaseOrder: null,
+    };
 
     // Filter by status
     if (status && status !== "all") {
@@ -1270,12 +1454,12 @@ export const getAllOrders = asyncHandler(async (req, res) => {
       }
     }
 
-    // Search by paymentId, PhonePe IDs, or user email
+    // Search by payment identifiers or user email
     if (search) {
       filter.$or = [
         { paymentId: { $regex: search, $options: "i" } },
-        { phonepeTransactionId: { $regex: search, $options: "i" } },
-        { phonepeMerchantTransactionId: { $regex: search, $options: "i" } },
+        { paytmTransactionId: { $regex: search, $options: "i" } },
+        { paytmOrderId: { $regex: search, $options: "i" } },
         { "user.email": { $regex: search, $options: "i" } },
       ];
     }
@@ -1292,7 +1476,6 @@ export const getAllOrders = asyncHandler(async (req, res) => {
         .populate("user", "name email avatar mobile")
         .populate("delivery_address")
         .populate("influencerId", "code name")
-        .populate("purchaseOrder", "_id status total createdAt")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -1349,7 +1532,9 @@ export const getOrderStats = asyncHandler(async (req, res) => {
       OrderModel.countDocuments({ order_status: "in_warehouse" }),
       OrderModel.countDocuments({ order_status: "shipped" }),
       OrderModel.countDocuments({ order_status: "out_for_delivery" }),
-      OrderModel.countDocuments({ order_status: "delivered" }),
+      OrderModel.countDocuments({
+        order_status: { $in: ["delivered", "completed"] },
+      }),
       OrderModel.countDocuments({ order_status: "cancelled" }),
       OrderModel.countDocuments({ payment_status: "paid" }),
       OrderModel.countDocuments({ payment_status: "failed" }),
@@ -1401,6 +1586,7 @@ export const getOrderStats = asyncHandler(async (req, res) => {
             shipped: stats[5],
             out_for_delivery: stats[6],
             delivered: stats[7],
+            completed: stats[7],
             cancelled: stats[8],
             confirmed: stats[3],
           },
@@ -1824,13 +2010,65 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
       throw new AppError("FORBIDDEN");
     }
 
-    const invoiceResult = await ensureOrderInvoice(order);
+    const fallbackInvoiceAbsolutePath = getAbsolutePathFromStoredInvoicePath(
+      order.invoicePath || order.invoiceUrl,
+    );
+    const invoiceDebugContext = {
+      orderId,
+      requesterId: requester?._id?.toString?.() || String(requesterId || ""),
+      requesterRole: requester?.role || null,
+      orderStatus: order?.order_status || null,
+      paymentStatus: order?.payment_status || null,
+      isInvoiceGenerated: Boolean(order?.isInvoiceGenerated),
+      invoiceNumber: order?.invoiceNumber || null,
+      invoicePath: order?.invoicePath || null,
+      invoiceUrl: order?.invoiceUrl || null,
+      resolvedFallbackPath: fallbackInvoiceAbsolutePath || null,
+      timelineTail: Array.isArray(order?.statusTimeline)
+        ? order.statusTimeline.slice(-3).map((entry) => ({
+            status: entry?.status || null,
+            source: entry?.source || null,
+            timestamp: entry?.timestamp || null,
+          }))
+        : [],
+    };
+
+    const invoiceResult = await ensureOrderInvoice(order, {
+      forceRegenerate: true,
+    });
     if (!invoiceResult.ok) {
-      logger.warn("downloadOrderInvoice", "Invoice unavailable", {
-        orderId,
+      logger.error("downloadOrderInvoice", "Invoice generation failed", {
+        ...invoiceDebugContext,
         reason: invoiceResult.reason,
         error: invoiceResult.error?.message || null,
+        stack: invoiceResult.error?.stack || null,
       });
+
+      if (fallbackInvoiceAbsolutePath) {
+        try {
+          await fsPromises.access(fallbackInvoiceAbsolutePath);
+          const fallbackFilename = `${order.invoiceNumber || `invoice_${orderId}`}.pdf`;
+          logger.warn(
+            "downloadOrderInvoice",
+            "Serving fallback invoice file after generation failure",
+            {
+              ...invoiceDebugContext,
+              servedFrom: fallbackInvoiceAbsolutePath,
+            },
+          );
+          return res.download(fallbackInvoiceAbsolutePath, fallbackFilename);
+        } catch (fallbackError) {
+          logger.warn(
+            "downloadOrderInvoice",
+            "Fallback invoice file unavailable after generation failure",
+            {
+              ...invoiceDebugContext,
+              fallbackError: fallbackError?.message || String(fallbackError),
+            },
+          );
+        }
+      }
+
       return res.status(400).json({
         error: true,
         success: false,
@@ -1857,9 +2095,21 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) {
+      logger.warn("downloadOrderInvoice", "AppError in downloadOrderInvoice", {
+        orderId: req?.params?.orderId || null,
+        requesterId: req?.user || null,
+        errorCode: error?.code || null,
+        errorMessage: error?.message || null,
+      });
       return sendError(res, error);
     }
 
+    logger.error("downloadOrderInvoice", "Unexpected error in downloadOrderInvoice", {
+      orderId: req?.params?.orderId || null,
+      requesterId: req?.user || null,
+      error: error?.message || String(error),
+      stack: error?.stack || null,
+    });
     const dbError = handleDatabaseError(error, "downloadOrderInvoice");
     return sendError(res, dbError);
   }
@@ -1868,7 +2118,7 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
 // ==================== ORDER CREATION & PAYMENT ENDPOINTS ====================
 
 /**
- * Create order (Checkout) - PhonePe Integration
+ * Create order (Checkout) - Paytm Integration
  * @route POST /api/orders
  * @access User (authenticated) / Guest
  * @param {Array} products - Product array with details
@@ -2152,7 +2402,7 @@ export const createOrder = asyncHandler(async (req, res) => {
 
     await sendOrderConfirmationEmail(order);
 
-    if (PAYMENT_PROVIDER === "PHONEPE") {
+    if (PAYMENT_PROVIDER === "PAYTM") {
       const primaryOrigin = String(process.env.CLIENT_URL || "")
         .split(",")[0]
         .trim()
@@ -2168,52 +2418,58 @@ export const createOrder = asyncHandler(async (req, res) => {
         .replace(/\/+$/, "");
 
       const merchantTransactionId = `BOG_${order._id}`;
-      const merchantUserId = userId ? String(userId) : "guest";
-      const amount = payableAmount;
-      const redirectUrl =
-        process.env.PHONEPE_ORDER_REDIRECT_URL ||
-        process.env.PHONEPE_REDIRECT_URL ||
-        `${primaryOrigin}/payment/phonepe`;
       const callbackUrl =
-        process.env.PHONEPE_ORDER_CALLBACK_URL ||
-        process.env.PHONEPE_CALLBACK_URL ||
-        `${backendUrl}/api/orders/webhook/phonepe`;
+        process.env.PAYTM_ORDER_CALLBACK_URL ||
+        process.env.PAYTM_CALLBACK_URL ||
+        `${backendUrl}/api/orders/webhook/paytm`;
 
-      const phonepeResponse = await createPhonePePayment({
-        amount,
-        merchantTransactionId,
-        merchantUserId,
-        redirectUrl,
+      const paytmResponse = await createPaytmPayment({
+        amount: payableAmount,
+        orderId: merchantTransactionId,
         callbackUrl,
+        customerId: userId ? String(userId) : "guest",
         mobileNumber:
           checkoutContact.contact.phone ||
           req.body?.shippingAddress?.mobile ||
           null,
+        email:
+          checkoutContact.contact.email ||
+          req.body?.billingDetails?.email ||
+          req.body?.guestDetails?.email ||
+          null,
       });
+      const gatewayBase = (() => {
+        try {
+          return new URL(String(paytmResponse.gatewayUrl || "")).origin;
+        } catch {
+          return "";
+        }
+      })();
 
-      const paymentUrl =
-        phonepeResponse?.data?.instrumentResponse?.redirectInfo?.url ||
-        phonepeResponse?.data?.redirectInfo?.url ||
-        null;
+      const paymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
+        paytmResponse.mid,
+      )}&orderId=${encodeURIComponent(
+        paytmResponse.orderId,
+      )}&txnToken=${encodeURIComponent(
+        paytmResponse.txnToken,
+      )}&amount=${encodeURIComponent(Number(payableAmount).toFixed(2))}`;
+      const paymentUrlWithGateway = gatewayBase
+        ? `${paymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
+        : paymentUrl;
 
-      if (!paymentUrl) {
-        throw new AppError("PAYMENT_GATEWAY_ERROR", {
-          message: "PhonePe payment URL not received",
-        });
-      }
-
-      order.phonepeMerchantTransactionId = merchantTransactionId;
       order.paymentId = merchantTransactionId;
-      order.phonepeTransactionId = phonepeResponse?.data?.transactionId || null;
+      order.paytmOrderId = merchantTransactionId;
       await order.save();
 
       return sendSuccess(
         res,
         {
           orderId: order._id,
-          paymentProvider: "PHONEPE",
-          paymentUrl,
+          paymentProvider: "PAYTM",
+          paymentUrl: paymentUrlWithGateway,
           merchantTransactionId,
+          txnToken: paytmResponse.txnToken,
+          paytmGatewayUrl: paytmResponse.gatewayUrl,
         },
         "Order created successfully",
         201,
@@ -2717,7 +2973,7 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
         ? `${PAYMENT_PROVIDER} payment gateway is active`
         : `${PAYMENT_PROVIDER} is currently unavailable. You can still save orders for later.`,
       canSaveOrder: true,
-      onboardingStatus: paymentEnabled ? "complete" : "in_progress",
+      configurationStatus: paymentEnabled ? "configured" : "not_configured",
     });
   } catch (error) {
     logger.error("getPaymentGatewayStatus", "Error checking payment status", {
@@ -2730,30 +2986,30 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
 // ==================== WEBHOOK HANDLERS ====================
 
 /**
- * PhonePe Webhook Handler
- * @route POST /api/orders/webhook/phonepe
- * @access Public (payment state verified via PhonePe status API)
+ * Paytm Webhook Handler
+ * @route POST /api/orders/webhook/paytm
+ * @access Public (payment state verified via Paytm status API)
  */
-export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
+export const handlePaytmWebhook = asyncHandler(async (req, res) => {
   try {
-    logger.debug("handlePhonePeWebhook", "Webhook received");
+    logger.debug("handlePaytmWebhook", "Webhook received");
 
     if (!(await isPaymentEnabled())) {
-      logger.warn("handlePhonePeWebhook", "PhonePe not enabled");
+      logger.warn("handlePaytmWebhook", "Paytm not enabled");
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    const payload = decodePhonePeWebhookEnvelope(req.body || {});
-    const webhookData = extractPhonePeWebhookFields(payload);
+    const payload = decodePaytmWebhookEnvelope(req.body || {});
+    const webhookData = extractPaytmWebhookFields(payload);
     const merchantTransactionId = webhookData.merchantTransactionId;
 
     if (!merchantTransactionId) {
-      logger.warn("handlePhonePeWebhook", "Missing merchantTransactionId");
+      logger.warn("handlePaytmWebhook", "Missing merchantTransactionId");
       return sendSuccess(res, {}, "Webhook received");
     }
 
     if (!String(merchantTransactionId).startsWith("BOG_")) {
-      logger.warn("handlePhonePeWebhook", "Ignoring non-order transaction", {
+      logger.warn("handlePaytmWebhook", "Ignoring non-order transaction", {
         merchantTransactionId,
       });
       return sendSuccess(res, {}, "Webhook received");
@@ -2761,7 +3017,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     const orderId = String(merchantTransactionId).replace("BOG_", "");
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      logger.warn("handlePhonePeWebhook", "Invalid orderId in transaction", {
+      logger.warn("handlePaytmWebhook", "Invalid orderId in transaction", {
         merchantTransactionId,
         orderId,
       });
@@ -2771,27 +3027,22 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     const order = await OrderModel.findById(orderId);
 
     if (!order) {
-      logger.warn("handlePhonePeWebhook", "Order not found", {
+      logger.warn("handlePaytmWebhook", "Order not found", {
         merchantTransactionId,
       });
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    if (
-      order.phonepeMerchantTransactionId &&
-      String(order.phonepeMerchantTransactionId) !== String(merchantTransactionId)
-    ) {
-      logger.warn("handlePhonePeWebhook", "Transaction/order mismatch", {
+    if (order.paytmOrderId && String(order.paytmOrderId) !== String(merchantTransactionId)) {
+      logger.warn("handlePaytmWebhook", "Transaction/order mismatch", {
         orderId: order._id,
         merchantTransactionId,
-        expected: order.phonepeMerchantTransactionId,
+        expected: order.paytmOrderId,
       });
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    const verifiedStatus = await verifyPhonePeWebhookState(
-      merchantTransactionId,
-    );
+    const verifiedStatus = await verifyPaytmWebhookState(merchantTransactionId);
     if (!verifiedStatus) {
       return sendSuccess(res, {}, "Webhook acknowledged");
     }
@@ -2800,12 +3051,19 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
       verifiedStatus.transactionId || webhookData.transactionId || null;
     const normalizedState = String(
       verifiedStatus.state || webhookData.state || "",
-    ).toLowerCase();
+    )
+      .toLowerCase()
+      .trim();
     const wasPaid = order.payment_status === "paid";
     let orderMutated = false;
 
-    if (transactionId && String(order.phonepeTransactionId || "") !== String(transactionId)) {
-      order.phonepeTransactionId = transactionId;
+    if (String(order.paytmOrderId || "") !== String(merchantTransactionId)) {
+      order.paytmOrderId = merchantTransactionId;
+      orderMutated = true;
+    }
+
+    if (transactionId && String(order.paytmTransactionId || "") !== String(transactionId)) {
+      order.paytmTransactionId = transactionId;
       order.paymentId = transactionId;
       orderMutated = true;
     }
@@ -2822,7 +3080,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     } else if (normalizedState.includes("fail")) {
       if (!wasPaid) {
         order.payment_status = "failed";
-        order.failureReason = "PhonePe payment failed";
+        order.failureReason = "Paytm payment failed";
         await releaseInventory(order, "PAYMENT_WEBHOOK");
         orderMutated = true;
       }
@@ -2832,7 +3090,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         orderMutated = true;
       }
     } else {
-      logger.warn("handlePhonePeWebhook", "Unknown payment state", {
+      logger.warn("handlePaytmWebhook", "Unknown payment state", {
         merchantTransactionId,
         state: verifiedStatus.state || webhookData.state || null,
       });
@@ -2848,7 +3106,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     if (isInvoiceEligible(order)) {
       ensureOrderInvoice(order).catch((err) =>
-        logger.error("handlePhonePeWebhook", "Failed to generate invoice", {
+        logger.error("handlePaytmWebhook", "Failed to generate invoice", {
           orderId: order._id,
           error: err.message,
         }),
@@ -2856,7 +3114,6 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     }
 
     if (!wasPaid && order.payment_status === "paid") {
-      // Deduct redeemed coins only after payment is successful.
       if (order.user && Number(order.coinRedemption?.coinsUsed || 0) > 0) {
         try {
           await applyRedemptionToUser({
@@ -2871,7 +3128,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           });
         } catch (coinError) {
           logger.error(
-            "handlePhonePeWebhook",
+            "handlePaytmWebhook",
             "Failed to deduct redeemed coins",
             {
               orderId: order._id,
@@ -2881,21 +3138,15 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         }
       }
 
-      // Record coupon usage (idempotent)
       if (order.couponCode) {
         recordCouponUsage(order).catch((err) =>
-          logger.error(
-            "handlePhonePeWebhook",
-            "Failed to record coupon usage",
-            {
-              orderId: order._id,
-              error: err.message,
-            },
-          ),
+          logger.error("handlePaytmWebhook", "Failed to record coupon usage", {
+            orderId: order._id,
+            error: err.message,
+          }),
         );
       }
 
-      // Update influencer stats if applicable (idempotent per order).
       if (order.influencerId && !order.influencerStatsSynced) {
         const effectiveAmount =
           order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
@@ -2920,7 +3171,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
             await order.save();
           }
         } catch (err) {
-          logger.error("handlePhonePeWebhook", "Failed to update influencer stats", {
+          logger.error("handlePaytmWebhook", "Failed to update influencer stats", {
             orderId: order._id,
             error: err.message,
           });
@@ -2944,16 +3195,40 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
             await order.save();
           }
         } catch (coinError) {
-          logger.error("handlePhonePeWebhook", "Failed to award coins", {
+          logger.error("handlePaytmWebhook", "Failed to award coins", {
             orderId: order._id,
             error: coinError.message,
           });
         }
       }
+
+      const autoShipmentResult = await autoCreateShipmentForPaidOrder({
+        orderId: order._id,
+        source: "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
+      });
+      if (!autoShipmentResult.ok && !autoShipmentResult.skipped) {
+        logger.error("handlePaytmWebhook", "Automatic shipment booking failed", {
+          orderId: order._id,
+          reason: autoShipmentResult.reason || "SHIPMENT_CREATION_FAILED",
+          error: autoShipmentResult.error?.message || null,
+        });
+      }
+
+      if (autoShipmentResult?.order) {
+        order.awb_number = autoShipmentResult.order.awb_number;
+        order.awbNumber = autoShipmentResult.order.awbNumber;
+        order.shipment_status = autoShipmentResult.order.shipment_status;
+        order.shipmentStatus = autoShipmentResult.order.shipmentStatus;
+        order.shipping_provider = autoShipmentResult.order.shipping_provider;
+        order.courierName = autoShipmentResult.order.courierName;
+        order.trackingUrl = autoShipmentResult.order.trackingUrl;
+        order.shipmentId = autoShipmentResult.order.shipmentId;
+        order.manifestId = autoShipmentResult.order.manifestId;
+      }
     }
 
     syncOrderToFirestore(order, "update").catch((err) =>
-      logger.error("handlePhonePeWebhook", "Failed to sync to Firestore", {
+      logger.error("handlePaytmWebhook", "Failed to sync to Firestore", {
         orderId: order._id,
         error: err.message,
       }),
@@ -2963,7 +3238,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     return sendSuccess(res, {}, "Webhook processed");
   } catch (error) {
-    logger.error("handlePhonePeWebhook", "Webhook processing error", {
+    logger.error("handlePaytmWebhook", "Webhook processing error", {
       error: error.message,
     });
     return sendError(res, error);
@@ -2984,59 +3259,122 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       throw new AppError("FORBIDDEN");
     }
 
-    const { userId } = req.body;
+    const body = req.body || {};
+    const effectiveUserId = String(body.userId || req.user || "").trim();
+    const influencerCode = String(body.influencerCode || "")
+      .trim()
+      .toUpperCase();
+    const shippingSuppressed = true;
 
-    if (!userId) {
+    if (!effectiveUserId) {
       throw new AppError("MISSING_FIELD", { field: "userId" });
     }
 
-    validateMongoId(userId, "userId");
+    validateMongoId(effectiveUserId, "userId");
 
-    logger.debug("createTestOrder", "Creating test order", { userId });
+    logger.debug("createTestOrder", "Creating test order", {
+      userId: effectiveUserId,
+      influencerCode: influencerCode || null,
+      shippingSuppressed,
+    });
 
     // Verify user exists
-    const user = await UserModel.findById(userId);
+    const user = await UserModel.findById(effectiveUserId).select(
+      "_id name email mobile",
+    );
     if (!user) {
-      logger.warn("createTestOrder", "User not found", { userId });
+      logger.warn("createTestOrder", "User not found", { userId: effectiveUserId });
       throw new AppError("USER_NOT_FOUND");
     }
 
-    // Get some products
-    const products = await ProductModel.find().limit(3);
-    if (products.length === 0) {
-      logger.warn("createTestOrder", "No products found in database");
-      throw new AppError("PRODUCT_NOT_FOUND", {
-        message: "No products available",
+    let normalizedProducts = [];
+    const requestedProducts = Array.isArray(body.products) ? body.products : [];
+    if (requestedProducts.length > 0) {
+      validateProductsArray(requestedProducts, "products");
+      const normalizedResult = await fetchAndNormalizeOrderProducts(
+        requestedProducts,
+        "createTestOrder",
+      );
+      normalizedProducts = normalizedResult.normalizedProducts;
+    } else {
+      const products = await ProductModel.find().limit(3);
+      if (products.length === 0) {
+        logger.warn("createTestOrder", "No products found in database");
+        throw new AppError("PRODUCT_NOT_FOUND", {
+          message: "No products available",
+        });
+      }
+      normalizedProducts = products.map((product) => {
+        const quantity = Math.floor(Math.random() * 2) + 1;
+        const price = round2(Number(product.price || 0));
+        return {
+          productId: String(product._id),
+          productTitle: product.name,
+          variantId: null,
+          variantName: "",
+          quantity,
+          price,
+          image: product.images?.[0] || product.thumbnail || "",
+          subTotal: round2(price * quantity),
+        };
       });
     }
 
-    // Create order items
-    const orderProducts = products.map((product) => {
-      const quantity = Math.floor(Math.random() * 3) + 1;
-      const price = round2(Number(product.price || 0));
-      return {
-        productId: product._id.toString(),
-        productTitle: product.name,
-        quantity,
-        price,
-        image: product.image,
-        subTotal: round2(price * quantity),
-      };
+    const selectedAddress = String(body.address || "").trim();
+    const selectedPincode = shippingSuppressed
+      ? ""
+      : String(body.pincode || "").trim();
+    const selectedState = String(body.state || "").trim();
+    const checkoutContact = {
+      addressId: null,
+      pincode: selectedPincode,
+      state: selectedState,
+      contact: {
+        fullName: String(user.name || "Demo User"),
+        email: String(user.email || "").trim().toLowerCase(),
+        phone: String(user.mobile || body.phone || "").trim(),
+        address: selectedAddress || "Demo test order (shipping suppressed)",
+        pincode: selectedPincode,
+        state: selectedState,
+        gst: String(body.gstNumber || "").trim().toUpperCase(),
+      },
+    };
+
+    const pricing = await calculateCheckoutPricing({
+      normalizedProducts,
+      userId: effectiveUserId,
+      couponCode: null,
+      influencerCode: influencerCode || null,
+      checkoutContact,
+      coinRedeem: { coins: 0 },
+      paymentType: "prepaid",
+      logContext: "createTestOrder",
     });
 
-    const totalAmount = round2(
-      orderProducts.reduce((sum, item) => sum + Number(item.subTotal || 0), 0),
-    );
+    if (pricing.errorMessage) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: pricing.errorMessage,
+      });
+    }
 
-    // Create test order
+    const shippingCharge = shippingSuppressed
+      ? 0
+      : round2(Number(pricing.shippingCharge || 0));
+    const taxableAmount = round2(Number(pricing.taxableAmount || 0));
+    const gstAmount = round2(Number(pricing.gstAmount || 0));
+    const finalAmount = round2(taxableAmount + gstAmount + shippingCharge);
+
+    // Create test order (paid + accepted), but shipping-suppressed.
     const testOrder = new OrderModel({
-      user: userId,
-      products: orderProducts,
-      totalAmt: totalAmount,
-      subtotal: totalAmount,
-      tax: 0,
-      shipping: 0,
-      finalAmount: totalAmount,
+      user: effectiveUserId,
+      products: normalizedProducts,
+      totalAmt: finalAmount,
+      subtotal: taxableAmount,
+      tax: gstAmount,
+      shipping: shippingCharge,
+      finalAmount,
       paymentMethod: "TEST",
       payment_status: "paid",
       order_status: ORDER_STATUS.ACCEPTED,
@@ -3045,30 +3383,176 @@ export const createTestOrder = asyncHandler(async (req, res) => {
         { status: ORDER_STATUS.ACCEPTED, source: "TEST_CREATE", timestamp: new Date() },
       ],
       paymentId: `TEST_${Date.now()}`,
+      originalPrice: round2(Number(pricing.originalAmount || finalAmount)),
+      couponCode: pricing.normalizedCouponCode || null,
+      discountAmount: round2(Number(pricing.couponDiscount || 0)),
+      discount: round2(Number(pricing.totalDiscount || 0)),
+      membershipDiscount: round2(Number(pricing.membershipDiscount || 0)),
+      influencerId: pricing.influencerData?._id || null,
+      influencerCode: pricing.influencerCode || null,
+      influencerDiscount: round2(Number(pricing.influencerDiscount || 0)),
+      influencerCommission: round2(Number(pricing.influencerCommission || 0)),
+      commissionPaid: false,
+      influencerStatsSynced: false,
+      affiliateCode: pricing.influencerCode || null,
+      affiliateSource: pricing.influencerCode ? "referral" : "demo",
+      gst: {
+        rate: Number(pricing.taxData?.rate ?? CHECKOUT_GST_RATE),
+        state: pricing.taxData?.state || selectedState || "",
+        taxableAmount,
+        cgst: Number(pricing.taxData?.cgst || 0),
+        sgst: Number(pricing.taxData?.sgst || 0),
+        igst: Number(pricing.taxData?.igst || 0),
+      },
+      gstNumber: checkoutContact.contact.gst || "",
+      billingDetails: {
+        fullName: checkoutContact.contact.fullName,
+        email: checkoutContact.contact.email,
+        phone: checkoutContact.contact.phone,
+        address: checkoutContact.contact.address,
+        pincode: checkoutContact.contact.pincode,
+        state: checkoutContact.contact.state,
+      },
+      isSavedOrder: true,
+      isDemoOrder: true,
+      notes:
+        String(body.notes || "").trim() ||
+        "Demo influencer test order (shipping suppressed)",
     });
 
     await testOrder.save();
 
-    if (isInvoiceEligible(testOrder)) {
-      ensureOrderInvoice(testOrder).catch((err) =>
-        logger.error("createTestOrder", "Failed to generate invoice", {
-          orderId: testOrder._id,
-          error: err.message,
-        }),
+    let influencerStatsSynced = false;
+    if (testOrder.influencerId && !testOrder.influencerStatsSynced) {
+      const effectiveAmount =
+        testOrder.finalAmount > 0 ? testOrder.finalAmount : testOrder.totalAmt;
+      const commissionBaseAmount = resolveInfluencerCommissionBase(testOrder);
+      let commission = testOrder.influencerCommission || 0;
+      if (!commission) {
+        commission = await calculateInfluencerCommission(
+          testOrder.influencerId,
+          commissionBaseAmount,
+        );
+        testOrder.influencerCommission = commission;
+      }
+
+      influencerStatsSynced = await updateInfluencerStats(
+        testOrder.influencerId,
+        effectiveAmount,
+        commission,
       );
+
+      if (influencerStatsSynced) {
+        testOrder.influencerStatsSynced = true;
+        await testOrder.save();
+      }
     }
+
+    let invoiceSummary = {
+      generated: false,
+      invoiceNumber: null,
+      invoicePath: "",
+      reason: null,
+    };
+    if (!isInvoiceEligible(testOrder)) {
+      applyOrderStatusTransition(testOrder, ORDER_STATUS.DELIVERED, {
+        source: "TEST_CREATE",
+      });
+      testOrder.deliveryDate = testOrder.deliveryDate || new Date();
+      await testOrder.save();
+    }
+
+    const invoiceResult = await ensureOrderInvoice(testOrder);
+    if (!invoiceResult.ok) {
+      logger.error("createTestOrder", "Failed to generate invoice", {
+        orderId: testOrder._id,
+        reason: invoiceResult.reason,
+        error: invoiceResult.error?.message || null,
+      });
+      return res.status(500).json({
+        error: true,
+        success: false,
+        message: invoiceResult.reason || "Failed to generate test invoice",
+      });
+    }
+    invoiceSummary = {
+      generated: Boolean(invoiceResult.generated),
+      invoiceNumber: testOrder.invoiceNumber || null,
+      invoicePath: testOrder.invoicePath || "",
+      reason: null,
+    };
+
+    const clientInvoice = {
+      invoiceNumber: testOrder.invoiceNumber || null,
+      invoicePath: testOrder.invoicePath || "",
+      totals: {
+        originalSubtotal: round2(Number(pricing.subtotal || 0)),
+        subtotal: taxableAmount,
+        influencerDiscount: round2(Number(pricing.influencerDiscount || 0)),
+        couponDiscount: round2(Number(pricing.couponDiscount || 0)),
+        gst: gstAmount,
+        shipping: shippingCharge,
+        total: finalAmount,
+      },
+      items: normalizedProducts.map((item) => ({
+        productId: item.productId || null,
+        name: item.productTitle || "Product",
+        quantity: Math.max(Number(item.quantity || 0), 0),
+        unitPrice: round2(Number(item.price || 0)),
+        lineTotal: round2(Number(item.subTotal || 0)),
+      })),
+    };
+
+    const localDiskInvoice = await persistInvoiceSnapshotToDisk({
+      filenameSeed:
+        testOrder.invoiceNumber || testOrder._id || `test_invoice_${Date.now()}`,
+      invoicePath: testOrder.invoicePath || "",
+      context: "createTestOrder",
+      payload: {
+        source: "demo_influencer_order",
+        savedAt: new Date().toISOString(),
+        shippingSuppressed: true,
+        xpressbeesPosted: false,
+        orderId: String(testOrder._id || ""),
+        invoice: invoiceSummary,
+        influencer: {
+          code: testOrder.influencerCode || null,
+          discount: round2(Number(testOrder.influencerDiscount || 0)),
+          commission: round2(Number(testOrder.influencerCommission || 0)),
+          statsSynced: influencerStatsSynced,
+        },
+        clientInvoice,
+      },
+    });
 
     logger.info("createTestOrder", "Test order created", {
       orderId: testOrder._id,
+      influencerCode: testOrder.influencerCode || null,
+      influencerCommission: testOrder.influencerCommission || 0,
+      influencerStatsSynced,
+      shippingSuppressed,
+      invoiceNumber: testOrder.invoiceNumber || null,
+      localInvoiceJsonPath: localDiskInvoice?.jsonPath || null,
     });
 
     return sendSuccess(
       res,
       {
         orderId: testOrder._id,
-        order: testOrder,
+        shippingSuppressed: true,
+        xpressbeesPosted: false,
+        order: normalizeOrderForResponse(testOrder),
+        influencer: {
+          code: testOrder.influencerCode || null,
+          discount: round2(Number(testOrder.influencerDiscount || 0)),
+          commission: round2(Number(testOrder.influencerCommission || 0)),
+          statsSynced: influencerStatsSynced,
+        },
+        invoice: invoiceSummary,
+        clientInvoice,
+        localDiskInvoice,
       },
-      "Test order created successfully",
+      "Demo test order created successfully",
       201,
     );
   } catch (error) {
@@ -3079,4 +3563,59 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     const dbError = handleDatabaseError(error, "createTestOrder");
     return sendError(res, dbError);
   }
+});
+
+/**
+ * Persist client test invoice snapshot (from localStorage) to server disk.
+ * @route POST /api/orders/test/save-invoice
+ * @access Development only
+ */
+export const saveClientTestInvoiceToDisk = asyncHandler(async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    throw new AppError("FORBIDDEN");
+  }
+
+  const payloadCandidate = req.body?.invoice || req.body || null;
+  if (!payloadCandidate || typeof payloadCandidate !== "object") {
+    throw new AppError("MISSING_FIELD", { field: "invoice" });
+  }
+
+  const invoiceRecord = {
+    ...payloadCandidate,
+    savedAt: new Date().toISOString(),
+  };
+
+  const invoicePath = String(invoiceRecord.invoicePath || "").trim();
+  const filenameSeed =
+    invoiceRecord.invoiceId ||
+    invoiceRecord.invoiceNumber ||
+    invoiceRecord.orderId ||
+    `client_invoice_${Date.now()}`;
+
+  const localDiskInvoice = await persistInvoiceSnapshotToDisk({
+    filenameSeed,
+    invoicePath,
+    context: "saveClientTestInvoiceToDisk",
+    payload: {
+      source: "client_local_storage_invoice",
+      actorUserId: req.user ? String(req.user) : null,
+      invoice: invoiceRecord,
+    },
+  });
+
+  if (!localDiskInvoice.ok) {
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: localDiskInvoice.error || "Failed to save invoice on disk",
+      data: { localDiskInvoice },
+    });
+  }
+
+  return sendSuccess(
+    res,
+    { localDiskInvoice },
+    "Invoice snapshot saved to local disk",
+    201,
+  );
 });

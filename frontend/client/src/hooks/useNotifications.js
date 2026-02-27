@@ -7,6 +7,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import cookies from "js-cookie";
 
 const API_URL = API_BASE_URL;
+// Public VAPID key fallback for environments where env injection is missed.
+const FALLBACK_VAPID_KEY =
+  "BL22YBdvb5TkydQ5LsnePfUgLQsf61THj-Ja72oli6FMb1U7lh-GYJJ__gjIvf8nZjAJ7s8aBQzq1ahFBxpSTi8";
 
 /**
  * useNotifications Hook
@@ -44,6 +47,22 @@ export const useNotifications = (options = {}) => {
     );
   }, []);
 
+  const getSessionId = useCallback(() => {
+    if (typeof window === "undefined") return null;
+
+    let sessionId = localStorage.getItem("cartSessionId");
+    if (!sessionId) {
+      sessionId = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      localStorage.setItem("cartSessionId", sessionId);
+    }
+
+    if (sessionId) {
+      document.cookie = `sessionId=${encodeURIComponent(sessionId)}; path=/; max-age=31536000; samesite=lax`;
+    }
+
+    return sessionId;
+  }, []);
+
   const registerTokenWithBackend = useCallback(
     async (fcmToken) => {
       const headers = {
@@ -51,8 +70,12 @@ export const useNotifications = (options = {}) => {
       };
 
       const authToken = getAuthToken();
+      const sessionId = getSessionId();
       if (authToken) {
         headers["Authorization"] = `Bearer ${authToken}`;
+      }
+      if (sessionId) {
+        headers["X-Session-Id"] = sessionId;
       }
 
       const response = await fetch(`${API_URL}/api/notifications/register`, {
@@ -61,9 +84,8 @@ export const useNotifications = (options = {}) => {
         credentials: "include",
         body: JSON.stringify({
           token: fcmToken,
-          userType,
-          userId: userType === "user" ? userId : null,
           platform: "web",
+          sessionId,
         }),
       });
 
@@ -80,8 +102,66 @@ export const useNotifications = (options = {}) => {
 
       return true;
     },
-    [getAuthToken, userId, userType],
+    [getAuthToken, getSessionId],
   );
+
+  const getFirebasePublicConfig = useCallback(() => {
+    const appOptions = firebaseApp?.options || {};
+    return {
+      apiKey:
+        appOptions.apiKey || process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+      authDomain:
+        appOptions.authDomain ||
+        process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ||
+        "",
+      projectId:
+        appOptions.projectId || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
+      storageBucket:
+        appOptions.storageBucket ||
+        process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+        "",
+      messagingSenderId:
+        appOptions.messagingSenderId ||
+        process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ||
+        "",
+      appId: appOptions.appId || process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
+    };
+  }, []);
+
+  const buildServiceWorkerUrl = useCallback(() => {
+    if (typeof window === "undefined") return "/firebase-messaging-sw.js";
+    const url = new URL("/firebase-messaging-sw.js", window.location.origin);
+    const swConfig = getFirebasePublicConfig();
+
+    Object.entries(swConfig).forEach(([key, value]) => {
+      const cleaned = String(value || "").trim();
+      if (cleaned) url.searchParams.set(key, cleaned);
+    });
+
+    return url.toString();
+  }, [getFirebasePublicConfig]);
+
+  const normalizePushErrorMessage = useCallback((err) => {
+    const raw = String(err?.message || err || "Push registration failed");
+    const lowered = raw.toLowerCase();
+
+    if (lowered.includes("permission")) {
+      return "Notification permission is blocked. Allow notifications in browser settings and try again.";
+    }
+
+    if (
+      lowered.includes("push service error") ||
+      lowered.includes("token-subscribe-failed")
+    ) {
+      return "Registration failed - push service error. Please refresh once and try again.";
+    }
+
+    if (lowered.includes("failed-service-worker-registration")) {
+      return "Push service worker registration failed. Please refresh and try again.";
+    }
+
+    return raw;
+  }, []);
 
   // Check if notifications are supported
   useEffect(() => {
@@ -103,6 +183,12 @@ export const useNotifications = (options = {}) => {
     checkSupport();
   }, []);
 
+  // Ensure every visitor gets a stable guest session ID from first load.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    getSessionId();
+  }, [getSessionId]);
+
   // Initialize messaging and set up foreground listener
   useEffect(() => {
     if (!isSupported || permission !== "granted" || !firebaseApp) return;
@@ -115,12 +201,28 @@ export const useNotifications = (options = {}) => {
         // Listen for foreground messages
         const unsubscribe = onMessage(messaging, (payload) => {
           console.log("Foreground message received:", payload);
-          setForegroundMessage({
-            title: payload.notification?.title,
-            body: payload.notification?.body,
+          const nextMessage = {
+            title: payload.notification?.title || payload.data?.title || "Notification",
+            body: payload.notification?.body || payload.data?.body || "",
             data: payload.data,
             timestamp: Date.now(),
-          });
+          };
+
+          // Show native browser notification in foreground so users see a real popup.
+          if (typeof window !== "undefined" && Notification.permission === "granted") {
+            try {
+              new Notification(nextMessage.title, {
+                body: nextMessage.body,
+                icon: "/logo.png",
+                badge: "/logo.png",
+                tag: nextMessage.data?.notificationId || nextMessage.data?.type || "foreground",
+              });
+            } catch (nativeError) {
+              // Best-effort only; toast fallback still runs.
+            }
+          }
+
+          setForegroundMessage(nextMessage);
         });
 
         return () => unsubscribe();
@@ -145,6 +247,58 @@ export const useNotifications = (options = {}) => {
     }
   }, [permission, token]);
 
+  // Self-heal token state when permission is granted but local token is missing.
+  // This can happen after storage clear / profile reset while browser push subscription still exists.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isSupported || permission !== "granted" || !firebaseApp) return;
+    if (token || localStorage.getItem("fcmToken")) return;
+
+    let cancelled = false;
+
+    const restoreToken = async () => {
+      try {
+        const swUrl = buildServiceWorkerUrl();
+        const registration = await navigator.serviceWorker.register(swUrl, {
+          scope: "/",
+        });
+        await navigator.serviceWorker.ready;
+
+        const messaging = getMessaging(firebaseApp);
+        const tokenOptions = { serviceWorkerRegistration: registration };
+        const vapidKey = (
+          process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || FALLBACK_VAPID_KEY
+        ).trim();
+        if (vapidKey) {
+          tokenOptions.vapidKey = vapidKey;
+        }
+
+        const recoveredToken = await getToken(messaging, tokenOptions);
+        if (!recoveredToken || cancelled) return;
+
+        setToken(recoveredToken);
+        localStorage.setItem("fcmToken", recoveredToken);
+        localStorage.setItem("notificationPermission", "granted");
+
+        await registerTokenWithBackend(recoveredToken);
+      } catch (restoreError) {
+        console.error("Error restoring FCM token:", restoreError);
+      }
+    };
+
+    void restoreToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    buildServiceWorkerUrl,
+    isSupported,
+    permission,
+    registerTokenWithBackend,
+    token,
+  ]);
+
   // Keep backend registration in sync (e.g., login/logout changes)
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -154,9 +308,10 @@ export const useNotifications = (options = {}) => {
     if (!storedToken) return;
 
     const authToken = getAuthToken();
+    const sessionId = getSessionId();
     const registerKey = `${storedToken}|${userType}|${userId || ""}|${
       authToken ? "auth" : "guest"
-    }`;
+    }|${sessionId || ""}`;
 
     if (lastRegisterKeyRef.current === registerKey) return;
     lastRegisterKeyRef.current = registerKey;
@@ -164,7 +319,15 @@ export const useNotifications = (options = {}) => {
     registerTokenWithBackend(storedToken).catch((err) => {
       console.error("Error syncing notification token:", err);
     });
-  }, [getAuthToken, permission, registerTokenWithBackend, token, userId, userType]);
+  }, [
+    getAuthToken,
+    getSessionId,
+    permission,
+    registerTokenWithBackend,
+    token,
+    userId,
+    userType,
+  ]);
 
   /**
    * Request notification permission and register token
@@ -200,9 +363,17 @@ export const useNotifications = (options = {}) => {
       }
 
       // Register service worker
-      const registration = await navigator.serviceWorker.register(
-        "/firebase-messaging-sw.js",
-      );
+      const swUrl = buildServiceWorkerUrl();
+      const registration = await navigator.serviceWorker.register(swUrl, {
+        scope: "/",
+      });
+      // Keep registration fresh after deploys.
+      try {
+        await registration.update();
+      } catch {
+        // Best-effort only.
+      }
+      await navigator.serviceWorker.ready;
       console.log("Service Worker registered:", registration);
 
       // Get FCM token
@@ -210,7 +381,9 @@ export const useNotifications = (options = {}) => {
       const tokenOptions = {
         serviceWorkerRegistration: registration,
       };
-      const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+      const vapidKey = (
+        process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || FALLBACK_VAPID_KEY
+      ).trim();
       if (vapidKey) {
         tokenOptions.vapidKey = vapidKey;
       }
@@ -242,18 +415,26 @@ export const useNotifications = (options = {}) => {
       return true;
     } catch (err) {
       console.error("Error requesting permission:", err);
-      setError(err.message);
+      setError(normalizePushErrorMessage(err));
       return false;
     } finally {
       setIsRegistering(false);
     }
-  }, [isSupported, permission, registerTokenWithBackend]);
+  }, [
+    buildServiceWorkerUrl,
+    isSupported,
+    normalizePushErrorMessage,
+    permission,
+    registerTokenWithBackend,
+  ]);
 
   /**
    * Unregister from notifications
    */
   const unregister = useCallback(async () => {
     const storedToken = token || localStorage.getItem("fcmToken");
+    const authToken = getAuthToken();
+    const sessionId = getSessionId();
 
     if (!storedToken) return;
 
@@ -271,12 +452,21 @@ export const useNotifications = (options = {}) => {
         }
       }
 
+      const headers = {
+        "Content-Type": "application/json",
+      };
+      if (authToken) {
+        headers.Authorization = `Bearer ${authToken}`;
+      }
+      if (sessionId) {
+        headers["X-Session-Id"] = sessionId;
+      }
+
       await fetch(`${API_URL}/api/notifications/unregister`, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ token: storedToken }),
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ token: storedToken, sessionId }),
       });
 
       localStorage.removeItem("fcmToken");
@@ -285,7 +475,7 @@ export const useNotifications = (options = {}) => {
     } catch (err) {
       console.error("Error unregistering:", err);
     }
-  }, [token]);
+  }, [getAuthToken, getSessionId, token]);
 
   /**
    * Check if already registered

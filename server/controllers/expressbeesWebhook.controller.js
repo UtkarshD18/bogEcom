@@ -8,11 +8,12 @@ import {
   applyOrderStatusTransition,
   isFinalStatus,
   mapExpressbeesToOrderStatus,
-  mapExpressbeesToShipmentStatus,
   normalizeOrderStatus,
 } from "../utils/orderStatus.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
+import { ensureOrderInvoice } from "./order.controller.js";
+import { syncShipmentStateOnOrder } from "../services/automatedShipping.service.js";
 
 const extractPayload = (body) => {
   if (!body) return {};
@@ -62,6 +63,36 @@ const extractTimestamp = (payload) => {
   );
 };
 
+const extractTrackingUrl = (payload) => {
+  return pickFirst(
+    payload?.tracking_url,
+    payload?.trackingUrl,
+    payload?.shipment?.tracking_url,
+    payload?.shipment?.trackingUrl,
+    payload?.data?.tracking_url,
+  );
+};
+
+const extractShipmentId = (payload) => {
+  return pickFirst(
+    payload?.shipment_id,
+    payload?.shipmentId,
+    payload?.id,
+    payload?.shipment?.shipment_id,
+    payload?.shipment?.shipmentId,
+  );
+};
+
+const extractManifestId = (payload) => {
+  return pickFirst(
+    payload?.manifest_id,
+    payload?.manifestId,
+    payload?.shipment?.manifest_id,
+    payload?.shipment?.manifestId,
+    payload?.manifest,
+  );
+};
+
 const acknowledgeWebhook = (res, state, details = {}) =>
   res.status(200).json({
     ok: true,
@@ -75,6 +106,9 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
     const awbRaw = extractAwb(payload);
     const statusRaw = extractStatus(payload);
     const timestampRaw = extractTimestamp(payload);
+    const trackingUrlRaw = extractTrackingUrl(payload);
+    const shipmentIdRaw = extractShipmentId(payload);
+    const manifestIdRaw = extractManifestId(payload);
 
     if (!awbRaw || !statusRaw) {
       logger.warn("expressbeesWebhook", "Missing awb or status", {
@@ -85,7 +119,9 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
     }
 
     const awb = String(awbRaw).trim();
-    const order = await OrderModel.findOne({ awb_number: awb });
+    const order = await OrderModel.findOne({
+      $or: [{ awb_number: awb }, { awbNumber: awb }],
+    });
     if (!order) {
       logger.warn("expressbeesWebhook", "Order not found for awb", { awb });
       return acknowledgeWebhook(res, "ignored_unknown_awb");
@@ -100,30 +136,68 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
       return acknowledgeWebhook(res, "ignored_unknown_status");
     }
 
-    if (isFinalStatus(order.order_status) && normalizeOrderStatus(order.order_status) !== mappedOrderStatus) {
-      return acknowledgeWebhook(res, "ignored_final_state");
-    }
+    const normalizedExistingOrderStatus = normalizeOrderStatus(order.order_status);
+    const isFinalStateLocked =
+      isFinalStatus(order.order_status) &&
+      normalizedExistingOrderStatus !== mappedOrderStatus;
+    const transitionResult = isFinalStateLocked
+      ? { updated: false, reason: "final_state_locked" }
+      : applyOrderStatusTransition(order, mappedOrderStatus, {
+          source: "EXPRESSBEES_WEBHOOK",
+          timestamp: timestampRaw,
+        });
 
-    const transitionResult = applyOrderStatusTransition(order, mappedOrderStatus, {
-      source: "EXPRESSBEES_WEBHOOK",
-      timestamp: timestampRaw,
+    const previousShipmentSnapshot = {
+      awb_number: order.awb_number || null,
+      awbNumber: order.awbNumber || null,
+      shipment_status: order.shipment_status || null,
+      shipmentStatus: order.shipmentStatus || null,
+      trackingUrl: order.trackingUrl || null,
+      manifestId: order.manifestId || null,
+      shipmentId: order.shipmentId || null,
+      courierName: order.courierName || null,
+    };
+
+    const shipmentSync = await syncShipmentStateOnOrder({
+      order,
+      awb,
+      status: statusRaw,
+      manifestId: manifestIdRaw,
+      trackingUrl: trackingUrlRaw,
+      shipmentId: shipmentIdRaw,
+      source: "XPRESSBEES_WEBHOOK",
     });
 
-    if (!transitionResult.updated) {
+    const shipmentChanged =
+      previousShipmentSnapshot.awb_number !== (order.awb_number || null) ||
+      previousShipmentSnapshot.awbNumber !== (order.awbNumber || null) ||
+      previousShipmentSnapshot.shipment_status !== (order.shipment_status || null) ||
+      previousShipmentSnapshot.shipmentStatus !== (order.shipmentStatus || null) ||
+      previousShipmentSnapshot.trackingUrl !== (order.trackingUrl || null) ||
+      previousShipmentSnapshot.manifestId !== (order.manifestId || null) ||
+      previousShipmentSnapshot.shipmentId !== (order.shipmentId || null) ||
+      previousShipmentSnapshot.courierName !== (order.courierName || null);
+
+    if (!transitionResult.updated && !shipmentChanged) {
       if (transitionResult.reason === "invalid_transition") {
         return acknowledgeWebhook(res, "ignored_invalid_transition");
       }
-
+      if (transitionResult.reason === "final_state_locked") {
+        return acknowledgeWebhook(res, "ignored_final_state");
+      }
       return acknowledgeWebhook(res, "duplicate_or_noop");
     }
 
-    const shipmentStatus = mapExpressbeesToShipmentStatus(statusRaw);
-    if (shipmentStatus) {
-      order.shipment_status = shipmentStatus;
-      order.shipping_provider = order.shipping_provider || "XPRESSBEES";
+    let deliveryDateChanged = false;
+    if (
+      ["delivered", "completed"].includes(normalizeOrderStatus(order.order_status)) &&
+      !order.deliveryDate
+    ) {
+      order.deliveryDate = new Date();
+      deliveryDateChanged = true;
     }
 
-    if (transitionResult.updated) {
+    if (transitionResult.updated || shipmentChanged || deliveryDateChanged) {
       order.updatedAt = new Date();
       await order.save();
 
@@ -137,6 +211,19 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
       emitOrderStatusUpdate(order, "EXPRESSBEES_WEBHOOK");
     }
 
+    if (
+      ["delivered", "completed"].includes(normalizeOrderStatus(order.order_status)) &&
+      !order.isInvoiceGenerated
+    ) {
+      ensureOrderInvoice(order).catch((err) =>
+        logger.error("expressbeesWebhook", "Failed to auto-generate invoice", {
+          orderId: order._id,
+          awb,
+          error: err.message,
+        }),
+      );
+    }
+
     logger.info("expressbeesWebhook", "Webhook processed", {
       source: "EXPRESSBEES_WEBHOOK",
       authMode: req.expressbeesAuthMode || null,
@@ -144,7 +231,7 @@ export const handleExpressbeesWebhook = asyncHandler(async (req, res) => {
       awb,
       status: statusRaw,
       mappedStatus: mappedOrderStatus || null,
-      shipmentStatus: shipmentStatus || null,
+      shipmentStatus: shipmentSync?.canonicalStatus || order.shipmentStatus || null,
       transition: transitionResult.reason || (transitionResult.updated ? "updated" : "skipped"),
     });
 

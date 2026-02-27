@@ -10,7 +10,8 @@ import { toast } from "react-hot-toast";
 
 const statusBadgeClass = (status) => {
   if (status === "OPEN") return "bg-red-100 text-red-700";
-  if (status === "IN_PROGRESS") return "bg-amber-100 text-amber-700";
+  if (status === "PENDING" || status === "IN_PROGRESS")
+    return "bg-amber-100 text-amber-700";
   if (status === "RESOLVED") return "bg-emerald-100 text-emerald-700";
   return "bg-gray-100 text-gray-700";
 };
@@ -128,7 +129,7 @@ const CustomerCarePage = () => {
           >
             <MenuItem value="">All</MenuItem>
             <MenuItem value="OPEN">OPEN</MenuItem>
-            <MenuItem value="IN_PROGRESS">IN_PROGRESS</MenuItem>
+            <MenuItem value="PENDING">PENDING</MenuItem>
             <MenuItem value="RESOLVED">RESOLVED</MenuItem>
           </TextField>
 
@@ -230,13 +231,7 @@ const CustomerCarePage = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700">
-                        {ticket.createdAt
-                          ? new Date(ticket.createdAt).toLocaleDateString("en-IN", {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            })
-                          : "-"}
+                        {ticket.created_at || ticket.createdAt || "-"}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <Link href={`/customer-care/${ticket.ticketId}`}>

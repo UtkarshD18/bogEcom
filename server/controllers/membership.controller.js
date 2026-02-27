@@ -1,7 +1,7 @@
 import MembershipPlanModel from "../models/membershipPlan.model.js";
 import MembershipUserModel from "../models/membershipUser.model.js";
 import UserModel from "../models/user.model.js";
-import { createPhonePePayment, getPhonePeStatus } from "../services/phonepe.service.js";
+import { createPaytmPayment, getPaytmStatus } from "../services/paytm.service.js";
 import { getUserCoinSummary, redeemCoins } from "../services/coin.service.js";
 import { activateMembershipForUser } from "../services/membershipUser.service.js";
 
@@ -9,69 +9,108 @@ import { activateMembershipForUser } from "../services/membershipUser.service.js
 
 /**
  * Payment Provider Constant
- * Currently: PhonePe (onboarding in progress)
+ * Current provider: Paytm
  */
-const PAYMENT_PROVIDER = "PHONEPE";
+const PAYMENT_PROVIDER = "PAYTM";
+const PAYTM_MERCHANT_ID = String(process.env.PAYTM_MERCHANT_ID || "").trim();
+const PAYTM_MERCHANT_KEY = String(process.env.PAYTM_MERCHANT_KEY || "").trim();
+const isTruthyEnv = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
+};
 
 /**
  * Check if payment gateway is enabled
- * Currently returns false - PhonePe onboarding in progress
- * Set PHONEPE_ENABLED=true in .env when PhonePe is activated
+ * Enable by setting PAYTM_ENABLED=true in .env
  */
 const isPaymentEnabled = () => {
-  return process.env.PHONEPE_ENABLED === "true";
+  return Boolean(
+    isTruthyEnv(process.env.PAYTM_ENABLED) &&
+      PAYTM_MERCHANT_ID &&
+      PAYTM_MERCHANT_KEY,
+  );
 };
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const floorInt = (value) => Math.max(Math.floor(Number(value || 0)), 0);
 
-const decodePhonePeEnvelope = (body = {}) => {
-  if (!body || typeof body !== "object") return {};
+const decodePaytmEnvelope = (body = {}) => {
+  if (!body) return {};
 
-  const base64Candidates = [];
-  if (typeof body.response === "string") base64Candidates.push(body.response);
-  if (typeof body.data === "string") base64Candidates.push(body.data);
-
-  for (const candidate of base64Candidates) {
+  if (typeof body === "string") {
     try {
-      const decoded = JSON.parse(
-        Buffer.from(candidate, "base64").toString("utf8"),
-      );
-      if (decoded && typeof decoded === "object") {
-        return decoded;
-      }
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed === "object") return parsed;
     } catch {
-      // Try next candidate.
+      return {};
     }
   }
 
-  if (body.data && typeof body.data === "object") {
-    return body.data;
+  if (body.BODY && typeof body.BODY === "string") {
+    try {
+      const parsed = JSON.parse(body.BODY);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      // fallback to raw payload
+    }
+  }
+
+  if (body.body && typeof body.body === "string") {
+    try {
+      const parsed = JSON.parse(body.body);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      // fallback to raw payload
+    }
+  }
+
+  if (body.body && typeof body.body === "object") {
+    return body.body;
   }
 
   return body;
 };
 
-const extractPhonePeFields = (payload = {}) => ({
-  merchantTransactionId:
-    payload?.merchantTransactionId ||
-    payload?.merchant_transaction_id ||
-    payload?.merchantOrderId ||
-    payload?.orderId ||
-    null,
-  transactionId:
-    payload?.transactionId ||
-    payload?.transaction_id ||
-    payload?.providerReferenceId ||
-    payload?.paymentTransactionId ||
-    null,
-  state:
-    payload?.state ||
-    payload?.code ||
-    payload?.status ||
-    payload?.paymentState ||
-    null,
-});
+const extractPaytmFields = (payload = {}) => {
+  const resultInfo =
+    payload?.resultInfo && typeof payload.resultInfo === "object"
+      ? payload.resultInfo
+      : payload?.RESULTINFO && typeof payload.RESULTINFO === "object"
+        ? payload.RESULTINFO
+        : {};
+
+  return {
+    merchantTransactionId:
+      payload?.merchantTransactionId ||
+      payload?.ORDERID ||
+      payload?.orderId ||
+      payload?.orderid ||
+      payload?.order_id ||
+      null,
+    transactionId:
+      payload?.transactionId ||
+      payload?.TXNID ||
+      payload?.txnId ||
+      payload?.txn_id ||
+      payload?.providerReferenceId ||
+      payload?.BANKTXNID ||
+      null,
+    state:
+      resultInfo?.resultStatus ||
+      payload?.STATUS ||
+      payload?.status ||
+      payload?.state ||
+      payload?.resultStatus ||
+      null,
+  };
+};
 
 const computeMembershipExpiry = (plan) => {
   const expiry = new Date();
@@ -220,7 +259,7 @@ export const getMembershipStatus = async (req, res) => {
 // ==================== USER ENDPOINTS ====================
 
 /**
- * Create membership order (PhonePe - onboarding in progress)
+ * Create membership order (Paytm)
  * @route POST /api/membership/create-order
  */
 export const createMembershipOrder = async (req, res) => {
@@ -309,13 +348,13 @@ export const createMembershipOrder = async (req, res) => {
       });
     }
 
-    // Check if payments are enabled (PhonePe onboarding)
+    // Check if payments are enabled
     if (!isPaymentEnabled()) {
       return res.status(503).json({
         error: true,
         success: false,
         message:
-          "Membership payments are temporarily unavailable. PhonePe onboarding is in progress.",
+          "Membership payments are temporarily unavailable. Payment gateway is not configured.",
         paymentProvider: PAYMENT_PROVIDER,
         data: {
           coinRedemption: coinPreview,
@@ -328,43 +367,45 @@ export const createMembershipOrder = async (req, res) => {
       .split(",")[0]
       .trim()
       .replace(/\/+$/, "");
-    const backendUrl = String(
-      process.env.BACKEND_URL ||
-        process.env.API_BASE_URL ||
-        (process.env.GAE_DEFAULT_HOSTNAME
-          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
-          : ""),
-    )
-      .trim()
-      .replace(/\/+$/, "");
 
-    const redirectUrl =
-      process.env.PHONEPE_MEMBERSHIP_REDIRECT_URL ||
-      process.env.PHONEPE_REDIRECT_URL ||
-      `${primaryOrigin}/membership/checkout`;
     const callbackUrl =
-      process.env.PHONEPE_MEMBERSHIP_CALLBACK_URL ||
-      process.env.PHONEPE_CALLBACK_URL ||
-      `${backendUrl}/api/membership/webhook/phonepe`;
+      process.env.PAYTM_MEMBERSHIP_CALLBACK_URL ||
+      `${primaryOrigin}/membership/checkout`;
 
-    const phonepeResponse = await createPhonePePayment({
+    const paytmResponse = await createPaytmPayment({
       amount: Math.max(coinPreview.payableAmount, 1),
-      merchantTransactionId,
-      merchantUserId: String(userId),
-      redirectUrl,
+      orderId: merchantTransactionId,
       callbackUrl,
+      customerId: String(userId),
+      mobileNumber: String(req.body?.mobile || "").trim() || null,
+      email: String(req.body?.email || "").trim().toLowerCase() || null,
     });
+    const gatewayBase = (() => {
+      try {
+        return new URL(String(paytmResponse.gatewayUrl || "")).origin;
+      } catch {
+        return "";
+      }
+    })();
 
-    const paymentUrl =
-      phonepeResponse?.data?.instrumentResponse?.redirectInfo?.url ||
-      phonepeResponse?.data?.redirectInfo?.url ||
-      null;
+    const basePaymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
+      paytmResponse.mid,
+    )}&orderId=${encodeURIComponent(
+      paytmResponse.orderId,
+    )}&txnToken=${encodeURIComponent(
+      paytmResponse.txnToken,
+    )}&amount=${encodeURIComponent(
+      Number(coinPreview.payableAmount).toFixed(2),
+    )}&flow=membership&returnPath=${encodeURIComponent("/membership/checkout")}`;
+    const paymentUrl = gatewayBase
+      ? `${basePaymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
+      : basePaymentUrl;
 
     if (!paymentUrl) {
       return res.status(503).json({
         error: true,
         success: false,
-        message: "PhonePe payment URL not received",
+        message: "Paytm payment URL not received",
         paymentProvider: PAYMENT_PROVIDER,
       });
     }
@@ -398,13 +439,13 @@ export const createMembershipOrder = async (req, res) => {
 };
 
 /**
- * Public PhonePe callback endpoint for membership flow
- * @route POST /api/membership/webhook/phonepe
+ * Public Paytm callback endpoint for membership flow
+ * @route POST /api/membership/webhook/paytm
  */
-export const handleMembershipPhonePeCallback = async (req, res) => {
+export const handleMembershipPaytmCallback = async (req, res) => {
   try {
-    const payload = decodePhonePeEnvelope(req.body || {});
-    const callbackData = extractPhonePeFields(payload);
+    const payload = decodePaytmEnvelope(req.body || {});
+    const callbackData = extractPaytmFields(payload);
     const merchantTransactionId = callbackData.merchantTransactionId;
 
     if (!merchantTransactionId) {
@@ -419,12 +460,8 @@ export const handleMembershipPhonePeCallback = async (req, res) => {
     let verifiedTransactionId = callbackData.transactionId || null;
 
     try {
-      const status = await getPhonePeStatus({ merchantTransactionId });
-      const statusPayload =
-        status?.data && typeof status.data === "object"
-          ? status.data
-          : status || {};
-      const normalized = extractPhonePeFields(statusPayload);
+      const statusPayload = await getPaytmStatus({ orderId: merchantTransactionId });
+      const normalized = extractPaytmFields(statusPayload || {});
       verifiedState = normalized.state || verifiedState;
       verifiedTransactionId = normalized.transactionId || verifiedTransactionId;
     } catch (statusError) {
@@ -457,18 +494,18 @@ export const handleMembershipPhonePeCallback = async (req, res) => {
 };
 
 /**
- * Verify membership payment (PhonePe - onboarding in progress)
+ * Verify membership payment (Paytm)
  * @route POST /api/membership/verify-payment
  */
 export const verifyMembershipPayment = async (req, res) => {
   try {
-    // Check if payments are enabled (PhonePe onboarding)
+    // Check if payments are enabled
     if (!isPaymentEnabled()) {
       return res.status(503).json({
         error: true,
         success: false,
         message:
-          "Membership payment verification unavailable. PhonePe onboarding in progress.",
+          "Membership payment verification unavailable. Payment gateway is not configured.",
         paymentProvider: PAYMENT_PROVIDER,
       });
     }
@@ -484,12 +521,9 @@ export const verifyMembershipPayment = async (req, res) => {
       });
     }
 
-    const status = await getPhonePeStatus({ merchantTransactionId });
-    const state =
-      status?.data?.state ||
-      status?.data?.status ||
-      status?.data?.code ||
-      "";
+    const statusPayload = await getPaytmStatus({ orderId: merchantTransactionId });
+    const statusFields = extractPaytmFields(statusPayload || {});
+    const state = statusFields.state || "";
 
     if (!String(state).toLowerCase().includes("success")) {
       return res.status(400).json({

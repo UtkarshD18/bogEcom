@@ -45,15 +45,18 @@ const ProductRow = ({
 
         if (categorySlug) params.push(`category=${categorySlug}`);
         if (isFeatured) params.push("isFeatured=true");
-        if (isNewArrivals) params.push("sortBy=createdAt&order=desc");
-        if (isBestSeller) params.push("sortBy=soldCount&order=desc");
+        if (isNewArrivals) params.push("newArrivals=true");
+        if (isBestSeller) params.push("bestSeller=true");
         params.push(`limit=${limit}`);
 
         url += params.join("&");
 
         const response = await fetchDataFromApi(url);
         if (response.success && response.data) {
-          setProducts(response.data);
+          const safeProducts = Array.isArray(response.data)
+            ? response.data.filter((product) => product?.isExclusive !== true)
+            : [];
+          setProducts(safeProducts);
         }
       } catch (error) {
         console.error("Failed to fetch products:", error);
@@ -181,7 +184,7 @@ const ProductRow = ({
           {products.map((product, index) => (
             <div
               key={product._id}
-              className="transform transition-all duration-300 hover:-translate-y-1"
+              className="h-full transform transition-all duration-300 hover:-translate-y-1"
               style={{
                 animation: "fadeInUp 0.4s ease-out forwards",
                 animationDelay: `${index * 50}ms`,

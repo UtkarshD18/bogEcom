@@ -57,7 +57,7 @@ settingsSchema.statics.defaultSettings = [
   {
     key: "paymentGatewayEnabled",
     value: true,
-    description: "Enable/disable payment gateway (PhonePe)",
+    description: "Enable/disable payment gateway (Paytm)",
     category: "payment",
   },
   {
@@ -65,6 +65,14 @@ settingsSchema.statics.defaultSettings = [
     value: false,
     description: "Put site in maintenance mode",
     category: "general",
+  },
+  {
+    key: "headerSettings",
+    value: {
+      headerBackgroundColor: "#fffbf5",
+    },
+    description: "Header appearance settings",
+    category: "display",
   },
   {
     key: "showOfferPopup",

@@ -109,14 +109,25 @@ const updateOrderShipping = async (orderId, updates, context = "shipping") => {
   if (!orderId) return null;
   validateMongoId(orderId, "orderId");
 
+  const existingOrder = await OrderModel.findById(orderId)
+    .select("_id isDemoOrder")
+    .lean();
+
+  if (!existingOrder) {
+    throw new AppError("ORDER_NOT_FOUND");
+  }
+
+  if (existingOrder.isDemoOrder) {
+    throw new AppError("FORBIDDEN", {
+      message: "Shipping updates are disabled for demo test orders",
+      orderId,
+    });
+  }
+
   const order = await OrderModel.findByIdAndUpdate(orderId, updates, {
     new: true,
     runValidators: true,
   });
-
-  if (!order) {
-    throw new AppError("ORDER_NOT_FOUND");
-  }
 
   syncOrderToFirestore(order, "update").catch((err) =>
     logger.error(context, "Failed to sync order to Firestore", {

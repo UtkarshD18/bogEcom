@@ -4,11 +4,12 @@ import { logger } from "../utils/errorHandler.js";
 import {
   applyOrderStatusTransition,
   mapExpressbeesToOrderStatus,
-  mapExpressbeesToShipmentStatus,
   ORDER_STATUS,
 } from "../utils/orderStatus.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
+import { ensureOrderInvoice } from "../controllers/order.controller.js";
+import { syncShipmentStateOnOrder } from "./automatedShipping.service.js";
 
 let pollingTimer = null;
 let pollingInFlight = false;
@@ -49,20 +50,30 @@ export const pollExpressbeesTracking = async () => {
 
     const orders = await OrderModel.find({
       shipping_provider: "XPRESSBEES",
-      awb_number: { $ne: null },
-      order_status: { $nin: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED] },
+      $or: [{ awb_number: { $ne: null } }, { awbNumber: { $ne: null } }],
+      order_status: {
+        $nin: [
+          ORDER_STATUS.DELIVERED,
+          ORDER_STATUS.COMPLETED,
+          ORDER_STATUS.RTO_COMPLETED,
+          ORDER_STATUS.CANCELLED,
+        ],
+      },
     })
       .limit(batchSize);
 
     for (const order of orders) {
       try {
-        const awb = order.awb_number;
+        const awb = order.awb_number || order.awbNumber;
         if (!awb) continue;
 
         const data = await trackShipment(awb);
         const rawStatus = parseTrackingStatus(data);
         if (!rawStatus) continue;
 
+        const previousLegacyShipmentStatus = order.shipment_status;
+        const previousCanonicalShipmentStatus = order.shipmentStatus;
+        const previousTrackingUrl = order.trackingUrl;
         const mappedOrderStatus = mapExpressbeesToOrderStatus(rawStatus);
         const transition = mappedOrderStatus
           ? applyOrderStatusTransition(order, mappedOrderStatus, {
@@ -70,28 +81,49 @@ export const pollExpressbeesTracking = async () => {
             })
           : { updated: false, reason: "no_status" };
 
-        if (!transition.updated) {
+        const shipmentSync = await syncShipmentStateOnOrder({
+          order,
+          awb,
+          status: rawStatus,
+          trackingUrl: data?.data?.tracking_url || data?.data?.trackingUrl || null,
+          source: "EXPRESSBEES_POLL",
+        });
+
+        const shipmentChanged =
+          previousLegacyShipmentStatus !== order.shipment_status ||
+          previousCanonicalShipmentStatus !== order.shipmentStatus ||
+          previousTrackingUrl !== order.trackingUrl;
+        if (!transition.updated && !shipmentChanged) {
           continue;
         }
 
-        const shipmentStatus = mapExpressbeesToShipmentStatus(rawStatus);
-        if (shipmentStatus) {
-          order.shipment_status = shipmentStatus;
-          order.shipping_provider = order.shipping_provider || "XPRESSBEES";
+        if (order.shipmentStatus === "delivered") {
+          order.deliveryDate = order.deliveryDate || new Date();
         }
 
-        if (transition.updated) {
-          order.updatedAt = new Date();
-          await order.save();
+        order.updatedAt = new Date();
+        await order.save();
 
-          syncOrderToFirestore(order, "update").catch((err) =>
-            logger.error("expressbeesPoll", "Failed to sync to Firestore", {
+        syncOrderToFirestore(order, "update").catch((err) =>
+          logger.error("expressbeesPoll", "Failed to sync to Firestore", {
+            orderId: order._id,
+            error: err.message,
+          }),
+        );
+
+        emitOrderStatusUpdate(order, "EXPRESSBEES_POLL");
+
+        if (
+          ["delivered", "completed"].includes(String(order.order_status || "").toLowerCase()) &&
+          !order.isInvoiceGenerated
+        ) {
+          ensureOrderInvoice(order).catch((err) =>
+            logger.error("expressbeesPoll", "Failed to auto-generate invoice", {
               orderId: order._id,
+              awb,
               error: err.message,
             }),
           );
-
-          emitOrderStatusUpdate(order, "EXPRESSBEES_POLL");
         }
 
         logger.info("expressbeesPoll", "Tracking polled", {
@@ -100,7 +132,7 @@ export const pollExpressbeesTracking = async () => {
           awb,
           status: rawStatus,
           mappedStatus: mappedOrderStatus || null,
-          shipmentStatus: shipmentStatus || null,
+          shipmentStatus: shipmentSync?.canonicalStatus || null,
           transition: transition.reason || (transition.updated ? "updated" : "skipped"),
         });
       } catch (err) {

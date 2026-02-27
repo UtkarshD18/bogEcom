@@ -21,7 +21,6 @@ const ProductItem = (props) => {
     const flavor = context?.flavor || FLAVORS.creamy;
 
     const productId = id || _id || product?._id || product?.id;
-    const isWishlisted = isInWishlist(productId);
     const alreadyInCart = isInCart(productId);
 
     const productData = product || {
@@ -47,14 +46,21 @@ const ProductItem = (props) => {
             ? Math.round(((defaultVariant.originalPrice - defaultVariant.price) / defaultVariant.originalPrice) * 100)
             : 0))
         : productData.discount;
+    const showDiscountBadge = Number(displayDiscount) > 0 && !productData.isBestSeller;
     const displayWeight = defaultVariant ? defaultVariant.weight : productData.weight;
     const displayUnit = defaultVariant ? (defaultVariant.unit || "g") : (productData.unit && productData.unit !== "piece" ? productData.unit : "g");
     const isExclusiveProduct = Boolean(productData?.isExclusive);
+    const wishlistVariantId = defaultVariant?._id || null;
+    const isWishlisted = isInWishlist(productId, wishlistVariantId);
 
     const handleWishlistClick = async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        await toggleWishlist(productData);
+        await toggleWishlist(productData, {
+            variantId: wishlistVariantId,
+            variantName: defaultVariant?.name || "",
+            quantity: 1,
+        });
     };
 
     const handleAddToCart = async (e) => {
@@ -67,7 +73,25 @@ const ProductItem = (props) => {
             try { await removeFromCart(productId); } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
         } else {
             setIsAddingToCart(true);
-            try { await addToCart(productData, 1); } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
+            try {
+                const cartPayload = defaultVariant
+                    ? {
+                        ...productData,
+                        price: defaultVariant.price,
+                        originalPrice: defaultVariant.originalPrice || productData.originalPrice,
+                        selectedVariant: {
+                            _id: defaultVariant._id,
+                            name: defaultVariant.name,
+                            sku: defaultVariant.sku,
+                            price: defaultVariant.price,
+                            weight: defaultVariant.weight,
+                            unit: defaultVariant.unit,
+                        },
+                        variantId: defaultVariant._id,
+                    }
+                    : productData;
+                await addToCart(cartPayload, 1);
+            } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
         }
     };
 
@@ -85,18 +109,24 @@ const ProductItem = (props) => {
     };
 
     return (
-        <Link href={`/product/${productId}`} className="group relative block h-full w-full rounded-3xl bg-white p-3 transition-all hover:shadow-xl hover:-translate-y-1 border border-gray-100">
+        <Link href={`/product/${productId}`} className="group relative flex h-full w-full flex-col rounded-3xl bg-white p-3 transition-all hover:shadow-xl hover:-translate-y-1 border border-gray-100">
 
             {/* Image Container */}
             <div className="relative mb-3 h-40 w-full overflow-hidden rounded-2xl bg-gray-50 flex items-center justify-center">
+                {productData.isBestSeller && (
+                    <span className="absolute -left-8 top-4 z-20 -rotate-45 bg-red-600 px-8 py-1 text-[9px] font-extrabold tracking-[0.2em] text-white shadow-md">
+                        BEST SELLER
+                    </span>
+                )}
+
                 {/* Discount Badge */}
-                {displayDiscount > 0 && (
-                    <span className="absolute left-2 top-2 z-10 rounded-full bg-gradient-to-r from-red-500 to-pink-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                {showDiscountBadge && (
+                    <span className="absolute left-2 top-2 z-10 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
                         {displayDiscount}% OFF
                     </span>
                 )}
                 {isExclusiveProduct && (
-                    <span className={`absolute left-2 z-10 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm ${displayDiscount > 0 ? "top-8" : "top-2"}`}>
+                    <span className={`absolute left-2 z-10 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm ${showDiscountBadge ? "top-8" : "top-2"}`}>
                         Members Only
                     </span>
                 )}
@@ -117,11 +147,18 @@ const ProductItem = (props) => {
             </div>
 
             {/* Content */}
-            <div className="px-1">
+            <div className="flex flex-1 flex-col px-1">
                 <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">{productData.brand}</p>
                 <h3 className="line-clamp-2 min-h-[40px] text-sm font-bold text-gray-900 group-hover:text-primary transition-colors">
                     {productData.name}
                 </h3>
+                <div className="mt-1 min-h-[32px]">
+                    {productData.shortDescription ? (
+                        <p className="line-clamp-2 text-[11px] font-medium text-gray-500">
+                            {productData.shortDescription}
+                        </p>
+                    ) : null}
+                </div>
 
                 {/* Weight */}
                 {displayWeight > 0 && (
@@ -142,7 +179,7 @@ const ProductItem = (props) => {
                 </div>
 
                 {/* Price & Cart */}
-                <div className="mt-3 flex items-end justify-between">
+                <div className="mt-auto flex items-end justify-between pt-3">
                     <div>
                         {displayOriginalPrice > displayPrice && (
                             <span className="block text-[10px] font-medium text-gray-400 line-through">₹{displayOriginalPrice}</span>

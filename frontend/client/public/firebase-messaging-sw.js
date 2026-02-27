@@ -15,13 +15,36 @@ importScripts(
 
 // Service workers can't access process.env directly.
 // These placeholders are replaced at deploy time from GitHub secrets.
+const readFromQuery = (key) => {
+  try {
+    const params = new URL(self.location.href).searchParams;
+    return params.get(key) || "";
+  } catch {
+    return "";
+  }
+};
+
+const fromPlaceholder = (value) =>
+  typeof value === "string" && !value.startsWith("__NEXT_PUBLIC_") ? value : "";
+
 const firebaseConfig = {
-  apiKey: "__NEXT_PUBLIC_FIREBASE_API_KEY__",
-  authDomain: "__NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN__",
-  projectId: "__NEXT_PUBLIC_FIREBASE_PROJECT_ID__",
-  storageBucket: "__NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET__",
-  messagingSenderId: "__NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID__",
-  appId: "__NEXT_PUBLIC_FIREBASE_APP_ID__",
+  apiKey:
+    readFromQuery("apiKey") ||
+    fromPlaceholder("__NEXT_PUBLIC_FIREBASE_API_KEY__"),
+  authDomain:
+    readFromQuery("authDomain") ||
+    fromPlaceholder("__NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN__"),
+  projectId:
+    readFromQuery("projectId") ||
+    fromPlaceholder("__NEXT_PUBLIC_FIREBASE_PROJECT_ID__"),
+  storageBucket:
+    readFromQuery("storageBucket") ||
+    fromPlaceholder("__NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET__"),
+  messagingSenderId:
+    readFromQuery("messagingSenderId") ||
+    fromPlaceholder("__NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID__"),
+  appId:
+    readFromQuery("appId") || fromPlaceholder("__NEXT_PUBLIC_FIREBASE_APP_ID__"),
 };
 
 const isConfigured = Object.values(firebaseConfig).every(
@@ -36,12 +59,13 @@ if (isConfigured) {
   messaging.onBackgroundMessage((payload) => {
     console.log("[SW] Background message received:", payload);
 
-    const notificationTitle = payload.notification?.title || "New Notification";
+    const notificationTitle =
+      payload.notification?.title || payload.data?.title || "New Notification";
     const notificationOptions = {
-      body: payload.notification?.body || "",
-      icon: "/logo192.png",
-      badge: "/logo192.png",
-      tag: payload.data?.type || "default",
+      body: payload.notification?.body || payload.data?.body || "",
+      icon: "/logo.png",
+      badge: "/logo.png",
+      tag: payload.data?.notificationId || payload.data?.type || "default",
       data: payload.data || {},
       actions: [
         {

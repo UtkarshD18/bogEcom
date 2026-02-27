@@ -38,6 +38,9 @@ import { io } from "socket.io-client";
 const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
+const SOCKET_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.slice(0, -4)
+  : API_BASE_URL;
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: MdAccessTime },
@@ -48,6 +51,58 @@ const STATUS_STEPS = [
   { key: "out_for_delivery", label: "Out for Delivery", icon: MdLocalShipping },
   { key: "delivered", label: "Delivered", icon: MdCheckCircle },
 ];
+
+const ORDER_ID_REGEX = /^[a-f\d]{24}$/i;
+const getAuthToken = () => {
+  if (typeof window === "undefined") return cookies.get("accessToken") || "";
+  return (
+    cookies.get("accessToken") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("token") ||
+    ""
+  );
+};
+
+const normalizeOrderIdValue = (value) =>
+  String(value || "").trim().toUpperCase();
+
+const resolveOrderRouteId = (record) =>
+  record?._id || record?.id || record?.orderId || null;
+
+const resolveOrderDisplayId = (record) => {
+  const explicitId =
+    record?.displayOrderId ||
+    record?.orderNumber ||
+    record?.order_id ||
+    "";
+  if (String(explicitId || "").trim()) {
+    return String(explicitId).trim().toUpperCase();
+  }
+
+  const routeId = String(resolveOrderRouteId(record) || "").trim();
+  if (!routeId) return "N/A";
+  return `BOG-${routeId.slice(-8).toUpperCase()}`;
+};
+
+const isMatchingOrderIdentifier = (record, identifier) => {
+  const wanted = normalizeOrderIdValue(identifier);
+  if (!wanted) return false;
+
+  const routeId = resolveOrderRouteId(record);
+  const displayId = resolveOrderDisplayId(record);
+  const candidates = [
+    routeId,
+    displayId,
+    record?.displayOrderId,
+    record?.orderNumber,
+    record?.order_id,
+    record?.orderId,
+  ]
+    .map((value) => normalizeOrderIdValue(value))
+    .filter(Boolean);
+
+  return candidates.includes(wanted);
+};
 
 const normalizeStatus = (status) => {
   if (!status) return "pending";
@@ -75,7 +130,7 @@ const getStepIndex = (status) => {
  * - Order status
  * - Payment status
  * - Pending payment messaging (if applicable)
- * - Retry payment button (stub - disabled until PhonePe)
+ * - Retry payment button (stub - disabled until Paytm)
  */
 const OrderDetailsPage = () => {
   const params = useParams();
@@ -113,6 +168,9 @@ const OrderDetailsPage = () => {
     isRajasthan: isRajasthanDelivery,
   });
 
+  const canonicalOrderId = resolveOrderRouteId(order);
+  const displayOrderId = resolveOrderDisplayId(order);
+
   // Fetch order details
   useEffect(() => {
     const fetchOrder = async () => {
@@ -122,38 +180,97 @@ const OrderDetailsPage = () => {
         return;
       }
 
-      const token = cookies.get("accessToken");
+      const token = getAuthToken();
       if (!token) {
         router.push("/login?redirect=/orders/" + orderId);
         return;
       }
 
       try {
-        const response = await fetch(`${API_URL}/orders/${orderId}`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include",
-        });
+        const requestOrderByUrl = async (url) => {
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: "include",
+          });
+          let data = null;
+          try {
+            data = await response.json();
+          } catch {
+            data = null;
+          }
+          return { response, data };
+        };
 
-        const data = await response.json();
+        const fetchSingleOrder = async () => {
+          const userScoped = await requestOrderByUrl(
+            `${API_URL}/orders/user/order/${orderId}`,
+          );
+          if (userScoped?.response?.status !== 404) {
+            return userScoped;
+          }
+          return requestOrderByUrl(`${API_URL}/orders/${orderId}`);
+        };
 
-        if (response.status === 401) {
-          router.push("/login?redirect=/orders/" + orderId);
-          return;
+        let resolvedOrder = null;
+
+        if (ORDER_ID_REGEX.test(String(orderId))) {
+          const { response, data } = await fetchSingleOrder();
+
+          if (response.status === 401) {
+            router.push("/login?redirect=/orders/" + orderId);
+            return;
+          }
+
+          if (response.status === 403) {
+            setError("You are not authorized to view this order");
+            setLoading(false);
+            return;
+          }
+
+          if (data?.success && data?.data) {
+            resolvedOrder = data.data;
+          } else if (response.status >= 400 && response.status < 500) {
+            setError(data?.message || "Failed to fetch order");
+          }
         }
 
-        if (response.status === 403) {
-          setError("You are not authorized to view this order");
-          setLoading(false);
-          return;
+        if (!resolvedOrder) {
+          const listResponse = await fetch(`${API_URL}/orders/my-orders`, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: "include",
+          });
+          const listData = await listResponse.json();
+
+          if (listResponse.status === 401) {
+            router.push("/login?redirect=/orders/" + orderId);
+            return;
+          }
+
+          const orders = Array.isArray(listData?.data) ? listData.data : [];
+          const matchedOrder = orders.find((item) =>
+            isMatchingOrderIdentifier(item, orderId),
+          );
+
+          if (matchedOrder) {
+            resolvedOrder = matchedOrder;
+            const matchedRouteId = resolveOrderRouteId(matchedOrder);
+            if (matchedRouteId && String(matchedRouteId) !== String(orderId)) {
+              router.replace(`/orders/${matchedRouteId}`);
+            }
+          }
         }
 
-        if (data.success) {
-          setOrder(data.data);
+        if (resolvedOrder) {
+          setOrder(resolvedOrder);
+          setError(null);
         } else {
-          setError(data.message || "Failed to fetch order");
+          setError("Failed to fetch order");
         }
       } catch (err) {
         console.error("Error fetching order:", err);
@@ -168,12 +285,13 @@ const OrderDetailsPage = () => {
 
   useEffect(() => {
     if (!orderId) return;
-    const token = cookies.get("accessToken");
+    const token = getAuthToken();
     if (!token) return;
 
-    const socket = io(API_URL, {
+    const socket = io(SOCKET_URL, {
       withCredentials: true,
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
+      auth: { token },
     });
 
     socket.on("order:update", (payload) => {
@@ -204,7 +322,7 @@ const OrderDetailsPage = () => {
   useEffect(() => {
     const fetchMyOrderReviews = async () => {
       if (!orderId) return;
-      const token = cookies.get("accessToken");
+      const token = getAuthToken();
       if (!token) return;
 
       try {
@@ -373,14 +491,25 @@ const OrderDetailsPage = () => {
   const downloadFile = async (url, filename, key) => {
     try {
       setDownloading((prev) => ({ ...prev, [key]: true }));
-      const token = cookies.get("accessToken");
+      const token = getAuthToken();
       const response = await fetch(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         credentials: "include",
       });
 
       if (!response.ok) {
-        throw new Error("Download failed");
+        let message = "Download failed";
+        try {
+          const errorPayload = await response.json();
+          message =
+            errorPayload?.message ||
+            errorPayload?.error?.message ||
+            errorPayload?.error ||
+            message;
+        } catch {
+          // Ignore non-JSON error payloads.
+        }
+        throw new Error(message);
       }
 
       const blob = await response.blob();
@@ -393,16 +522,17 @@ const OrderDetailsPage = () => {
       link.remove();
       window.URL.revokeObjectURL(objectUrl);
     } catch (downloadError) {
-      setError(downloadError.message || "Failed to download file");
+      toast.error(downloadError?.message || "Failed to download file");
     } finally {
       setDownloading((prev) => ({ ...prev, [key]: false }));
     }
   };
 
   const handleDownloadInvoice = () => {
+    if (!canonicalOrderId) return;
     downloadFile(
-      `${API_URL}/orders/${order._id}/invoice`,
-      `invoice-${order._id}.pdf`,
+      `${API_URL}/orders/${canonicalOrderId}/invoice`,
+      `invoice-${displayOrderId || canonicalOrderId}.pdf`,
       "invoice",
     );
   };
@@ -517,28 +647,28 @@ const OrderDetailsPage = () => {
   const orderTotals = calculateOrderTotals(
     buildSavedOrderCalculationInput(order, { payableShipping: 0 }),
   );
-  const canDownloadInvoice =
-    order?.order_status !== "cancelled" &&
-    (order?.payment_status === "paid" ||
-      normalizeStatus(order?.order_status) === "accepted");
+  const normalizedOrderStatus = normalizeStatus(order?.order_status);
+  const hasDeliveredTimelineStatus = Array.isArray(order?.statusTimeline)
+    ? order.statusTimeline.some((entry) => {
+        const normalizedTimelineStatus = normalizeStatus(entry?.status);
+        return (
+          normalizedTimelineStatus === "delivered" ||
+          normalizedTimelineStatus === "completed"
+        );
+      })
+    : false;
+  const isDeliveredLikeOrder =
+    ["delivered", "completed"].includes(normalizedOrderStatus) ||
+    hasDeliveredTimelineStatus;
+  const hasInvoiceHint = Boolean(
+    order?.isInvoiceGenerated ||
+      order?.invoiceUrl ||
+      order?.invoicePath ||
+      order?.invoiceGeneratedAt,
+  );
+  const canDownloadInvoice = hasInvoiceHint || isDeliveredLikeOrder;
   const isReviewEligibleOrder = (() => {
-    const normalizedOrderStatus = normalizeStatus(order?.order_status);
-    if (
-      normalizedOrderStatus === "delivered" ||
-      normalizedOrderStatus === "completed"
-    ) {
-      return true;
-    }
-
-    return Array.isArray(order?.statusTimeline)
-      ? order.statusTimeline.some((entry) => {
-          const normalizedTimelineStatus = normalizeStatus(entry?.status);
-          return (
-            normalizedTimelineStatus === "delivered" ||
-            normalizedTimelineStatus === "completed"
-          );
-        })
-      : false;
+    return isDeliveredLikeOrder;
   })();
 
   const getItemProductId = (item) => {
@@ -626,7 +756,7 @@ const OrderDetailsPage = () => {
       return;
     }
 
-    const token = cookies.get("accessToken");
+    const token = getAuthToken();
     if (!token) {
       toast.error("Please login again");
       return;
@@ -696,7 +826,7 @@ const OrderDetailsPage = () => {
                 <p className="text-gray-500 mt-1">
                   Order ID:{" "}
                   <span className="font-mono font-medium">
-                    #{order._id?.slice(-8).toUpperCase()}
+                    {displayOrderId}
                   </span>
                 </p>
                 <p className="text-gray-500 text-sm">
@@ -832,7 +962,7 @@ const OrderDetailsPage = () => {
                   </h3>
                   <p className="text-amber-700 mb-4">
                     Payments are temporarily unavailable as we onboard{" "}
-                    <strong>PhonePe</strong> as our payment partner. Your order
+                    <strong>Paytm</strong> as our payment partner. Your order
                     is saved and will be payable once payments go live.
                   </p>
                   <Button
@@ -979,7 +1109,7 @@ const OrderDetailsPage = () => {
                         ₹{displayShippingCharge.toFixed(2)}
                       </span>
                     )}
-                    <span>FREE</span>
+                    <span>₹0.00</span>
                   </span>
                 ) : (
                   <span className="text-gray-500">--</span>
@@ -1102,24 +1232,22 @@ const OrderDetailsPage = () => {
 
           {/* Actions */}
           <div className="flex flex-wrap gap-4 justify-center">
-            {canDownloadInvoice && (
-              <Button
-                onClick={handleDownloadInvoice}
-                disabled={downloading.invoice}
-                variant="contained"
-                sx={{
-                  backgroundColor: "#0f766e",
-                  color: "white",
-                  padding: "12px 24px",
-                  borderRadius: "12px",
-                  fontWeight: 600,
-                  textTransform: "none",
-                  "&:hover": { backgroundColor: "#115e59" },
-                }}
-              >
-                {downloading.invoice ? "Downloading..." : "Download Invoice"}
-              </Button>
-            )}
+            <Button
+              onClick={handleDownloadInvoice}
+              disabled={!canDownloadInvoice || downloading.invoice}
+              variant="contained"
+              sx={{
+                backgroundColor: "#0f766e",
+                color: "white",
+                padding: "12px 24px",
+                borderRadius: "12px",
+                fontWeight: 600,
+                textTransform: "none",
+                "&:hover": { backgroundColor: "#115e59" },
+              }}
+            >
+              {downloading.invoice ? "Downloading..." : "Download Invoice"}
+            </Button>
             <Link href="/my-orders">
               <Button
                 variant="outlined"
@@ -1182,8 +1310,8 @@ const OrderDetailsPage = () => {
             Payments are temporarily unavailable.
           </p>
           <p className="text-gray-600">
-            We are currently onboarding <strong>PhonePe</strong> as our payment
-            partner. You will be notified once payments are enabled.
+            Please try again shortly. You can still save orders for later and
+            complete payment once the gateway is available.
           </p>
         </DialogContent>
         <DialogActions sx={{ justifyContent: "center", pb: 3, px: 3 }}>

@@ -58,6 +58,9 @@ export const getProducts = async (req, res) => {
       order = "desc",
       featured,
       newArrivals,
+      bestSeller,
+      priceDrop,
+      minDiscount,
       onSale,
       inStock,
       lowStock,
@@ -204,7 +207,47 @@ export const getProducts = async (req, res) => {
     // Boolean filters
     if (featured === "true") filter.isFeatured = true;
     if (newArrivals === "true") filter.isNewArrival = true;
+    if (bestSeller === "true") filter.isBestSeller = true;
     if (onSale === "true") filter.isOnSale = true;
+    if (priceDrop === "true") {
+      const parsedMinDiscount = Number(minDiscount);
+      const minDiscountPercent =
+        Number.isFinite(parsedMinDiscount) && parsedMinDiscount > 0
+          ? parsedMinDiscount
+          : 25;
+      exprFilters.push({
+        $gte: [
+          {
+            $max: [
+              { $ifNull: ["$discount", 0] },
+              {
+                $cond: [
+                  {
+                    $and: [
+                      { $gt: ["$originalPrice", 0] },
+                      { $gt: ["$originalPrice", "$price"] },
+                    ],
+                  },
+                  {
+                    $multiply: [
+                      {
+                        $divide: [
+                          { $subtract: ["$originalPrice", "$price"] },
+                          "$originalPrice",
+                        ],
+                      },
+                      100,
+                    ],
+                  },
+                  0,
+                ],
+              },
+            ],
+          },
+          minDiscountPercent,
+        ],
+      });
+    }
     if (inStock === "true") {
       exprFilters.push({
         $gt: [
@@ -568,6 +611,7 @@ export const createProduct = async (req, res) => {
       tags,
       isFeatured,
       isNewArrival,
+      isBestSeller,
       isExclusive,
       demandStatus,
       specifications,
@@ -687,6 +731,7 @@ export const createProduct = async (req, res) => {
       tags: tags || [],
       isFeatured: isFeatured || false,
       isNewArrival: isNewArrival || false,
+      isBestSeller: toBoolean(isBestSeller),
       isExclusive: toBoolean(isExclusive),
       demandStatus: demandStatus || "NORMAL",
       specifications,
@@ -782,6 +827,9 @@ export const updateProduct = async (req, res) => {
     }
     if ("isExclusive" in updateData) {
       updateData.isExclusive = toBoolean(updateData.isExclusive);
+    }
+    if ("isBestSeller" in updateData) {
+      updateData.isBestSeller = toBoolean(updateData.isBestSeller);
     }
 
     const product = await ProductModel.findById(id);
@@ -976,10 +1024,12 @@ export const updateStock = async (req, res) => {
         variant.stock = normalizedStock;
         variant.stock_quantity = normalizedStock;
       }
-    } else {
+      // Parent stock will be synced automatically by pre-save hook
+    } else if (!product.hasVariants || !product.variants.length) {
       product.stock = normalizedStock;
       product.stock_quantity = normalizedStock;
     }
+    // If hasVariants and no variantId, skip — parent is derived from variants
 
     await product.save();
 
