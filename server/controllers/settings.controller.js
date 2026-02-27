@@ -360,6 +360,7 @@ export const deleteSetting = async (req, res) => {
       "orderSettings",
       "storeInfo",
       "discountSettings",
+      "popupSettings",
       "headerSettings",
     ];
     if (protectedKeys.includes(key)) {

@@ -121,6 +121,7 @@ const Checkout = () => {
   const [isPayButtonDisabled, setIsPayButtonDisabled] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [paymentGatewayEnabled, setPaymentGatewayEnabled] = useState(true);
   const [isCreatingDemoOrder, setIsCreatingDemoOrder] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -171,6 +172,7 @@ const Checkout = () => {
     email: "",
   });
   const [guestLocationPayload, setGuestLocationPayload] = useState(null);
+  const [checkoutLocationPayload, setCheckoutLocationPayload] = useState(null);
   const [guestErrors, setGuestErrors] = useState({});
   const [gstNumber, setGstNumber] = useState("");
   const [gstError, setGstError] = useState("");
@@ -385,6 +387,28 @@ const Checkout = () => {
     }
     fetchAddresses();
   }, [fetchAddresses]);
+
+  useEffect(() => {
+    let active = true;
+
+    const fetchPaymentGatewayStatus = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/orders/payment-status`);
+        const data = await response.json();
+        if (!active) return;
+        setPaymentGatewayEnabled(Boolean(data?.data?.paymentEnabled));
+      } catch (error) {
+        if (!active) return;
+        // Keep checkout usable even if the status endpoint is unreachable.
+        setPaymentGatewayEnabled(true);
+      }
+    };
+
+    fetchPaymentGatewayStatus();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!authToken || gstSavedValue) return;

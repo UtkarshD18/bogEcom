@@ -1,0 +1,275 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(245, 158, 11, 0.08), transparent 40%),
+    rgba(17, 24, 39, 0.56);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+  z-index: 9998;
+}
+
+.wrapper {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.95) translateY(6px);
+  transition:
+    opacity 230ms ease,
+    transform 230ms ease;
+  z-index: 9999;
+}
+
+.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1) translateY(0);
+}
+
+.card {
+  position: relative;
+  width: min(560px, 100%);
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    0 26px 58px rgba(15, 23, 42, 0.28),
+    0 10px 22px rgba(15, 23, 42, 0.16);
+  isolation: isolate;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      140deg,
+      rgba(255, 255, 255, 0.22),
+      transparent 38%,
+      rgba(255, 255, 255, 0.08)
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cardClickable {
+  cursor: pointer;
+}
+
+.cardClickable:focus-visible {
+  outline: 3px solid rgba(17, 24, 39, 0.45);
+  outline-offset: 2px;
+}
+
+.closeButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
+  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.24);
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    background 140ms ease;
+  z-index: 3;
+}
+
+.closeButton:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
+}
+
+.media {
+  width: 100%;
+  aspect-ratio: 16 / 6.6;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.34), transparent 45%),
+    linear-gradient(135deg, #6a3e16, #bf7a2f 55%, #e7b061);
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scale(1.03);
+}
+
+.mediaFallback {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 75% 32%, rgba(255, 255, 255, 0.34), transparent 45%),
+    linear-gradient(125deg, #7c3f00, #be6f20 52%, #ebbe72);
+}
+
+.media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(17, 24, 39, 0.08), rgba(17, 24, 39, 0.24));
+  pointer-events: none;
+}
+
+.heroBadge {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #7c3f00;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.heroHint {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 2;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.65);
+  color: #f9fafb;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 24px 22px 22px;
+  display: grid;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.3rem, 1.04rem + 0.9vw, 1.95rem);
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.description {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.54;
+  opacity: 0.9;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metaPill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #7c3f00;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(124, 63, 0, 0.18);
+}
+
+.metaAction {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.72;
+}
+
+.ctaButton {
+  margin-top: 2px;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(140deg, #0f172a, #111827 42%, #1f2937);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.94rem;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.24);
+  transition:
+    transform 140ms ease,
+    filter 140ms ease;
+}
+
+.ctaButton:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.ctaButton:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 640px) {
+  .wrapper {
+    padding: 12px;
+    align-items: end;
+  }
+
+  .card {
+    border-radius: 19px;
+  }
+
+  .content {
+    padding: 18px 16px 16px;
+    gap: 10px;
+  }
+
+  .heroBadge {
+    left: 10px;
+    top: 10px;
+    font-size: 11px;
+  }
+
+  .heroHint {
+    right: 10px;
+    bottom: 9px;
+    font-size: 11px;
+  }
+
+  .closeButton {
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+  }
+}
+
