@@ -468,7 +468,7 @@ const sendTicketRegistrationEmail = async (ticket) => {
     subtitle: "Your request has been registered with HealthyOneGram Customer Care",
     greeting: `Hello, ${safeName}!`,
     intro:
-      "Thank you for contacting us. Your support ticket has been generated successfully and registered with our customer care team.",
+      "Thank you for contacting us. Your support ticket has been generated successfully and registered with our support team.",
     details: [
       `<strong>Ticket ID:</strong> ${safeTicketId}`,
       `<strong>Status:</strong> ${safeStatus}`,
@@ -584,7 +584,7 @@ const sendTicketUpdateEmail = async (ticket) => {
       status,
       updated_at: updatedAt,
       admin_reply: safeReply,
-      support_url: `${SUPPORT_STORE_URL}/customer-care`,
+      support_url: `${SUPPORT_STORE_URL}/contact`,
       year: getIstYear(),
     },
     text,
@@ -602,7 +602,7 @@ const sendTicketUpdateEmail = async (ticket) => {
 
   const fallbackHtml = buildSupportEmailLayout({
     title: "Support Ticket Status Update",
-    subtitle: "Your customer care ticket has a new status update",
+    subtitle: "Your support ticket has a new status update",
     greeting: `Hello, ${escapeHtml(customerName)}!`,
     intro: `Your support request <strong>${escapeHtml(ticketId)}</strong> has been updated by our team.`,
     details: [
