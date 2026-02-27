@@ -59,6 +59,37 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   )
     .trim()
     .toUpperCase();
+  const internalOrderId = String(order?._id || order?.id || "").trim();
+
+  const copyToClipboard = async (value, label = "value") => {
+    const safeValue = String(value || "").trim();
+    if (!safeValue) {
+      toast.error(`No ${label} available`);
+      return;
+    }
+
+    try {
+      if (typeof navigator !== "undefined" && navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(safeValue);
+      } else if (typeof document !== "undefined") {
+        const textArea = document.createElement("textarea");
+        textArea.value = safeValue;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "absolute";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      } else {
+        throw new Error("Clipboard not available");
+      }
+
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Failed to copy ${label}`);
+    }
+  };
 
   const handleDownloadInvoice = async () => {
     try {
@@ -391,6 +422,32 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
                 Loading customer reviews...
               </p>
             )}
+
+            <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
+              <div className="text-gray-800 font-semibold">Order References</div>
+              <div className="mt-3 grid md:grid-cols-2 gap-3 text-sm">
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                  <span className="font-semibold text-gray-700">Order No:</span>{" "}
+                  <span className="text-gray-800">{orderDisplayId || "N/A"}</span>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-semibold text-gray-700">Internal ID:</span>{" "}
+                    <span className="text-gray-800 break-all">
+                      {internalOrderId || "N/A"}
+                    </span>
+                  </div>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={!internalOrderId}
+                    onClick={() => copyToClipboard(internalOrderId, "Internal ID")}
+                  >
+                    Copy
+                  </Button>
+                </div>
+              </div>
+            </div>
 
             {/* Invoice Section */}
             <div className="mt-6 bg-white rounded-lg shadow-sm p-4">
