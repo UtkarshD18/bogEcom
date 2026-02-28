@@ -9,7 +9,7 @@ const API_URL = API_BASE_URL;
 const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
 const COIN_REWARD_KEY = "coinRewardAnimation";
 
-const DEFAULT_PAYTM_STAGE_URL = "https://securegw-stage.paytm.in";
+const DEFAULT_PAYTM_STAGE_URL = "https://securestage.paytmpayments.com";
 
 const getStoredAuthToken = () => {
   const cookieToken = cookies.get("accessToken");

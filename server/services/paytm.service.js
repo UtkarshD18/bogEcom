@@ -1,7 +1,7 @@
 import PaytmChecksum from "paytmchecksum";
 
-const DEFAULT_PAYTM_STAGE_URL = "https://securegw-stage.paytm.in";
-const DEFAULT_PAYTM_PROD_URL = "https://securegw.paytm.in";
+const DEFAULT_PAYTM_STAGE_URL = "https://securestage.paytmpayments.com";
+const DEFAULT_PAYTM_PROD_URL = "https://secure.paytmpayments.com";
 
 const normalizeBaseUrl = (value) =>
   String(value || "")
