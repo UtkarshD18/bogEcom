@@ -3,6 +3,7 @@
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
+import ManagedPopup from "@/components/ManagedPopup";
 import NotificationHandler from "@/components/NotificationHandler";
 import OfferPopup from "@/components/OfferPopup";
 import CartDrawer from "@/components/CartDrawer";
@@ -52,6 +53,7 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
         {children}
       </main>
       <Footer />
+      <ManagedPopup />
       <OfferPopup />
       <NotificationHandler />
       <CartDrawer />
