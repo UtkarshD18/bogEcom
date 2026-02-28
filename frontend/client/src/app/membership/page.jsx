@@ -399,7 +399,10 @@ export default function MembershipPage() {
       router.push("/login?redirect=/membership/checkout");
       return;
     }
-    if (membershipStatus?.isMember && !membershipStatus?.isExpired) {
+    const memberNow =
+      Boolean(membershipStatus?.isMember ?? membershipStatus?.membershipActive) &&
+      !Boolean(membershipStatus?.isExpired);
+    if (memberNow) {
       return;
     }
     router.push("/membership/checkout");

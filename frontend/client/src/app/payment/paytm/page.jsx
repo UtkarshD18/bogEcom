@@ -35,7 +35,6 @@ const loadScript = async (src) =>
     const script = document.createElement("script");
     script.src = src;
     script.async = true;
-    script.crossOrigin = "anonymous";
     script.onload = () => {
       script.dataset.loaded = "true";
       resolve();
@@ -48,6 +47,28 @@ const sanitizePath = (value, fallback) => {
   const normalized = String(value || "").trim();
   if (!normalized.startsWith("/")) return fallback;
   return normalized;
+};
+
+const normalizeProvider = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
+
+const buildMembershipReturnUrl = (params) => {
+  if (typeof window === "undefined") return params.returnPath;
+  const target = new URL(params.returnPath, window.location.origin);
+  target.searchParams.set("merchantTransactionId", params.orderId);
+  if (params.planId) {
+    target.searchParams.set("planId", params.planId);
+  }
+  const provider = normalizeProvider(params.paymentProvider || "PAYTM");
+  if (provider) {
+    target.searchParams.set("paymentProvider", provider);
+  }
+  if (params.coins) {
+    target.searchParams.set("coins", params.coins);
+  }
+  return target.toString();
 };
 
 const PaytmReturn = () => {
@@ -76,6 +97,9 @@ const PaytmReturn = () => {
       orderId: String(search.get("orderId") || "").trim(),
       txnToken: String(search.get("txnToken") || "").trim(),
       amount: String(search.get("amount") || "").trim(),
+      planId: String(search.get("planId") || "").trim(),
+      paymentProvider: normalizeProvider(search.get("paymentProvider") || "PAYTM"),
+      coins: String(search.get("coins") || "").trim(),
       flow: String(search.get("flow") || "order")
         .trim()
         .toLowerCase(),
@@ -129,7 +153,7 @@ const PaytmReturn = () => {
                   if (disposed) return;
 
                   if (params.flow === "membership") {
-                    window.location.href = params.returnPath;
+                    window.location.href = buildMembershipReturnUrl(params);
                     return;
                   }
 
@@ -258,6 +282,10 @@ const PaytmReturn = () => {
     };
 
     const checkStatus = async () => {
+      if (params.flow === "membership") {
+        return;
+      }
+
       const verified = await verifyPendingOrder();
       if (verified || disposed) return;
 

@@ -375,11 +375,9 @@ const Contact = () => {
                 <div>
                   <h3 className="font-bold text-gray-800 mb-2">Our Address</h3>
                   <p className="text-gray-600 text-sm leading-relaxed">
-                    Healthy One Gram – Mega Health Store
+                    G-220,225, RIICO, Sitapura Industrial Area,
                     <br />
-                    Rajasthan Centre of Advanced Technology (R-CAT)
-                    <br />
-                    Jaipur, Rajasthan, India
+                    Jaipur, Rajasthan 302022
                   </p>
                 </div>
               </div>
