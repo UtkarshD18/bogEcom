@@ -24,6 +24,28 @@ const sanitizePath = (value, fallback) => {
   return normalized;
 };
 
+const normalizeProvider = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
+
+const buildMembershipReturnUrl = (params) => {
+  if (typeof window === "undefined") return params.returnPath;
+  const target = new URL(params.returnPath, window.location.origin);
+  target.searchParams.set("merchantTransactionId", params.merchantOrderId);
+  if (params.planId) {
+    target.searchParams.set("planId", params.planId);
+  }
+  const provider = normalizeProvider(params.paymentProvider);
+  if (provider) {
+    target.searchParams.set("paymentProvider", provider);
+  }
+  if (params.coins) {
+    target.searchParams.set("coins", params.coins);
+  }
+  return target.toString();
+};
+
 const PhonePeReturn = () => {
   const [message, setMessage] = useState(
     "We are verifying your payment status. Please wait...",
@@ -44,6 +66,9 @@ const PhonePeReturn = () => {
       merchantOrderId: String(
         search.get("merchantOrderId") || search.get("orderId") || "",
       ).trim(),
+      planId: String(search.get("planId") || "").trim(),
+      paymentProvider: normalizeProvider(search.get("paymentProvider") || "PHONEPE"),
+      coins: String(search.get("coins") || "").trim(),
       flow: String(search.get("flow") || "order")
         .trim()
         .toLowerCase(),
@@ -188,6 +213,18 @@ const PhonePeReturn = () => {
     };
 
     const checkStatus = async () => {
+      if (params.flow === "membership") {
+        setMessage("Payment received. Redirecting to membership verification...");
+        if (!redirectedRef.current) {
+          redirectedRef.current = true;
+          const membershipReturnUrl = buildMembershipReturnUrl(params);
+          setTimeout(() => {
+            window.location.href = membershipReturnUrl;
+          }, 900);
+        }
+        return;
+      }
+
       const verified = await verifyPendingOrder();
       if (verified || disposed) return;
 
