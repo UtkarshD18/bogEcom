@@ -49,16 +49,40 @@ const buildLimiterKey = (req, scope, includeApiBucket = false) => {
 
 const skipPreflight = (req) => req.method === "OPTIONS";
 
-const generalLimitMax = toPositiveInteger(process.env.RATE_LIMIT_GENERAL_MAX, 1500);
-const adminLimitMax = toPositiveInteger(process.env.RATE_LIMIT_ADMIN_MAX, 2500);
-const authLimitMax = toPositiveInteger(process.env.RATE_LIMIT_AUTH_MAX, 80);
-const paymentLimitMax = toPositiveInteger(process.env.RATE_LIMIT_PAYMENT_MAX, 12);
-const uploadLimitMax = toPositiveInteger(process.env.RATE_LIMIT_UPLOAD_MAX, 30);
-const supportLimitMax = toPositiveInteger(process.env.RATE_LIMIT_SUPPORT_MAX, 10);
+const limiterWindowMs =
+  toPositiveInteger(process.env.RATE_LIMIT_WINDOW_SECONDS, 60) * 1000;
+const defaultLimitMax = toPositiveInteger(
+  process.env.RATE_LIMIT_DEFAULT_MAX,
+  2500,
+);
+const generalLimitMax = toPositiveInteger(
+  process.env.RATE_LIMIT_GENERAL_MAX,
+  defaultLimitMax,
+);
+const adminLimitMax = toPositiveInteger(
+  process.env.RATE_LIMIT_ADMIN_MAX,
+  defaultLimitMax,
+);
+const authLimitMax = toPositiveInteger(
+  process.env.RATE_LIMIT_AUTH_MAX,
+  defaultLimitMax,
+);
+const paymentLimitMax = toPositiveInteger(
+  process.env.RATE_LIMIT_PAYMENT_MAX,
+  defaultLimitMax,
+);
+const uploadLimitMax = toPositiveInteger(
+  process.env.RATE_LIMIT_UPLOAD_MAX,
+  defaultLimitMax,
+);
+const supportLimitMax = toPositiveInteger(
+  process.env.RATE_LIMIT_SUPPORT_MAX,
+  defaultLimitMax,
+);
 
-// General API rate limit - scoped by top-level /api/* route and client IP
+// General API rate limit - scoped by top-level /api/* route and client IP.
 export const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: limiterWindowMs, // 1 minute by default
   max: generalLimitMax,
   message: {
     error: true,
@@ -73,7 +97,7 @@ export const generalLimiter = rateLimit({
 
 // Admin rate limit - Higher limit for admin panel operations
 export const adminLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: limiterWindowMs,
   max: adminLimitMax,
   message: {
     error: true,
@@ -86,15 +110,14 @@ export const adminLimiter = rateLimit({
   skip: skipPreflight,
 });
 
-// Auth rate limit - 50 attempts per 15 minutes (reasonable for admin development)
+// Auth rate limit - currently aligned with 1-minute burst settings.
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: limiterWindowMs,
   max: authLimitMax,
   message: {
     error: true,
     success: false,
-    message:
-      "Too many authentication attempts. Please try again in 15 minutes.",
+    message: "Too many authentication attempts. Please try again in a minute.",
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -103,9 +126,9 @@ export const authLimiter = rateLimit({
   skip: (req) => skipPreflight(req) || req.path === "/logout",
 });
 
-// Payment rate limit - 10 requests per minute (prevent payment abuse)
+// Payment rate limit.
 export const paymentLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
+  windowMs: limiterWindowMs,
   max: paymentLimitMax,
   message: {
     error: true,
@@ -118,9 +141,9 @@ export const paymentLimiter = rateLimit({
   skip: skipPreflight,
 });
 
-// Upload rate limit - 20 uploads per 10 minutes
+// Upload rate limit.
 export const uploadLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
+  windowMs: limiterWindowMs,
   max: uploadLimitMax,
   message: {
     error: true,
@@ -133,14 +156,14 @@ export const uploadLimiter = rateLimit({
   skip: skipPreflight,
 });
 
-// Support ticket limiter - tighter limit to reduce spam on customer-care forms
+// Support ticket limiter.
 export const supportLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: limiterWindowMs,
   max: supportLimitMax,
   message: {
     error: true,
     success: false,
-    message: "Too many support requests. Please try again after a few minutes.",
+    message: "Too many support requests. Please try again in a minute.",
   },
   standardHeaders: true,
   legacyHeaders: false,
