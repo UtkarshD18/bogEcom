@@ -22,6 +22,7 @@ const resolveSocketUrl = () => {
 };
 
 const SOCKET_URL = resolveSocketUrl();
+const SOCKET_TRANSPORTS = ["polling"];
 const API_ROOT = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
@@ -174,8 +175,12 @@ const NotificationHandler = () => {
 
     const socket = io(SOCKET_URL, {
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      // Production ingress currently accepts polling but can reject direct websocket upgrades.
+      transports: SOCKET_TRANSPORTS,
       reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       timeout: 8000,
     });
 
