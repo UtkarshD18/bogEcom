@@ -27,6 +27,10 @@ import {
   getPaytmStatus,
 } from "../services/paytm.service.js";
 import {
+  createPhonePePayment,
+  getPhonePeOrderStatus,
+} from "../services/phonepe.service.js";
+import {
   getShippingQuote,
   validateIndianPincode,
 } from "../services/shippingRate.service.js";
@@ -77,16 +81,20 @@ import { autoCreateShipmentForPaidOrder } from "../services/automatedShipping.se
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
-const DEFAULT_PAYMENT_PROVIDER = "PAYTM";
+const PAYMENT_PROVIDERS = Object.freeze({
+  PAYTM: "PAYTM",
+  PHONEPE: "PHONEPE",
+});
+const DEFAULT_PAYMENT_PROVIDER = PAYMENT_PROVIDERS.PAYTM;
 const configuredPaymentProvider = String(
   process.env.PAYMENT_PROVIDER || DEFAULT_PAYMENT_PROVIDER,
-).toUpperCase();
-const PAYMENT_PROVIDER =
-  configuredPaymentProvider === "PAYTM"
-    ? configuredPaymentProvider
-    : DEFAULT_PAYMENT_PROVIDER;
-const PAYTM_MERCHANT_ID = process.env.PAYTM_MERCHANT_ID || "";
-const PAYTM_MERCHANT_KEY = process.env.PAYTM_MERCHANT_KEY || "";
+)
+  .trim()
+  .toUpperCase();
+const PAYTM_MERCHANT_ID = String(process.env.PAYTM_MERCHANT_ID || "").trim();
+const PAYTM_MERCHANT_KEY = String(process.env.PAYTM_MERCHANT_KEY || "").trim();
+const PHONEPE_CLIENT_ID = String(process.env.PHONEPE_CLIENT_ID || "").trim();
+const PHONEPE_CLIENT_SECRET = String(process.env.PHONEPE_CLIENT_SECRET || "").trim();
 const isTruthyEnv = (value) => {
   const normalized = String(value ?? "")
     .trim()
@@ -98,13 +106,68 @@ const isTruthyEnv = (value) => {
     normalized === "on"
   );
 };
-const PAYTM_ENV_ENABLED = Boolean(
-  PAYMENT_PROVIDER === "PAYTM" &&
+const PAYMENT_PROVIDER_ENV_ENABLED = Object.freeze({
+  PAYTM: Boolean(
     isTruthyEnv(process.env.PAYTM_ENABLED) &&
-    PAYTM_MERCHANT_ID &&
-    PAYTM_MERCHANT_KEY,
+      PAYTM_MERCHANT_ID &&
+      PAYTM_MERCHANT_KEY,
+  ),
+  PHONEPE: Boolean(
+    isTruthyEnv(process.env.PHONEPE_ENABLED) &&
+      PHONEPE_CLIENT_ID &&
+      PHONEPE_CLIENT_SECRET,
+  ),
+});
+const getEnabledPaymentProviders = () =>
+  Object.entries(PAYMENT_PROVIDER_ENV_ENABLED)
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([provider]) => provider);
+const resolveDefaultPaymentProvider = () => {
+  const requested = configuredPaymentProvider;
+  const isSupported = Object.values(PAYMENT_PROVIDERS).includes(requested);
+  if (isSupported && PAYMENT_PROVIDER_ENV_ENABLED[requested]) {
+    return requested;
+  }
+
+  const orderedProviders =
+    requested === PAYMENT_PROVIDERS.PHONEPE
+      ? [PAYMENT_PROVIDERS.PHONEPE, PAYMENT_PROVIDERS.PAYTM]
+      : [PAYMENT_PROVIDERS.PAYTM, PAYMENT_PROVIDERS.PHONEPE];
+  return (
+    orderedProviders.find(
+      (provider) => PAYMENT_PROVIDER_ENV_ENABLED[provider],
+    ) || null
+  );
+};
+const PAYMENT_PROVIDER = resolveDefaultPaymentProvider();
+const PAYMENT_ENV_ENABLED = Boolean(
+  Object.values(PAYMENT_PROVIDER_ENV_ENABLED).some(Boolean),
 );
-const PAYMENT_ENV_ENABLED = PAYTM_ENV_ENABLED;
+const resolvePaymentProviderForRequest = (requestedProvider) => {
+  const normalized = String(requestedProvider || "")
+    .trim()
+    .toUpperCase();
+  if (normalized) {
+    if (!Object.values(PAYMENT_PROVIDERS).includes(normalized)) {
+      throw new AppError("INVALID_PAYMENT_METHOD", {
+        provider: normalized,
+      });
+    }
+    if (!PAYMENT_PROVIDER_ENV_ENABLED[normalized]) {
+      throw new AppError("PAYMENT_DISABLED", {
+        provider: normalized,
+        enabledProviders: getEnabledPaymentProviders(),
+      });
+    }
+    return normalized;
+  }
+
+  if (PAYMENT_PROVIDER) return PAYMENT_PROVIDER;
+
+  throw new AppError("PAYMENT_DISABLED", {
+    enabledProviders: getEnabledPaymentProviders(),
+  });
+};
 
 const SETTINGS_CACHE_TTL_MS = 30 * 1000;
 const settingsCache = new Map();
@@ -734,6 +797,91 @@ const verifyPaytmWebhookState = async (merchantTransactionId) => {
   }
 };
 
+const decodeMaybeJson = (value) => {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const decodeMaybeBase64Json = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  try {
+    const decoded = Buffer.from(normalized, "base64").toString("utf-8");
+    return decodeMaybeJson(decoded);
+  } catch {
+    return null;
+  }
+};
+
+const extractPhonePeWebhookMerchantOrderId = (req, payload = {}) => {
+  const payloadObj = payload && typeof payload === "object" ? payload : {};
+  const nestedPayload =
+    decodeMaybeJson(payloadObj.payload) ||
+    decodeMaybeBase64Json(payloadObj.payload) ||
+    null;
+  const nestedResponse =
+    decodeMaybeJson(payloadObj.response) ||
+    decodeMaybeBase64Json(payloadObj.response) ||
+    null;
+
+  return (
+    payloadObj.merchantOrderId ||
+    payloadObj.merchant_order_id ||
+    payloadObj.orderId ||
+    payloadObj.order_id ||
+    payloadObj.transactionId ||
+    nestedPayload?.merchantOrderId ||
+    nestedPayload?.merchant_order_id ||
+    nestedPayload?.data?.merchantOrderId ||
+    nestedResponse?.merchantOrderId ||
+    nestedResponse?.data?.merchantOrderId ||
+    req?.query?.merchantOrderId ||
+    req?.body?.merchantOrderId ||
+    null
+  );
+};
+
+const normalizePhonePeState = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
+
+const verifyPhonePeWebhookState = async (merchantOrderId) => {
+  try {
+    const statusResponse = await getPhonePeOrderStatus({ merchantOrderId });
+    const state = normalizePhonePeState(statusResponse?.state);
+    const paymentDetails = Array.isArray(statusResponse?.paymentDetails)
+      ? statusResponse.paymentDetails
+      : [];
+    const firstPayment = paymentDetails[0] || {};
+
+    return {
+      state,
+      merchantOrderId: String(merchantOrderId || "").trim(),
+      phonepeOrderId: String(statusResponse?.orderId || "").trim() || null,
+      transactionId:
+        firstPayment?.transactionId ||
+        firstPayment?.providerReferenceId ||
+        firstPayment?.utr ||
+        null,
+      raw: statusResponse,
+    };
+  } catch (error) {
+    logger.warn("handlePhonePeWebhook", "PhonePe status verification failed", {
+      merchantOrderId,
+      error: error?.message || String(error),
+    });
+    return null;
+  }
+};
+
 const normalizeGuestDetails = (guestDetails = {}) => ({
   fullName: String(guestDetails.fullName || "").trim(),
   phone: String(guestDetails.phone || "").trim(),
@@ -909,7 +1057,11 @@ const authorizePurchaseOrderForCheckout = async ({
 
 logger.info(
   "Payment System",
-  `Provider: ${PAYMENT_PROVIDER}, EnvEnabled: ${PAYMENT_ENV_ENABLED}`,
+  `DefaultProvider: ${PAYMENT_PROVIDER || "NONE"}, EnvEnabled: ${PAYMENT_ENV_ENABLED}`,
+  {
+    configuredProvider: configuredPaymentProvider,
+    providerReadiness: PAYMENT_PROVIDER_ENV_ENABLED,
+  },
 );
 
 const isInvoiceEligible = (order) => {
@@ -2162,7 +2314,7 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
 // ==================== ORDER CREATION & PAYMENT ENDPOINTS ====================
 
 /**
- * Create order (Checkout) - Paytm Integration
+ * Create order (Checkout) - Paytm / PhonePe integration
  * @route POST /api/orders
  * @access User (authenticated) / Guest
  * @param {Array} products - Product array with details
@@ -2202,8 +2354,12 @@ export const createOrder = asyncHandler(async (req, res) => {
       coinRedeem,
       purchaseOrderId,
       paymentType,
+      paymentProvider: requestedPaymentProvider,
     } = req.validatedData;
     const userId = req.user || null;
+    const selectedPaymentProvider = resolvePaymentProviderForRequest(
+      requestedPaymentProvider,
+    );
 
     logger.debug("createOrder", "Creating order", {
       userId,
@@ -2295,7 +2451,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       statusTimeline: [
         { status: ORDER_STATUS.PENDING, source: "ORDER_CREATE", timestamp: new Date() },
       ],
-      paymentMethod: PAYMENT_PROVIDER,
+      paymentMethod: selectedPaymentProvider,
       originalPrice: pricing.originalAmount,
       finalAmount: computedFinalAmount,
       couponCode: normalizedCouponCode,
@@ -2446,22 +2602,22 @@ export const createOrder = asyncHandler(async (req, res) => {
 
     await sendOrderConfirmationEmail(order);
 
-    if (PAYMENT_PROVIDER === "PAYTM") {
-      const primaryOrigin = String(process.env.CLIENT_URL || "")
-        .split(",")[0]
-        .trim()
-        .replace(/\/+$/, "");
-      const backendUrl = String(
-        process.env.BACKEND_URL ||
-          process.env.API_BASE_URL ||
-          (process.env.GAE_DEFAULT_HOSTNAME
-            ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
-            : ""),
-      )
-        .trim()
-        .replace(/\/+$/, "");
+    const primaryOrigin = String(process.env.CLIENT_URL || "")
+      .split(",")[0]
+      .trim()
+      .replace(/\/+$/, "");
+    const backendUrl = String(
+      process.env.BACKEND_URL ||
+        process.env.API_BASE_URL ||
+        (process.env.GAE_DEFAULT_HOSTNAME
+          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
+          : ""),
+    )
+      .trim()
+      .replace(/\/+$/, "");
+    const merchantTransactionId = `BOG_${order._id}`;
 
-      const merchantTransactionId = `BOG_${order._id}`;
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
       const callbackUrl =
         process.env.PAYTM_ORDER_CALLBACK_URL ||
         process.env.PAYTM_CALLBACK_URL ||
@@ -2509,7 +2665,7 @@ export const createOrder = asyncHandler(async (req, res) => {
         res,
         {
           orderId: order._id,
-          paymentProvider: "PAYTM",
+          paymentProvider: PAYMENT_PROVIDERS.PAYTM,
           paymentUrl: paymentUrlWithGateway,
           merchantTransactionId,
           txnToken: paytmResponse.txnToken,
@@ -2520,16 +2676,52 @@ export const createOrder = asyncHandler(async (req, res) => {
       );
     }
 
-    return sendSuccess(
-      res,
-      {
-        orderId: order._id,
-        status: "pending",
-        message: "Order created. Payment provider not configured.",
-      },
-      "Order created successfully",
-      201,
-    );
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PHONEPE) {
+      const defaultPhonePeCallback = `${backendUrl}/api/orders/webhook/phonepe`;
+      const callbackUrl =
+        process.env.PHONEPE_ORDER_CALLBACK_URL ||
+        `${defaultPhonePeCallback}?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}`;
+      const defaultPhonePeRedirect =
+        `${primaryOrigin}/payment/phonepe?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}&flow=order&returnPath=${encodeURIComponent("/my-orders")}`;
+      const redirectUrl =
+        process.env.PHONEPE_REDIRECT_URL || defaultPhonePeRedirect;
+
+      const phonepeResponse = await createPhonePePayment({
+        amount: payableAmount,
+        merchantOrderId: merchantTransactionId,
+        redirectUrl,
+        callbackUrl,
+        customerId: userId ? String(userId) : "guest",
+      });
+
+      order.paymentId = merchantTransactionId;
+      order.phonepeMerchantOrderId = merchantTransactionId;
+      order.phonepeOrderId = phonepeResponse.phonepeOrderId || null;
+      await order.save();
+
+      return sendSuccess(
+        res,
+        {
+          orderId: order._id,
+          paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+          paymentUrl: phonepeResponse.redirectUrl,
+          merchantTransactionId,
+          phonepeOrderId: phonepeResponse.phonepeOrderId,
+          state: phonepeResponse.state,
+          expiresAt: phonepeResponse.expireAt,
+        },
+        "Order created successfully",
+        201,
+      );
+    }
+
+    throw new AppError("INVALID_PAYMENT_METHOD", {
+      provider: selectedPaymentProvider,
+    });
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -3004,18 +3196,30 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
 export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
   try {
     const paymentEnabled = await isPaymentEnabled();
+    const enabledProviders = getEnabledPaymentProviders();
+    const defaultProvider = PAYMENT_PROVIDER || enabledProviders[0] || null;
+    const providerStatus = Object.fromEntries(
+      Object.entries(PAYMENT_PROVIDER_ENV_ENABLED).map(([provider, enabled]) => [
+        provider,
+        Boolean(enabled),
+      ]),
+    );
 
     logger.info("getPaymentGatewayStatus", "Status check", {
-      provider: PAYMENT_PROVIDER,
+      provider: defaultProvider,
       enabled: paymentEnabled,
+      enabledProviders,
     });
 
     return sendSuccess(res, {
       paymentEnabled,
-      provider: PAYMENT_PROVIDER,
+      provider: defaultProvider,
+      defaultProvider,
+      enabledProviders,
+      providers: providerStatus,
       message: paymentEnabled
-        ? `${PAYMENT_PROVIDER} payment gateway is active`
-        : `${PAYMENT_PROVIDER} is currently unavailable. You can still save orders for later.`,
+        ? `${defaultProvider || "Payment gateway"} is active`
+        : "Payment gateways are currently unavailable. You can still save orders for later.",
       canSaveOrder: true,
       configurationStatus: paymentEnabled ? "configured" : "not_configured",
     });
@@ -3026,6 +3230,121 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
     return sendError(res, error);
   }
 });
+
+const runPostPaymentSuccessTasks = async ({
+  order,
+  webhookContext = "paymentWebhook",
+  shipmentSource = "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
+}) => {
+  if (!order) return;
+
+  if (order.user && Number(order.coinRedemption?.coinsUsed || 0) > 0) {
+    try {
+      await applyRedemptionToUser({
+        userId: order.user,
+        coinsUsed: Number(order.coinRedemption.coinsUsed || 0),
+        source: "order",
+        referenceId: String(order._id),
+        meta: {
+          orderId: String(order._id),
+          paymentId: order.paymentId || null,
+        },
+      });
+    } catch (coinError) {
+      logger.error(webhookContext, "Failed to deduct redeemed coins", {
+        orderId: order._id,
+        error: coinError.message,
+      });
+    }
+  }
+
+  if (order.couponCode) {
+    recordCouponUsage(order).catch((err) =>
+      logger.error(webhookContext, "Failed to record coupon usage", {
+        orderId: order._id,
+        error: err.message,
+      }),
+    );
+  }
+
+  if (order.influencerId && !order.influencerStatsSynced) {
+    const effectiveAmount = order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
+    const commissionBaseAmount = resolveInfluencerCommissionBase(order);
+    let commission = order.influencerCommission || 0;
+    if (!commission && order.influencerId) {
+      commission = await calculateInfluencerCommission(
+        order.influencerId,
+        commissionBaseAmount,
+      );
+      order.influencerCommission = commission;
+    }
+
+    try {
+      const influencerStatsSynced = await updateInfluencerStats(
+        order.influencerId,
+        effectiveAmount,
+        commission,
+      );
+      if (influencerStatsSynced) {
+        order.influencerStatsSynced = true;
+        await order.save();
+      }
+    } catch (err) {
+      logger.error(webhookContext, "Failed to update influencer stats", {
+        orderId: order._id,
+        error: err.message,
+      });
+    }
+  }
+
+  if (order.user) {
+    try {
+      const effectiveAmount = Math.max(
+        Number(order.subtotal || 0) - Number(order.discount || 0),
+        0,
+      );
+      const awardResult = await awardCoinsToUser({
+        userId: order.user,
+        orderAmount: effectiveAmount,
+        source: "order",
+        referenceId: String(order._id),
+      });
+      if (awardResult.coinsAwarded > 0) {
+        order.coinsAwarded = awardResult.coinsAwarded;
+        await order.save();
+      }
+    } catch (coinError) {
+      logger.error(webhookContext, "Failed to award coins", {
+        orderId: order._id,
+        error: coinError.message,
+      });
+    }
+  }
+
+  const autoShipmentResult = await autoCreateShipmentForPaidOrder({
+    orderId: order._id,
+    source: shipmentSource,
+  });
+  if (!autoShipmentResult.ok && !autoShipmentResult.skipped) {
+    logger.error(webhookContext, "Automatic shipment booking failed", {
+      orderId: order._id,
+      reason: autoShipmentResult.reason || "SHIPMENT_CREATION_FAILED",
+      error: autoShipmentResult.error?.message || null,
+    });
+  }
+
+  if (autoShipmentResult?.order) {
+    order.awb_number = autoShipmentResult.order.awb_number;
+    order.awbNumber = autoShipmentResult.order.awbNumber;
+    order.shipment_status = autoShipmentResult.order.shipment_status;
+    order.shipmentStatus = autoShipmentResult.order.shipmentStatus;
+    order.shipping_provider = autoShipmentResult.order.shipping_provider;
+    order.courierName = autoShipmentResult.order.courierName;
+    order.trackingUrl = autoShipmentResult.order.trackingUrl;
+    order.shipmentId = autoShipmentResult.order.shipmentId;
+    order.manifestId = autoShipmentResult.order.manifestId;
+  }
+};
 
 // ==================== WEBHOOK HANDLERS ====================
 
@@ -3038,8 +3357,8 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
   try {
     logger.debug("handlePaytmWebhook", "Webhook received");
 
-    if (!(await isPaymentEnabled())) {
-      logger.warn("handlePaytmWebhook", "Paytm not enabled");
+    if (!PAYMENT_PROVIDER_ENV_ENABLED.PAYTM) {
+      logger.warn("handlePaytmWebhook", "Paytm environment not enabled");
       return sendSuccess(res, {}, "Webhook received");
     }
 
@@ -3158,117 +3477,11 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     }
 
     if (!wasPaid && order.payment_status === "paid") {
-      if (order.user && Number(order.coinRedemption?.coinsUsed || 0) > 0) {
-        try {
-          await applyRedemptionToUser({
-            userId: order.user,
-            coinsUsed: Number(order.coinRedemption.coinsUsed || 0),
-            source: "order",
-            referenceId: String(order._id),
-            meta: {
-              orderId: String(order._id),
-              paymentId: order.paymentId || null,
-            },
-          });
-        } catch (coinError) {
-          logger.error(
-            "handlePaytmWebhook",
-            "Failed to deduct redeemed coins",
-            {
-              orderId: order._id,
-              error: coinError.message,
-            },
-          );
-        }
-      }
-
-      if (order.couponCode) {
-        recordCouponUsage(order).catch((err) =>
-          logger.error("handlePaytmWebhook", "Failed to record coupon usage", {
-            orderId: order._id,
-            error: err.message,
-          }),
-        );
-      }
-
-      if (order.influencerId && !order.influencerStatsSynced) {
-        const effectiveAmount =
-          order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
-        const commissionBaseAmount = resolveInfluencerCommissionBase(order);
-        let commission = order.influencerCommission || 0;
-        if (!commission && order.influencerId) {
-          commission = await calculateInfluencerCommission(
-            order.influencerId,
-            commissionBaseAmount,
-          );
-          order.influencerCommission = commission;
-        }
-
-        try {
-          const influencerStatsSynced = await updateInfluencerStats(
-            order.influencerId,
-            effectiveAmount,
-            commission,
-          );
-          if (influencerStatsSynced) {
-            order.influencerStatsSynced = true;
-            await order.save();
-          }
-        } catch (err) {
-          logger.error("handlePaytmWebhook", "Failed to update influencer stats", {
-            orderId: order._id,
-            error: err.message,
-          });
-        }
-      }
-
-      if (order.user) {
-        try {
-          const effectiveAmount = Math.max(
-            Number(order.subtotal || 0) - Number(order.discount || 0),
-            0,
-          );
-          const awardResult = await awardCoinsToUser({
-            userId: order.user,
-            orderAmount: effectiveAmount,
-            source: "order",
-            referenceId: String(order._id),
-          });
-          if (awardResult.coinsAwarded > 0) {
-            order.coinsAwarded = awardResult.coinsAwarded;
-            await order.save();
-          }
-        } catch (coinError) {
-          logger.error("handlePaytmWebhook", "Failed to award coins", {
-            orderId: order._id,
-            error: coinError.message,
-          });
-        }
-      }
-
-      const autoShipmentResult = await autoCreateShipmentForPaidOrder({
-        orderId: order._id,
-        source: "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
+      await runPostPaymentSuccessTasks({
+        order,
+        webhookContext: "handlePaytmWebhook",
+        shipmentSource: "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
       });
-      if (!autoShipmentResult.ok && !autoShipmentResult.skipped) {
-        logger.error("handlePaytmWebhook", "Automatic shipment booking failed", {
-          orderId: order._id,
-          reason: autoShipmentResult.reason || "SHIPMENT_CREATION_FAILED",
-          error: autoShipmentResult.error?.message || null,
-        });
-      }
-
-      if (autoShipmentResult?.order) {
-        order.awb_number = autoShipmentResult.order.awb_number;
-        order.awbNumber = autoShipmentResult.order.awbNumber;
-        order.shipment_status = autoShipmentResult.order.shipment_status;
-        order.shipmentStatus = autoShipmentResult.order.shipmentStatus;
-        order.shipping_provider = autoShipmentResult.order.shipping_provider;
-        order.courierName = autoShipmentResult.order.courierName;
-        order.trackingUrl = autoShipmentResult.order.trackingUrl;
-        order.shipmentId = autoShipmentResult.order.shipmentId;
-        order.manifestId = autoShipmentResult.order.manifestId;
-      }
     }
 
     syncOrderToFirestore(order, "update").catch((err) =>
@@ -3288,6 +3501,190 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     return sendError(res, error);
   }
 });
+
+/**
+ * PhonePe Webhook Handler
+ * @route POST /api/orders/webhook/phonepe
+ * @access Public (payment state verified via PhonePe status API)
+ */
+export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
+  try {
+    logger.debug("handlePhonePeWebhook", "Webhook received");
+
+    if (!PAYMENT_PROVIDER_ENV_ENABLED.PHONEPE) {
+      logger.warn("handlePhonePeWebhook", "PhonePe environment not enabled");
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    const merchantTransactionId = String(
+      extractPhonePeWebhookMerchantOrderId(req, req.body || {}) || "",
+    ).trim();
+
+    if (!merchantTransactionId) {
+      logger.warn("handlePhonePeWebhook", "Missing merchantOrderId");
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    if (!merchantTransactionId.startsWith("BOG_")) {
+      logger.warn("handlePhonePeWebhook", "Ignoring non-order transaction", {
+        merchantTransactionId,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    const orderId = merchantTransactionId.replace(/^BOG_/, "");
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      logger.warn("handlePhonePeWebhook", "Invalid orderId in transaction", {
+        merchantTransactionId,
+        orderId,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      logger.warn("handlePhonePeWebhook", "Order not found", {
+        merchantTransactionId,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    if (
+      order.phonepeMerchantOrderId &&
+      String(order.phonepeMerchantOrderId) !== String(merchantTransactionId)
+    ) {
+      logger.warn("handlePhonePeWebhook", "Transaction/order mismatch", {
+        orderId: order._id,
+        merchantTransactionId,
+        expected: order.phonepeMerchantOrderId,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    const verifiedStatus = await verifyPhonePeWebhookState(merchantTransactionId);
+    if (!verifiedStatus) {
+      return sendSuccess(res, {}, "Webhook acknowledged");
+    }
+
+    const normalizedState = normalizePhonePeState(verifiedStatus.state);
+    const transactionId = verifiedStatus.transactionId || null;
+    const wasPaid = order.payment_status === "paid";
+    let orderMutated = false;
+
+    if (
+      String(order.phonepeMerchantOrderId || "") !== String(merchantTransactionId)
+    ) {
+      order.phonepeMerchantOrderId = merchantTransactionId;
+      orderMutated = true;
+    }
+
+    if (
+      verifiedStatus.phonepeOrderId &&
+      String(order.phonepeOrderId || "") !== String(verifiedStatus.phonepeOrderId)
+    ) {
+      order.phonepeOrderId = verifiedStatus.phonepeOrderId;
+      orderMutated = true;
+    }
+
+    if (transactionId && String(order.phonepeTransactionId || "") !== String(transactionId)) {
+      order.phonepeTransactionId = transactionId;
+      order.paymentId = transactionId;
+      orderMutated = true;
+    }
+
+    if (normalizedState.includes("COMPLETED") || normalizedState.includes("SUCCESS")) {
+      if (!wasPaid) {
+        order.payment_status = "paid";
+        applyOrderStatusTransition(order, ORDER_STATUS.ACCEPTED, {
+          source: "PHONEPE_WEBHOOK",
+        });
+        await confirmInventory(order, "PHONEPE_WEBHOOK");
+        orderMutated = true;
+      }
+    } else if (
+      normalizedState.includes("FAIL") ||
+      normalizedState.includes("DECLINED")
+    ) {
+      if (!wasPaid) {
+        order.payment_status = "failed";
+        order.failureReason = "PhonePe payment failed";
+        await releaseInventory(order, "PHONEPE_WEBHOOK");
+        orderMutated = true;
+      }
+    } else if (
+      normalizedState.includes("PENDING") ||
+      normalizedState.includes("CREATED")
+    ) {
+      if (!wasPaid) {
+        order.payment_status = "pending";
+        orderMutated = true;
+      }
+    } else {
+      logger.warn("handlePhonePeWebhook", "Unknown payment state", {
+        merchantTransactionId,
+        state: normalizedState || null,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    if (!orderMutated) {
+      return sendSuccess(res, {}, "Webhook already processed");
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+
+    if (isInvoiceEligible(order)) {
+      ensureOrderInvoice(order).catch((err) =>
+        logger.error("handlePhonePeWebhook", "Failed to generate invoice", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+    }
+
+    if (!wasPaid && order.payment_status === "paid") {
+      await runPostPaymentSuccessTasks({
+        order,
+        webhookContext: "handlePhonePeWebhook",
+        shipmentSource: "PHONEPE_WEBHOOK_AUTO_SHIPMENT",
+      });
+    }
+
+    syncOrderToFirestore(order, "update").catch((err) =>
+      logger.error("handlePhonePeWebhook", "Failed to sync to Firestore", {
+        orderId: order._id,
+        error: err.message,
+      }),
+    );
+
+    emitOrderStatusUpdate(order, "PHONEPE_WEBHOOK");
+
+    return sendSuccess(res, {}, "Webhook processed");
+  } catch (error) {
+    logger.error("handlePhonePeWebhook", "Webhook processing error", {
+      error: error.message,
+    });
+    return sendError(res, error);
+  }
+});
+
+const createPhonePePassiveWebhookHandler = (context) =>
+  asyncHandler(async (req, res) => {
+    logger.info(context, "Webhook received", {
+      bodyKeys: Object.keys(req.body || {}),
+    });
+    return sendSuccess(res, {}, "Webhook received");
+  });
+
+export const handlePhonePeRefundSuccessWebhook =
+  createPhonePePassiveWebhookHandler("handlePhonePeRefundSuccessWebhook");
+export const handlePhonePeRefundAcceptWebhook =
+  createPhonePePassiveWebhookHandler("handlePhonePeRefundAcceptWebhook");
+export const handlePhonePeChargebackWebhook =
+  createPhonePePassiveWebhookHandler("handlePhonePeChargebackWebhook");
+export const handlePhonePeSubscriptionPreWebhook =
+  createPhonePePassiveWebhookHandler("handlePhonePeSubscriptionPreWebhook");
 
 // ==================== TEST ENDPOINTS (Development Only) ====================
 

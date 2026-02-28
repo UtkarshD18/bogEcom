@@ -126,6 +126,8 @@ const Checkout = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [paymentGatewayEnabled, setPaymentGatewayEnabled] = useState(true);
+  const [paymentProviders, setPaymentProviders] = useState([]);
+  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState("PAYTM");
   const [isCreatingDemoOrder, setIsCreatingDemoOrder] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -401,11 +403,41 @@ const Checkout = () => {
         const response = await fetch(`${API_URL}/api/orders/payment-status`);
         const data = await response.json();
         if (!active) return;
-        setPaymentGatewayEnabled(Boolean(data?.data?.paymentEnabled));
+
+        const payload = data?.data || {};
+        const providersFromObject = Object.entries(payload?.providers || {})
+          .filter(([, enabled]) => Boolean(enabled))
+          .map(([provider]) => String(provider).toUpperCase());
+        const enabledProviders = (
+          Array.isArray(payload?.enabledProviders) &&
+          payload.enabledProviders.length > 0
+            ? payload.enabledProviders
+            : providersFromObject
+        )
+          .map((provider) => String(provider || "").trim().toUpperCase())
+          .filter(Boolean);
+        const defaultProvider = String(
+          payload?.defaultProvider ||
+            payload?.provider ||
+            enabledProviders[0] ||
+            "PAYTM",
+        )
+          .trim()
+          .toUpperCase();
+
+        setPaymentGatewayEnabled(Boolean(payload?.paymentEnabled));
+        setPaymentProviders(enabledProviders);
+        setSelectedPaymentProvider((prev) => {
+          if (enabledProviders.includes(prev)) return prev;
+          if (enabledProviders.includes(defaultProvider)) return defaultProvider;
+          return enabledProviders[0] || "PAYTM";
+        });
       } catch (error) {
         if (!active) return;
         // Keep checkout usable even if the status endpoint is unreachable.
         setPaymentGatewayEnabled(true);
+        setPaymentProviders(["PAYTM"]);
+        setSelectedPaymentProvider("PAYTM");
       }
     };
 
@@ -1102,7 +1134,7 @@ const Checkout = () => {
     return null;
   };
 
-  // Handle Pay Now click - Paytm redirect flow
+  // Handle Pay Now click - provider redirect flow (Paytm / PhonePe)
   const handlePayNow = async () => {
     if (isPayButtonDisabled) return;
 
@@ -1137,8 +1169,25 @@ const Checkout = () => {
 
       const statusRes = await fetch(`${API_URL}/api/orders/payment-status`);
       const statusData = await statusRes.json();
+      const statusPayload = statusData?.data || {};
+      const runtimeEnabledProviders = (
+        Array.isArray(statusPayload?.enabledProviders)
+          ? statusPayload.enabledProviders
+          : []
+      )
+        .map((provider) => String(provider || "").trim().toUpperCase())
+        .filter(Boolean);
+      const runtimeDefaultProvider = String(
+        statusPayload?.defaultProvider ||
+          statusPayload?.provider ||
+          runtimeEnabledProviders[0] ||
+          selectedPaymentProvider ||
+          "PAYTM",
+      )
+        .trim()
+        .toUpperCase();
 
-      if (!statusData?.data?.paymentEnabled) {
+      if (!statusPayload?.paymentEnabled) {
         setShowPaymentModal(true);
         return;
       }
@@ -1183,6 +1232,10 @@ const Checkout = () => {
           coins: 0,
         },
         paymentType: "prepaid",
+        paymentProvider:
+          runtimeEnabledProviders.includes(selectedPaymentProvider)
+            ? selectedPaymentProvider
+            : runtimeDefaultProvider,
         guestDetails: buildGuestDetailsPayload(),
         purchaseOrderId,
         shippingAddress: selectedAddrObj
@@ -1982,6 +2035,42 @@ const Checkout = () => {
                         </p>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="mb-5">
+                    {paymentProviders.length > 1 ? (
+                      <div className="space-y-2">
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                          Payment Method
+                        </p>
+                        <select
+                          value={selectedPaymentProvider}
+                          onChange={(event) =>
+                            setSelectedPaymentProvider(
+                              String(event.target.value || "").toUpperCase(),
+                            )
+                          }
+                          className="w-full bg-white/10 border border-white/20 text-white rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        >
+                          {paymentProviders.map((provider) => (
+                            <option
+                              key={provider}
+                              value={provider}
+                              className="text-gray-900"
+                            >
+                              {provider === "PHONEPE" ? "PhonePe" : "Paytm"}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-gray-300 font-semibold">
+                        Pay via{" "}
+                        {selectedPaymentProvider === "PHONEPE"
+                          ? "PhonePe"
+                          : "Paytm"}
+                      </p>
+                    )}
                   </div>
 
                   <button
