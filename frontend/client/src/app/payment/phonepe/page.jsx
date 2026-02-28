@@ -9,8 +9,6 @@ const API_URL = API_BASE_URL;
 const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
 const COIN_REWARD_KEY = "coinRewardAnimation";
 
-const DEFAULT_PAYTM_STAGE_URL = "https://securestage.paytmpayments.com";
-
 const getStoredAuthToken = () => {
   const cookieToken = cookies.get("accessToken");
   if (cookieToken) return cookieToken;
@@ -20,62 +18,32 @@ const getStoredAuthToken = () => {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const loadScript = async (src) =>
-  new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${src}"]`);
-    if (existing) {
-      if (existing.dataset.loaded === "true") return resolve();
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Script load failed")), {
-        once: true,
-      });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.onload = () => {
-      script.dataset.loaded = "true";
-      resolve();
-    };
-    script.onerror = () => reject(new Error("Script load failed"));
-    document.body.appendChild(script);
-  });
-
 const sanitizePath = (value, fallback) => {
   const normalized = String(value || "").trim();
   if (!normalized.startsWith("/")) return fallback;
   return normalized;
 };
 
-const PaytmReturn = () => {
+const PhonePeReturn = () => {
   const [message, setMessage] = useState(
-    "We are preparing secure payment. Please wait...",
+    "We are verifying your payment status. Please wait...",
   );
-  const launchedRef = useRef(false);
   const redirectedRef = useRef(false);
 
   const params = useMemo(() => {
     if (typeof window === "undefined") {
       return {
-        mid: "",
-        orderId: "",
-        txnToken: "",
-        amount: "",
+        merchantOrderId: "",
         flow: "order",
         returnPath: "/my-orders",
-        gatewayBase: DEFAULT_PAYTM_STAGE_URL,
       };
     }
 
     const search = new URLSearchParams(window.location.search || "");
     return {
-      mid: String(search.get("mid") || "").trim(),
-      orderId: String(search.get("orderId") || "").trim(),
-      txnToken: String(search.get("txnToken") || "").trim(),
-      amount: String(search.get("amount") || "").trim(),
+      merchantOrderId: String(
+        search.get("merchantOrderId") || search.get("orderId") || "",
+      ).trim(),
       flow: String(search.get("flow") || "order")
         .trim()
         .toLowerCase(),
@@ -83,84 +51,46 @@ const PaytmReturn = () => {
         search.get("returnPath"),
         search.get("flow") === "membership" ? "/membership/checkout" : "/my-orders",
       ),
-      gatewayBase: String(search.get("gatewayBase") || DEFAULT_PAYTM_STAGE_URL)
-        .trim()
-        .replace(/\/+$/, ""),
     };
   }, []);
 
   useEffect(() => {
     let disposed = false;
 
-    const invokeCheckout = async () => {
-      if (launchedRef.current) return;
-      if (!params.mid || !params.orderId || !params.txnToken) {
-        setMessage("Missing Paytm session details. Please retry checkout.");
+    const syncWebhook = async () => {
+      if (!params.merchantOrderId) {
+        setMessage("Missing PhonePe session details. Please retry checkout.");
         return;
       }
 
-      launchedRef.current = true;
-      setMessage("Opening Paytm secure checkout...");
+      setMessage("Payment completed. Syncing with server...");
 
       try {
-        const scriptUrl = `${params.gatewayBase}/merchantpgpui/checkoutjs/merchants/${encodeURIComponent(
-          params.mid,
-        )}.js`;
-        await loadScript(scriptUrl);
-
-        if (!window.Paytm?.CheckoutJS) {
-          throw new Error("Paytm checkout SDK not available");
-        }
-
-        window.Paytm.CheckoutJS.onLoad(async () => {
-          if (disposed) return;
-          try {
-            await window.Paytm.CheckoutJS.init({
-              root: "",
-              flow: "DEFAULT",
-              data: {
-                orderId: params.orderId,
-                token: params.txnToken,
-                tokenType: "TXN_TOKEN",
-                ...(params.amount ? { amount: params.amount } : {}),
-              },
-              handler: {
-                notifyMerchant: (eventName) => {
-                  if (disposed) return;
-
-                  if (params.flow === "membership") {
-                    window.location.href = params.returnPath;
-                    return;
-                  }
-
-                  if (eventName === "APP_CLOSED") {
-                    setMessage(
-                      "Checkout window closed. We are still verifying your payment status.",
-                    );
-                  }
-                },
-              },
-            });
-
-            if (!disposed) {
-              window.Paytm.CheckoutJS.invoke();
-              setMessage("Paytm checkout opened. Complete payment to continue.");
-            }
-          } catch {
-            setMessage("Unable to start Paytm checkout. Please retry from checkout.");
-          }
+        await fetch(`${API_URL}/api/orders/webhook/phonepe`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            merchantOrderId: params.merchantOrderId,
+            source: "return_page",
+          }),
         });
       } catch {
-        setMessage("Unable to load Paytm checkout. Please retry from checkout.");
+        // Webhook sync is best-effort; polling below still handles final state.
       }
+
+      if (disposed) return;
+      setMessage("Checking payment confirmation...");
     };
 
-    void invokeCheckout();
+    void syncWebhook();
 
     return () => {
       disposed = true;
     };
-  }, [params]);
+  }, [params.merchantOrderId]);
 
   useEffect(() => {
     let disposed = false;
@@ -261,23 +191,7 @@ const PaytmReturn = () => {
       const verified = await verifyPendingOrder();
       if (verified || disposed) return;
 
-      try {
-        const res = await fetch(`${API_URL}/api/orders/payment-status`);
-        const data = await res.json();
-        if (!data?.data?.paymentEnabled) {
-          setMessage(
-            "Payments are currently unavailable. If your payment went through, it will update shortly.",
-          );
-        } else {
-          setMessage(
-            "Payment status is being updated. Please check your orders in a moment.",
-          );
-        }
-      } catch {
-        setMessage(
-          "Payment status is being updated. Please check your orders in a moment.",
-        );
-      }
+      setMessage("Payment status is being updated. Please check your orders shortly.");
     };
 
     void checkStatus();
@@ -291,7 +205,7 @@ const PaytmReturn = () => {
     <section className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-xl shadow-md p-8 max-w-lg text-center">
         <h1 className="text-2xl font-bold text-gray-800 mb-3">
-          Paytm Payment Processing
+          PhonePe Payment Processing
         </h1>
         <p className="text-gray-600 mb-6">{message}</p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -313,4 +227,4 @@ const PaytmReturn = () => {
   );
 };
 
-export default PaytmReturn;
+export default PhonePeReturn;
