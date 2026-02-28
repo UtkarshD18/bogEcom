@@ -417,10 +417,10 @@ const Contact = () => {
                     Email Address
                   </h3>
                   <a
-                    href="mailto:support@healthyonegram.com"
+                    href="https://healthyonegram.com"
                     className="text-primary font-semibold hover:underline"
                   >
-                    support@healthyonegram.com
+                    healthyonegram.com
                   </a>
                   <p className="text-gray-500 text-sm mt-1">
                     We reply within 24 hours

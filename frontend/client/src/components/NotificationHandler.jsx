@@ -27,8 +27,27 @@ const API_ROOT = API_BASE_URL.endsWith("/api")
   : `${API_BASE_URL}/api`;
 const LIVE_FEED_URL = `${API_ROOT}/notifications/offers/live-feed`;
 const MAX_DEDUPED_NOTIFICATION_IDS = 100;
+const LIVE_FEED_CURSOR_KEY = "live_offer_last_seen_ms";
+const DEFAULT_LIVE_FEED_LOOKBACK_MS = 2 * 60 * 1000; // 2 minutes
 const AUTO_PROMPT_KEY = "push_prompt_last_shown_at";
 const AUTO_PROMPT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const readLiveFeedCursor = () => {
+  if (typeof window === "undefined") return 0;
+
+  const raw = Number(localStorage.getItem(LIVE_FEED_CURSOR_KEY) || 0);
+  if (Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+
+  return Date.now() - DEFAULT_LIVE_FEED_LOOKBACK_MS;
+};
+
+const persistLiveFeedCursor = (value) => {
+  if (typeof window === "undefined") return;
+  if (!Number.isFinite(value) || value <= 0) return;
+  localStorage.setItem(LIVE_FEED_CURSOR_KEY, String(Math.floor(value)));
+};
 
 /**
  * NotificationHandler Component
@@ -43,6 +62,10 @@ const NotificationHandler = () => {
   const [activeMessage, setActiveMessage] = useState(null);
   const seenNotificationIdsRef = useRef(new Set());
   const lastSeenOfferTimestampRef = useRef(0);
+
+  useEffect(() => {
+    lastSeenOfferTimestampRef.current = readLiveFeedCursor();
+  }, []);
 
   const rememberNotification = useCallback((notificationId) => {
     if (!notificationId) return false;
@@ -161,6 +184,14 @@ const NotificationHandler = () => {
         payload?.data && typeof payload.data === "object" ? payload.data : {};
       const notificationId =
         payload?.notificationId || liveData.notificationId || null;
+      const offerTimestamp =
+        Number(payload?.sentAtMs || Date.parse(payload?.sentAt || "") || 0) ||
+        Date.now();
+
+      if (offerTimestamp > lastSeenOfferTimestampRef.current) {
+        lastSeenOfferTimestampRef.current = offerTimestamp;
+        persistLiveFeedCursor(offerTimestamp);
+      }
 
       if (rememberNotification(notificationId)) return;
 
@@ -237,6 +268,7 @@ const NotificationHandler = () => {
 
           if (offerTimestamp > lastSeenOfferTimestampRef.current) {
             lastSeenOfferTimestampRef.current = offerTimestamp;
+            persistLiveFeedCursor(offerTimestamp);
           }
 
           if (rememberNotification(notificationId)) {

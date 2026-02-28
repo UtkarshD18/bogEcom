@@ -133,10 +133,10 @@ export default function DeliveryPage() {
             </p>
             <div className="flex flex-col md:flex-row gap-4 justify-center items-center">
               <a
-                href="mailto:support@healthyonegram.com"
+                href="https://healthyonegram.com"
                 className="inline-block bg-orange-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-orange-700 transition"
               >
-                📧 support@healthyonegram.com
+                📧 healthyonegram.com
               </a>
               <span className="text-gray-600">or</span>
               <Link

@@ -93,7 +93,7 @@ const defaultSettings = {
   // Store info
   storeInfo: {
     name: "BuyOneGram",
-    email: "support@buyonegram.com",
+    email: "healthyonegram.com",
     phone: "+91 9876541234",
     address: "",
     gstNumber: "",

@@ -14,6 +14,10 @@ import {
   initAffiliateTracking,
   setAffiliateFromCoupon,
 } from "@/utils/affiliateTracking";
+import {
+  clearPendingCouponCode,
+  readPendingCouponCode,
+} from "@/utils/couponIntent";
 import { calculateOrderTotals } from "@/utils/calculateOrderTotals.mjs";
 import { round2 } from "@/utils/gst";
 import { getDisplayTaxBreakup } from "@/utils/shippingDisplay";
@@ -134,6 +138,7 @@ const Checkout = () => {
   const [couponLoading, setCouponLoading] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState("");
+  const [couponIntentProcessed, setCouponIntentProcessed] = useState(false);
 
   // Affiliate State
   const [affiliateData, setAffiliateData] = useState(null);
@@ -758,54 +763,64 @@ const Checkout = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // Validate coupon with backend
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) {
-      setCouponError("Please enter a coupon code");
-      return;
-    }
+  const applyCouponCode = useCallback(
+    async (rawCode, { source = "manual" } = {}) => {
+      const normalizedCode = String(rawCode || "")
+        .trim()
+        .toUpperCase();
 
-    setCouponLoading(true);
-    setCouponError("");
+      if (!normalizedCode) {
+        setCouponError("Please enter a coupon code");
+        return { success: false };
+      }
 
-    try {
-      const token = getStoredAccessToken();
-      const response = await fetch(`${API_URL}/api/coupons/validate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-        body: JSON.stringify({
-          code: couponCode.trim(),
-          // Backend validates coupon against the GST-exclusive base amount
-          // (after membership/referral, before coupon/shipping).
-          orderAmount: baseBeforeCoupon,
-          influencerCode: activeInfluencerCode || null,
-        }),
-      });
+      setCouponLoading(true);
+      setCouponError("");
 
-      const data = await response.json();
-
-      if (data.success) {
-        setAppliedCoupon(data.data);
-        setCouponCode("");
-        setSnackbar({
-          open: true,
-          message: `Coupon applied! You save Rs.${data.data.discountAmount}`,
-          severity: "success",
+      try {
+        const token = getStoredAccessToken();
+        const response = await fetch(`${API_URL}/api/coupons/validate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+          body: JSON.stringify({
+            code: normalizedCode,
+            // Backend validates coupon against the GST-exclusive base amount
+            // (after membership/referral, before coupon/shipping).
+            orderAmount: baseBeforeCoupon,
+            influencerCode: activeInfluencerCode || null,
+          }),
         });
 
-        // Track if it's an affiliate coupon
-        if (data.data.isAffiliateCoupon) {
-          setAffiliateFromCoupon(data.data.code, data.data.affiliateSource);
-          setAffiliateData({
-            code: data.data.code,
-            source: data.data.affiliateSource,
-            fromCoupon: true,
+        const data = await response.json();
+
+        if (data.success) {
+          setAppliedCoupon(data.data);
+          setCouponCode("");
+          setSnackbar({
+            open: true,
+            message:
+              source === "intent"
+                ? `Coupon ${data.data.code} applied from notification`
+                : `Coupon applied! You save Rs.${data.data.discountAmount}`,
+            severity: "success",
           });
+
+          // Track if it's an affiliate coupon
+          if (data.data.isAffiliateCoupon) {
+            setAffiliateFromCoupon(data.data.code, data.data.affiliateSource);
+            setAffiliateData({
+              code: data.data.code,
+              source: data.data.affiliateSource,
+              fromCoupon: true,
+            });
+          }
+
+          return { success: true, data: data.data };
         }
-      } else {
+
         const validationMessage = String(data?.message || "").toLowerCase();
         const looksLikeUnknownCoupon =
           response.status === 404 ||
@@ -815,7 +830,7 @@ const Checkout = () => {
         const shouldTryReferral = looksLikeUnknownCoupon;
         if (shouldTryReferral && applyReferralCode) {
           const referralResult = await applyReferralCode(
-            couponCode.trim(),
+            normalizedCode,
             "manual",
           );
 
@@ -828,19 +843,71 @@ const Checkout = () => {
               message: "Referral code applied successfully",
               severity: "success",
             });
-            return;
+            return { success: true, viaReferral: true };
           }
         }
 
         setCouponError(data.message || "Invalid coupon");
+        return { success: false, message: data.message || "Invalid coupon" };
+      } catch (error) {
+        console.error("Coupon validation error:", error);
+        setCouponError("Failed to validate coupon. Please try again.");
+        return {
+          success: false,
+          message: "Failed to validate coupon. Please try again.",
+        };
+      } finally {
+        setCouponLoading(false);
       }
-    } catch (error) {
-      console.error("Coupon validation error:", error);
-      setCouponError("Failed to validate coupon. Please try again.");
-    } finally {
-      setCouponLoading(false);
+    },
+    [activeInfluencerCode, applyReferralCode, baseBeforeCoupon],
+  );
+
+  // Validate coupon with backend
+  const handleApplyCoupon = () => applyCouponCode(couponCode, { source: "manual" });
+
+  // Consume queued coupon intent from notification toast and auto-apply once.
+  useEffect(() => {
+    if (couponIntentProcessed) return;
+    if (couponLoading) return;
+    if (appliedCoupon?.code) {
+      setCouponIntentProcessed(true);
+      return;
     }
-  };
+
+    const pendingCouponCode = readPendingCouponCode();
+    if (!pendingCouponCode) {
+      setCouponIntentProcessed(true);
+      return;
+    }
+
+    // If cart is still empty/loading, keep intent and wait until products exist.
+    if (!Array.isArray(cartItems) || cartItems.length === 0) {
+      setCouponCode((prev) => prev || pendingCouponCode);
+      return;
+    }
+
+    let isDisposed = false;
+    const run = async () => {
+      setCouponCode((prev) => prev || pendingCouponCode);
+      await applyCouponCode(pendingCouponCode, { source: "intent" });
+      if (isDisposed) return;
+      clearPendingCouponCode();
+      setCouponIntentProcessed(true);
+    };
+
+    void run();
+
+    return () => {
+      isDisposed = true;
+    };
+  }, [
+    appliedCoupon?.code,
+    applyCouponCode,
+    cartItems,
+    couponIntentProcessed,
+    couponLoading,
+  ]);
 
   // Remove applied coupon
   const handleRemoveCoupon = () => {
