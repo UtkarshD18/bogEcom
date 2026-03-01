@@ -191,6 +191,38 @@ const computeMembershipExpiry = (plan) => {
   return expiry;
 };
 
+const getClientBaseUrl = () =>
+  String(process.env.CLIENT_URL || "https://healthyonegram.com")
+    .trim()
+    .replace(/\/+$/, "");
+
+const isBrowserNavigationRequest = (req) => {
+  const accept = String(req?.headers?.accept || "").toLowerCase();
+  const secFetchDest = String(req?.headers?.["sec-fetch-dest"] || "").toLowerCase();
+  return accept.includes("text/html") || secFetchDest === "document";
+};
+
+const redirectMembershipCallbackToClient = ({
+  res,
+  merchantTransactionId,
+  state,
+  paymentProvider = PAYMENT_PROVIDERS.PAYTM,
+}) => {
+  const baseUrl = getClientBaseUrl();
+  const target = new URL("/membership/checkout", `${baseUrl}/`);
+  if (merchantTransactionId) {
+    target.searchParams.set(
+      "merchantTransactionId",
+      String(merchantTransactionId),
+    );
+  }
+  if (state) {
+    target.searchParams.set("paymentState", String(state).toLowerCase());
+  }
+  target.searchParams.set("paymentProvider", String(paymentProvider));
+  return res.redirect(303, target.toString());
+};
+
 const activateMembership = async ({ user, plan, membershipPaymentId }) => {
   const startDate = new Date();
   const expiry = computeMembershipExpiry(plan);
@@ -641,11 +673,22 @@ export const createMembershipOrder = async (req, res) => {
  */
 export const handleMembershipPaytmCallback = async (req, res) => {
   try {
-    const payload = decodePaytmEnvelope(req.body || {});
+    const wantsBrowserRedirect = isBrowserNavigationRequest(req);
+    const bodyHasPayload =
+      req.body && typeof req.body === "object" && Object.keys(req.body).length > 0;
+    const incomingPayload = bodyHasPayload ? req.body : req.query || {};
+    const payload = decodePaytmEnvelope(incomingPayload);
     const callbackData = extractPaytmFields(payload);
     const merchantTransactionId = callbackData.merchantTransactionId;
 
     if (!merchantTransactionId) {
+      if (wantsBrowserRedirect) {
+        return redirectMembershipCallbackToClient({
+          res,
+          state: "pending",
+          paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+        });
+      }
       return res.status(200).json({
         error: false,
         success: true,
@@ -675,6 +718,14 @@ export const handleMembershipPaytmCallback = async (req, res) => {
     });
 
     // Membership activation still happens via authenticated /verify-payment.
+    if (wantsBrowserRedirect) {
+      return redirectMembershipCallbackToClient({
+        res,
+        merchantTransactionId,
+        state: verifiedState || "pending",
+        paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+      });
+    }
     return res.status(200).json({
       error: false,
       success: true,
@@ -682,6 +733,13 @@ export const handleMembershipPaytmCallback = async (req, res) => {
     });
   } catch (error) {
     console.error("Error processing membership callback:", error);
+    if (isBrowserNavigationRequest(req)) {
+      return redirectMembershipCallbackToClient({
+        res,
+        state: "failed",
+        paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+      });
+    }
     return res.status(200).json({
       error: false,
       success: true,
@@ -696,6 +754,7 @@ export const handleMembershipPaytmCallback = async (req, res) => {
  */
 export const handleMembershipPhonePeCallback = async (req, res) => {
   try {
+    const wantsBrowserRedirect = isBrowserNavigationRequest(req);
     const merchantTransactionId = String(
       req.body?.merchantOrderId ||
         req.body?.merchant_order_id ||
@@ -704,6 +763,13 @@ export const handleMembershipPhonePeCallback = async (req, res) => {
     ).trim();
 
     if (!merchantTransactionId) {
+      if (wantsBrowserRedirect) {
+        return redirectMembershipCallbackToClient({
+          res,
+          state: "pending",
+          paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+        });
+      }
       return res.status(200).json({
         error: false,
         success: true,
@@ -733,6 +799,14 @@ export const handleMembershipPhonePeCallback = async (req, res) => {
     });
 
     // Membership activation still happens via authenticated /verify-payment.
+    if (wantsBrowserRedirect) {
+      return redirectMembershipCallbackToClient({
+        res,
+        merchantTransactionId,
+        state: state || "pending",
+        paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+      });
+    }
     return res.status(200).json({
       error: false,
       success: true,
@@ -740,6 +814,13 @@ export const handleMembershipPhonePeCallback = async (req, res) => {
     });
   } catch (error) {
     console.error("Error processing membership PhonePe callback:", error);
+    if (isBrowserNavigationRequest(req)) {
+      return redirectMembershipCallbackToClient({
+        res,
+        state: "failed",
+        paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+      });
+    }
     return res.status(200).json({
       error: false,
       success: true,
