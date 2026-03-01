@@ -118,6 +118,7 @@ settingsSchema.statics.defaultSettings = [
       showOncePerSession: true,
       backgroundColor: "#fff7ed",
       buttonText: "Shop Now",
+      couponCode: "",
     },
     description: "Homepage popup configuration",
     category: "display",

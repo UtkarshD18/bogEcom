@@ -27,6 +27,8 @@ const PAYTM_MERCHANT_ID = String(process.env.PAYTM_MERCHANT_ID || "").trim();
 const PAYTM_MERCHANT_KEY = String(process.env.PAYTM_MERCHANT_KEY || "").trim();
 const PHONEPE_CLIENT_ID = String(process.env.PHONEPE_CLIENT_ID || "").trim();
 const PHONEPE_CLIENT_SECRET = String(process.env.PHONEPE_CLIENT_SECRET || "").trim();
+const isValidPaytmMerchantKey = (value) =>
+  [16, 24, 32].includes(String(value || "").trim().length);
 const isTruthyEnv = (value) => {
   const normalized = String(value ?? "")
     .trim()
@@ -46,7 +48,7 @@ const PAYMENT_PROVIDER_ENV_ENABLED = Object.freeze({
   PAYTM: Boolean(
     isTruthyEnv(process.env.PAYTM_ENABLED) &&
       PAYTM_MERCHANT_ID &&
-      PAYTM_MERCHANT_KEY,
+      isValidPaytmMerchantKey(PAYTM_MERCHANT_KEY),
   ),
   PHONEPE: Boolean(
     isTruthyEnv(process.env.PHONEPE_ENABLED) &&

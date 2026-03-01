@@ -50,6 +50,7 @@ const defaultPopupSettings = {
   showOncePerSession: true,
   backgroundColor: "#fff7ed",
   buttonText: "Shop Now",
+  couponCode: "",
 };
 
 const toDateTimeLocal = (value) => {
@@ -224,6 +225,19 @@ const SettingsPage = () => {
       };
     }
 
+    if (
+      String(value.couponCode || "").trim() &&
+      !/^[A-Z0-9_-]{3,50}$/.test(
+        String(value.couponCode || "").trim().toUpperCase(),
+      )
+    ) {
+      return {
+        valid: false,
+        message:
+          "Popup coupon code must be 3-50 characters and contain only letters, numbers, underscore, or hyphen.",
+      };
+    }
+
     return { valid: true, message: "" };
   }, []);
 
@@ -327,6 +341,9 @@ const SettingsPage = () => {
           showOncePerSession: !!value.showOncePerSession,
           backgroundColor: String(value.backgroundColor || "").trim(),
           buttonText: String(value.buttonText || "").trim(),
+          couponCode: String(value.couponCode || "")
+            .trim()
+            .toUpperCase(),
         }),
       });
 
@@ -1209,6 +1226,22 @@ const SettingsPage = () => {
           />
 
           <TextField
+            label="Popup Coupon Code (Optional)"
+            value={popupSettings.couponCode}
+            onChange={(e) =>
+              setPopupSettings((prev) => ({
+                ...prev,
+                couponCode: String(e.target.value || "")
+                  .replace(/\s+/g, "")
+                  .toUpperCase(),
+              }))
+            }
+            size="small"
+            fullWidth
+            helperText="Optional: if set, clicking popup CTA auto-fills this coupon on checkout."
+          />
+
+          <TextField
             label="Description"
             value={popupSettings.description}
             onChange={(e) =>
@@ -1437,6 +1470,11 @@ const SettingsPage = () => {
               >
                 {popupSettings.buttonText || "Shop Now"}
               </Button>
+              {popupSettings.couponCode ? (
+                <p className="text-xs text-amber-700 font-semibold mt-2">
+                  Coupon: {popupSettings.couponCode}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
