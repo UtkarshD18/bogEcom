@@ -814,6 +814,30 @@ const verifyPaytmWebhookState = async (merchantTransactionId) => {
   }
 };
 
+const getClientBaseUrl = () =>
+  String(process.env.CLIENT_URL || "https://healthyonegram.com")
+    .trim()
+    .replace(/\/+$/, "");
+
+const isBrowserNavigationRequest = (req) => {
+  const accept = String(req?.headers?.accept || "").toLowerCase();
+  const secFetchDest = String(req?.headers?.["sec-fetch-dest"] || "").toLowerCase();
+  return accept.includes("text/html") || secFetchDest === "document";
+};
+
+const redirectPaytmWebhookToClient = (res, { orderId, paymentState }) => {
+  const baseUrl = getClientBaseUrl();
+  const path = orderId
+    ? `/orders/${encodeURIComponent(String(orderId))}`
+    : "/my-orders";
+  const target = new URL(path, `${baseUrl}/`);
+  target.searchParams.set("paymentProvider", "PAYTM");
+  if (paymentState) {
+    target.searchParams.set("paymentState", String(paymentState).toLowerCase());
+  }
+  return res.redirect(303, target.toString());
+};
+
 const decodeMaybeJson = (value) => {
   if (!value) return null;
   if (typeof value === "object") return value;
@@ -3594,26 +3618,36 @@ const runPostPaymentSuccessTasks = async ({
 export const handlePaytmWebhook = asyncHandler(async (req, res) => {
   try {
     logger.debug("handlePaytmWebhook", "Webhook received");
+    const wantsBrowserRedirect = isBrowserNavigationRequest(req);
+    const bodyHasPayload =
+      req.body && typeof req.body === "object" && Object.keys(req.body).length > 0;
+    const incomingPayload = bodyHasPayload ? req.body : req.query || {};
 
     if (!PAYMENT_PROVIDER_ENV_ENABLED.PAYTM) {
       logger.warn("handlePaytmWebhook", "Paytm environment not enabled");
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { paymentState: "unavailable" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
-    const payload = decodePaytmWebhookEnvelope(req.body || {});
+    const payload = decodePaytmWebhookEnvelope(incomingPayload);
     const webhookData = extractPaytmWebhookFields(payload);
     const merchantTransactionId = webhookData.merchantTransactionId;
 
     if (!merchantTransactionId) {
       logger.warn("handlePaytmWebhook", "Missing merchantTransactionId");
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { paymentState: "pending" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
     if (!String(merchantTransactionId).startsWith("BOG_")) {
       logger.warn("handlePaytmWebhook", "Ignoring non-order transaction", {
         merchantTransactionId,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { paymentState: "pending" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
     const orderId = extractOrderIdFromMerchantTransactionId(merchantTransactionId);
@@ -3622,7 +3656,9 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
         merchantTransactionId,
         orderId,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { paymentState: "pending" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
     const order = await OrderModel.findById(orderId);
@@ -3631,7 +3667,9 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
       logger.warn("handlePaytmWebhook", "Order not found", {
         merchantTransactionId,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { orderId, paymentState: "pending" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
     if (order.paytmOrderId && String(order.paytmOrderId) !== String(merchantTransactionId)) {
@@ -3640,12 +3678,22 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
         merchantTransactionId,
         expected: order.paytmOrderId,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, {
+            orderId: order._id,
+            paymentState: String(order.payment_status || "pending").toLowerCase(),
+          })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
     const verifiedStatus = await verifyPaytmWebhookState(merchantTransactionId);
     if (!verifiedStatus) {
-      return sendSuccess(res, {}, "Webhook acknowledged");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, {
+            orderId: order._id,
+            paymentState: String(order.payment_status || "pending").toLowerCase(),
+          })
+        : sendSuccess(res, {}, "Webhook acknowledged");
     }
 
     const transactionId =
@@ -3695,11 +3743,21 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
         merchantTransactionId,
         state: verifiedStatus.state || webhookData.state || null,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, {
+            orderId: order._id,
+            paymentState: String(order.payment_status || "pending").toLowerCase(),
+          })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
     if (!orderMutated) {
-      return sendSuccess(res, {}, "Webhook already processed");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, {
+            orderId: order._id,
+            paymentState: String(order.payment_status || "pending").toLowerCase(),
+          })
+        : sendSuccess(res, {}, "Webhook already processed");
     }
 
     order.updatedAt = new Date();
@@ -3731,11 +3789,19 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
 
     emitOrderStatusUpdate(order, "PAYMENT_WEBHOOK");
 
-    return sendSuccess(res, {}, "Webhook processed");
+    return wantsBrowserRedirect
+      ? redirectPaytmWebhookToClient(res, {
+          orderId: order._id,
+          paymentState: String(order.payment_status || "pending").toLowerCase(),
+        })
+      : sendSuccess(res, {}, "Webhook processed");
   } catch (error) {
     logger.error("handlePaytmWebhook", "Webhook processing error", {
       error: error.message,
     });
+    if (isBrowserNavigationRequest(req)) {
+      return redirectPaytmWebhookToClient(res, { paymentState: "failed" });
+    }
     return sendError(res, error);
   }
 });

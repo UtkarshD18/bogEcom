@@ -16,6 +16,7 @@ import {
   handlePhonePeSubscriptionPreWebhook,
   handlePhonePeWebhook,
   handlePaytmWebhook,
+  retryOrderPayment,
   saveClientTestInvoiceToDisk,
   saveOrderForLater,
   updateOrderStatus,
@@ -50,6 +51,7 @@ const router = express.Router();
 // ==================== WEBHOOKS (Public) ====================
 
 // Paytm webhook (state verified server-side against Paytm status API)
+router.get("/webhook/paytm", handlePaytmWebhook);
 router.post("/webhook/paytm", handlePaytmWebhook);
 // PhonePe webhook (state verified server-side against PhonePe status API)
 router.post("/webhook/phonepe", handlePhonePeWebhook);
@@ -95,6 +97,14 @@ router.get(
   auth,
   validateGetOrderRequest,
   getUserOrderById
+);
+
+// Retry payment for an existing unpaid order
+router.post(
+  "/:orderId/retry-payment",
+  auth,
+  validateGetOrderRequest,
+  retryOrderPayment,
 );
 
 // Download invoice (user own order or admin any order)
