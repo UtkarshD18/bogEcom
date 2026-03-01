@@ -10,6 +10,9 @@ const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
 const COIN_REWARD_KEY = "coinRewardAnimation";
 
 const DEFAULT_PAYTM_STAGE_URL = "https://securestage.paytmpayments.com";
+const DEFAULT_PAYTM_PROD_URL = "https://secure.paytmpayments.com";
+const LEGACY_PAYTM_STAGE_URL = "https://securegw-stage.paytm.in";
+const LEGACY_PAYTM_PROD_URL = "https://securegw.paytm.in";
 
 const getStoredAuthToken = () => {
   const cookieToken = cookies.get("accessToken");
@@ -43,10 +46,113 @@ const loadScript = async (src) =>
     document.body.appendChild(script);
   });
 
+const waitFor = async (predicate, { timeoutMs = 4500, intervalMs = 120 } = {}) =>
+  new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+
+    const tick = () => {
+      try {
+        if (predicate()) {
+          resolve(true);
+          return;
+        }
+      } catch {
+        // keep polling until timeout
+      }
+
+      if (Date.now() - startedAt >= timeoutMs) {
+        reject(new Error("Timed out waiting for Paytm SDK"));
+        return;
+      }
+
+      setTimeout(tick, intervalMs);
+    };
+
+    tick();
+  });
+
 const sanitizePath = (value, fallback) => {
   const normalized = String(value || "").trim();
   if (!normalized.startsWith("/")) return fallback;
   return normalized;
+};
+
+const sanitizePaytmBase = (value) => {
+  const raw = String(value || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:") return "";
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return "";
+  }
+};
+
+const resolvePaytmBaseCandidates = (preferredBase) => {
+  const candidates = [
+    sanitizePaytmBase(preferredBase),
+    DEFAULT_PAYTM_PROD_URL,
+    DEFAULT_PAYTM_STAGE_URL,
+    LEGACY_PAYTM_PROD_URL,
+    LEGACY_PAYTM_STAGE_URL,
+  ].filter(Boolean);
+
+  return [...new Set(candidates)];
+};
+
+const buildScriptCandidates = (mid, preferredBase) => {
+  const safeMid = encodeURIComponent(String(mid || "").trim());
+  if (!safeMid) return [];
+
+  return resolvePaytmBaseCandidates(preferredBase).map(
+    (base) => `${base}/merchantpgpui/checkoutjs/merchants/${safeMid}.js`,
+  );
+};
+
+const buildHostedFallbackUrl = ({ mid, orderId, txnToken, gatewayBase }) => {
+  const fallbackBase =
+    sanitizePaytmBase(gatewayBase) || DEFAULT_PAYTM_PROD_URL;
+  const query = new URLSearchParams({
+    mid: String(mid || "").trim(),
+    orderId: String(orderId || "").trim(),
+  });
+  const normalizedToken = String(txnToken || "").trim();
+  if (normalizedToken) {
+    query.set("txnToken", normalizedToken);
+  }
+
+  // processTransaction + txnToken renders Paytm hosted checkout reliably.
+  return `${fallbackBase}/theia/processTransaction?${query.toString()}`;
+};
+
+const isVisibleElement = (element) => {
+  if (!element || typeof window === "undefined") return false;
+  const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return (
+    style.display !== "none" &&
+    style.visibility !== "hidden" &&
+    Number(style.opacity || 1) > 0 &&
+    rect.width > 0 &&
+    rect.height > 0
+  );
+};
+
+const hasPaytmOverlayMounted = () => {
+  if (typeof document === "undefined") return false;
+
+  const selectors = [
+    "iframe[src*='paytm']",
+    "iframe[name*='paytm']",
+    "iframe[id*='paytm']",
+    "iframe[class*='paytm']",
+  ];
+
+  return selectors.some((selector) =>
+    Array.from(document.querySelectorAll(selector)).some(isVisibleElement),
+  );
 };
 
 const normalizeProvider = (value) =>
@@ -77,6 +183,7 @@ const PaytmReturn = () => {
   );
   const launchedRef = useRef(false);
   const redirectedRef = useRef(false);
+  const hostedFallbackTriggeredRef = useRef(false);
 
   const params = useMemo(() => {
     if (typeof window === "undefined") {
@@ -115,6 +222,23 @@ const PaytmReturn = () => {
 
   useEffect(() => {
     let disposed = false;
+    let hostedFallbackTimer = null;
+
+    const gotoHostedFallback = () => {
+      if (disposed || hostedFallbackTriggeredRef.current) return;
+      hostedFallbackTriggeredRef.current = true;
+      setMessage("Checkout script unavailable. Redirecting to secure Paytm page...");
+      if (typeof window !== "undefined") {
+        window.location.assign(
+          buildHostedFallbackUrl({
+            mid: params.mid,
+            orderId: params.orderId,
+            txnToken: params.txnToken,
+            gatewayBase: params.gatewayBase,
+          }),
+        );
+      }
+    };
 
     const invokeCheckout = async () => {
       if (launchedRef.current) return;
@@ -127,16 +251,30 @@ const PaytmReturn = () => {
       setMessage("Opening Paytm secure checkout...");
 
       try {
-        const scriptUrl = `${params.gatewayBase}/merchantpgpui/checkoutjs/merchants/${encodeURIComponent(
-          params.mid,
-        )}.js`;
-        await loadScript(scriptUrl);
+        let loadedScriptUrl = "";
+        const scriptCandidates = buildScriptCandidates(params.mid, params.gatewayBase);
+        let lastLoadError = null;
 
-        if (!window.Paytm?.CheckoutJS) {
-          throw new Error("Paytm checkout SDK not available");
+        for (const scriptUrl of scriptCandidates) {
+          try {
+            await loadScript(scriptUrl);
+            await waitFor(() => Boolean(window.Paytm?.CheckoutJS), {
+              timeoutMs: 3500,
+              intervalMs: 120,
+            });
+            loadedScriptUrl = scriptUrl;
+            lastLoadError = null;
+            break;
+          } catch (loadError) {
+            lastLoadError = loadError;
+          }
         }
 
-        window.Paytm.CheckoutJS.onLoad(async () => {
+        if (!loadedScriptUrl || !window.Paytm?.CheckoutJS) {
+          throw lastLoadError || new Error("Paytm checkout SDK not available");
+        }
+
+        const initAndInvokeCheckout = async () => {
           if (disposed) return;
           try {
             await window.Paytm.CheckoutJS.init({
@@ -169,13 +307,43 @@ const PaytmReturn = () => {
             if (!disposed) {
               window.Paytm.CheckoutJS.invoke();
               setMessage("Paytm checkout opened. Complete payment to continue.");
+
+              // Some browsers load CheckoutJS but never render the popup.
+              // In that case, force hosted Paytm fallback instead of keeping user stuck.
+              hostedFallbackTimer = window.setTimeout(() => {
+                const stillOnBridgePage =
+                  typeof window !== "undefined" &&
+                  window.location.pathname.includes("/payment/paytm");
+                if (stillOnBridgePage && !hasPaytmOverlayMounted()) {
+                  gotoHostedFallback();
+                }
+              }, 2200);
             }
           } catch {
-            setMessage("Unable to start Paytm checkout. Please retry from checkout.");
+            gotoHostedFallback();
           }
-        });
+        };
+
+        const checkoutSdk = window.Paytm.CheckoutJS;
+        if (typeof checkoutSdk.onLoad === "function") {
+          let bootstrapped = false;
+          checkoutSdk.onLoad(async () => {
+            if (bootstrapped) return;
+            bootstrapped = true;
+            await initAndInvokeCheckout();
+          });
+
+          window.setTimeout(() => {
+            if (!bootstrapped) {
+              bootstrapped = true;
+              void initAndInvokeCheckout();
+            }
+          }, 1400);
+        } else {
+          await initAndInvokeCheckout();
+        }
       } catch {
-        setMessage("Unable to load Paytm checkout. Please retry from checkout.");
+        gotoHostedFallback();
       }
     };
 
@@ -183,6 +351,9 @@ const PaytmReturn = () => {
 
     return () => {
       disposed = true;
+      if (hostedFallbackTimer) {
+        window.clearTimeout(hostedFallbackTimer);
+      }
     };
   }, [params]);
 

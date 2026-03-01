@@ -1,4 +1,5 @@
 import SettingsModel from "../models/settings.model.js";
+import CouponModel from "../models/coupon.model.js";
 
 const POPUP_SETTINGS_KEY = "popupSettings";
 const ALLOWED_REDIRECT_TYPES = new Set(["product", "category", "custom"]);
@@ -15,6 +16,7 @@ const createDefaultPopupSettings = () => ({
   showOncePerSession: true,
   backgroundColor: "#fff7ed",
   buttonText: "Shop Now",
+  couponCode: "",
 });
 
 const sanitizeText = (value, fallback = "") =>
@@ -46,6 +48,12 @@ const normalizeDate = (value, fallback) => {
   return parsed;
 };
 
+const normalizeCouponCode = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+
 const serializePopup = (popup) => ({
   title: popup.title,
   description: popup.description,
@@ -58,6 +66,7 @@ const serializePopup = (popup) => ({
   showOncePerSession: popup.showOncePerSession,
   backgroundColor: popup.backgroundColor,
   buttonText: popup.buttonText,
+  couponCode: popup.couponCode || "",
 });
 
 const normalizePopupPayload = (input = {}) => {
@@ -87,6 +96,7 @@ const normalizePopupPayload = (input = {}) => {
     ),
     buttonText:
       sanitizeText(input.buttonText, defaults.buttonText) || defaults.buttonText,
+    couponCode: normalizeCouponCode(input.couponCode || defaults.couponCode),
   };
 
   if (popup.expiryDate <= popup.startDate) {
@@ -171,6 +181,30 @@ export const updateAdminPopupSettings = async (req, res) => {
       });
     }
 
+    if (popup.couponCode && !/^[A-Z0-9_-]{3,50}$/.test(popup.couponCode)) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "Coupon code must be 3-50 characters and contain only letters, numbers, underscore, or hyphen.",
+      });
+    }
+
+    if (popup.couponCode) {
+      const couponExists = await CouponModel.exists({
+        code: popup.couponCode,
+        isActive: true,
+      });
+      if (!couponExists) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message:
+            "Popup coupon code must match an existing active coupon in Coupons.",
+        });
+      }
+    }
+
     const setting = await SettingsModel.findOneAndUpdate(
       { key: POPUP_SETTINGS_KEY },
       {
@@ -249,6 +283,16 @@ export const getActivePopup = async (_req, res) => {
         success: true,
         data: null,
       });
+    }
+
+    if (popup.couponCode) {
+      const couponExists = await CouponModel.exists({
+        code: popup.couponCode,
+        isActive: true,
+      });
+      if (!couponExists) {
+        popup.couponCode = "";
+      }
     }
 
     res.status(200).json({

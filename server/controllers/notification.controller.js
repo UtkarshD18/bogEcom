@@ -337,30 +337,39 @@ export const unregisterToken = async (req, res) => {
 export const sendOfferNotification = async (coupon, options = {}) => {
   const includeUsers = options.includeUsers !== false;
   const targetPath = normalizeNotificationTargetPath(options.targetUrl, "/products");
+  const couponCode = String(coupon?.code || "")
+    .trim()
+    .toUpperCase();
+  const discountType = String(coupon?.discountType || "percentage")
+    .trim()
+    .toLowerCase();
+  const discountValue = Number(coupon?.discountValue || 0);
   const discountText =
-    coupon.discountType === "percentage"
-      ? `${coupon.discountValue}% OFF`
-      : `INR ${coupon.discountValue} OFF`;
+    discountType === "percentage"
+      ? `${discountValue}% OFF`
+      : `INR ${discountValue} OFF`;
 
   const customTitle = String(options.title || "").trim();
   const customBody = String(options.body || "").trim();
 
   const notification = {
-    title: customTitle || `New Offer: ${discountText}`,
+    title: customTitle || (couponCode ? `New Offer: ${discountText}` : "New Offer"),
     body:
       customBody ||
-      coupon.description ||
-      `Use code ${coupon.code} to get ${discountText} on your order!`,
+      String(coupon?.description || "").trim() ||
+      (couponCode
+        ? `Use code ${couponCode} to get ${discountText} on your order!`
+        : "Discover our latest offers and products."),
   };
 
   const data = {
     type: "offer",
-    couponCode: coupon.code,
-    discountType: coupon.discountType,
-    discountValue: String(coupon.discountValue),
-    expiresAt: coupon.endDate?.toISOString() || "",
+    ...(couponCode ? { couponCode } : {}),
+    discountType,
+    discountValue: String(discountValue),
+    expiresAt: coupon?.endDate?.toISOString() || "",
     url: targetPath,
-    notificationId: `offer:${coupon.code || "GEN"}:${Date.now()}`,
+    notificationId: `offer:${couponCode || "GEN"}:${Date.now()}`,
     title: notification.title,
     body: notification.body,
   };
@@ -844,9 +853,13 @@ export const manualSendOffer = async (req, res) => {
       });
     }
 
-    // Create a pseudo-coupon object for the notification
+    const normalizedCouponCode = String(data?.couponCode || "")
+      .trim()
+      .toUpperCase();
+
+    // Create a pseudo-coupon object for notification content (coupon is optional)
     const pseudoCoupon = {
-      code: data?.couponCode || "SPECIAL",
+      code: normalizedCouponCode,
       discountType: "percentage",
       discountValue: data?.discountValue || 10,
       description: body,

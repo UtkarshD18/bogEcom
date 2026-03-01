@@ -95,6 +95,8 @@ const PAYTM_MERCHANT_ID = String(process.env.PAYTM_MERCHANT_ID || "").trim();
 const PAYTM_MERCHANT_KEY = String(process.env.PAYTM_MERCHANT_KEY || "").trim();
 const PHONEPE_CLIENT_ID = String(process.env.PHONEPE_CLIENT_ID || "").trim();
 const PHONEPE_CLIENT_SECRET = String(process.env.PHONEPE_CLIENT_SECRET || "").trim();
+const isValidPaytmMerchantKey = (value) =>
+  [16, 24, 32].includes(String(value || "").trim().length);
 const isTruthyEnv = (value) => {
   const normalized = String(value ?? "")
     .trim()
@@ -110,7 +112,7 @@ const PAYMENT_PROVIDER_ENV_ENABLED = Object.freeze({
   PAYTM: Boolean(
     isTruthyEnv(process.env.PAYTM_ENABLED) &&
       PAYTM_MERCHANT_ID &&
-      PAYTM_MERCHANT_KEY,
+      isValidPaytmMerchantKey(PAYTM_MERCHANT_KEY),
   ),
   PHONEPE: Boolean(
     isTruthyEnv(process.env.PHONEPE_ENABLED) &&
@@ -778,6 +780,21 @@ const extractPaytmWebhookFields = (payload = {}) => {
     null;
 
   return { merchantTransactionId, transactionId, state };
+};
+
+const extractOrderIdFromMerchantTransactionId = (merchantTransactionId) => {
+  const normalized = String(merchantTransactionId || "").trim();
+  if (!normalized || !normalized.startsWith("BOG_")) return null;
+
+  const directOrderId = normalized.replace(/^BOG_/, "");
+  if (mongoose.Types.ObjectId.isValid(directOrderId)) {
+    return directOrderId;
+  }
+
+  const withSuffixMatch = normalized.match(/^BOG_([a-fA-F0-9]{24})(?:[_-].+)?$/);
+  if (!withSuffixMatch?.[1]) return null;
+
+  return withSuffixMatch[1];
 };
 
 const verifyPaytmWebhookState = async (merchantTransactionId) => {
@@ -3231,6 +3248,227 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Retry payment for an existing unpaid order
+ * @route POST /api/orders/:orderId/retry-payment
+ * @access User (authenticated + owner)
+ */
+export const retryOrderPayment = asyncHandler(async (req, res) => {
+  try {
+    const userId = req.user;
+    const orderId = req.params.orderId || req.params.id;
+
+    if (!userId) {
+      throw new AppError("UNAUTHORIZED");
+    }
+
+    validateMongoId(orderId, "orderId");
+
+    const maintenanceMode = await isMaintenanceMode();
+    if (maintenanceMode) {
+      return res.status(503).json({
+        error: true,
+        success: false,
+        message:
+          "Checkout is temporarily unavailable due to maintenance. Please try again later.",
+      });
+    }
+
+    if (!(await isPaymentEnabled())) {
+      throw new AppError("PAYMENT_DISABLED");
+    }
+
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      throw new AppError("ORDER_NOT_FOUND");
+    }
+
+    const orderUserId = order.user?._id?.toString() || order.user?.toString();
+    if (orderUserId !== userId?.toString()) {
+      throw new AppError("FORBIDDEN");
+    }
+
+    const normalizedPaymentStatus = String(order.payment_status || "")
+      .trim()
+      .toLowerCase();
+    if (normalizedPaymentStatus === "paid") {
+      throw new AppError("CONFLICT", {
+        field: "payment_status",
+        message: "Order is already paid",
+      });
+    }
+
+    const normalizedOrderStatus = normalizeOrderStatus(order.order_status);
+    const terminalStatuses = new Set([
+      ORDER_STATUS.CANCELLED,
+      ORDER_STATUS.DELIVERED,
+      ORDER_STATUS.COMPLETED,
+      ORDER_STATUS.RTO,
+      ORDER_STATUS.RTO_COMPLETED,
+    ]);
+    if (terminalStatuses.has(normalizedOrderStatus)) {
+      throw new AppError("INVALID_STATUS", {
+        field: "order_status",
+        status: normalizedOrderStatus,
+        message: "Order is not eligible for payment retry",
+      });
+    }
+
+    const requestedPaymentProvider = String(
+      req.body?.paymentProvider || order.paymentMethod || "",
+    )
+      .trim()
+      .toUpperCase();
+    const selectedPaymentProvider = resolvePaymentProviderForRequest(
+      requestedPaymentProvider,
+    );
+
+    const payableAmount = Math.max(
+      Number(order.finalAmount || order.totalAmt || 0),
+      1,
+    );
+
+    const primaryOrigin = String(process.env.CLIENT_URL || "")
+      .split(",")[0]
+      .trim()
+      .replace(/\/+$/, "");
+    const backendUrl = String(
+      process.env.BACKEND_URL ||
+        process.env.API_BASE_URL ||
+        (process.env.GAE_DEFAULT_HOSTNAME
+          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
+          : ""),
+    )
+      .trim()
+      .replace(/\/+$/, "");
+
+    const contact = order.billingDetails || order.guestDetails || {};
+
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
+      const merchantTransactionId =
+        String(order.paytmOrderId || order.paymentId || `BOG_${order._id}`).trim() ||
+        `BOG_${order._id}`;
+      const callbackUrl =
+        process.env.PAYTM_ORDER_CALLBACK_URL ||
+        process.env.PAYTM_CALLBACK_URL ||
+        `${backendUrl}/api/orders/webhook/paytm`;
+
+      const paytmResponse = await createPaytmPayment({
+        amount: payableAmount,
+        orderId: merchantTransactionId,
+        callbackUrl,
+        customerId: userId ? String(userId) : "guest",
+        mobileNumber: contact.phone || null,
+        email: contact.email || null,
+      });
+
+      const gatewayBase = (() => {
+        try {
+          return new URL(String(paytmResponse.gatewayUrl || "")).origin;
+        } catch {
+          return "";
+        }
+      })();
+
+      const paymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
+        paytmResponse.mid,
+      )}&orderId=${encodeURIComponent(
+        paytmResponse.orderId,
+      )}&txnToken=${encodeURIComponent(
+        paytmResponse.txnToken,
+      )}&amount=${encodeURIComponent(Number(payableAmount).toFixed(2))}`;
+      const paymentUrlWithGateway = gatewayBase
+        ? `${paymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
+        : paymentUrl;
+
+      order.paymentMethod = PAYMENT_PROVIDERS.PAYTM;
+      order.payment_status = "pending";
+      order.paymentId = merchantTransactionId;
+      order.paytmOrderId = merchantTransactionId;
+      order.failureReason = "";
+      order.updatedAt = new Date();
+      await order.save();
+
+      syncOrderToFirestore(order, "update").catch((err) =>
+        logger.error("retryOrderPayment", "Failed to sync order to Firestore", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+
+      return sendSuccess(res, {
+        orderId: order._id,
+        paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+        paymentUrl: paymentUrlWithGateway,
+        merchantTransactionId,
+        txnToken: paytmResponse.txnToken,
+        paytmGatewayUrl: paytmResponse.gatewayUrl,
+      });
+    }
+
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PHONEPE) {
+      const merchantTransactionId = `BOG_${order._id}_${Date.now().toString(36).toUpperCase()}`;
+      const defaultPhonePeCallback = `${backendUrl}/api/orders/webhook/phonepe`;
+      const callbackUrl =
+        process.env.PHONEPE_ORDER_CALLBACK_URL ||
+        `${defaultPhonePeCallback}?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}`;
+      const defaultPhonePeRedirect =
+        `${primaryOrigin}/payment/phonepe?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}&flow=order&returnPath=${encodeURIComponent("/my-orders")}`;
+      const redirectUrl =
+        process.env.PHONEPE_REDIRECT_URL || defaultPhonePeRedirect;
+
+      const phonepeResponse = await createPhonePePayment({
+        amount: payableAmount,
+        merchantOrderId: merchantTransactionId,
+        redirectUrl,
+        callbackUrl,
+        customerId: userId ? String(userId) : "guest",
+      });
+
+      order.paymentMethod = PAYMENT_PROVIDERS.PHONEPE;
+      order.payment_status = "pending";
+      order.paymentId = merchantTransactionId;
+      order.phonepeMerchantOrderId = merchantTransactionId;
+      order.phonepeOrderId = phonepeResponse.phonepeOrderId || null;
+      order.failureReason = "";
+      order.updatedAt = new Date();
+      await order.save();
+
+      syncOrderToFirestore(order, "update").catch((err) =>
+        logger.error("retryOrderPayment", "Failed to sync order to Firestore", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+
+      return sendSuccess(res, {
+        orderId: order._id,
+        paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+        paymentUrl: phonepeResponse.redirectUrl,
+        merchantTransactionId,
+        phonepeOrderId: phonepeResponse.phonepeOrderId,
+        state: phonepeResponse.state,
+        expiresAt: phonepeResponse.expireAt,
+      });
+    }
+
+    throw new AppError("INVALID_PAYMENT_METHOD", {
+      provider: selectedPaymentProvider,
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      return sendError(res, error);
+    }
+
+    const dbError = handleDatabaseError(error, "retryOrderPayment");
+    return sendError(res, dbError);
+  }
+});
+
 const runPostPaymentSuccessTasks = async ({
   order,
   webhookContext = "paymentWebhook",
@@ -3378,8 +3616,8 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    const orderId = String(merchantTransactionId).replace("BOG_", "");
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    const orderId = extractOrderIdFromMerchantTransactionId(merchantTransactionId);
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
       logger.warn("handlePaytmWebhook", "Invalid orderId in transaction", {
         merchantTransactionId,
         orderId,
@@ -3532,8 +3770,8 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
       return sendSuccess(res, {}, "Webhook received");
     }
 
-    const orderId = merchantTransactionId.replace(/^BOG_/, "");
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    const orderId = extractOrderIdFromMerchantTransactionId(merchantTransactionId);
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
       logger.warn("handlePhonePeWebhook", "Invalid orderId in transaction", {
         merchantTransactionId,
         orderId,
@@ -3553,12 +3791,11 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
       order.phonepeMerchantOrderId &&
       String(order.phonepeMerchantOrderId) !== String(merchantTransactionId)
     ) {
-      logger.warn("handlePhonePeWebhook", "Transaction/order mismatch", {
+      logger.info("handlePhonePeWebhook", "Processing alternate retry transaction id", {
         orderId: order._id,
         merchantTransactionId,
-        expected: order.phonepeMerchantOrderId,
+        previous: order.phonepeMerchantOrderId,
       });
-      return sendSuccess(res, {}, "Webhook received");
     }
 
     const verifiedStatus = await verifyPhonePeWebhookState(merchantTransactionId);

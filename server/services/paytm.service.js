@@ -28,6 +28,12 @@ const getPaytmCredentials = () => {
     );
   }
 
+  if (![16, 24, 32].includes(merchantKey.length)) {
+    throw new Error(
+      "Paytm merchant key length is invalid. It must be 16/24/32 chars. If key contains # in .env, wrap it in quotes.",
+    );
+  }
+
   return {
     mid,
     merchantKey,

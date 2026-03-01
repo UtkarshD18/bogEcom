@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL } from "@/utils/api";
+import { stashPendingCouponCode } from "@/utils/couponIntent";
 import { getImageUrl } from "@/utils/imageUtils";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MdClose, MdLocalOffer, MdNorthEast } from "react-icons/md";
@@ -41,11 +42,21 @@ const resolvePopupTarget = (popup) => {
   return "";
 };
 
+const normalizeCouponCode = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+
 const ManagedPopup = () => {
   const [popup, setPopup] = useState(null);
   const [visible, setVisible] = useState(false);
 
   const targetUrl = useMemo(() => resolvePopupTarget(popup), [popup]);
+  const popupCouponCode = useMemo(
+    () => normalizeCouponCode(popup?.couponCode),
+    [popup?.couponCode],
+  );
   const isClickable = Boolean(targetUrl);
 
   const markSeen = useCallback((nextPopup) => {
@@ -63,6 +74,13 @@ const ManagedPopup = () => {
   }, [markSeen, popup]);
 
   const handleCta = useCallback(() => {
+    if (popupCouponCode) {
+      stashPendingCouponCode(popupCouponCode, {
+        source: "managed_popup",
+        notificationId: popup?.id || "",
+      });
+    }
+
     if (!isClickable) {
       handleDismiss();
       return;
@@ -72,7 +90,7 @@ const ManagedPopup = () => {
     if (typeof window !== "undefined") {
       window.location.assign(targetUrl);
     }
-  }, [handleDismiss, isClickable, targetUrl]);
+  }, [handleDismiss, isClickable, popup?.id, popupCouponCode, targetUrl]);
 
   useEffect(() => {
     let disposed = false;
@@ -181,6 +199,11 @@ const ManagedPopup = () => {
                 {isClickable ? "Click to continue" : "Dismiss anytime"}
               </span>
             </div>
+            {popupCouponCode ? (
+              <p className="mt-2 text-xs font-semibold tracking-wide text-amber-700">
+                Coupon: {popupCouponCode}
+              </p>
+            ) : null}
             <button
               type="button"
               className={styles.ctaButton}
