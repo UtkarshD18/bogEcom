@@ -29,6 +29,73 @@ const normalizeProvider = (value) =>
     .trim()
     .toUpperCase();
 
+const normalizePaymentState = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const inferPaymentStateFromSearch = (search) => {
+  if (!search) return "";
+
+  const explicit = normalizePaymentState(
+    search.get("paymentState") ||
+      search.get("payment_status") ||
+      search.get("state") ||
+      search.get("status") ||
+      search.get("result") ||
+      search.get("code") ||
+      search.get("txnStatus") ||
+      search.get("txStatus") ||
+      search.get("responseCode") ||
+      search.get("errorCode") ||
+      search.get("error") ||
+      search.get("message") ||
+      "",
+  );
+
+  const combined = normalizePaymentState(
+    `${explicit} ${Array.from(search.values()).join(" ")}`,
+  );
+
+  if (
+    combined.includes("cancel") ||
+    combined.includes("aborted") ||
+    combined.includes("dropped")
+  ) {
+    return "cancelled";
+  }
+  if (
+    combined.includes("fail") ||
+    combined.includes("declin") ||
+    combined.includes("error") ||
+    combined.includes("timeout") ||
+    combined.includes("expire")
+  ) {
+    return "failed";
+  }
+  if (
+    combined.includes("success") ||
+    combined.includes("completed") ||
+    combined.includes("paid")
+  ) {
+    return "paid";
+  }
+  if (combined.includes("pending") || combined.includes("processing")) {
+    return "pending";
+  }
+
+  return "";
+};
+
+const isFailureState = (value) => {
+  const state = normalizePaymentState(value);
+  return state === "failed" || state === "cancelled" || state === "canceled";
+};
+
+const getFailureMessage = (state) =>
+  normalizePaymentState(state).includes("cancel")
+    ? "Payment was cancelled. No amount was charged."
+    : "Payment failed. Please retry from your order page.";
 const buildMembershipReturnUrl = (params) => {
   if (typeof window === "undefined") return params.returnPath;
   const target = new URL(params.returnPath, window.location.origin);
@@ -42,6 +109,9 @@ const buildMembershipReturnUrl = (params) => {
   }
   if (params.coins) {
     target.searchParams.set("coins", params.coins);
+  }
+  if (params.paymentState) {
+    target.searchParams.set("paymentState", normalizePaymentState(params.paymentState));
   }
   return target.toString();
 };
@@ -66,9 +136,11 @@ const PhonePeReturn = () => {
       merchantOrderId: String(
         search.get("merchantOrderId") || search.get("orderId") || "",
       ).trim(),
+      orderId: String(search.get("orderId") || "").trim(),
       planId: String(search.get("planId") || "").trim(),
       paymentProvider: normalizeProvider(search.get("paymentProvider") || "PHONEPE"),
       coins: String(search.get("coins") || "").trim(),
+      paymentState: inferPaymentStateFromSearch(search),
       flow: String(search.get("flow") || "order")
         .trim()
         .toLowerCase(),
@@ -83,12 +155,17 @@ const PhonePeReturn = () => {
     let disposed = false;
 
     const syncWebhook = async () => {
+      if (isFailureState(params.paymentState)) {
+        setMessage(getFailureMessage(params.paymentState));
+        return;
+      }
+
       if (!params.merchantOrderId) {
         setMessage("Missing PhonePe session details. Please retry checkout.");
         return;
       }
 
-      setMessage("Payment completed. Syncing with server...");
+      setMessage("Checking payment status with PhonePe...");
 
       try {
         await fetch(`${API_URL}/api/orders/webhook/phonepe`, {
@@ -115,7 +192,7 @@ const PhonePeReturn = () => {
     return () => {
       disposed = true;
     };
-  }, [params.merchantOrderId]);
+  }, [params.flow, params.merchantOrderId, params.paymentState]);
 
   useEffect(() => {
     let disposed = false;
@@ -124,27 +201,28 @@ const PhonePeReturn = () => {
       if (typeof window === "undefined") return false;
       if (params.flow !== "order") return false;
 
+      let orderId = String(params.orderId || "").trim();
       const raw = localStorage.getItem(ORDER_PENDING_PAYMENT_KEY);
-      if (!raw) return false;
-
-      let pending = null;
-      try {
-        pending = JSON.parse(raw);
-      } catch {
-        localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
-        return false;
+      if (raw) {
+        try {
+          const pending = JSON.parse(raw);
+          const pendingOrderId = String(pending?.orderId || "").trim();
+          if (pendingOrderId) {
+            orderId = pendingOrderId;
+          }
+        } catch {
+          localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
+        }
       }
 
-      const orderId = String(pending?.orderId || "").trim();
       if (!orderId) {
-        localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
         return false;
       }
 
       const token = getStoredAuthToken();
       if (!token) return false;
 
-      setMessage("Payment received. Verifying your order status...");
+      setMessage("Verifying your order payment status...");
 
       for (let attempt = 0; attempt < 8; attempt += 1) {
         if (disposed) return true;
@@ -160,7 +238,8 @@ const PhonePeReturn = () => {
           if (response.ok) {
             const data = await response.json();
             const order = data?.data;
-            const paid = String(order?.payment_status || "").toLowerCase() === "paid";
+            const paymentStatus = normalizePaymentState(order?.payment_status);
+            const paid = paymentStatus === "paid";
 
             if (paid) {
               localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
@@ -201,6 +280,29 @@ const PhonePeReturn = () => {
               }
               return true;
             }
+
+            if (
+              paymentStatus === "failed" ||
+              paymentStatus === "cancelled" ||
+              paymentStatus === "canceled" ||
+              paymentStatus === "unavailable"
+            ) {
+              localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
+
+              if (!disposed) {
+                const resolvedOrderId = String(order?._id || orderId).trim();
+                setMessage(getFailureMessage(paymentStatus));
+                if (resolvedOrderId && !redirectedRef.current) {
+                  redirectedRef.current = true;
+                  setTimeout(() => {
+                    window.location.href = `/orders/${encodeURIComponent(
+                      resolvedOrderId,
+                    )}?paymentProvider=PHONEPE&paymentState=${encodeURIComponent(paymentStatus)}`;
+                  }, 900);
+                }
+              }
+              return true;
+            }
           }
         } catch {
           // keep polling briefly
@@ -214,7 +316,11 @@ const PhonePeReturn = () => {
 
     const checkStatus = async () => {
       if (params.flow === "membership") {
-        setMessage("Payment received. Redirecting to membership verification...");
+        if (isFailureState(params.paymentState)) {
+          setMessage(getFailureMessage(params.paymentState));
+        } else {
+          setMessage("Redirecting to membership verification...");
+        }
         if (!redirectedRef.current) {
           redirectedRef.current = true;
           const membershipReturnUrl = buildMembershipReturnUrl(params);
@@ -225,6 +331,28 @@ const PhonePeReturn = () => {
         return;
       }
 
+      if (isFailureState(params.paymentState)) {
+        localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
+        const resolvedOrderId = String(params.orderId || "").trim();
+        setMessage(getFailureMessage(params.paymentState));
+        if (!redirectedRef.current) {
+          redirectedRef.current = true;
+          setTimeout(() => {
+            if (resolvedOrderId) {
+              window.location.href = `/orders/${encodeURIComponent(
+                resolvedOrderId,
+              )}?paymentProvider=PHONEPE&paymentState=${encodeURIComponent(
+                normalizePaymentState(params.paymentState),
+              )}`;
+              return;
+            }
+            window.location.href = `/my-orders?paymentProvider=PHONEPE&paymentState=${encodeURIComponent(
+              normalizePaymentState(params.paymentState),
+            )}`;
+          }, 900);
+        }
+        return;
+      }
       const verified = await verifyPendingOrder();
       if (verified || disposed) return;
 
@@ -236,13 +364,23 @@ const PhonePeReturn = () => {
     return () => {
       disposed = true;
     };
-  }, [params.flow]);
+  }, [
+    params,
+    params.coins,
+    params.flow,
+    params.merchantOrderId,
+    params.orderId,
+    params.paymentProvider,
+    params.paymentState,
+    params.planId,
+    params.returnPath,
+  ]);
 
   return (
     <section className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-xl shadow-md p-8 max-w-lg text-center">
         <h1 className="text-2xl font-bold text-gray-800 mb-3">
-          PhonePe Payment Processing
+          PhonePe Payment Status
         </h1>
         <p className="text-gray-600 mb-6">{message}</p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
