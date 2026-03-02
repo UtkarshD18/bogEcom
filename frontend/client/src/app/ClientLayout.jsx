@@ -15,7 +15,7 @@ import { ReferralProvider } from "../context/ReferralContext";
 import { SettingsProvider, useSettings } from "../context/SettingsContext";
 import { WishlistProvider } from "../context/WishlistContext";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { Toaster } from "react-hot-toast";
 
 const MaintenanceScreen = ({ storeName }) => {
@@ -97,7 +97,9 @@ export default function ClientLayout({ children }) {
             <CartProvider>
               <WishlistProvider>
                 <ErrorBoundary>
-                  <AnalyticsTracker />
+                  <Suspense fallback={null}>
+                    <AnalyticsTracker />
+                  </Suspense>
                   <ClientShell isAffiliateRoute={isAffiliateRoute}>
                     {children}
                   </ClientShell>
