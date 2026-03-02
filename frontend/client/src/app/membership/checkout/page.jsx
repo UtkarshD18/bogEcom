@@ -9,6 +9,7 @@ const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL.slice(0, -4)
   : API_BASE_URL;
 const PENDING_PAYMENT_KEY = "membershipPaymentPending";
+const PAYMENT_PROVIDERS = ["PAYTM", "PHONEPE"];
 
 const getStoredAuthToken = () => {
   const cookieToken = cookies.get("accessToken");
@@ -26,6 +27,34 @@ const ensureAccessTokenCookie = (token) => {
 
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const normalizeProvider = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  return PAYMENT_PROVIDERS.includes(normalized) ? normalized : "";
+};
+const parsePendingPaymentFromSearch = () => {
+  if (typeof window === "undefined") return null;
+  const search = new URLSearchParams(window.location.search || "");
+  const merchantTransactionId = String(
+    search.get("merchantTransactionId") ||
+      search.get("merchantOrderId") ||
+      search.get("orderId") ||
+      "",
+  ).trim();
+  const planId = String(search.get("planId") || "").trim();
+  if (!merchantTransactionId || !planId) return null;
+
+  return {
+    merchantTransactionId,
+    planId,
+    coinRedeem: {
+      coins: Math.max(Math.floor(Number(search.get("coins") || 0)), 0),
+    },
+    paymentProvider: normalizeProvider(search.get("paymentProvider")),
+    createdAt: Date.now(),
+  };
+};
 
 const DEFAULT_COIN_SUMMARY = {
   usable_coins: 0,
@@ -67,6 +96,8 @@ export default function MembershipCheckoutPage() {
   const [requestedCoins, setRequestedCoins] = useState(0);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [paymentProviders, setPaymentProviders] = useState(["PAYTM"]);
+  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState("PAYTM");
   const router = useRouter();
 
   const redeemRate = Number(coinSummary?.settings?.redeemRate || 0);
@@ -104,11 +135,12 @@ export default function MembershipCheckoutPage() {
       ensureAccessTokenCookie(token);
 
       try {
-        const [statusRes, planRes] = await Promise.all([
+        const [statusRes, planRes, paymentStatusRes] = await Promise.all([
           fetch(`${API_URL}/api/membership/status`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
           fetch(`${API_URL}/api/membership/active`),
+          fetch(`${API_URL}/api/orders/payment-status`),
         ]);
 
         if (statusRes.status === 401) {
@@ -131,6 +163,36 @@ export default function MembershipCheckoutPage() {
           setPlan(planData.data);
         } else {
           setError("No membership plan available");
+        }
+
+        const paymentStatusData = await paymentStatusRes
+          .json()
+          .catch(() => null);
+        const enabledProviders = (
+          Array.isArray(paymentStatusData?.data?.enabledProviders)
+            ? paymentStatusData.data.enabledProviders
+            : []
+        )
+          .map((provider) => String(provider || "").trim().toUpperCase())
+          .filter((provider) => PAYMENT_PROVIDERS.includes(provider));
+        const defaultProvider = String(
+          paymentStatusData?.data?.defaultProvider ||
+            paymentStatusData?.data?.provider ||
+            enabledProviders[0] ||
+            "PAYTM",
+        )
+          .trim()
+          .toUpperCase();
+        if (enabledProviders.length > 0) {
+          setPaymentProviders(enabledProviders);
+          setSelectedPaymentProvider(
+            enabledProviders.includes(defaultProvider)
+              ? defaultProvider
+              : enabledProviders[0],
+          );
+        } else {
+          setPaymentProviders([]);
+          setSelectedPaymentProvider("");
         }
 
         const coinHeaders = { Authorization: `Bearer ${token}` };
@@ -168,9 +230,23 @@ export default function MembershipCheckoutPage() {
         ensureAccessTokenCookie(token);
 
         const raw = localStorage.getItem(PENDING_PAYMENT_KEY);
-        if (!raw) return;
+        let pending = null;
+        if (raw) {
+          try {
+            pending = JSON.parse(raw);
+          } catch {
+            pending = null;
+            localStorage.removeItem(PENDING_PAYMENT_KEY);
+          }
+        }
+        if (!pending) {
+          pending = parsePendingPaymentFromSearch();
+          if (pending) {
+            localStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
+          }
+        }
+        if (!pending) return;
 
-        const pending = JSON.parse(raw);
         if (!pending?.merchantTransactionId || !pending?.planId) {
           localStorage.removeItem(PENDING_PAYMENT_KEY);
           return;
@@ -179,26 +255,47 @@ export default function MembershipCheckoutPage() {
         setIsProcessing(true);
         setError(null);
 
-        const verifyRes = await fetch(`${API_URL}/api/membership/verify-payment`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            merchantTransactionId: pending.merchantTransactionId,
-            planId: pending.planId,
-            coinRedeem: {
-              coins: Math.max(
-                Math.floor(Number(pending?.coinRedeem?.coins || 0)),
-                0,
-              ),
-            },
-          }),
-        });
+        const normalizedProvider =
+          normalizeProvider(pending?.paymentProvider) ||
+          normalizeProvider(selectedPaymentProvider) ||
+          "PAYTM";
 
-        const verifyData = await verifyRes.json();
-        if (verifyData.success) {
+        let verifyData = null;
+        let verified = false;
+
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          const verifyRes = await fetch(`${API_URL}/api/membership/verify-payment`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              merchantTransactionId: pending.merchantTransactionId,
+              planId: pending.planId,
+              paymentProvider: normalizedProvider,
+              coinRedeem: {
+                coins: Math.max(
+                  Math.floor(Number(pending?.coinRedeem?.coins || 0)),
+                  0,
+                ),
+              },
+            }),
+          });
+
+          verifyData = await verifyRes.json().catch(() => null);
+          if (verifyData?.success) {
+            verified = true;
+            break;
+          }
+
+          const message = String(verifyData?.message || "").toLowerCase();
+          if (!message.includes("not successful yet")) break;
+
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+
+        if (verified) {
           localStorage.removeItem(PENDING_PAYMENT_KEY);
           window.dispatchEvent(
             new CustomEvent("coinBalanceRefresh", {
@@ -209,7 +306,7 @@ export default function MembershipCheckoutPage() {
           setTimeout(() => router.push("/membership"), 1500);
         } else {
           setError(
-            verifyData.message ||
+            verifyData?.message ||
               "Payment not confirmed yet. Please wait a moment and retry.",
           );
         }
@@ -221,7 +318,7 @@ export default function MembershipCheckoutPage() {
     };
 
     verifyPendingPayment();
-  }, [router]);
+  }, [router, selectedPaymentProvider]);
 
   const handlePayment = async () => {
     if (!plan) return;
@@ -236,6 +333,12 @@ export default function MembershipCheckoutPage() {
     }
     ensureAccessTokenCookie(token);
 
+    if (finalPayable > 0 && !selectedPaymentProvider) {
+      setError("No payment gateway is currently available. Please try again later.");
+      setIsProcessing(false);
+      return;
+    }
+
     try {
       const orderRes = await fetch(`${API_URL}/api/membership/create-order`, {
         method: "POST",
@@ -245,6 +348,7 @@ export default function MembershipCheckoutPage() {
         },
         body: JSON.stringify({
           planId: plan._id,
+          paymentProvider: selectedPaymentProvider,
           coinRedeem: {
             coins: effectiveCoins,
           },
@@ -292,6 +396,11 @@ export default function MembershipCheckoutPage() {
                 0,
               ),
             },
+            paymentProvider: String(
+              orderData?.data?.paymentProvider || selectedPaymentProvider || "PAYTM",
+            )
+              .trim()
+              .toUpperCase(),
             createdAt: Date.now(),
           }),
         );
@@ -575,6 +684,48 @@ export default function MembershipCheckoutPage() {
           </div>
         </div>
 
+        {finalPayable > 0 && (
+          <div
+            style={{
+              marginBottom: 18,
+              borderRadius: 12,
+              border: "1px solid #d1d5db",
+              padding: 12,
+              background: "#f9fafb",
+            }}
+          >
+            <div style={{ color: "#374151", fontWeight: 700, marginBottom: 10 }}>
+              Payment Method
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {paymentProviders.map((provider) => {
+                const active = selectedPaymentProvider === provider;
+                return (
+                  <button
+                    key={provider}
+                    type="button"
+                    onClick={() => setSelectedPaymentProvider(provider)}
+                    style={{
+                      borderRadius: 999,
+                      border: active ? "2px solid var(--primary)" : "1px solid #d1d5db",
+                      background: active ? "rgba(143, 177, 89, 0.15)" : "#fff",
+                      color: "#1f2937",
+                      padding: "8px 14px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {provider === "PAYTM" ? "Paytm" : "PhonePe"}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 8, fontSize: "0.82rem", color: "#6b7280" }}>
+              Secure payment via {selectedPaymentProvider === "PHONEPE" ? "PhonePe" : "Paytm"}
+            </div>
+          </div>
+        )}
+
         {error && (
           <div
             style={{
@@ -592,7 +743,7 @@ export default function MembershipCheckoutPage() {
 
         <button
           onClick={handlePayment}
-          disabled={isProcessing}
+          disabled={isProcessing || (finalPayable > 0 && !selectedPaymentProvider)}
           style={{
             width: "100%",
             padding: "16px",
@@ -619,7 +770,12 @@ export default function MembershipCheckoutPage() {
             marginTop: 16,
           }}
         >
-          Secure payment powered by Paytm
+          Secure payment powered by{" "}
+          {selectedPaymentProvider === "PHONEPE"
+            ? "PhonePe"
+            : selectedPaymentProvider === "PAYTM"
+              ? "Paytm"
+              : "gateway"}
         </p>
       </div>
 

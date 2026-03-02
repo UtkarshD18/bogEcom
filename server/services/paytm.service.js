@@ -1,7 +1,7 @@
 import PaytmChecksum from "paytmchecksum";
 
-const DEFAULT_PAYTM_STAGE_URL = "https://securegw-stage.paytm.in";
-const DEFAULT_PAYTM_PROD_URL = "https://securegw.paytm.in";
+const DEFAULT_PAYTM_STAGE_URL = "https://securestage.paytmpayments.com";
+const DEFAULT_PAYTM_PROD_URL = "https://secure.paytmpayments.com";
 
 const normalizeBaseUrl = (value) =>
   String(value || "")
@@ -25,6 +25,12 @@ const getPaytmCredentials = () => {
   if (!mid || !merchantKey) {
     throw new Error(
       "Paytm credentials missing. Set PAYTM_MERCHANT_ID and PAYTM_MERCHANT_KEY.",
+    );
+  }
+
+  if (![16, 24, 32].includes(merchantKey.length)) {
+    throw new Error(
+      "Paytm merchant key length is invalid. It must be 16/24/32 chars. If key contains # in .env, wrap it in quotes.",
     );
   }
 

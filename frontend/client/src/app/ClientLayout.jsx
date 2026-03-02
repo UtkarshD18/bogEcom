@@ -6,6 +6,7 @@ import ErrorBoundary from "../components/ErrorBoundary";
 import Footer from "../components/Footer";
 import Header from "../components/Header";
 import AnalyticsTracker from "../components/AnalyticsTracker";
+import ManagedPopup from "../components/ManagedPopup";
 import NotificationHandler from "../components/NotificationHandler";
 import OfferPopup from "../components/OfferPopup";
 import { CartProvider } from "../context/CartContext";
@@ -57,6 +58,7 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
         {children}
       </main>
       <Footer />
+      <ManagedPopup />
       <OfferPopup />
       <NotificationHandler />
       <CartDrawer />

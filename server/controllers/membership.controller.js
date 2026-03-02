@@ -2,18 +2,33 @@ import MembershipPlanModel from "../models/membershipPlan.model.js";
 import MembershipUserModel from "../models/membershipUser.model.js";
 import UserModel from "../models/user.model.js";
 import { createPaytmPayment, getPaytmStatus } from "../services/paytm.service.js";
+import {
+  createPhonePePayment,
+  getPhonePeOrderStatus,
+} from "../services/phonepe.service.js";
 import { getUserCoinSummary, redeemCoins } from "../services/coin.service.js";
 import { activateMembershipForUser } from "../services/membershipUser.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
 /**
- * Payment Provider Constant
- * Current provider: Paytm
+ * Membership payment provider constants
  */
-const PAYMENT_PROVIDER = "PAYTM";
+const PAYMENT_PROVIDERS = Object.freeze({
+  PAYTM: "PAYTM",
+  PHONEPE: "PHONEPE",
+});
+const configuredPaymentProvider = String(
+  process.env.PAYMENT_PROVIDER || PAYMENT_PROVIDERS.PAYTM,
+)
+  .trim()
+  .toUpperCase();
 const PAYTM_MERCHANT_ID = String(process.env.PAYTM_MERCHANT_ID || "").trim();
 const PAYTM_MERCHANT_KEY = String(process.env.PAYTM_MERCHANT_KEY || "").trim();
+const PHONEPE_CLIENT_ID = String(process.env.PHONEPE_CLIENT_ID || "").trim();
+const PHONEPE_CLIENT_SECRET = String(process.env.PHONEPE_CLIENT_SECRET || "").trim();
+const isValidPaytmMerchantKey = (value) =>
+  [16, 24, 32].includes(String(value || "").trim().length);
 const isTruthyEnv = (value) => {
   const normalized = String(value ?? "")
     .trim()
@@ -27,15 +42,62 @@ const isTruthyEnv = (value) => {
 };
 
 /**
- * Check if payment gateway is enabled
- * Enable by setting PAYTM_ENABLED=true in .env
+ * Membership payment provider readiness
  */
-const isPaymentEnabled = () => {
-  return Boolean(
+const PAYMENT_PROVIDER_ENV_ENABLED = Object.freeze({
+  PAYTM: Boolean(
     isTruthyEnv(process.env.PAYTM_ENABLED) &&
       PAYTM_MERCHANT_ID &&
-      PAYTM_MERCHANT_KEY,
+      isValidPaytmMerchantKey(PAYTM_MERCHANT_KEY),
+  ),
+  PHONEPE: Boolean(
+    isTruthyEnv(process.env.PHONEPE_ENABLED) &&
+      PHONEPE_CLIENT_ID &&
+      PHONEPE_CLIENT_SECRET,
+  ),
+});
+const getEnabledPaymentProviders = () =>
+  Object.entries(PAYMENT_PROVIDER_ENV_ENABLED)
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([provider]) => provider);
+const resolveDefaultPaymentProvider = () => {
+  const requested = configuredPaymentProvider;
+  const isSupported = Object.values(PAYMENT_PROVIDERS).includes(requested);
+  if (isSupported && PAYMENT_PROVIDER_ENV_ENABLED[requested]) {
+    return requested;
+  }
+
+  const fallbackOrder =
+    requested === PAYMENT_PROVIDERS.PHONEPE
+      ? [PAYMENT_PROVIDERS.PHONEPE, PAYMENT_PROVIDERS.PAYTM]
+      : [PAYMENT_PROVIDERS.PAYTM, PAYMENT_PROVIDERS.PHONEPE];
+  return (
+    fallbackOrder.find((provider) => PAYMENT_PROVIDER_ENV_ENABLED[provider]) ||
+    null
   );
+};
+const DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER = resolveDefaultPaymentProvider();
+const isPaymentEnabled = () =>
+  Object.values(PAYMENT_PROVIDER_ENV_ENABLED).some(Boolean);
+const resolveMembershipPaymentProvider = (requestedProvider) => {
+  const normalized = String(requestedProvider || "")
+    .trim()
+    .toUpperCase();
+  if (normalized) {
+    if (!Object.values(PAYMENT_PROVIDERS).includes(normalized)) {
+      return null;
+    }
+    if (!PAYMENT_PROVIDER_ENV_ENABLED[normalized]) {
+      return null;
+    }
+    return normalized;
+  }
+
+  if (DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER) {
+    return DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER;
+  }
+
+  return null;
 };
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -112,6 +174,11 @@ const extractPaytmFields = (payload = {}) => {
   };
 };
 
+const extractPhonePeState = (statusPayload = {}) =>
+  String(statusPayload?.state || statusPayload?.status || "")
+    .trim()
+    .toUpperCase();
+
 const computeMembershipExpiry = (plan) => {
   const expiry = new Date();
   if (plan.durationUnit === "months") {
@@ -122,6 +189,81 @@ const computeMembershipExpiry = (plan) => {
     expiry.setDate(expiry.getDate() + Number(plan.duration || 0));
   }
   return expiry;
+};
+
+const getClientBaseUrl = () => {
+  const configured = String(process.env.CLIENT_URL || "")
+    .split(",")[0]
+    .trim()
+    .replace(/\/+$/, "");
+
+  if (/^https?:\/\//i.test(configured)) {
+    return configured;
+  }
+
+  return "https://healthyonegram.com";
+};
+
+const isBrowserNavigationRequest = (req) => {
+  const method = String(req?.method || "")
+    .trim()
+    .toUpperCase();
+  const accept = String(req?.headers?.accept || "").toLowerCase();
+  const secFetchDest = String(req?.headers?.["sec-fetch-dest"] || "").toLowerCase();
+  const secFetchMode = String(req?.headers?.["sec-fetch-mode"] || "").toLowerCase();
+  const secFetchUser = String(req?.headers?.["sec-fetch-user"] || "").toLowerCase();
+  const userAgent = String(req?.headers?.["user-agent"] || "").toLowerCase();
+
+  if (method === "GET") return true;
+
+  const hasNavigationHints =
+    secFetchDest === "document" ||
+    secFetchMode === "navigate" ||
+    secFetchUser === "?1";
+  const browserUserAgent =
+    userAgent.includes("mozilla") ||
+    userAgent.includes("chrome") ||
+    userAgent.includes("safari") ||
+    userAgent.includes("firefox") ||
+    userAgent.includes("edg") ||
+    userAgent.includes("opera");
+
+  return accept.includes("text/html") || hasNavigationHints || browserUserAgent;
+};
+
+const redirectMembershipCallbackToClient = ({
+  res,
+  merchantTransactionId,
+  state,
+  paymentProvider = PAYMENT_PROVIDERS.PAYTM,
+}) => {
+  try {
+    const target = new URL("/membership/checkout", `${getClientBaseUrl()}/`);
+    if (merchantTransactionId) {
+      target.searchParams.set(
+        "merchantTransactionId",
+        String(merchantTransactionId),
+      );
+    }
+    if (state) {
+      target.searchParams.set("paymentState", String(state).toLowerCase());
+    }
+    target.searchParams.set("paymentProvider", String(paymentProvider));
+    return res.redirect(303, target.toString());
+  } catch {
+    const fallback = new URL("/membership/checkout", "https://healthyonegram.com/");
+    if (merchantTransactionId) {
+      fallback.searchParams.set(
+        "merchantTransactionId",
+        String(merchantTransactionId),
+      );
+    }
+    if (state) {
+      fallback.searchParams.set("paymentState", String(state).toLowerCase());
+    }
+    fallback.searchParams.set("paymentProvider", String(paymentProvider));
+    return res.redirect(303, fallback.toString());
+  }
 };
 
 const activateMembership = async ({ user, plan, membershipPaymentId }) => {
@@ -214,14 +356,19 @@ export const getMembershipStatus = async (req, res) => {
   try {
     const userId = req.user;
 
-    const user = await UserModel.findById(userId)
-      .select(
-        "isMember is_member membership_id membershipPlan membershipExpiry",
-      )
-      .populate(
-        "membershipPlan",
-        "name benefits discountPercent pointsMultiplier",
-      );
+    const [user, membershipUser] = await Promise.all([
+      UserModel.findById(userId)
+        .select(
+          "isMember is_member membership_id membershipPlan membershipExpiry",
+        )
+        .populate(
+          "membershipPlan",
+          "name benefits discountPercent pointsMultiplier",
+        ),
+      MembershipUserModel.findOne({ user: userId })
+        .select("status expiryDate")
+        .lean(),
+    ]);
 
     if (!user) {
       return res.status(404).json({
@@ -231,18 +378,30 @@ export const getMembershipStatus = async (req, res) => {
       });
     }
 
-    // Check if membership has expired
-    const isExpired =
-      user.membershipExpiry && new Date() > new Date(user.membershipExpiry);
+    const now = new Date();
+    const recordExpiry = membershipUser?.expiryDate
+      ? new Date(membershipUser.expiryDate)
+      : null;
+    const userExpiry = user.membershipExpiry ? new Date(user.membershipExpiry) : null;
+    const effectiveExpiry = recordExpiry || userExpiry || null;
+    const isExpired = effectiveExpiry ? now > effectiveExpiry : false;
+    const recordActive =
+      membershipUser?.status === "active" &&
+      recordExpiry &&
+      recordExpiry > now;
+    const legacyActive =
+      (Boolean(user.isMember) || Boolean(user.is_member)) && !isExpired;
+    const isMember = Boolean(recordActive || legacyActive);
 
     res.status(200).json({
       error: false,
       success: true,
       data: {
-        isMember: (Boolean(user.isMember) || Boolean(user.is_member)) && !isExpired,
+        isMember,
+        membershipActive: isMember,
         membershipId: user.membership_id || null,
         membershipPlan: user.membershipPlan,
-        membershipExpiry: user.membershipExpiry,
+        membershipExpiry: effectiveExpiry || null,
         isExpired,
       },
     });
@@ -348,17 +507,36 @@ export const createMembershipOrder = async (req, res) => {
       });
     }
 
-    // Check if payments are enabled
-    if (!isPaymentEnabled()) {
+    const enabledProviders = getEnabledPaymentProviders();
+    const selectedPaymentProvider = resolveMembershipPaymentProvider(
+      req.body?.paymentProvider,
+    );
+
+    if (!isPaymentEnabled() || enabledProviders.length === 0) {
       return res.status(503).json({
         error: true,
         success: false,
         message:
           "Membership payments are temporarily unavailable. Payment gateway is not configured.",
-        paymentProvider: PAYMENT_PROVIDER,
+        paymentProvider: null,
         data: {
           coinRedemption: coinPreview,
           payableAmount: coinPreview.payableAmount,
+          enabledProviders,
+          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+        },
+      });
+    }
+
+    if (!selectedPaymentProvider) {
+      return res.status(422).json({
+        error: true,
+        success: false,
+        message:
+          "Selected payment provider is unavailable. Please choose another method.",
+        data: {
+          enabledProviders,
+          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
         },
       });
     }
@@ -367,65 +545,159 @@ export const createMembershipOrder = async (req, res) => {
       .split(",")[0]
       .trim()
       .replace(/\/+$/, "");
+    const backendUrl = String(
+      process.env.BACKEND_URL ||
+        process.env.API_BASE_URL ||
+        (process.env.GAE_DEFAULT_HOSTNAME
+          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
+          : ""),
+    )
+      .trim()
+      .replace(/\/+$/, "");
 
-    const callbackUrl =
-      process.env.PAYTM_MEMBERSHIP_CALLBACK_URL ||
-      `${primaryOrigin}/membership/checkout`;
+    const baseMembershipReturnPath = "/membership/checkout";
 
-    const paytmResponse = await createPaytmPayment({
-      amount: Math.max(coinPreview.payableAmount, 1),
-      orderId: merchantTransactionId,
-      callbackUrl,
-      customerId: String(userId),
-      mobileNumber: String(req.body?.mobile || "").trim() || null,
-      email: String(req.body?.email || "").trim().toLowerCase() || null,
-    });
-    const gatewayBase = (() => {
-      try {
-        return new URL(String(paytmResponse.gatewayUrl || "")).origin;
-      } catch {
-        return "";
-      }
-    })();
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
+      const callbackUrl =
+        process.env.PAYTM_MEMBERSHIP_CALLBACK_URL ||
+        `${primaryOrigin}${baseMembershipReturnPath}`;
 
-    const basePaymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
-      paytmResponse.mid,
-    )}&orderId=${encodeURIComponent(
-      paytmResponse.orderId,
-    )}&txnToken=${encodeURIComponent(
-      paytmResponse.txnToken,
-    )}&amount=${encodeURIComponent(
-      Number(coinPreview.payableAmount).toFixed(2),
-    )}&flow=membership&returnPath=${encodeURIComponent("/membership/checkout")}`;
-    const paymentUrl = gatewayBase
-      ? `${basePaymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
-      : basePaymentUrl;
+      const paytmResponse = await createPaytmPayment({
+        amount: Math.max(coinPreview.payableAmount, 1),
+        orderId: merchantTransactionId,
+        callbackUrl,
+        customerId: String(userId),
+        mobileNumber: String(req.body?.mobile || "").trim() || null,
+        email: String(req.body?.email || "").trim().toLowerCase() || null,
+      });
+      const gatewayBase = (() => {
+        try {
+          return new URL(String(paytmResponse.gatewayUrl || "")).origin;
+        } catch {
+          return "";
+        }
+      })();
 
-    if (!paymentUrl) {
-      return res.status(503).json({
-        error: true,
-        success: false,
-        message: "Paytm payment URL not received",
-        paymentProvider: PAYMENT_PROVIDER,
+      const basePaymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
+        paytmResponse.mid,
+      )}&orderId=${encodeURIComponent(
+        paytmResponse.orderId,
+      )}&txnToken=${encodeURIComponent(
+        paytmResponse.txnToken,
+      )}&amount=${encodeURIComponent(
+        Number(coinPreview.payableAmount).toFixed(2),
+      )}&flow=membership&returnPath=${encodeURIComponent(
+        baseMembershipReturnPath,
+      )}&planId=${encodeURIComponent(String(plan._id))}&paymentProvider=${encodeURIComponent(
+        PAYMENT_PROVIDERS.PAYTM,
+      )}&coins=${encodeURIComponent(String(coinPreview.coinsUsed || 0))}`;
+      const paymentUrl = gatewayBase
+        ? `${basePaymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
+        : basePaymentUrl;
+
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Membership order created",
+        data: {
+          membershipActivated: false,
+          paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+          paymentUrl,
+          merchantTransactionId,
+          planId: plan._id,
+          payableAmount: coinPreview.payableAmount,
+          enabledProviders,
+          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+          coinRedemption: {
+            coinsUsed: coinPreview.coinsUsed,
+            redeemAmount: coinPreview.redeemAmount,
+            maxRedeemRupees: coinPreview.maxRedeemRupees,
+            maxCoinsByLimit: coinPreview.maxCoinsByLimit,
+          },
+        },
       });
     }
 
-    return res.status(200).json({
-      error: false,
-      success: true,
-      message: "Membership order created",
-      data: {
-        membershipActivated: false,
-        paymentUrl,
-        merchantTransactionId,
-        planId: plan._id,
-        payableAmount: coinPreview.payableAmount,
-        coinRedemption: {
-          coinsUsed: coinPreview.coinsUsed,
-          redeemAmount: coinPreview.redeemAmount,
-          maxRedeemRupees: coinPreview.maxRedeemRupees,
-          maxCoinsByLimit: coinPreview.maxCoinsByLimit,
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PHONEPE) {
+      const callbackUrl =
+        process.env.PHONEPE_MEMBERSHIP_CALLBACK_URL ||
+        `${backendUrl}/api/membership/webhook/phonepe?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}`;
+      const redirectUrl = (() => {
+        const configured =
+          process.env.PHONEPE_MEMBERSHIP_REDIRECT_URL ||
+          process.env.PHONEPE_REDIRECT_URL ||
+          `${primaryOrigin}/payment/phonepe`;
+        try {
+          const url = new URL(
+            configured.startsWith("http")
+              ? configured
+              : `${primaryOrigin}${configured.startsWith("/") ? "" : "/"}${configured}`,
+          );
+           url.searchParams.set("merchantOrderId", merchantTransactionId);
+           url.searchParams.set("flow", "membership");
+           url.searchParams.set("returnPath", baseMembershipReturnPath);
+           url.searchParams.set("planId", String(plan._id));
+           url.searchParams.set("paymentProvider", PAYMENT_PROVIDERS.PHONEPE);
+           url.searchParams.set(
+             "coins",
+             String(Math.max(floorInt(coinPreview.coinsUsed || 0), 0)),
+           );
+           return url.toString();
+         } catch {
+           return `${primaryOrigin}/payment/phonepe?merchantOrderId=${encodeURIComponent(
+             merchantTransactionId,
+           )}&flow=membership&returnPath=${encodeURIComponent(
+             baseMembershipReturnPath,
+           )}&planId=${encodeURIComponent(
+             String(plan._id),
+           )}&paymentProvider=${encodeURIComponent(
+             PAYMENT_PROVIDERS.PHONEPE,
+           )}&coins=${encodeURIComponent(
+             String(Math.max(floorInt(coinPreview.coinsUsed || 0), 0)),
+           )}`;
+         }
+       })();
+
+      const phonepeResponse = await createPhonePePayment({
+        amount: Math.max(coinPreview.payableAmount, 1),
+        merchantOrderId: merchantTransactionId,
+        redirectUrl,
+        callbackUrl,
+        customerId: String(userId),
+      });
+
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Membership order created",
+        data: {
+          membershipActivated: false,
+          paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+          paymentUrl: phonepeResponse.redirectUrl,
+          merchantTransactionId,
+          planId: plan._id,
+          payableAmount: coinPreview.payableAmount,
+          enabledProviders,
+          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+          coinRedemption: {
+            coinsUsed: coinPreview.coinsUsed,
+            redeemAmount: coinPreview.redeemAmount,
+            maxRedeemRupees: coinPreview.maxRedeemRupees,
+            maxCoinsByLimit: coinPreview.maxCoinsByLimit,
+          },
         },
+      });
+    }
+
+    return res.status(422).json({
+      error: true,
+      success: false,
+      message: "Unsupported payment provider selected",
+      data: {
+        enabledProviders,
+        defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
       },
     });
   } catch (error) {
@@ -444,11 +716,22 @@ export const createMembershipOrder = async (req, res) => {
  */
 export const handleMembershipPaytmCallback = async (req, res) => {
   try {
-    const payload = decodePaytmEnvelope(req.body || {});
+    const wantsBrowserRedirect = isBrowserNavigationRequest(req);
+    const bodyHasPayload =
+      req.body && typeof req.body === "object" && Object.keys(req.body).length > 0;
+    const incomingPayload = bodyHasPayload ? req.body : req.query || {};
+    const payload = decodePaytmEnvelope(incomingPayload);
     const callbackData = extractPaytmFields(payload);
     const merchantTransactionId = callbackData.merchantTransactionId;
 
     if (!merchantTransactionId) {
+      if (wantsBrowserRedirect) {
+        return redirectMembershipCallbackToClient({
+          res,
+          state: "pending",
+          paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+        });
+      }
       return res.status(200).json({
         error: false,
         success: true,
@@ -478,6 +761,14 @@ export const handleMembershipPaytmCallback = async (req, res) => {
     });
 
     // Membership activation still happens via authenticated /verify-payment.
+    if (wantsBrowserRedirect) {
+      return redirectMembershipCallbackToClient({
+        res,
+        merchantTransactionId,
+        state: verifiedState || "pending",
+        paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+      });
+    }
     return res.status(200).json({
       error: false,
       success: true,
@@ -485,6 +776,13 @@ export const handleMembershipPaytmCallback = async (req, res) => {
     });
   } catch (error) {
     console.error("Error processing membership callback:", error);
+    if (isBrowserNavigationRequest(req)) {
+      return redirectMembershipCallbackToClient({
+        res,
+        state: "failed",
+        paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+      });
+    }
     return res.status(200).json({
       error: false,
       success: true,
@@ -494,23 +792,111 @@ export const handleMembershipPaytmCallback = async (req, res) => {
 };
 
 /**
- * Verify membership payment (Paytm)
+ * Public PhonePe callback endpoint for membership flow
+ * @route POST /api/membership/webhook/phonepe
+ */
+export const handleMembershipPhonePeCallback = async (req, res) => {
+  try {
+    const wantsBrowserRedirect = isBrowserNavigationRequest(req);
+    const merchantTransactionId = String(
+      req.body?.merchantOrderId ||
+        req.body?.merchant_order_id ||
+        req.query?.merchantOrderId ||
+        "",
+    ).trim();
+
+    if (!merchantTransactionId) {
+      if (wantsBrowserRedirect) {
+        return redirectMembershipCallbackToClient({
+          res,
+          state: "pending",
+          paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+        });
+      }
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Callback acknowledged",
+      });
+    }
+
+    let state = null;
+    let phonepeOrderId = null;
+    try {
+      const statusPayload = await getPhonePeOrderStatus({
+        merchantOrderId: merchantTransactionId,
+      });
+      state = extractPhonePeState(statusPayload);
+      phonepeOrderId = statusPayload?.orderId || null;
+    } catch (statusError) {
+      console.warn(
+        "Membership PhonePe callback status verification failed:",
+        statusError?.message || statusError,
+      );
+    }
+
+    console.log("Membership PhonePe callback received", {
+      merchantTransactionId,
+      state,
+      phonepeOrderId,
+    });
+
+    // Membership activation still happens via authenticated /verify-payment.
+    if (wantsBrowserRedirect) {
+      return redirectMembershipCallbackToClient({
+        res,
+        merchantTransactionId,
+        state: state || "pending",
+        paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+      });
+    }
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Callback acknowledged",
+    });
+  } catch (error) {
+    console.error("Error processing membership PhonePe callback:", error);
+    if (isBrowserNavigationRequest(req)) {
+      return redirectMembershipCallbackToClient({
+        res,
+        state: "failed",
+        paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+      });
+    }
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Callback acknowledged",
+    });
+  }
+};
+
+/**
+ * Verify membership payment (Paytm / PhonePe)
  * @route POST /api/membership/verify-payment
  */
 export const verifyMembershipPayment = async (req, res) => {
   try {
-    // Check if payments are enabled
-    if (!isPaymentEnabled()) {
+    const enabledProviders = getEnabledPaymentProviders();
+    if (!isPaymentEnabled() || enabledProviders.length === 0) {
       return res.status(503).json({
         error: true,
         success: false,
         message:
           "Membership payment verification unavailable. Payment gateway is not configured.",
-        paymentProvider: PAYMENT_PROVIDER,
+        paymentProvider: null,
+        data: {
+          enabledProviders,
+          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+        },
       });
     }
 
     const { merchantTransactionId, planId } = req.body || {};
+    const selectedPaymentProvider = resolveMembershipPaymentProvider(
+      req.body?.paymentProvider,
+    );
     const requestedCoins = floorInt(req.body?.coinRedeem?.coins || 0);
 
     if (!merchantTransactionId || !planId) {
@@ -521,11 +907,37 @@ export const verifyMembershipPayment = async (req, res) => {
       });
     }
 
-    const statusPayload = await getPaytmStatus({ orderId: merchantTransactionId });
-    const statusFields = extractPaytmFields(statusPayload || {});
-    const state = statusFields.state || "";
+    if (!selectedPaymentProvider) {
+      return res.status(422).json({
+        error: true,
+        success: false,
+        message:
+          "Selected payment provider is unavailable. Please choose another method.",
+        data: {
+          enabledProviders,
+          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+        },
+      });
+    }
 
-    if (!String(state).toLowerCase().includes("success")) {
+    let paymentSuccessful = false;
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
+      const statusPayload = await getPaytmStatus({ orderId: merchantTransactionId });
+      const statusFields = extractPaytmFields(statusPayload || {});
+      const state = String(statusFields.state || "")
+        .trim()
+        .toLowerCase();
+      paymentSuccessful = state.includes("success");
+    } else if (selectedPaymentProvider === PAYMENT_PROVIDERS.PHONEPE) {
+      const statusPayload = await getPhonePeOrderStatus({
+        merchantOrderId: merchantTransactionId,
+      });
+      const state = extractPhonePeState(statusPayload);
+      paymentSuccessful =
+        state.includes("COMPLETED") || state.includes("SUCCESS");
+    }
+
+    if (!paymentSuccessful) {
       return res.status(400).json({
         error: true,
         success: false,
@@ -582,6 +994,7 @@ export const verifyMembershipPayment = async (req, res) => {
       success: true,
       message: "Membership activated",
       data: {
+        paymentProvider: selectedPaymentProvider,
         membershipPlan: plan._id,
         membershipExpiry: expiry,
         coinRedemption: {

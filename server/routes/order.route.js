@@ -10,7 +10,13 @@ import {
   getPaymentGatewayStatus,
   getUserOrderById,
   getUserOrders,
+  handlePhonePeChargebackWebhook,
+  handlePhonePeRefundAcceptWebhook,
+  handlePhonePeRefundSuccessWebhook,
+  handlePhonePeSubscriptionPreWebhook,
+  handlePhonePeWebhook,
   handlePaytmWebhook,
+  retryOrderPayment,
   saveClientTestInvoiceToDisk,
   saveOrderForLater,
   updateOrderStatus,
@@ -34,7 +40,7 @@ const router = express.Router();
  *
  * Admin routes for managing orders
  * User routes for creating and viewing orders
- * Payment integration (Paytm)
+ * Payment integration (Paytm / PhonePe)
  *
  * Route Structure:
  * - Public routes: Payment status, webhooks
@@ -45,7 +51,14 @@ const router = express.Router();
 // ==================== WEBHOOKS (Public) ====================
 
 // Paytm webhook (state verified server-side against Paytm status API)
+router.get("/webhook/paytm", handlePaytmWebhook);
 router.post("/webhook/paytm", handlePaytmWebhook);
+// PhonePe webhook (state verified server-side against PhonePe status API)
+router.post("/webhook/phonepe", handlePhonePeWebhook);
+router.post("/webhook/phonepe/refund-success", handlePhonePeRefundSuccessWebhook);
+router.post("/webhook/phonepe/refund-accept", handlePhonePeRefundAcceptWebhook);
+router.post("/webhook/phonepe/chargeback", handlePhonePeChargebackWebhook);
+router.post("/webhook/phonepe/subscription", handlePhonePeSubscriptionPreWebhook);
 
 // ==================== PUBLIC ROUTES ====================
 
@@ -84,6 +97,14 @@ router.get(
   auth,
   validateGetOrderRequest,
   getUserOrderById
+);
+
+// Retry payment for an existing unpaid order
+router.post(
+  "/:orderId/retry-payment",
+  auth,
+  validateGetOrderRequest,
+  retryOrderPayment,
 );
 
 // Download invoice (user own order or admin any order)

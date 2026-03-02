@@ -209,7 +209,8 @@ const server = http.createServer(app);
 app.disable("x-powered-by");
 
 if (isProductionEnv) {
-  app.set("trust proxy", 1);
+  // App Engine/Cloud Run can add multiple proxy hops before Express.
+  app.set("trust proxy", true);
 }
 
 // Redirect duplicate slashes in request paths (e.g., //api/cart -> /api/cart)

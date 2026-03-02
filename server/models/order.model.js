@@ -4,6 +4,7 @@ const LEGACY_GATEWAY_METHOD = String.fromCharCode(82, 65, 90, 79, 82, 80, 65, 89
 const ORDER_PAYMENT_METHODS = [
   LEGACY_GATEWAY_METHOD,
   "PAYTM",
+  "PHONEPE",
   "COD",
   "PENDING",
   "TEST",
@@ -111,6 +112,25 @@ const orderSchema = new mongoose.Schema(
     },
 
     paytmTransactionId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    // PhonePe identifiers
+    phonepeMerchantOrderId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    phonepeOrderId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    phonepeTransactionId: {
       type: String,
       default: null,
       index: true,

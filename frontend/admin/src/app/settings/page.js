@@ -50,6 +50,7 @@ const defaultPopupSettings = {
   showOncePerSession: true,
   backgroundColor: "#fff7ed",
   buttonText: "Shop Now",
+  couponCode: "",
 };
 
 const toDateTimeLocal = (value) => {
@@ -120,6 +121,13 @@ const SettingsPage = () => {
   const [siteControls, setSiteControls] = useState({
     paymentGatewayEnabled: false,
     maintenanceMode: false,
+  });
+  const [offerPopupSettings, setOfferPopupSettings] = useState({
+    showOfferPopup: true,
+    offerCouponCode: "",
+    offerTitle: "Special Offer!",
+    offerDescription: "Use this code to get a discount on your order!",
+    offerDiscountText: "Get Discount",
   });
 
   const [storeInfo, setStoreInfo] = useState({
@@ -214,6 +222,19 @@ const SettingsPage = () => {
       return {
         valid: false,
         message: "Background color must be a valid hex color (e.g. #fff7ed).",
+      };
+    }
+
+    if (
+      String(value.couponCode || "").trim() &&
+      !/^[A-Z0-9_-]{3,50}$/.test(
+        String(value.couponCode || "").trim().toUpperCase(),
+      )
+    ) {
+      return {
+        valid: false,
+        message:
+          "Popup coupon code must be 3-50 characters and contain only letters, numbers, underscore, or hyphen.",
       };
     }
 
@@ -320,6 +341,9 @@ const SettingsPage = () => {
           showOncePerSession: !!value.showOncePerSession,
           backgroundColor: String(value.backgroundColor || "").trim(),
           buttonText: String(value.buttonText || "").trim(),
+          couponCode: String(value.couponCode || "")
+            .trim()
+            .toUpperCase(),
         }),
       });
 
@@ -422,6 +446,38 @@ const SettingsPage = () => {
             case "highTrafficNotice":
               setHighTrafficNotice(setting.value);
               break;
+            case "showOfferPopup":
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                showOfferPopup: !!setting.value,
+              }));
+              break;
+            case "offerCouponCode":
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                offerCouponCode: String(setting.value || "")
+                  .trim()
+                  .toUpperCase(),
+              }));
+              break;
+            case "offerTitle":
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                offerTitle: String(setting.value || "").trim(),
+              }));
+              break;
+            case "offerDescription":
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                offerDescription: String(setting.value || "").trim(),
+              }));
+              break;
+            case "offerDiscountText":
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                offerDiscountText: String(setting.value || "").trim(),
+              }));
+              break;
           }
         });
       }
@@ -471,6 +527,16 @@ const SettingsPage = () => {
       setToast(popupValidation.message, "error");
       return;
     }
+    if (
+      offerPopupSettings.showOfferPopup &&
+      !String(offerPopupSettings.offerCouponCode || "").trim()
+    ) {
+      setToast(
+        "Coupon code is required when Welcome Offer Popup is enabled.",
+        "error",
+      );
+      return;
+    }
 
     setSaving(true);
     try {
@@ -483,6 +549,11 @@ const SettingsPage = () => {
         trafficSaved,
         paymentSaved,
         maintenanceSaved,
+        showOfferPopupSaved,
+        offerCouponCodeSaved,
+        offerTitleSaved,
+        offerDescriptionSaved,
+        offerDiscountTextSaved,
       ] = await Promise.all([
         savePopupConfig(popupSettings),
         saveSetting("shippingSettings", shippingSettings),
@@ -492,6 +563,25 @@ const SettingsPage = () => {
         saveSetting("highTrafficNotice", highTrafficNotice),
         saveSetting("paymentGatewayEnabled", siteControls.paymentGatewayEnabled),
         saveSetting("maintenanceMode", siteControls.maintenanceMode),
+        saveSetting("showOfferPopup", !!offerPopupSettings.showOfferPopup),
+        saveSetting(
+          "offerCouponCode",
+          String(offerPopupSettings.offerCouponCode || "")
+            .trim()
+            .toUpperCase(),
+        ),
+        saveSetting(
+          "offerTitle",
+          String(offerPopupSettings.offerTitle || "").trim(),
+        ),
+        saveSetting(
+          "offerDescription",
+          String(offerPopupSettings.offerDescription || "").trim(),
+        ),
+        saveSetting(
+          "offerDiscountText",
+          String(offerPopupSettings.offerDiscountText || "").trim(),
+        ),
       ]);
 
       const coreSettingsSaved =
@@ -501,7 +591,12 @@ const SettingsPage = () => {
         storeSaved &&
         trafficSaved &&
         paymentSaved &&
-        maintenanceSaved;
+        maintenanceSaved &&
+        showOfferPopupSaved &&
+        offerCouponCodeSaved &&
+        offerTitleSaved &&
+        offerDescriptionSaved &&
+        offerDiscountTextSaved;
 
       if (popupSaveResult.success && coreSettingsSaved) {
         setToast("All settings saved successfully!", "success");
@@ -966,6 +1061,99 @@ const SettingsPage = () => {
         </p>
       </div>
 
+      {/* Welcome Offer Popup (Coupon) */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <MdLocalOffer className="text-2xl text-amber-500" />
+          <h2 className="text-lg font-semibold text-gray-800">
+            Welcome Offer Popup
+          </h2>
+        </div>
+        <Divider className="mb-4" />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={offerPopupSettings.showOfferPopup}
+                onChange={(e) =>
+                  setOfferPopupSettings((prev) => ({
+                    ...prev,
+                    showOfferPopup: e.target.checked,
+                  }))
+                }
+                color="warning"
+              />
+            }
+            label="Enable Welcome Offer Popup"
+          />
+
+          <TextField
+            label="Coupon Code"
+            value={offerPopupSettings.offerCouponCode}
+            onChange={(e) =>
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                offerCouponCode: String(e.target.value || "")
+                  .replace(/\s+/g, "")
+                  .toUpperCase(),
+              }))
+            }
+            size="small"
+            fullWidth
+            helperText="Must match an existing coupon code"
+          />
+
+          <TextField
+            label="Popup Title"
+            value={offerPopupSettings.offerTitle}
+            onChange={(e) =>
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                offerTitle: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+          />
+
+          <TextField
+            label="Discount Badge Text"
+            value={offerPopupSettings.offerDiscountText}
+            onChange={(e) =>
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                offerDiscountText: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+          />
+
+          <TextField
+            label="Popup Description"
+            value={offerPopupSettings.offerDescription}
+            onChange={(e) =>
+              setOfferPopupSettings((prev) => ({
+                ...prev,
+                offerDescription: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+            multiline
+            rows={3}
+            className="md:col-span-2"
+          />
+        </div>
+
+        <p className="text-sm text-gray-500 mt-3">
+          This controls the coupon welcome popup shown on storefront load. It
+          is separate from Popup Management and separate from manual
+          notifications.
+        </p>
+      </div>
+
       {/* Popup Management */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -1035,6 +1223,22 @@ const SettingsPage = () => {
             size="small"
             fullWidth
             required
+          />
+
+          <TextField
+            label="Popup Coupon Code (Optional)"
+            value={popupSettings.couponCode}
+            onChange={(e) =>
+              setPopupSettings((prev) => ({
+                ...prev,
+                couponCode: String(e.target.value || "")
+                  .replace(/\s+/g, "")
+                  .toUpperCase(),
+              }))
+            }
+            size="small"
+            fullWidth
+            helperText="Optional: if set, clicking popup CTA auto-fills this coupon on checkout."
           />
 
           <TextField
@@ -1266,6 +1470,11 @@ const SettingsPage = () => {
               >
                 {popupSettings.buttonText || "Shop Now"}
               </Button>
+              {popupSettings.couponCode ? (
+                <p className="text-xs text-amber-700 font-semibold mt-2">
+                  Coupon: {popupSettings.couponCode}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>

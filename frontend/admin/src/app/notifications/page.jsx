@@ -79,7 +79,7 @@ const NotificationsPage = () => {
         body: form.body.trim(),
         includeUsers: form.includeUsers,
         data: {
-          couponCode: form.couponCode.trim().toUpperCase() || "SPECIAL",
+          couponCode: form.couponCode.trim().toUpperCase(),
           discountValue: Number(form.discountValue || 10),
         },
       };

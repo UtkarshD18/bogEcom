@@ -69,6 +69,22 @@ const parseStoredCart = (savedCart) => {
   return [];
 };
 
+const SUPPRESSED_CART_FETCH_TOAST_PATHS = [
+  "/checkout",
+  "/payment/paytm",
+  "/payment/phonepe",
+  "/membership/checkout",
+];
+
+const shouldShowCartFetchErrorToast = () => {
+  if (typeof window === "undefined") return false;
+
+  const pathname = String(window.location?.pathname || "").toLowerCase();
+  return !SUPPRESSED_CART_FETCH_TOAST_PATHS.some((prefix) =>
+    pathname.startsWith(prefix),
+  );
+};
+
 // Generate or get session ID for guest carts
 const getSessionId = () => {
   if (typeof window === "undefined") return null;
@@ -144,8 +160,10 @@ export const CartProvider = ({ children }) => {
       }
     } catch (error) {
       console.error("Error fetching cart:", error);
-      toast.error("Failed to fetch cart. Using local data.");
-      loadFromLocalStorage();
+      const restoredFromLocal = loadFromLocalStorage();
+      if (!restoredFromLocal && shouldShowCartFetchErrorToast()) {
+        toast.error("Unable to sync cart right now. Please refresh.");
+      }
     } finally {
       setLoading(false);
       setIsInitialized(true);
@@ -154,14 +172,14 @@ export const CartProvider = ({ children }) => {
 
   // Load cart from local storage (fallback)
   const loadFromLocalStorage = () => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") return false;
 
     const savedCart = localStorage.getItem("cart");
     if (!savedCart) {
       setCartItems([]);
       setCartCount(0);
       setCartTotal(0);
-      return;
+      return false;
     }
 
     try {
@@ -169,12 +187,14 @@ export const CartProvider = ({ children }) => {
       setCartItems(items);
       calculateTotals(items);
       saveToLocalStorage(items);
+      return items.length > 0;
     } catch (e) {
       console.error("Error parsing cart from localStorage:", e);
       localStorage.removeItem("cart");
       setCartItems([]);
       setCartCount(0);
       setCartTotal(0);
+      return false;
     }
   };
 

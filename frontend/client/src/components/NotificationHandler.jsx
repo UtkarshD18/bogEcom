@@ -22,6 +22,7 @@ const resolveSocketUrl = () => {
 };
 
 const SOCKET_URL = resolveSocketUrl();
+const SOCKET_TRANSPORTS = ["polling"];
 const API_ROOT = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
@@ -47,6 +48,27 @@ const persistLiveFeedCursor = (value) => {
   if (typeof window === "undefined") return;
   if (!Number.isFinite(value) || value <= 0) return;
   localStorage.setItem(LIVE_FEED_CURSOR_KEY, String(Math.floor(value)));
+};
+
+const buildStableNotificationId = ({
+  notificationId,
+  fallbackId,
+  sentAtMs,
+  title,
+  body,
+  couponCode,
+}) => {
+  const explicit = String(notificationId || "").trim();
+  if (explicit) return explicit;
+
+  const dbId = String(fallbackId || "").trim();
+  if (dbId) return `offer:${dbId}`;
+
+  const safeSentAt = Number(sentAtMs || 0) || 0;
+  const safeTitle = String(title || "").trim().toLowerCase();
+  const safeBody = String(body || "").trim().toLowerCase();
+  const safeCoupon = String(couponCode || "").trim().toUpperCase();
+  return `offer:fallback:${safeSentAt}:${safeTitle}:${safeBody}:${safeCoupon}`;
 };
 
 /**
@@ -174,19 +196,29 @@ const NotificationHandler = () => {
 
     const socket = io(SOCKET_URL, {
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      // Production ingress currently accepts polling but can reject direct websocket upgrades.
+      transports: SOCKET_TRANSPORTS,
       reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       timeout: 8000,
     });
 
     const handleLiveOffer = (payload) => {
       const liveData =
         payload?.data && typeof payload.data === "object" ? payload.data : {};
-      const notificationId =
-        payload?.notificationId || liveData.notificationId || null;
       const offerTimestamp =
         Number(payload?.sentAtMs || Date.parse(payload?.sentAt || "") || 0) ||
         Date.now();
+      const notificationId = buildStableNotificationId({
+        notificationId: payload?.notificationId || liveData.notificationId,
+        fallbackId: payload?._id,
+        sentAtMs: offerTimestamp,
+        title: payload?.title || liveData.title,
+        body: payload?.body || liveData.body,
+        couponCode: liveData?.couponCode,
+      });
 
       if (offerTimestamp > lastSeenOfferTimestampRef.current) {
         lastSeenOfferTimestampRef.current = offerTimestamp;
@@ -202,7 +234,7 @@ const NotificationHandler = () => {
         body,
         data: {
           ...liveData,
-          notificationId: notificationId || `offer-live:${Date.now()}`,
+          notificationId,
         },
         timestamp: Date.now(),
       };
@@ -261,10 +293,16 @@ const NotificationHandler = () => {
           if (isDisposed) return;
           const liveData =
             offer?.data && typeof offer.data === "object" ? offer.data : {};
-          const notificationId =
-            offer?.notificationId || liveData.notificationId || null;
           const offerTimestamp =
             Number(offer?.sentAtMs || Date.parse(offer?.sentAt || "") || 0) || 0;
+          const notificationId = buildStableNotificationId({
+            notificationId: offer?.notificationId || liveData.notificationId,
+            fallbackId: offer?._id,
+            sentAtMs: offerTimestamp,
+            title: offer?.title || liveData.title,
+            body: offer?.body || liveData.body,
+            couponCode: liveData?.couponCode,
+          });
 
           if (offerTimestamp > lastSeenOfferTimestampRef.current) {
             lastSeenOfferTimestampRef.current = offerTimestamp;
@@ -282,7 +320,7 @@ const NotificationHandler = () => {
             body,
             data: {
               ...liveData,
-              notificationId: notificationId || `offer-feed:${Date.now()}`,
+              notificationId,
             },
             timestamp: Date.now(),
           };
