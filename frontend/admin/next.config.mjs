@@ -21,6 +21,14 @@ const apiImagePattern = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   basePath: "/admin",
+  async rewrites() {
+    return [
+      { source: "/logo.png", destination: "/admin/logo.png" },
+      { source: "/profile.png", destination: "/admin/profile.png" },
+      { source: "/placeholder.png", destination: "/admin/placeholder.png" },
+      { source: "/pattern.png", destination: "/admin/pattern.png" },
+    ];
+  },
   turbopack: {
     root: __dirname,
   },

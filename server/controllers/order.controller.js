@@ -78,6 +78,7 @@ import {
   restoreInventory,
 } from "../services/inventory.service.js";
 import { autoCreateShipmentForPaidOrder } from "../services/automatedShipping.service.js";
+import { emitTrackingEvent } from "../services/analytics/trackingEmitter.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -553,6 +554,74 @@ const resolveDisplayOrderNumber = (order = {}) => {
   const rawOrderId = String(order?._id || "").trim();
   if (!rawOrderId) return "N/A";
   return `BOG-${rawOrderId.slice(-8).toUpperCase()}`;
+};
+
+const emitPurchaseCompletedTrackingEvent = ({
+  req,
+  order,
+  source = "unknown",
+}) => {
+  if (!req || !order) return;
+  if (String(order?.analyticsConsent || "").toLowerCase() === "denied") return;
+
+  const orderId = String(order?._id || "").trim();
+  if (!orderId) return;
+
+  const lineItems = Array.isArray(order?.products)
+    ? order.products.slice(0, 100).map((item) => ({
+        productId: String(item?.productId || "").trim(),
+        productTitle: String(item?.productTitle || "").trim(),
+        quantity: Number(item?.quantity || 0),
+        price: Number(item?.price || 0),
+        subTotal: Number(item?.subTotal || 0),
+      }))
+    : [];
+
+  emitTrackingEvent({
+    req,
+    eventType: "purchase_completed",
+    userId: order?.user ? String(order.user) : null,
+    sessionId: String(order?.trackingSessionId || req.analyticsSessionId || ""),
+    metadata: {
+      source,
+      orderId,
+      orderNumber:
+        String(order?.orderNumber || order?.displayOrderId || "").trim() || null,
+      paymentMethod: String(order?.paymentMethod || "").trim() || "unknown",
+      paymentStatus: String(order?.payment_status || "").trim() || "unknown",
+      orderStatus: String(order?.order_status || "").trim() || "unknown",
+      revenue: Number(order?.finalAmount || order?.totalAmt || 0),
+      subtotal: Number(order?.subtotal || 0),
+      tax: Number(order?.tax || 0),
+      shipping: Number(order?.shipping || 0),
+      discount: Number(order?.discount || order?.discountAmount || 0),
+      influencerCode: String(order?.influencerCode || "").trim() || null,
+      couponCode: String(order?.couponCode || "").trim() || null,
+      items: lineItems,
+    },
+    pageUrl: "/checkout",
+    referrer: "",
+    async: true,
+  });
+};
+
+const resolveAnalyticsConsentFromRequest = (req) => {
+  const normalized = String(
+    req?.headers?.["x-analytics-consent"] ||
+      req?.cookies?.analytics_consent ||
+      req?.body?.consent ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (["granted", "allow", "opt_in", "yes", "true"].includes(normalized)) {
+    return "granted";
+  }
+  if (["denied", "disallow", "opt_out", "no", "false"].includes(normalized)) {
+    return "denied";
+  }
+  return "unknown";
 };
 
 const formatOrderDateForEmail = (value) => {
@@ -2558,6 +2627,10 @@ export const createOrder = asyncHandler(async (req, res) => {
         state: checkoutContact.contact.state || "",
       },
       guestDetails: userId ? {} : checkoutContact.contact,
+      trackingSessionId:
+        String(req.analyticsSessionId || req.cookies?.hog_sid || "")
+          .trim() || null,
+      analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       coinRedemption: {
         coinsUsed: Number(redemption.coinsUsed || 0),
         amount: Number(redemption.redeemAmount || 0),
@@ -3092,6 +3165,10 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         state: checkoutContact.contact.state || "",
       },
       guestDetails: userId ? {} : checkoutContact.contact,
+      trackingSessionId:
+        String(req.analyticsSessionId || req.cookies?.hog_sid || "")
+          .trim() || null,
+      analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       coinRedemption: {
         coinsUsed: Number(redemption.coinsUsed || 0),
         amount: Number(redemption.redeemAmount || 0),
@@ -3815,6 +3892,12 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     }
 
     if (!wasPaid && order.payment_status === "paid") {
+      emitPurchaseCompletedTrackingEvent({
+        req,
+        order,
+        source: "paytm_webhook",
+      });
+
       await runPostPaymentSuccessTasks({
         order,
         webhookContext: "handlePaytmWebhook",
@@ -4199,6 +4282,10 @@ export const createTestOrder = asyncHandler(async (req, res) => {
         pincode: checkoutContact.contact.pincode,
         state: checkoutContact.contact.state,
       },
+      trackingSessionId:
+        String(req.analyticsSessionId || req.cookies?.hog_sid || "")
+          .trim() || null,
+      analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       isSavedOrder: true,
       isDemoOrder: true,
       notes:
@@ -4207,6 +4294,12 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     });
 
     await testOrder.save();
+
+    emitPurchaseCompletedTrackingEvent({
+      req,
+      order: testOrder,
+      source: "test_order",
+    });
 
     let influencerStatsSynced = false;
     if (testOrder.influencerId && !testOrder.influencerStatsSynced) {

@@ -156,6 +156,19 @@ export const uploadLimiter = rateLimit({
   skip: skipPreflight,
 });
 
+// Analytics rate limit - high throughput for lightweight tracking beacons
+export const analyticsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5000,
+  message: {
+    error: true,
+    success: false,
+    message: "Too many analytics events. Please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Support ticket limiter.
 export const supportLimiter = rateLimit({
   windowMs: limiterWindowMs,

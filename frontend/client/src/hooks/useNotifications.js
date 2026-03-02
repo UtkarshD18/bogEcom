@@ -10,6 +10,10 @@ const API_URL = API_BASE_URL;
 // Public VAPID key fallback for environments where env injection is missed.
 const FALLBACK_VAPID_KEY =
   "BL22YBdvb5TkydQ5LsnePfUgLQsf61THj-Ja72oli6FMb1U7lh-GYJJ__gjIvf8nZjAJ7s8aBQzq1ahFBxpSTi8";
+const ENABLE_PUSH_IN_DEV =
+  String(process.env.NEXT_PUBLIC_ENABLE_PUSH_IN_DEV || "")
+    .trim()
+    .toLowerCase() === "true";
 
 /**
  * useNotifications Hook
@@ -37,6 +41,7 @@ export const useNotifications = (options = {}) => {
 
   const messagingRef = useRef(null);
   const lastRegisterKeyRef = useRef(null);
+  const isLocalhostRef = useRef(false);
 
   const getAuthToken = useCallback(() => {
     if (typeof window === "undefined") return null;
@@ -163,10 +168,40 @@ export const useNotifications = (options = {}) => {
     return raw;
   }, []);
 
+  const isExpectedPushRegistrationFailure = useCallback((err) => {
+    const raw = String(err?.message || err || "").toLowerCase();
+    return (
+      raw.includes("push service error") ||
+      raw.includes("token-subscribe-failed") ||
+      raw.includes("failed-service-worker-registration") ||
+      raw.includes("messaging/permission-blocked") ||
+      raw.includes("registration failed")
+    );
+  }, []);
+
+  const shouldDisablePushInCurrentRuntime = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    const host = String(window.location.hostname || "").toLowerCase();
+    const isLocalhost = host === "localhost" || host === "127.0.0.1";
+    isLocalhostRef.current = isLocalhost;
+
+    if (process.env.NODE_ENV === "production") {
+      return false;
+    }
+
+    return isLocalhost && !ENABLE_PUSH_IN_DEV;
+  }, []);
+
   // Check if notifications are supported
   useEffect(() => {
     const checkSupport = async () => {
       if (typeof window === "undefined") return;
+
+      if (shouldDisablePushInCurrentRuntime()) {
+        setIsSupported(false);
+        setPermission("default");
+        return;
+      }
 
       const supported =
         "Notification" in window &&
@@ -181,7 +216,7 @@ export const useNotifications = (options = {}) => {
     };
 
     checkSupport();
-  }, []);
+  }, [shouldDisablePushInCurrentRuntime]);
 
   // Ensure every visitor gets a stable guest session ID from first load.
   useEffect(() => {
@@ -282,6 +317,13 @@ export const useNotifications = (options = {}) => {
 
         await registerTokenWithBackend(recoveredToken);
       } catch (restoreError) {
+        if (isExpectedPushRegistrationFailure(restoreError)) {
+          console.warn(
+            "Push token restore skipped in current environment:",
+            restoreError?.message || restoreError,
+          );
+          return;
+        }
         console.error("Error restoring FCM token:", restoreError);
       }
     };
@@ -294,6 +336,7 @@ export const useNotifications = (options = {}) => {
   }, [
     buildServiceWorkerUrl,
     isSupported,
+    isExpectedPushRegistrationFailure,
     permission,
     registerTokenWithBackend,
     token,
@@ -334,6 +377,13 @@ export const useNotifications = (options = {}) => {
    * Call this only after user interaction (button click, etc.)
    */
   const requestPermission = useCallback(async () => {
+    if (shouldDisablePushInCurrentRuntime()) {
+      setError(
+        "Push notifications are disabled on localhost by default. Set NEXT_PUBLIC_ENABLE_PUSH_IN_DEV=true to test locally.",
+      );
+      return false;
+    }
+
     if (!isSupported) {
       setError("Notifications not supported in this browser");
       return false;
@@ -414,7 +464,11 @@ export const useNotifications = (options = {}) => {
 
       return true;
     } catch (err) {
-      console.error("Error requesting permission:", err);
+      if (isExpectedPushRegistrationFailure(err)) {
+        console.warn("Push registration failed:", err?.message || err);
+      } else {
+        console.error("Error requesting permission:", err);
+      }
       setError(normalizePushErrorMessage(err));
       return false;
     } finally {
@@ -423,9 +477,11 @@ export const useNotifications = (options = {}) => {
   }, [
     buildServiceWorkerUrl,
     isSupported,
+    isExpectedPushRegistrationFailure,
     normalizePushErrorMessage,
     permission,
     registerTokenWithBackend,
+    shouldDisablePushInCurrentRuntime,
   ]);
 
   /**

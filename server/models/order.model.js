@@ -444,6 +444,20 @@ const orderSchema = new mongoose.Schema(
       gst: { type: String, default: "" },
     },
 
+    trackingSessionId: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+
+    analyticsConsent: {
+      type: String,
+      enum: ["granted", "denied", "unknown"],
+      default: "unknown",
+      index: true,
+    },
+
     // ==================== SHIPPING (XPRESSBEES) ====================
 
 shipping_provider: {
@@ -615,6 +629,7 @@ orderSchema.index({ shipment_status: 1, order_status: 1 });
 orderSchema.index({ shipmentStatus: 1, order_status: 1 });
 orderSchema.index({ isInvoiceGenerated: 1, invoiceGeneratedAt: -1 });
 orderSchema.index({ deliveryDate: -1 }, { sparse: true });
+orderSchema.index({ trackingSessionId: 1, createdAt: -1 }, { sparse: true });
 
 // Normalize legacy payment_status before validation
 orderSchema.pre("validate", function () {

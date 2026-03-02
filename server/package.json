@@ -8,6 +8,8 @@
     "build": "node -e \"console.log('Server build: no transpilation required')\"",
     "dev": "nodemon index.js",
     "test": "node --test",
+    "test:analytics-smoke": "node scripts/analyticsSmokeTest.mjs",
+    "setup:pubsub": "node scripts/setupPubSubInfra.mjs",
     "migrate:enterprise": "node migrations/2026-02-enterprise-upgrade.mjs",
     "migrate:inventory": "node migrations/2026-02-inventory-backfill.mjs",
     "migrate:payment-cleanup": "node migrations/2026-02-payment-provider-cleanup.mjs",
@@ -18,6 +20,7 @@
   "license": "ISC",
   "description": "BogEcom Backend API Server",
   "dependencies": {
+    "@google-cloud/pubsub": "^5.3.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",
     "cookie-parser": "^1.4.7",
