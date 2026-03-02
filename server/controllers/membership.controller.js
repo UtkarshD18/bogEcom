@@ -191,15 +191,44 @@ const computeMembershipExpiry = (plan) => {
   return expiry;
 };
 
-const getClientBaseUrl = () =>
-  String(process.env.CLIENT_URL || "https://healthyonegram.com")
+const getClientBaseUrl = () => {
+  const configured = String(process.env.CLIENT_URL || "")
+    .split(",")[0]
     .trim()
     .replace(/\/+$/, "");
 
+  if (/^https?:\/\//i.test(configured)) {
+    return configured;
+  }
+
+  return "https://healthyonegram.com";
+};
+
 const isBrowserNavigationRequest = (req) => {
+  const method = String(req?.method || "")
+    .trim()
+    .toUpperCase();
   const accept = String(req?.headers?.accept || "").toLowerCase();
   const secFetchDest = String(req?.headers?.["sec-fetch-dest"] || "").toLowerCase();
-  return accept.includes("text/html") || secFetchDest === "document";
+  const secFetchMode = String(req?.headers?.["sec-fetch-mode"] || "").toLowerCase();
+  const secFetchUser = String(req?.headers?.["sec-fetch-user"] || "").toLowerCase();
+  const userAgent = String(req?.headers?.["user-agent"] || "").toLowerCase();
+
+  if (method === "GET") return true;
+
+  const hasNavigationHints =
+    secFetchDest === "document" ||
+    secFetchMode === "navigate" ||
+    secFetchUser === "?1";
+  const browserUserAgent =
+    userAgent.includes("mozilla") ||
+    userAgent.includes("chrome") ||
+    userAgent.includes("safari") ||
+    userAgent.includes("firefox") ||
+    userAgent.includes("edg") ||
+    userAgent.includes("opera");
+
+  return accept.includes("text/html") || hasNavigationHints || browserUserAgent;
 };
 
 const redirectMembershipCallbackToClient = ({
@@ -208,19 +237,33 @@ const redirectMembershipCallbackToClient = ({
   state,
   paymentProvider = PAYMENT_PROVIDERS.PAYTM,
 }) => {
-  const baseUrl = getClientBaseUrl();
-  const target = new URL("/membership/checkout", `${baseUrl}/`);
-  if (merchantTransactionId) {
-    target.searchParams.set(
-      "merchantTransactionId",
-      String(merchantTransactionId),
-    );
+  try {
+    const target = new URL("/membership/checkout", `${getClientBaseUrl()}/`);
+    if (merchantTransactionId) {
+      target.searchParams.set(
+        "merchantTransactionId",
+        String(merchantTransactionId),
+      );
+    }
+    if (state) {
+      target.searchParams.set("paymentState", String(state).toLowerCase());
+    }
+    target.searchParams.set("paymentProvider", String(paymentProvider));
+    return res.redirect(303, target.toString());
+  } catch {
+    const fallback = new URL("/membership/checkout", "https://healthyonegram.com/");
+    if (merchantTransactionId) {
+      fallback.searchParams.set(
+        "merchantTransactionId",
+        String(merchantTransactionId),
+      );
+    }
+    if (state) {
+      fallback.searchParams.set("paymentState", String(state).toLowerCase());
+    }
+    fallback.searchParams.set("paymentProvider", String(paymentProvider));
+    return res.redirect(303, fallback.toString());
   }
-  if (state) {
-    target.searchParams.set("paymentState", String(state).toLowerCase());
-  }
-  target.searchParams.set("paymentProvider", String(paymentProvider));
-  return res.redirect(303, target.toString());
 };
 
 const activateMembership = async ({ user, plan, membershipPaymentId }) => {

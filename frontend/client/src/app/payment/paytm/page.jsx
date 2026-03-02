@@ -160,6 +160,15 @@ const normalizeProvider = (value) =>
     .trim()
     .toUpperCase();
 
+const normalizePaymentState = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const getFailureMessage = (state) =>
+  normalizePaymentState(state).includes("cancel")
+    ? "Payment was cancelled. No amount was charged."
+    : "Payment failed. Please retry from your order page.";
 const buildMembershipReturnUrl = (params) => {
   if (typeof window === "undefined") return params.returnPath;
   const target = new URL(params.returnPath, window.location.origin);
@@ -173,6 +182,9 @@ const buildMembershipReturnUrl = (params) => {
   }
   if (params.coins) {
     target.searchParams.set("coins", params.coins);
+  }
+  if (params.paymentState) {
+    target.searchParams.set("paymentState", normalizePaymentState(params.paymentState));
   }
   return target.toString();
 };
@@ -207,6 +219,7 @@ const PaytmReturn = () => {
       planId: String(search.get("planId") || "").trim(),
       paymentProvider: normalizeProvider(search.get("paymentProvider") || "PAYTM"),
       coins: String(search.get("coins") || "").trim(),
+      paymentState: normalizePaymentState(search.get("paymentState") || ""),
       flow: String(search.get("flow") || "order")
         .trim()
         .toLowerCase(),
@@ -384,7 +397,7 @@ const PaytmReturn = () => {
       const token = getStoredAuthToken();
       if (!token) return false;
 
-      setMessage("Payment received. Verifying your order status...");
+      setMessage("Verifying your order payment status...");
 
       for (let attempt = 0; attempt < 8; attempt += 1) {
         if (disposed) return true;
@@ -400,7 +413,8 @@ const PaytmReturn = () => {
           if (response.ok) {
             const data = await response.json();
             const order = data?.data;
-            const paid = String(order?.payment_status || "").toLowerCase() === "paid";
+            const paymentStatus = normalizePaymentState(order?.payment_status);
+            const paid = paymentStatus === "paid";
 
             if (paid) {
               localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
@@ -441,6 +455,33 @@ const PaytmReturn = () => {
               }
               return true;
             }
+
+            if (
+              paymentStatus === "failed" ||
+              paymentStatus === "cancelled" ||
+              paymentStatus === "canceled" ||
+              paymentStatus === "unavailable"
+            ) {
+              localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
+
+              if (!disposed) {
+                const resolvedOrderId = String(order?._id || orderId).trim();
+                setMessage(getFailureMessage(paymentStatus));
+                if (
+                  resolvedOrderId &&
+                  params.flow === "order" &&
+                  !redirectedRef.current
+                ) {
+                  redirectedRef.current = true;
+                  setTimeout(() => {
+                    window.location.href = `/orders/${encodeURIComponent(
+                      resolvedOrderId,
+                    )}?paymentProvider=PAYTM&paymentState=${encodeURIComponent(paymentStatus)}`;
+                  }, 900);
+                }
+              }
+              return true;
+            }
           }
         } catch {
           // keep polling briefly
@@ -454,6 +495,31 @@ const PaytmReturn = () => {
 
     const checkStatus = async () => {
       if (params.flow === "membership") {
+        if (
+          params.paymentState === "failed" ||
+          params.paymentState === "cancelled" ||
+          params.paymentState === "canceled"
+        ) {
+          setMessage(getFailureMessage(params.paymentState));
+        }
+        return;
+      }
+
+      if (
+        params.paymentState === "failed" ||
+        params.paymentState === "cancelled" ||
+        params.paymentState === "canceled"
+      ) {
+        localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
+        setMessage(getFailureMessage(params.paymentState));
+        if (!redirectedRef.current) {
+          redirectedRef.current = true;
+          setTimeout(() => {
+            window.location.href = `/my-orders?paymentProvider=PAYTM&paymentState=${encodeURIComponent(
+              params.paymentState,
+            )}`;
+          }, 900);
+        }
         return;
       }
 
@@ -484,7 +550,7 @@ const PaytmReturn = () => {
     return () => {
       disposed = true;
     };
-  }, [params.flow]);
+  }, [params.flow, params.paymentState]);
 
   return (
     <section className="min-h-screen bg-gray-50 flex items-center justify-center px-4">

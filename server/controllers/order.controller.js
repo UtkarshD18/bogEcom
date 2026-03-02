@@ -814,28 +814,66 @@ const verifyPaytmWebhookState = async (merchantTransactionId) => {
   }
 };
 
-const getClientBaseUrl = () =>
-  String(process.env.CLIENT_URL || "https://healthyonegram.com")
+const getClientBaseUrl = () => {
+  const configured = String(process.env.CLIENT_URL || "")
+    .split(",")[0]
     .trim()
     .replace(/\/+$/, "");
 
+  if (/^https?:\/\//i.test(configured)) {
+    return configured;
+  }
+
+  return "https://healthyonegram.com";
+};
+
 const isBrowserNavigationRequest = (req) => {
+  const method = String(req?.method || "")
+    .trim()
+    .toUpperCase();
   const accept = String(req?.headers?.accept || "").toLowerCase();
   const secFetchDest = String(req?.headers?.["sec-fetch-dest"] || "").toLowerCase();
-  return accept.includes("text/html") || secFetchDest === "document";
+  const secFetchMode = String(req?.headers?.["sec-fetch-mode"] || "").toLowerCase();
+  const secFetchUser = String(req?.headers?.["sec-fetch-user"] || "").toLowerCase();
+  const userAgent = String(req?.headers?.["user-agent"] || "").toLowerCase();
+
+  if (method === "GET") return true;
+
+  const hasNavigationHints =
+    secFetchDest === "document" ||
+    secFetchMode === "navigate" ||
+    secFetchUser === "?1";
+  const browserUserAgent =
+    userAgent.includes("mozilla") ||
+    userAgent.includes("chrome") ||
+    userAgent.includes("safari") ||
+    userAgent.includes("firefox") ||
+    userAgent.includes("edg") ||
+    userAgent.includes("opera");
+
+  return accept.includes("text/html") || hasNavigationHints || browserUserAgent;
 };
 
 const redirectPaytmWebhookToClient = (res, { orderId, paymentState }) => {
-  const baseUrl = getClientBaseUrl();
   const path = orderId
     ? `/orders/${encodeURIComponent(String(orderId))}`
     : "/my-orders";
-  const target = new URL(path, `${baseUrl}/`);
-  target.searchParams.set("paymentProvider", "PAYTM");
-  if (paymentState) {
-    target.searchParams.set("paymentState", String(paymentState).toLowerCase());
+
+  try {
+    const target = new URL(path, `${getClientBaseUrl()}/`);
+    target.searchParams.set("paymentProvider", "PAYTM");
+    if (paymentState) {
+      target.searchParams.set("paymentState", String(paymentState).toLowerCase());
+    }
+    return res.redirect(303, target.toString());
+  } catch {
+    const fallback = new URL("/my-orders", "https://healthyonegram.com/");
+    fallback.searchParams.set("paymentProvider", "PAYTM");
+    if (paymentState) {
+      fallback.searchParams.set("paymentState", String(paymentState).toLowerCase());
+    }
+    return res.redirect(303, fallback.toString());
   }
-  return res.redirect(303, target.toString());
 };
 
 const decodeMaybeJson = (value) => {
@@ -2727,6 +2765,8 @@ export const createOrder = asyncHandler(async (req, res) => {
       const defaultPhonePeRedirect =
         `${primaryOrigin}/payment/phonepe?merchantOrderId=${encodeURIComponent(
           merchantTransactionId,
+        )}&orderId=${encodeURIComponent(String(order._id))}&paymentProvider=${encodeURIComponent(
+          PAYMENT_PROVIDERS.PHONEPE,
         )}&flow=order&returnPath=${encodeURIComponent("/my-orders")}`;
       const redirectUrl =
         process.env.PHONEPE_REDIRECT_URL || defaultPhonePeRedirect;
@@ -3441,6 +3481,8 @@ export const retryOrderPayment = asyncHandler(async (req, res) => {
       const defaultPhonePeRedirect =
         `${primaryOrigin}/payment/phonepe?merchantOrderId=${encodeURIComponent(
           merchantTransactionId,
+        )}&orderId=${encodeURIComponent(String(order._id))}&paymentProvider=${encodeURIComponent(
+          PAYMENT_PROVIDERS.PHONEPE,
         )}&flow=order&returnPath=${encodeURIComponent("/my-orders")}`;
       const redirectUrl =
         process.env.PHONEPE_REDIRECT_URL || defaultPhonePeRedirect;
