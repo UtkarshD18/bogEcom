@@ -5,6 +5,7 @@ import CoinRewardLayer from "../components/CoinRewardLayer";
 import ErrorBoundary from "../components/ErrorBoundary";
 import Footer from "../components/Footer";
 import Header from "../components/Header";
+import AnalyticsTracker from "../components/AnalyticsTracker";
 import NotificationHandler from "../components/NotificationHandler";
 import OfferPopup from "../components/OfferPopup";
 import { CartProvider } from "../context/CartContext";
@@ -94,6 +95,7 @@ export default function ClientLayout({ children }) {
             <CartProvider>
               <WishlistProvider>
                 <ErrorBoundary>
+                  <AnalyticsTracker />
                   <ClientShell isAffiliateRoute={isAffiliateRoute}>
                     {children}
                   </ClientShell>

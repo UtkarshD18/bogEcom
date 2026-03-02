@@ -1,0 +1,17 @@
+{
+  "name": "analytics-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@google-cloud/pubsub": "^4.11.0",
+    "dotenv": "^17.2.3",
+    "mongoose": "^9.1.2",
+    "zod": "^3.24.2"
+  }
+}

@@ -4,7 +4,8 @@
     "validate:env": "node scripts/validate-env-examples.mjs",
     "test:server": "npm --prefix server test",
     "build:client": "npm --prefix frontend/client run build",
-    "build:admin": "npm --prefix frontend/admin run build"
+    "build:admin": "npm --prefix frontend/admin run build",
+    "start:analytics-worker": "npm --prefix analytics-worker start"
   },
   "dependencies": {
     "node-fetch": "^2.7.0"

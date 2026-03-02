@@ -1,7 +1,7 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
-import { API_BASE_URL } from "@/utils/api";
+import { API_BASE_URL, uploadFile } from "@/utils/api";
 import {
   Alert,
   Button,
@@ -88,6 +88,10 @@ const AboutPageEditor = () => {
   const { token } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState({
+    hero: false,
+    standard: false,
+  });
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -251,6 +255,53 @@ const AboutPageEditor = () => {
         severity: "error",
       });
     }
+  };
+
+  const handleSectionImageUpload = async (sectionKey, file) => {
+    if (!file) return;
+
+    setUploadingImage((prev) => ({ ...prev, [sectionKey]: true }));
+    try {
+      const adminToken = getAdminToken(token);
+      if (!adminToken) {
+        throw new Error("Admin token missing. Please login again.");
+      }
+
+      const uploadResult = await uploadFile(file, adminToken);
+      if (!uploadResult?.success || !uploadResult?.data?.url) {
+        throw new Error(uploadResult?.message || "Image upload failed");
+      }
+
+      setContent((prev) => ({
+        ...prev,
+        [sectionKey]: {
+          ...prev[sectionKey],
+          image: uploadResult.data.url,
+        },
+      }));
+
+      setSnackbar({
+        open: true,
+        message: `${sectionKey === "hero" ? "Hero" : "Standard"} image uploaded successfully.`,
+        severity: "success",
+      });
+    } catch (error) {
+      console.error("AboutPageEditor image upload error:", error);
+      setSnackbar({
+        open: true,
+        message: error?.message || "Failed to upload image.",
+        severity: "error",
+      });
+    } finally {
+      setUploadingImage((prev) => ({ ...prev, [sectionKey]: false }));
+    }
+  };
+
+  const handleImageInputChange = (sectionKey) => async (event) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    await handleSectionImageUpload(sectionKey, file);
+    event.target.value = "";
   };
 
   // Helper to add stat
@@ -588,6 +639,35 @@ const AboutPageEditor = () => {
               fullWidth
               size="small"
             />
+            <div className="md:col-span-2 flex flex-wrap items-center gap-3">
+              <Button
+                component="label"
+                variant="outlined"
+                disabled={uploadingImage.hero}
+              >
+                {uploadingImage.hero ? "Uploading..." : "Upload Hero Image"}
+                <input
+                  hidden
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageInputChange("hero")}
+                />
+              </Button>
+              {content.hero.image && (
+                <a
+                  href={content.hero.image}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-blue-600 hover:underline break-all"
+                >
+                  Preview current hero image
+                </a>
+              )}
+            </div>
+            <p className="md:col-span-2 text-xs text-gray-500">
+              Use a direct image URL (ending in .jpg/.png/.webp) or upload here.
+              Many page links from free image websites are not directly embeddable.
+            </p>
             <TextField
               label="Description"
               value={content.hero.description}
@@ -665,6 +745,37 @@ const AboutPageEditor = () => {
               size="small"
               className="md:col-span-2"
             />
+            <div className="md:col-span-2 flex flex-wrap items-center gap-3">
+              <Button
+                component="label"
+                variant="outlined"
+                disabled={uploadingImage.standard}
+              >
+                {uploadingImage.standard
+                  ? "Uploading..."
+                  : "Upload Standard Section Image"}
+                <input
+                  hidden
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageInputChange("standard")}
+                />
+              </Button>
+              {content.standard.image && (
+                <a
+                  href={content.standard.image}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-blue-600 hover:underline break-all"
+                >
+                  Preview current standard image
+                </a>
+              )}
+            </div>
+            <p className="md:col-span-2 text-xs text-gray-500">
+              If image is broken on the live page, the URL is usually not a direct
+              image file. Uploading here is the safest option.
+            </p>
           </div>
 
           <Divider className="my-4" />

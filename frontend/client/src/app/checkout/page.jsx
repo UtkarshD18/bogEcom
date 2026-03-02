@@ -18,6 +18,7 @@ import {
   clearPendingCouponCode,
   readPendingCouponCode,
 } from "@/utils/couponIntent";
+import { trackEvent } from "@/utils/analyticsTracker";
 import { calculateOrderTotals } from "@/utils/calculateOrderTotals.mjs";
 import { round2 } from "@/utils/gst";
 import { getDisplayTaxBreakup } from "@/utils/shippingDisplay";
@@ -38,7 +39,7 @@ import {
 } from "@mui/material";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { FiCheck, FiEdit2, FiPlus, FiTag, FiX } from "react-icons/fi";
 import { HiOutlineFire } from "react-icons/hi";
 import { IoCartOutline } from "react-icons/io5";
@@ -183,6 +184,7 @@ const Checkout = () => {
   const [gstError, setGstError] = useState("");
   const [gstSaving, setGstSaving] = useState(false);
   const [gstSavedValue, setGstSavedValue] = useState("");
+  const checkoutStartTrackedRef = useRef(false);
 
   const INDIAN_STATES = [
     "Andhra Pradesh",
@@ -392,6 +394,18 @@ const Checkout = () => {
     }
     fetchAddresses();
   }, [fetchAddresses]);
+
+  useEffect(() => {
+    if (checkoutStartTrackedRef.current) return;
+    if (!Array.isArray(cartItems) || cartItems.length === 0) return;
+
+    trackEvent("checkout_started", {
+      itemCount: cartItems.length,
+      isGuestCheckout,
+      total,
+    });
+    checkoutStartTrackedRef.current = true;
+  }, [cartItems, isGuestCheckout, total]);
 
   useEffect(() => {
     let active = true;

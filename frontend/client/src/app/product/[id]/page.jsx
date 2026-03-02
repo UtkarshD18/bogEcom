@@ -6,6 +6,7 @@ import QtyBox from "@/components/QtyBox";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { fetchDataFromApi } from "@/utils/api";
+import { trackEvent } from "@/utils/analyticsTracker";
 import { sanitizeHTML } from "@/utils/sanitize";
 import {
   Alert,
@@ -116,6 +117,14 @@ const ProductDetailPage = () => {
       if (response?.error !== true && response?.data) {
         setProduct(response.data);
         const resolvedProductId = response.data?._id || response.data?.id;
+        trackEvent("product_view", {
+          productId: String(resolvedProductId || ""),
+          productName: String(response.data?.name || response.data?.title || ""),
+          categoryId: String(
+            response.data?.category?._id || response.data?.category || "",
+          ),
+          price: Number(response.data?.price || 0),
+        });
         fetchProductReviews(resolvedProductId);
 
         // Auto-select default variant (or first) if product has variants
@@ -141,6 +150,12 @@ const ProductDetailPage = () => {
       } else if (response) {
         // Handle different API response formats
         setProduct(response);
+        trackEvent("product_view", {
+          productId: String(response?._id || response?.id || ""),
+          productName: String(response?.name || response?.title || ""),
+          categoryId: String(response?.category?._id || response?.category || ""),
+          price: Number(response?.price || response?.salePrice || 0),
+        });
         fetchProductReviews(response?._id || response?.id);
       } else {
         setCustomerReviews([]);
@@ -312,7 +327,10 @@ const ProductDetailPage = () => {
   const isWishlisted = productId ? isInWishlist(productId) : false;
 
   return (
-    <section className="py-4 sm:py-10 min-h-screen bg-[radial-gradient(circle_at_top_left,var(--flavor-glass),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.12),_transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef9f2_100%)]">
+    <section
+      className="py-4 sm:py-10 min-h-screen bg-[radial-gradient(circle_at_top_left,var(--flavor-glass),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.12),_transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef9f2_100%)]"
+      data-product-id={String(productId || "")}
+    >
       <div
         className="container px-3 sm:px-4"
         style={{ fontFamily: "'Sora', 'Segoe UI', sans-serif" }}
@@ -344,10 +362,18 @@ const ProductDetailPage = () => {
         </nav>
 
         {/* Main Product Section */}
-        <div className="bg-white/75 backdrop-blur-xl border border-white/70 rounded-2xl sm:rounded-3xl shadow-[0_30px_80px_-55px_rgba(15,23,42,0.45)] p-4 sm:p-6 md:p-8 transition-all duration-500">
+        <div
+          className="bg-white/75 backdrop-blur-xl border border-white/70 rounded-2xl sm:rounded-3xl shadow-[0_30px_80px_-55px_rgba(15,23,42,0.45)] p-4 sm:p-6 md:p-8 transition-all duration-500"
+          data-track-section="product_hero"
+        >
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
             {/* Product Images */}
-            <div className="relative">
+            <div
+              className="relative"
+              data-track-section="product_image_gallery"
+              data-track-hover="product_image"
+              data-track-role="product-image"
+            >
               {discount > 0 && (
                 <span className="absolute top-4 left-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full z-10">
                   {discount}% OFF
@@ -455,7 +481,12 @@ const ProductDetailPage = () => {
               )}
 
               {/* Price */}
-              <div className="flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 flex-wrap">
+              <div
+                className="flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 flex-wrap"
+                data-track-section="product_price_block"
+                data-track-hover="product_price"
+                data-track-role="price"
+              >
                 <span className="text-2xl sm:text-3xl font-extrabold text-gray-900">
                   ₹{activePrice || product.salePrice}
                 </span>
@@ -517,7 +548,7 @@ const ProductDetailPage = () => {
               </div>
 
               {/* Quantity & Add to Cart */}
-              <div className="flex flex-wrap items-center gap-4 mb-6">
+              <div className="flex flex-wrap items-center gap-4 mb-6" data-track-section="product_cta">
                 {!isInCart(product._id || product.id) && (
                   <div className="flex items-center gap-3">
                     <span className="text-gray-700 font-medium">Qty:</span>
@@ -545,6 +576,8 @@ const ProductDetailPage = () => {
                   size="large"
                   startIcon={<IoMdCart />}
                   onClick={handleAddToCart}
+                  data-track="product_cta_add_to_cart"
+                  data-product-id={String(productId || "")}
                   disabled={!isInCart(product._id || product.id) && availableQty === 0}
                   sx={{
                     backgroundColor: isInCart(product._id || product.id)
@@ -581,6 +614,8 @@ const ProductDetailPage = () => {
                     )
                   }
                   onClick={handleWishlistToggle}
+                  data-track="product_cta_wishlist_toggle"
+                  data-product-id={String(productId || "")}
                   sx={{
                     borderColor: isWishlisted ? "#ef4444" : "#d1d5db",
                     color: isWishlisted ? "#fff" : "#6b7280",
@@ -671,13 +706,17 @@ const ProductDetailPage = () => {
         </div>
 
         {/* Tabs Section */}
-        <div className="bg-white/75 backdrop-blur-xl border border-white/70 rounded-2xl sm:rounded-3xl shadow-[0_24px_70px_-50px_rgba(30,41,59,0.55)] mt-8 p-6 md:p-8">
+        <div
+          className="bg-white/75 backdrop-blur-xl border border-white/70 rounded-2xl sm:rounded-3xl shadow-[0_24px_70px_-50px_rgba(30,41,59,0.55)] mt-8 p-6 md:p-8"
+          data-track-section="product_details_tabs"
+        >
           {/* Tab Headers */}
           <div className="flex border-b border-gray-200">
             {["description", "reviews", "shipping"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
+                data-track={`product_tab_${tab}`}
                 className={`px-6 py-3 font-semibold text-sm capitalize transition-colors ${activeTab === tab
                   ? "text-primary border-b-2 border-primary"
                   : "text-gray-500 hover:text-gray-700"
@@ -693,7 +732,7 @@ const ProductDetailPage = () => {
           {/* Tab Content */}
           <div className="py-6">
             {activeTab === "description" && (
-              <div className="prose max-w-none text-gray-600">
+              <div className="prose max-w-none text-gray-600" data-track-section="product_description">
                 {product.description ? (
                   <div
                     dangerouslySetInnerHTML={{
@@ -709,7 +748,7 @@ const ProductDetailPage = () => {
             )}
 
             {activeTab === "reviews" && (
-              <div>
+              <div data-track-section="product_reviews">
                 {reviewsLoading ? (
                   <p className="text-gray-500">Loading reviews...</p>
                 ) : customerReviews.length > 0 ? (
@@ -746,7 +785,7 @@ const ProductDetailPage = () => {
             )}
 
             {activeTab === "shipping" && (
-              <div className="text-gray-600 space-y-4">
+              <div className="text-gray-600 space-y-4" data-track-section="product_shipping">
                 <p>
                   <strong>Delivery:</strong> Standard delivery within 3-5
                   business days.
@@ -765,7 +804,7 @@ const ProductDetailPage = () => {
 
         {/* Related Products */}
         {relatedProducts.length > 0 && (
-          <div className="mt-12">
+          <div className="mt-12" data-track-section="related_products">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">
               Related Products
             </h2>

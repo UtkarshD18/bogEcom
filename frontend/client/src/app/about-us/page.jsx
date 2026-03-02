@@ -97,6 +97,101 @@ const GlassCard = ({ className = "", children }) => (
   </div>
 );
 
+const DIRECT_IMAGE_EXTENSION_RE = /\.(avif|bmp|gif|ico|jpe?g|jfif|png|svg|webp)(\?.*)?$/i;
+const FREEIMAGE_HOSTS = new Set([
+  "freeimage.host",
+  "www.freeimage.host",
+  "iili.io",
+  "www.iili.io",
+]);
+
+const normalizeImageUrl = (rawValue) => {
+  const value = String(rawValue || "").trim();
+  if (!value) return "";
+  if (value.startsWith("data:image/")) return value;
+  if (value.startsWith("//")) return `https:${value}`;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith("/")) return value;
+  return `https://${value}`;
+};
+
+const extractFreeImageId = (rawUrl) => {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (!FREEIMAGE_HOSTS.has(host)) return "";
+
+    const lastSegment = parsed.pathname.split("/").filter(Boolean).pop() || "";
+    if (!lastSegment) return "";
+
+    // freeimage.host often uses page links like /i/some-slug.<id>; id is usually the last token.
+    const token = lastSegment.includes(".")
+      ? lastSegment.split(".").pop()
+      : lastSegment;
+    return token.replace(/[^A-Za-z0-9]/g, "");
+  } catch {
+    return "";
+  }
+};
+
+const buildImageCandidates = (rawUrl) => {
+  const normalized = normalizeImageUrl(rawUrl);
+  if (!normalized) return [];
+
+  const candidates = new Set([normalized]);
+  try {
+    const parsed = new URL(normalized, "https://healthyonegram.com");
+    const host = parsed.hostname.toLowerCase();
+    const isDirectUrl = DIRECT_IMAGE_EXTENSION_RE.test(parsed.pathname);
+
+    if (FREEIMAGE_HOSTS.has(host) && !isDirectUrl) {
+      const imageId = extractFreeImageId(normalized);
+      if (imageId) {
+        ["jpg", "png", "jpeg", "webp"].forEach((ext) => {
+          candidates.add(`https://iili.io/${imageId}.${ext}`);
+        });
+      }
+    }
+  } catch {
+    // Ignore URL parse failures and keep original candidate only.
+  }
+
+  return Array.from(candidates);
+};
+
+const AboutSectionImage = ({ src, alt, className, loading = "lazy", placeholder }) => {
+  const candidates = useMemo(() => buildImageCandidates(src), [src]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [allFailed, setAllFailed] = useState(false);
+
+  useEffect(() => {
+    setActiveIndex(0);
+    setAllFailed(false);
+  }, [src]);
+
+  if (!candidates.length || allFailed) {
+    return placeholder;
+  }
+
+  return (
+    <img
+      src={candidates[activeIndex]}
+      alt={alt}
+      className={className}
+      loading={loading}
+      onError={() => {
+        setActiveIndex((prev) => {
+          if (prev < candidates.length - 1) {
+            return prev + 1;
+          }
+          setAllFailed(true);
+          return prev;
+        });
+      }}
+    />
+  );
+};
+
 /**
  * About Us Page
  * Theme/layout and content are fully controlled from admin CMS.
@@ -350,26 +445,24 @@ export default function AboutUsPage() {
             </div>
 
             <div className="lg:col-span-5">
-              <GlassCard className={`p-4 border ${theme.border}`}>
-                {hero?.image ? (
-                  <img
-                    src={hero.image}
-                    alt={hero?.title || "About us"}
-                    className="w-full h-72 sm:h-80 object-cover rounded-2xl"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full h-72 sm:h-80 rounded-2xl border border-dashed border-gray-200 bg-white/40 flex items-center justify-center">
-                    <div className="text-center px-6">
-                      <div className="text-sm font-semibold text-gray-800">
-                        Optional hero image
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        Add a URL from the admin editor
+              <GlassCard className={`border ${theme.border}`}>
+                <AboutSectionImage
+                  src={hero?.image}
+                  alt={hero?.title || "About us"}
+                  className="w-full h-80 sm:h-[420px] lg:h-[440px] rounded-3xl object-cover object-center scale-[1.06]"
+                  placeholder={
+                    <div className="w-full h-80 sm:h-[420px] lg:h-[440px] rounded-3xl border border-dashed border-gray-200 bg-white/40 flex items-center justify-center">
+                      <div className="text-center px-6">
+                        <div className="text-sm font-semibold text-gray-800">
+                          Optional hero image
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Use a direct image URL (or upload from admin)
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  }
+                />
               </GlassCard>
             </div>
           </section>
@@ -416,20 +509,18 @@ export default function AboutUsPage() {
                 </div>
 
                 <div className="lg:col-span-5">
-                  {standard?.image ? (
-                    <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-white/50 backdrop-blur">
-                      <img
-                        src={standard.image}
-                        alt={standard?.title || "Our standard"}
-                        className="w-full h-72 object-cover"
-                        loading="lazy"
-                      />
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-gray-200 bg-white/40 p-6 text-sm text-gray-600">
-                      Add an optional image URL for this section.
-                    </div>
-                  )}
+                  <div className="relative overflow-hidden rounded-3xl border border-white/60 bg-transparent">
+                    <AboutSectionImage
+                      src={standard?.image}
+                      alt={standard?.title || "Our standard"}
+                      className="w-full h-full min-h-[360px] object-cover object-center"
+                      placeholder={
+                        <div className="h-full min-h-[360px] rounded-3xl border border-dashed border-gray-200 bg-white/40 p-6 text-sm text-gray-600">
+                          Add a direct image URL for this section.
+                        </div>
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </GlassCard>

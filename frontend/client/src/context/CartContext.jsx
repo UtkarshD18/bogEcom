@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL } from "@/utils/api";
+import { trackEvent } from "@/utils/analyticsTracker";
 
 import { useSettings } from "@/context/SettingsContext";
 import { round2 } from "@/utils/gst";
@@ -223,6 +224,13 @@ export const CartProvider = ({ children }) => {
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
 
+        trackEvent("add_to_cart", {
+          productId: String(product._id || product.id || ""),
+          quantity: Number(quantity || 1),
+          price: Number(product.price || 0),
+          variantId: String(product.variantId || product.selectedVariant?._id || ""),
+        });
+
         // Auto-open drawer only if it was the first item added
         if (cartItems.length === 0) {
           setIsDrawerOpen(true);
@@ -247,6 +255,13 @@ export const CartProvider = ({ children }) => {
         }
 
         addToCartLocal(product, quantity);
+        trackEvent("add_to_cart", {
+          productId: String(product._id || product.id || ""),
+          quantity: Number(quantity || 1),
+          price: Number(product.price || 0),
+          variantId: String(product.variantId || product.selectedVariant?._id || ""),
+          source: "local_fallback",
+        });
         if (cartItems.length === 0) {
           setIsDrawerOpen(true);
         }
@@ -255,6 +270,13 @@ export const CartProvider = ({ children }) => {
     } catch (error) {
       console.error("Error adding to cart:", error);
       addToCartLocal(product, quantity);
+      trackEvent("add_to_cart", {
+        productId: String(product._id || product.id || ""),
+        quantity: Number(quantity || 1),
+        price: Number(product.price || 0),
+        variantId: String(product.variantId || product.selectedVariant?._id || ""),
+        source: "local_fallback",
+      });
       if (cartItems.length === 0) {
         setIsDrawerOpen(true);
       }
@@ -453,13 +475,27 @@ export const CartProvider = ({ children }) => {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
+        trackEvent("remove_from_cart", {
+          productId: String(productId || ""),
+          variantId: String(resolvedVariantId || ""),
+        });
         // toast.success("Item removed from cart");
       } else {
         removeFromCartLocal(productId, resolvedVariantId);
+        trackEvent("remove_from_cart", {
+          productId: String(productId || ""),
+          variantId: String(resolvedVariantId || ""),
+          source: "local_fallback",
+        });
       }
     } catch (error) {
       console.error("Error removing from cart:", error);
       removeFromCartLocal(productId, resolvedVariantId);
+      trackEvent("remove_from_cart", {
+        productId: String(productId || ""),
+        variantId: String(resolvedVariantId || ""),
+        source: "local_fallback",
+      });
     } finally {
       setLoading(false);
     }

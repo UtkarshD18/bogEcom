@@ -73,7 +73,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${poppins.variable} ${inter.className}`}>
         <Script id="header-bg-bootstrap" strategy="beforeInteractive">
           {`(function () {

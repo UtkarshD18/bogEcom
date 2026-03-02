@@ -15,6 +15,7 @@ import {
   normalizeTokenString,
 } from "../utils/tokenHash.js";
 import VerificationEmail from "../utils/verifyEmailTemplate.js";
+import { emitTrackingEvent } from "../services/analytics/trackingEmitter.service.js";
 
 const ACCESS_TOKEN_MAX_AGE = 15 * 60 * 1000; // 15 minutes
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -211,6 +212,17 @@ export async function registerUserController(req, res) {
       });
     }
 
+    emitTrackingEvent({
+      req,
+      eventType: "signup",
+      userId: String(user?._id || ""),
+      metadata: {
+        method: "email_password",
+        emailVerified: false,
+      },
+      async: true,
+    });
+
     return res.status(200).json({
       success: true,
       error: false,
@@ -376,6 +388,17 @@ export async function loginUserController(req, res) {
     res.cookie("accessToken", accessToken, accessCookieOptions);
     res.cookie("refreshToken", refreshToken, refreshCookieOptions);
 
+    emitTrackingEvent({
+      req,
+      eventType: "login",
+      userId: String(user?._id || ""),
+      metadata: {
+        method: "email_password",
+        role: user?.role || "User",
+      },
+      async: true,
+    });
+
     return res.json({
       message: "Login successful",
       success: true,
@@ -492,6 +515,16 @@ export async function logoutController(req, res) {
         { $set: { refreshToken: "" } },
       );
     }
+
+    emitTrackingEvent({
+      req,
+      eventType: "logout",
+      userId: userId ? String(userId) : null,
+      metadata: {
+        hasRefreshToken: Boolean(refreshToken),
+      },
+      async: true,
+    });
 
     return res.json({
       message: "Logout successful",
@@ -754,6 +787,7 @@ export async function authWithGoogle(req, res) {
 
     let user = await UserModel.findOne({ email: normalizedEmail });
 
+    let isNewGoogleUser = false;
     if (!user) {
       // Create new user with Google auth
       user = new UserModel({
@@ -769,6 +803,7 @@ export async function authWithGoogle(req, res) {
         // No password needed for Google users due to conditional validation
       });
       await user.save();
+      isNewGoogleUser = true;
     } else {
       // Update existing user with Google data if needed
       if (avatar && !user.avatar) {
@@ -796,6 +831,17 @@ export async function authWithGoogle(req, res) {
 
     res.cookie("accessToken", accessToken, accessCookieOptions);
     res.cookie("refreshToken", refreshToken, refreshCookieOptions);
+
+    emitTrackingEvent({
+      req,
+      eventType: isNewGoogleUser ? "signup" : "login",
+      userId: String(user?._id || ""),
+      metadata: {
+        method: "google_oauth",
+        isNewUser: isNewGoogleUser,
+      },
+      async: true,
+    });
 
     return res.json({
       message: "Google login successful",

@@ -78,6 +78,19 @@ export const uploadLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Analytics rate limit - high throughput for lightweight tracking beacons
+export const analyticsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5000,
+  message: {
+    error: true,
+    success: false,
+    message: "Too many analytics events. Please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Support ticket limiter - tighter limit to reduce spam on customer-care forms
 export const supportLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

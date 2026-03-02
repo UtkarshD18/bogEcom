@@ -1,4 +1,9 @@
 const STATE_CHANGING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const CSRF_EXEMPT_PATH_PREFIXES = [
+  "/api/track",
+  "/api/analytics/track",
+  "/api/analytics/consent",
+];
 
 const normalizeOrigin = (value) =>
   String(value || "")
@@ -32,6 +37,15 @@ export const createCookieCsrfGuard = ({
   return (req, res, next) => {
     const method = String(req.method || "").toUpperCase();
     if (!STATE_CHANGING_METHODS.has(method)) {
+      return next();
+    }
+
+    const requestPath = String(req.originalUrl || req.url || "").split("?")[0];
+    if (
+      CSRF_EXEMPT_PATH_PREFIXES.some((prefix) =>
+        String(requestPath || "").startsWith(prefix),
+      )
+    ) {
       return next();
     }
 

@@ -10,6 +10,7 @@ import { IoBagCheckOutline } from "react-icons/io5";
 import { LiaImageSolid } from "react-icons/lia";
 import {
   MdInfoOutline,
+  MdInsights,
   MdMailOutline,
   MdNotificationsActive,
   MdOutlineArticle,
@@ -68,6 +69,16 @@ const Sidebar = () => {
       name: "Dashboard",
       icon: <RxDashboard size={20} />,
       href: "/",
+    },
+    {
+      name: "Analytics",
+      icon: <MdInsights size={22} />,
+      href: "/analytics",
+    },
+    {
+      name: "Behavior",
+      icon: <MdInsights size={22} />,
+      href: "/behavior-analytics",
     },
     {
       name: "Home Slides",

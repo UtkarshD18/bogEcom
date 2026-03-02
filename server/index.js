@@ -17,11 +17,13 @@ import {
 import connectDb from "./config/connectDb.js";
 import createCookieCsrfGuard from "./middlewares/csrfGuard.js";
 import {
+  analyticsLimiter,
   adminLimiter,
   generalLimiter,
   uploadLimiter,
 } from "./middlewares/rateLimiter.js";
 import { UPLOAD_ROOT } from "./middlewares/upload.js";
+import analyticsSession from "./middlewares/analyticsSession.js";
 
 dotenv.config();
 
@@ -156,7 +158,9 @@ import aboutPageRouter from "./routes/aboutPage.route.js";
 import addressRouter from "./routes/address.route.js";
 import adminMembershipRouter from "./routes/adminMembership.route.js";
 import adminOrdersRouter from "./routes/adminOrders.route.js";
+import adminAnalyticsRouter from "./routes/adminAnalytics.route.js";
 import adminReviewRouter from "./routes/adminReview.route.js";
+import analyticsRouter from "./routes/analytics.route.js";
 import bannerRouter from "./routes/banner.route.js";
 import blogRouter from "./routes/blog.route.js";
 import cancellationPolicyRouter from "./routes/cancellationPolicy.routes.js";
@@ -184,6 +188,7 @@ import settingsRouter from "./routes/settings.route.js";
 import shippingRouter from "./routes/shipping.route.js";
 import supportRouter from "./routes/support.route.js";
 import statisticsRouter from "./routes/statistics.route.js";
+import trackingRouter from "./routes/tracking.route.js";
 import uploadRouter from "./routes/upload.route.js";
 import userRouter from "./routes/user.route.js";
 import userLocationLogRouter from "./routes/userLocationLog.route.js";
@@ -236,7 +241,13 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Session-Id"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Session-Id",
+      "X-Analytics-Consent",
+      "X-Page-Url",
+    ],
   }),
 );
 
@@ -258,6 +269,7 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
+app.use(analyticsSession);
 app.use(
   createCookieCsrfGuard({
     allowedOrigins,
@@ -289,6 +301,8 @@ app.get("/", (req, res) => {
 
 // API routes with rate limiting
 app.use("/api/about", generalLimiter, aboutPageRouter);
+app.use("/api", analyticsLimiter, trackingRouter);
+app.use("/api/analytics", analyticsLimiter, analyticsRouter);
 app.use("/api/user", generalLimiter, userRouter);
 app.use("/api/address", generalLimiter, addressRouter);
 app.use("/api/products", generalLimiter, productRouter);
@@ -298,6 +312,7 @@ app.use("/api/home-slides", adminLimiter, homeSlideRouter);
 app.use("/api/blogs", adminLimiter, blogRouter);
 app.use("/api/orders", generalLimiter, orderRouter);
 app.use("/api/admin/orders", adminLimiter, adminOrdersRouter);
+app.use("/api/admin/analytics", adminLimiter, adminAnalyticsRouter);
 app.use("/api/admin", adminLimiter, adminMembershipRouter);
 app.use("/api/cart", generalLimiter, cartRouter);
 app.use("/api/wishlist", generalLimiter, wishlistRouter);
