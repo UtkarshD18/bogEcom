@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { INDIA_COUNTRY } from "../utils/addressUtils.js";
 
 const LEGACY_GATEWAY_METHOD = String.fromCharCode(82, 65, 90, 79, 82, 80, 65, 89);
 const ORDER_PAYMENT_METHODS = [
@@ -199,6 +200,25 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
+    deliveryAddressSnapshot: {
+      order_name: { type: String, default: "" },
+      order_mobile: { type: String, default: "" },
+      order_flat_house: { type: String, default: "" },
+      order_area: { type: String, default: "" },
+      order_landmark: { type: String, default: "" },
+      order_city: { type: String, default: "" },
+      order_state: { type: String, default: "" },
+      order_pincode: { type: String, default: "" },
+      order_district: { type: String, default: "" },
+      country: { type: String, default: INDIA_COUNTRY },
+      address_line1: { type: String, default: "" },
+      address_line2: { type: String, default: "" },
+      full_address: { type: String, default: "" },
+      email: { type: String, default: "" },
+      source: { type: String, default: "manual" },
+      address_id: { type: String, default: "" },
+    },
+
     // Location capture (90-day retention logs)
     locationLog: {
       type: mongoose.Schema.ObjectId,
@@ -284,6 +304,11 @@ const orderSchema = new mongoose.Schema(
       address: { type: String, default: "" },
       pincode: { type: String, default: "" },
       state: { type: String, default: "" },
+      city: { type: String, default: "" },
+      flat_house: { type: String, default: "" },
+      area_street_sector: { type: String, default: "" },
+      landmark: { type: String, default: "" },
+      country: { type: String, default: INDIA_COUNTRY },
     },
 
     notes: {
@@ -440,6 +465,12 @@ const orderSchema = new mongoose.Schema(
       address: { type: String, default: "" },
       pincode: { type: String, default: "" },
       state: { type: String, default: "" },
+      city: { type: String, default: "" },
+      flat_house: { type: String, default: "" },
+      area_street_sector: { type: String, default: "" },
+      landmark: { type: String, default: "" },
+      district: { type: String, default: "" },
+      country: { type: String, default: INDIA_COUNTRY },
       email: { type: String, default: "" },
       gst: { type: String, default: "" },
     },
@@ -474,6 +505,11 @@ awb_number: {
 shipping_label: {
   type: String,
   default: null, // PDF URL from courier
+},
+
+shipping_label_local_path: {
+  type: String,
+  default: null,
 },
 
 shipping_manifest: {

@@ -19,6 +19,18 @@ import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
 import { sendTemplatedEmail } from "../config/emailService.js";
 import {
+  ADDRESS_DEV_SAMPLE,
+  INDIA_COUNTRY,
+  buildLegacyGuestDetails,
+  buildOrderAddressSnapshot,
+  composeAddressLine1,
+  composeFullAddressText,
+  normalizeStructuredAddress,
+  serializeAddressDocument,
+  snapshotToDisplayAddress,
+  validateStructuredAddress,
+} from "../utils/addressUtils.js";
+import {
   applyRedemptionToUser,
   awardCoinsToUser,
 } from "../services/coin.service.js";
@@ -1030,50 +1042,33 @@ const verifyPhonePeWebhookState = async (merchantOrderId) => {
   }
 };
 
-const normalizeGuestDetails = (guestDetails = {}) => ({
-  fullName: String(guestDetails.fullName || "").trim(),
-  phone: String(guestDetails.phone || "").trim(),
-  address: String(guestDetails.address || "").trim(),
-  pincode: String(guestDetails.pincode || "").trim(),
-  state: String(guestDetails.state || "").trim(),
-  email: String(guestDetails.email || "")
-    .trim()
-    .toLowerCase(),
-  gst: String(guestDetails.gst || "").trim(),
-});
+const normalizeGuestDetails = (guestDetails = {}) =>
+  buildLegacyGuestDetails(guestDetails, {
+    email: guestDetails.email,
+    gst: guestDetails.gst,
+  });
 
 const validateGuestDetails = (details) => {
-  const requiredFields = [
-    "fullName",
-    "phone",
-    "address",
-    "pincode",
-    "state",
-    "email",
-  ];
+  const validation = validateStructuredAddress(
+    {
+      full_name: details.fullName,
+      mobile_number: details.phone,
+      pincode: details.pincode,
+      flat_house: details.flat_house || details.address,
+      area_street_sector: details.area_street_sector || details.address,
+      landmark: details.landmark,
+      city: details.city || details.state,
+      state: details.state,
+      email: details.email,
+    },
+    { requireEmail: true },
+  );
 
-  for (const field of requiredFields) {
-    if (!details[field]) {
-      throw new AppError("MISSING_FIELD", { field });
-    }
-  }
-
-  if (!/^\d{10}$/.test(details.phone)) {
+  if (!validation.isValid) {
+    const [field, message] = Object.entries(validation.errors)[0] || [];
     throw new AppError("INVALID_FORMAT", {
-      field: "phone",
-      message: "Phone must be 10 digits",
-    });
-  }
-  if (!validateIndianPincode(details.pincode)) {
-    throw new AppError("INVALID_FORMAT", {
-      field: "pincode",
-      message: "Pincode must be 6 digits",
-    });
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.email)) {
-    throw new AppError("INVALID_FORMAT", {
-      field: "email",
-      message: "Email is invalid",
+      field: field || "guestDetails",
+      message: message || "Guest details are invalid",
     });
   }
 };
@@ -1099,17 +1094,31 @@ const resolveCheckoutContact = async ({
       throw new AppError("ADDRESS_NOT_FOUND");
     }
 
+    const serializedAddress = serializeAddressDocument(address);
     const derived = {
-      fullName: String(address.name || normalizedGuest.fullName || "").trim(),
-      phone: String(address.mobile || normalizedGuest.phone || "").trim(),
-      address: String(
-        address.address_line1 || normalizedGuest.address || "",
+      ...buildLegacyGuestDetails(serializedAddress, {
+        email: normalizedGuest.email,
+        gst: normalizedGuest.gst || userGstNumber,
+      }),
+      fullName: String(
+        serializedAddress.full_name || normalizedGuest.fullName || "",
       ).trim(),
-      pincode: String(address.pincode || normalizedGuest.pincode || "").trim(),
-      state: String(address.state || normalizedGuest.state || "").trim(),
+      phone: String(
+        serializedAddress.mobile_number || normalizedGuest.phone || "",
+      ).trim(),
+      address: String(
+        serializedAddress.address_line1 || normalizedGuest.address || "",
+      ).trim(),
+      pincode: String(
+        serializedAddress.pincode || normalizedGuest.pincode || "",
+      ).trim(),
+      state: String(
+        serializedAddress.state || normalizedGuest.state || "",
+      ).trim(),
       email: String(normalizedGuest.email || "")
         .trim()
         .toLowerCase(),
+      city: String(serializedAddress.city || normalizedGuest.city || "").trim(),
       gst: normalizedGuest.gst || userGstNumber,
     };
 
@@ -1117,17 +1126,43 @@ const resolveCheckoutContact = async ({
       validateGuestDetails(derived);
     }
 
+    const structuredAddress = normalizeStructuredAddress({
+      ...serializedAddress,
+      email: derived.email,
+    });
+    const addressSnapshot = buildOrderAddressSnapshot(structuredAddress, {
+      email: derived.email,
+      source: "saved_address",
+      addressId: address._id,
+    });
+
     return {
       contact: derived,
       addressId: address._id,
       state: derived.state,
       pincode: derived.pincode,
+      structuredAddress,
+      addressSnapshot,
     };
   }
 
   if (!userId && strictGuestValidation) {
     validateGuestDetails(normalizedGuest);
   }
+
+  const structuredAddress = normalizeStructuredAddress({
+    full_name: normalizedGuest.fullName,
+    mobile_number: normalizedGuest.phone,
+    pincode: normalizedGuest.pincode,
+    flat_house: normalizedGuest.flat_house || normalizedGuest.address,
+    area_street_sector:
+      normalizedGuest.area_street_sector || normalizedGuest.address,
+    landmark: normalizedGuest.landmark,
+    city: normalizedGuest.city,
+    state: normalizedGuest.state,
+    district: normalizedGuest.district,
+    email: normalizedGuest.email,
+  });
 
   return {
     contact: {
@@ -1137,6 +1172,55 @@ const resolveCheckoutContact = async ({
     addressId: null,
     state: normalizedGuest.state,
     pincode: normalizedGuest.pincode,
+    structuredAddress,
+    addressSnapshot: buildOrderAddressSnapshot(structuredAddress, {
+      email: normalizedGuest.email,
+      source: userId ? "registered_manual" : "guest_manual",
+      addressId: null,
+    }),
+  };
+};
+
+const buildBillingDetailsFromCheckoutContact = (checkoutContact = {}) => {
+  const snapshot = checkoutContact.addressSnapshot || {};
+  const structured = checkoutContact.structuredAddress || {};
+  const contact = checkoutContact.contact || {};
+
+  return {
+    fullName: contact.fullName || snapshot.order_name || "",
+    email: contact.email || snapshot.email || "",
+    phone: contact.phone || snapshot.order_mobile || "",
+    address:
+      contact.address ||
+      snapshot.address_line1 ||
+      composeAddressLine1(structured) ||
+      "Address not available",
+    pincode: contact.pincode || snapshot.order_pincode || "",
+    state: contact.state || snapshot.order_state || "",
+    city: structured.city || snapshot.order_city || "",
+    flat_house: structured.flat_house || snapshot.order_flat_house || "",
+    area_street_sector:
+      structured.area_street_sector || snapshot.order_area || "",
+    landmark: structured.landmark || snapshot.order_landmark || "",
+    country: INDIA_COUNTRY,
+  };
+};
+
+const buildGuestOrderDetails = (checkoutContact = {}, { include = false } = {}) => {
+  if (!include) return {};
+
+  const contact = checkoutContact.contact || {};
+  const structured = checkoutContact.structuredAddress || {};
+
+  return {
+    ...contact,
+    city: structured.city || contact.city || "",
+    flat_house: structured.flat_house || contact.flat_house || "",
+    area_street_sector:
+      structured.area_street_sector || contact.area_street_sector || "",
+    landmark: structured.landmark || contact.landmark || "",
+    district: structured.district || contact.district || "",
+    country: INDIA_COUNTRY,
   };
 };
 
@@ -1585,7 +1669,22 @@ export const ensureOrderInvoice = async (orderDoc, options = {}) => {
     }
 
     const pricing = calculateOrderTotal(populatedOrder);
+    const addressSnapshot =
+      populatedOrder.deliveryAddressSnapshot ||
+      buildOrderAddressSnapshot(
+        populatedOrder.delivery_address || populatedOrder.guestDetails || {},
+        {
+          email:
+            populatedOrder.billingDetails?.email ||
+            populatedOrder.guestDetails?.email ||
+            populatedOrder.user?.email ||
+            "",
+          source: populatedOrder.delivery_address ? "saved_address" : "manual",
+          addressId: populatedOrder.delivery_address?._id || null,
+        },
+      );
     const state =
+      addressSnapshot?.order_state ||
       populatedOrder.billingDetails?.state ||
       populatedOrder.guestDetails?.state ||
       populatedOrder.delivery_address?.state ||
@@ -1606,31 +1705,59 @@ export const ensureOrderInvoice = async (orderDoc, options = {}) => {
 
     const billingDetails = {
       fullName:
+        addressSnapshot?.order_name ||
         populatedOrder.billingDetails?.fullName ||
         populatedOrder.guestDetails?.fullName ||
         populatedOrder.delivery_address?.name ||
         populatedOrder.user?.name ||
         "Customer",
       email:
+        addressSnapshot?.email ||
         populatedOrder.billingDetails?.email ||
         populatedOrder.guestDetails?.email ||
         populatedOrder.user?.email ||
         "",
       phone:
+        addressSnapshot?.order_mobile ||
         populatedOrder.billingDetails?.phone ||
         populatedOrder.guestDetails?.phone ||
         String(populatedOrder.delivery_address?.mobile || ""),
       address:
+        addressSnapshot?.address_line1 ||
         populatedOrder.billingDetails?.address ||
         populatedOrder.guestDetails?.address ||
         populatedOrder.delivery_address?.address_line1 ||
         "Address not available",
       pincode:
+        addressSnapshot?.order_pincode ||
         populatedOrder.billingDetails?.pincode ||
         populatedOrder.guestDetails?.pincode ||
         populatedOrder.delivery_address?.pincode ||
         "",
       state,
+      city:
+        addressSnapshot?.order_city ||
+        populatedOrder.billingDetails?.city ||
+        populatedOrder.guestDetails?.city ||
+        populatedOrder.delivery_address?.city ||
+        "",
+      flat_house:
+        addressSnapshot?.order_flat_house ||
+        populatedOrder.billingDetails?.flat_house ||
+        populatedOrder.guestDetails?.flat_house ||
+        "",
+      area_street_sector:
+        addressSnapshot?.order_area ||
+        populatedOrder.billingDetails?.area_street_sector ||
+        populatedOrder.guestDetails?.area_street_sector ||
+        "",
+      landmark:
+        addressSnapshot?.order_landmark ||
+        populatedOrder.billingDetails?.landmark ||
+        populatedOrder.guestDetails?.landmark ||
+        populatedOrder.delivery_address?.landmark ||
+        "",
+      country: INDIA_COUNTRY,
     };
 
     const invoiceNumber =
@@ -1715,6 +1842,7 @@ export const ensureOrderInvoice = async (orderDoc, options = {}) => {
             sellerDetails.gstin ||
             "",
           billingDetails,
+          deliveryAddress: addressSnapshot,
           invoicePath,
           createdBy,
         },
@@ -2586,6 +2714,10 @@ export const createOrder = asyncHandler(async (req, res) => {
       userId,
       checkoutContact,
     });
+    const billingDetails = buildBillingDetailsFromCheckoutContact(checkoutContact);
+    const guestOrderDetails = buildGuestOrderDetails(checkoutContact, {
+      include: !userId,
+    });
 
     // Create order in database
     const order = new OrderModel({
@@ -2618,15 +2750,9 @@ export const createOrder = asyncHandler(async (req, res) => {
         igst: taxData.igst,
       },
       gstNumber: checkoutContact.contact.gst || "",
-      billingDetails: {
-        fullName: checkoutContact.contact.fullName || "",
-        email: checkoutContact.contact.email || "",
-        phone: checkoutContact.contact.phone || "",
-        address: checkoutContact.contact.address || "",
-        pincode: checkoutContact.contact.pincode || "",
-        state: checkoutContact.contact.state || "",
-      },
-      guestDetails: userId ? {} : checkoutContact.contact,
+      billingDetails,
+      deliveryAddressSnapshot: checkoutContact.addressSnapshot,
+      guestDetails: guestOrderDetails,
       trackingSessionId:
         String(req.analyticsSessionId || req.cookies?.hog_sid || "")
           .trim() || null,
@@ -2666,11 +2792,17 @@ export const createOrder = asyncHandler(async (req, res) => {
     try {
       let locationForLog = req.validatedData?.location || null;
       let addressFieldsForLog = {
-        street: checkoutContact?.contact?.address || "",
-        city: "",
+        street:
+          checkoutContact?.addressSnapshot?.address_line1 ||
+          checkoutContact?.contact?.address ||
+          "",
+        city:
+          checkoutContact?.addressSnapshot?.order_city ||
+          checkoutContact?.structuredAddress?.city ||
+          "",
         state: checkoutContact?.contact?.state || "",
         pincode: checkoutContact?.contact?.pincode || "",
-        country: "India",
+        country: INDIA_COUNTRY,
       };
 
       if (checkoutContact?.addressId) {
@@ -3119,6 +3251,10 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       userId,
       checkoutContact,
     });
+    const billingDetails = buildBillingDetailsFromCheckoutContact(checkoutContact);
+    const guestOrderDetails = buildGuestOrderDetails(checkoutContact, {
+      include: !userId,
+    });
 
     // Create saved order
     const savedOrder = new OrderModel({
@@ -3156,15 +3292,9 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         igst: taxData.igst,
       },
       gstNumber: checkoutContact.contact.gst || "",
-      billingDetails: {
-        fullName: checkoutContact.contact.fullName || "",
-        email: checkoutContact.contact.email || "",
-        phone: checkoutContact.contact.phone || "",
-        address: checkoutContact.contact.address || "",
-        pincode: checkoutContact.contact.pincode || "",
-        state: checkoutContact.contact.state || "",
-      },
-      guestDetails: userId ? {} : checkoutContact.contact,
+      billingDetails,
+      deliveryAddressSnapshot: checkoutContact.addressSnapshot,
+      guestDetails: guestOrderDetails,
       trackingSessionId:
         String(req.analyticsSessionId || req.cookies?.hog_sid || "")
           .trim() || null,
@@ -3202,11 +3332,17 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     try {
       let locationForLog = req.validatedData?.location || null;
       let addressFieldsForLog = {
-        street: checkoutContact?.contact?.address || "",
-        city: "",
+        street:
+          checkoutContact?.addressSnapshot?.address_line1 ||
+          checkoutContact?.contact?.address ||
+          "",
+        city:
+          checkoutContact?.addressSnapshot?.order_city ||
+          checkoutContact?.structuredAddress?.city ||
+          "",
         state: checkoutContact?.contact?.state || "",
         pincode: checkoutContact?.contact?.pincode || "",
-        country: "India",
+        country: INDIA_COUNTRY,
       };
 
       if (checkoutContact?.addressId) {
@@ -4234,6 +4370,7 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     const taxableAmount = round2(Number(pricing.taxableAmount || 0));
     const gstAmount = round2(Number(pricing.gstAmount || 0));
     const finalAmount = round2(taxableAmount + gstAmount + shippingCharge);
+    const billingDetails = buildBillingDetailsFromCheckoutContact(checkoutContact);
 
     // Create test order (paid + accepted), but shipping-suppressed.
     const testOrder = new OrderModel({
@@ -4274,14 +4411,9 @@ export const createTestOrder = asyncHandler(async (req, res) => {
         igst: Number(pricing.taxData?.igst || 0),
       },
       gstNumber: checkoutContact.contact.gst || "",
-      billingDetails: {
-        fullName: checkoutContact.contact.fullName,
-        email: checkoutContact.contact.email,
-        phone: checkoutContact.contact.phone,
-        address: checkoutContact.contact.address,
-        pincode: checkoutContact.contact.pincode,
-        state: checkoutContact.contact.state,
-      },
+      billingDetails,
+      deliveryAddressSnapshot: checkoutContact.addressSnapshot,
+      guestDetails: {},
       trackingSessionId:
         String(req.analyticsSessionId || req.cookies?.hog_sid || "")
           .trim() || null,

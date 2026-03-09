@@ -15,6 +15,7 @@ import {
   handlePhonePeRefundSuccessWebhook,
   handlePhonePeSubscriptionPreWebhook,
   handlePhonePeWebhook,
+  previewOrderPricing,
   handlePaytmWebhook,
   retryOrderPayment,
   saveClientTestInvoiceToDisk,
@@ -66,6 +67,9 @@ router.post("/webhook/phonepe/subscription", handlePhonePeSubscriptionPreWebhook
 router.get("/payment-status", getPaymentGatewayStatus);
 
 // ==================== USER ROUTES ====================
+
+// Preview checkout pricing
+router.post("/preview", optionalAuth, previewOrderPricing);
 
 // Create order (Checkout) - with validation
 router.post(

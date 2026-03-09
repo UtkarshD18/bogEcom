@@ -5,6 +5,11 @@
 
 import { AppError, validateAmount, validateMongoId, validateProductsArray } from "../utils/errorHandler.js";
 import mongoose from "mongoose";
+import {
+  buildLegacyGuestDetails,
+  composeAddressLine1,
+  validateStructuredAddress,
+} from "../utils/addressUtils.js";
 
 const calculateProductsSubtotal = (products = []) =>
   Number(
@@ -18,15 +23,22 @@ const calculateProductsSubtotal = (products = []) =>
     ) || 0,
   );
 
-const normalizeGuestDetails = (guestDetails = {}) => ({
-  fullName: String(guestDetails.fullName || "").trim(),
-  phone: String(guestDetails.phone || "").trim(),
-  address: String(guestDetails.address || "").trim(),
-  pincode: String(guestDetails.pincode || "").trim(),
-  state: String(guestDetails.state || "").trim(),
-  email: String(guestDetails.email || "").trim().toLowerCase(),
-  gst: String(guestDetails.gst || "").trim(),
-});
+const normalizeGuestDetails = (guestDetails = {}) => {
+  const legacy = buildLegacyGuestDetails(guestDetails, {
+    email: guestDetails.email,
+    gst: guestDetails.gst,
+  });
+
+  return {
+    ...legacy,
+    address:
+      legacy.address ||
+      composeAddressLine1({
+        flat_house: guestDetails.flat_house,
+        area_street_sector: guestDetails.area_street_sector,
+      }),
+  };
+};
 
 const normalizeLocationPayload = (location = null) => {
   if (!location || typeof location !== "object") return null;
@@ -71,41 +83,26 @@ const validateGuestDetails = (guestDetails) => {
   const hasAnyGuestField = Object.values(guestDetails).some(Boolean);
   if (!hasAnyGuestField) return;
 
-  const requiredFields = [
-    "fullName",
-    "phone",
-    "address",
-    "pincode",
-    "state",
-    "email",
-  ];
+  const validation = validateStructuredAddress(
+    {
+      full_name: guestDetails.fullName,
+      mobile_number: guestDetails.phone,
+      pincode: guestDetails.pincode,
+      flat_house: guestDetails.flat_house,
+      area_street_sector: guestDetails.area_street_sector,
+      landmark: guestDetails.landmark,
+      city: guestDetails.city,
+      state: guestDetails.state,
+      email: guestDetails.email,
+    },
+    { requireEmail: true },
+  );
 
-  for (const field of requiredFields) {
-    if (!guestDetails[field]) {
-      throw new AppError("MISSING_FIELD", {
-        field: `guestDetails.${field}`,
-      });
-    }
-  }
-
-  if (!/^\d{10}$/.test(guestDetails.phone)) {
+  if (!validation.isValid) {
+    const [field, message] = Object.entries(validation.errors)[0] || [];
     throw new AppError("INVALID_FORMAT", {
-      field: "guestDetails.phone",
-      message: "Phone must be 10 digits",
-    });
-  }
-
-  if (!/^\d{6}$/.test(guestDetails.pincode)) {
-    throw new AppError("INVALID_FORMAT", {
-      field: "guestDetails.pincode",
-      message: "Pincode must be 6 digits",
-    });
-  }
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestDetails.email)) {
-    throw new AppError("INVALID_FORMAT", {
-      field: "guestDetails.email",
-      message: "Invalid email format",
+      field: field ? `guestDetails.${field}` : "guestDetails",
+      message: message || "Guest address is invalid",
     });
   }
 };
@@ -188,7 +185,8 @@ export const validateCreateOrderRequest = (req, res, next) => {
     const hasGuestIdentity = [
       "fullName",
       "phone",
-      "address",
+      "flat_house",
+      "area_street_sector",
       "pincode",
       "state",
       "email",
@@ -395,7 +393,8 @@ export const validateSaveOrderRequest = (req, res, next) => {
     const hasGuestIdentity = [
       "fullName",
       "phone",
-      "address",
+      "flat_house",
+      "area_street_sector",
       "pincode",
       "state",
       "email",

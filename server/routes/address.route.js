@@ -4,6 +4,7 @@ import {
   deleteAddress,
   getAddressById,
   getUserAddresses,
+  lookupPincodeAddress,
   setDefaultAddress,
   updateAddress,
 } from "../controllers/address.controller.js";
@@ -11,7 +12,10 @@ import auth from "../middlewares/auth.js";
 
 const addressRouter = Router();
 
-// All address routes require authentication
+// Public lookup routes for checkout autofill.
+addressRouter.get("/lookup/pincode/:pincode", lookupPincodeAddress);
+
+// Address CRUD routes require authentication.
 addressRouter.get("/", auth, getUserAddresses);
 addressRouter.get("/:addressId", auth, getAddressById);
 addressRouter.post("/", auth, createAddress);

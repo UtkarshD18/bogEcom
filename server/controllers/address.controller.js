@@ -1,5 +1,14 @@
 import AddressModel from "../models/address.model.js";
+import { lookupIndiaPostPincode } from "../services/addressLookup.service.js";
 import { createUserLocationLog } from "../services/userLocationLog.service.js";
+import {
+  INDIA_COUNTRY,
+  buildAddressDedupeKey,
+  mapStructuredAddressToAddressDocument,
+  normalizeStructuredAddress,
+  serializeAddressDocument,
+  validateStructuredAddress,
+} from "../utils/addressUtils.js";
 
 const normalizeLocationPayload = (raw) => {
   if (!raw || typeof raw !== "object") return null;
@@ -20,14 +29,87 @@ const normalizeLocationPayload = (raw) => {
   };
 };
 
-const sanitizeAddressForResponse = (addressDoc) => {
-  if (!addressDoc) return addressDoc;
-  const data =
-    typeof addressDoc?.toObject === "function" ? addressDoc.toObject() : addressDoc;
-  if (data && data.location) {
-    delete data.location;
+const buildAddressPayloadFromRequest = (body = {}) => {
+  const normalized = normalizeStructuredAddress({
+    ...body,
+    country: INDIA_COUNTRY,
+  });
+  const mapped = mapStructuredAddressToAddressDocument(normalized, {
+    is_default: body.is_default ?? body.selected ?? body.makeDefault,
+    addressType: body.addressType,
+  });
+
+  return {
+    ...mapped,
+    country: INDIA_COUNTRY,
+    location: normalizeLocationPayload(body.location),
+  };
+};
+
+const logAddressLocation = async ({
+  userId,
+  location,
+  addressPayload,
+  orderId = null,
+  context = "address",
+}) => {
+  try {
+    await createUserLocationLog({
+      userId,
+      orderId,
+      location: location || null,
+      addressFields: {
+        street: addressPayload.address_line1,
+        city: addressPayload.city,
+        state: addressPayload.state,
+        pincode: addressPayload.pincode,
+        country: INDIA_COUNTRY,
+      },
+    });
+  } catch (logError) {
+    console.warn(`${context} location log failed:`, logError?.message || logError);
   }
-  return data;
+};
+
+const ensureNoDuplicateAddress = async ({
+  userId,
+  dedupeKey,
+  excludeId = null,
+}) => {
+  const filter = { userId, dedupeKey };
+  if (excludeId) {
+    filter._id = { $ne: excludeId };
+  }
+  return AddressModel.findOne(filter);
+};
+
+const normalizeAddressesForResponse = (addresses = []) =>
+  addresses.map((address) => serializeAddressDocument(address));
+
+/**
+ * Public pincode lookup for India Post autofill
+ */
+export const lookupPincodeAddress = async (req, res) => {
+  try {
+    const pincode = String(req.params.pincode || "").trim();
+    const data = await lookupIndiaPostPincode(pincode);
+
+    return res.status(200).json({
+      success: true,
+      error: false,
+      data,
+      message: data.cacheHit
+        ? "Pincode details fetched from cache"
+        : "Pincode details fetched successfully",
+    });
+  } catch (error) {
+    const status = error?.code === "INVALID_PINCODE" ? 400 : 502;
+    return res.status(status).json({
+      success: false,
+      error: true,
+      message: error.message || "Failed to lookup pincode",
+    });
+  }
 };
 
 /**
@@ -38,13 +120,16 @@ export const getUserAddresses = async (req, res) => {
     const userId = req.user;
 
     const addresses = await AddressModel.find({ userId }).sort({
+      is_default: -1,
+      selected: -1,
+      updatedAt: -1,
       createdAt: -1,
     });
 
     return res.status(200).json({
       success: true,
       error: false,
-      data: addresses,
+      data: normalizeAddressesForResponse(addresses),
       message: "Addresses fetched successfully",
     });
   } catch (error) {
@@ -78,7 +163,7 @@ export const getAddressById = async (req, res) => {
     return res.status(200).json({
       success: true,
       error: false,
-      data: address,
+      data: serializeAddressDocument(address),
       message: "Address fetched successfully",
     });
   } catch (error) {
@@ -97,91 +182,66 @@ export const getAddressById = async (req, res) => {
 export const createAddress = async (req, res) => {
   try {
     const userId = req.user;
-    const {
-      address_line1,
-      city,
-      state,
-      pincode,
-      country,
-      mobile,
-      landmark,
-      addressType,
-      name,
-      location,
-    } = req.body;
+    const payload = buildAddressPayloadFromRequest(req.body || {});
+    const validation = validateStructuredAddress(payload);
 
-    // Validation
-    if (!address_line1 || !city || !state || !pincode || !mobile) {
+    if (!validation.isValid) {
       return res.status(400).json({
         success: false,
         error: true,
-        message:
-          "Please fill all required fields (address, city, state, pincode, mobile)",
+        message: "Please complete all required address fields",
+        errors: validation.errors,
       });
     }
 
-    // Validate pincode (6 digits for India)
-    if (!/^\d{6}$/.test(pincode)) {
-      return res.status(400).json({
-        success: false,
-        error: true,
-        message: "Please enter a valid 6-digit pincode",
+    payload.dedupeKey = buildAddressDedupeKey(payload);
+
+    const duplicate = await ensureNoDuplicateAddress({
+      userId,
+      dedupeKey: payload.dedupeKey,
+    });
+    if (duplicate) {
+      return res.status(200).json({
+        success: true,
+        error: false,
+        duplicate: true,
+        data: serializeAddressDocument(duplicate),
+        message: "Address already saved",
       });
     }
 
-    // Validate mobile (10 digits)
-    const mobileStr = String(mobile).replace(/\D/g, "");
-    if (mobileStr.length !== 10) {
-      return res.status(400).json({
-        success: false,
-        error: true,
-        message: "Please enter a valid 10-digit mobile number",
-      });
-    }
+    const existingAddresses = await AddressModel.find({ userId })
+      .select("_id")
+      .lean();
+    const shouldBeDefault =
+      existingAddresses.length === 0 || Boolean(payload.is_default);
 
-    // If this is the first address or marked as selected, unselect others
-    const existingAddresses = await AddressModel.find({ userId });
-    const shouldBeSelected = existingAddresses.length === 0;
+    if (shouldBeDefault) {
+      await AddressModel.updateMany(
+        { userId },
+        { $set: { selected: false, is_default: false } },
+      );
+    }
 
     const newAddress = new AddressModel({
+      ...payload,
       userId,
-      address_line1,
-      city,
-      state,
-      pincode,
-      country: country || "India",
-      mobile: parseInt(mobileStr),
-      landmark,
-      addressType: addressType || "Home",
-      name,
-      selected: shouldBeSelected,
-      location: normalizeLocationPayload(location),
+      selected: shouldBeDefault,
+      is_default: shouldBeDefault,
     });
 
     await newAddress.save();
-
-    // Location log (90-day retention). This does not change address/order behavior.
-    try {
-      await createUserLocationLog({
-        userId,
-        orderId: null,
-        location: location || null,
-        addressFields: {
-          street: address_line1,
-          city,
-          state,
-          pincode,
-          country: country || "India",
-        },
-      });
-    } catch (logError) {
-      console.warn("createAddress location log failed:", logError?.message || logError);
-    }
+    await logAddressLocation({
+      userId,
+      location: req.body?.location,
+      addressPayload: newAddress,
+      context: "createAddress",
+    });
 
     return res.status(201).json({
       success: true,
       error: false,
-      data: sanitizeAddressForResponse(newAddress),
+      data: serializeAddressDocument(newAddress),
       message: "Address created successfully",
     });
   } catch (error) {
@@ -201,20 +261,6 @@ export const updateAddress = async (req, res) => {
   try {
     const userId = req.user;
     const { addressId } = req.params;
-    const {
-      address_line1,
-      city,
-      state,
-      pincode,
-      country,
-      mobile,
-      landmark,
-      addressType,
-      name,
-      location,
-    } = req.body;
-
-    // Check if address exists and belongs to user
     const existingAddress = await AddressModel.findOne({
       _id: addressId,
       userId,
@@ -228,68 +274,102 @@ export const updateAddress = async (req, res) => {
       });
     }
 
-    // Validate pincode if provided
-    if (pincode && !/^\d{6}$/.test(pincode)) {
+    const payload = buildAddressPayloadFromRequest({
+      ...existingAddress.toObject(),
+      ...req.body,
+    });
+    const validation = validateStructuredAddress(payload);
+
+    if (!validation.isValid) {
       return res.status(400).json({
         success: false,
         error: true,
-        message: "Please enter a valid 6-digit pincode",
+        message: "Please complete all required address fields",
+        errors: validation.errors,
       });
     }
 
-    // Validate mobile if provided
-    if (mobile) {
-      const mobileStr = String(mobile).replace(/\D/g, "");
-      if (mobileStr.length !== 10) {
-        return res.status(400).json({
-          success: false,
-          error: true,
-          message: "Please enter a valid 10-digit mobile number",
-        });
+    payload.dedupeKey = buildAddressDedupeKey(payload);
+
+    const duplicate = await ensureNoDuplicateAddress({
+      userId,
+      dedupeKey: payload.dedupeKey,
+      excludeId: addressId,
+    });
+    if (duplicate) {
+      return res.status(200).json({
+        success: true,
+        error: false,
+        duplicate: true,
+        data: serializeAddressDocument(duplicate),
+        message: "Address already saved",
+      });
+    }
+
+    let shouldBeDefault = Boolean(
+      req.body?.is_default ??
+        req.body?.selected ??
+        req.body?.makeDefault ??
+        existingAddress.is_default ??
+        existingAddress.selected,
+    );
+
+    let replacementDefault = null;
+    if (
+      !shouldBeDefault &&
+      (existingAddress.is_default || existingAddress.selected)
+    ) {
+      replacementDefault = await AddressModel.findOne({
+        userId,
+        _id: { $ne: addressId },
+      }).sort({
+        is_default: -1,
+        selected: -1,
+        updatedAt: -1,
+        createdAt: -1,
+      });
+
+      if (!replacementDefault) {
+        shouldBeDefault = true;
       }
     }
 
-    // Update fields
-    const updateData = {};
-    if (address_line1) updateData.address_line1 = address_line1;
-    if (city) updateData.city = city;
-    if (state) updateData.state = state;
-    if (pincode) updateData.pincode = pincode;
-    if (country) updateData.country = country;
-    if (mobile) updateData.mobile = parseInt(String(mobile).replace(/\D/g, ""));
-    if (landmark !== undefined) updateData.landmark = landmark;
-    if (addressType) updateData.addressType = addressType;
-    if (name) updateData.name = name;
-    if (location !== undefined) updateData.location = normalizeLocationPayload(location);
-
-    const updatedAddress = await AddressModel.findByIdAndUpdate(
-      addressId,
-      updateData,
-      { new: true },
-    );
-
-    // Location log (90-day retention). Store on each save/update.
-    try {
-      await createUserLocationLog({
-        userId,
-        orderId: null,
-        location: location || null,
-        addressFields: {
-          street: updateData.address_line1 || existingAddress.address_line1,
-          city: updateData.city || existingAddress.city,
-          state: updateData.state || existingAddress.state,
-          pincode: updateData.pincode || existingAddress.pincode,
-          country: updateData.country || existingAddress.country || "India",
-        },
-      });
-    } catch (logError) {
-      console.warn("updateAddress location log failed:", logError?.message || logError);
+    if (shouldBeDefault) {
+      await AddressModel.updateMany(
+        { userId, _id: { $ne: addressId } },
+        { $set: { selected: false, is_default: false } },
+      );
     }
+
+    Object.assign(existingAddress, {
+      ...payload,
+      selected: shouldBeDefault,
+      is_default: shouldBeDefault,
+      country: INDIA_COUNTRY,
+    });
+
+    if (req.body?.location !== undefined) {
+      existingAddress.location = normalizeLocationPayload(req.body.location);
+    }
+
+    await existingAddress.save();
+
+    if (replacementDefault && !shouldBeDefault) {
+      replacementDefault.selected = true;
+      replacementDefault.is_default = true;
+      await replacementDefault.save();
+    }
+    await logAddressLocation({
+      userId,
+      location: req.body?.location,
+      addressPayload: existingAddress,
+      context: "updateAddress",
+    });
 
     return res.status(200).json({
       success: true,
       error: false,
-      data: sanitizeAddressForResponse(updatedAddress),
+      data: serializeAddressDocument(existingAddress),
       message: "Address updated successfully",
     });
   } catch (error) {
@@ -310,7 +390,6 @@ export const deleteAddress = async (req, res) => {
     const userId = req.user;
     const { addressId } = req.params;
 
-    // Check if address exists and belongs to user
     const existingAddress = await AddressModel.findOne({
       _id: addressId,
       userId,
@@ -326,12 +405,15 @@ export const deleteAddress = async (req, res) => {
 
     await AddressModel.findByIdAndDelete(addressId);
 
-    // If deleted address was selected, select another one
-    if (existingAddress.selected) {
-      const remainingAddress = await AddressModel.findOne({ userId });
-      if (remainingAddress) {
-        remainingAddress.selected = true;
-        await remainingAddress.save();
+    if (existingAddress.selected || existingAddress.is_default) {
+      const replacement = await AddressModel.findOne({ userId }).sort({
+        updatedAt: -1,
+        createdAt: -1,
+      });
+      if (replacement) {
+        replacement.selected = true;
+        replacement.is_default = true;
+        await replacement.save();
       }
     }
 
@@ -358,7 +440,6 @@ export const setDefaultAddress = async (req, res) => {
     const userId = req.user;
     const { addressId } = req.params;
 
-    // Check if address exists and belongs to user
     const existingAddress = await AddressModel.findOne({
       _id: addressId,
       userId,
@@ -372,20 +453,19 @@ export const setDefaultAddress = async (req, res) => {
       });
     }
 
-    // Unselect all other addresses for this user
     await AddressModel.updateMany(
       { userId, _id: { $ne: addressId } },
-      { selected: false },
+      { $set: { selected: false, is_default: false } },
     );
 
-    // Select this address
     existingAddress.selected = true;
+    existingAddress.is_default = true;
     await existingAddress.save();
 
     return res.status(200).json({
       success: true,
       error: false,
-      data: existingAddress,
+      data: serializeAddressDocument(existingAddress),
       message: "Default address updated successfully",
     });
   } catch (error) {
@@ -396,4 +476,14 @@ export const setDefaultAddress = async (req, res) => {
       message: error.message || "Failed to set default address",
     });
   }
+};
+
+export default {
+  createAddress,
+  deleteAddress,
+  getAddressById,
+  getUserAddresses,
+  lookupPincodeAddress,
+  setDefaultAddress,
+  updateAddress,
 };

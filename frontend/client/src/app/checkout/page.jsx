@@ -7,6 +7,7 @@ import UseCurrentLocationGoogleMaps from "@/components/UseCurrentLocationGoogleM
 import { useCart } from "@/context/CartContext";
 import { useReferral } from "@/context/ReferralContext";
 import { useSettings } from "@/context/SettingsContext";
+import useIndiaPincodeLookup from "@/hooks/useIndiaPincodeLookup";
 import { MyContext } from "@/context/ThemeProvider";
 import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
 import {
@@ -14,6 +15,21 @@ import {
   initAffiliateTracking,
   setAffiliateFromCoupon,
 } from "@/utils/affiliateTracking";
+import {
+  applyGoogleLocationToForm,
+  applyPincodeLookupToForm,
+  buildAddressPayload,
+  buildGuestDetailsPayload as buildGuestCheckoutPayload,
+  composeAddressLine1,
+  createEmptyAddressForm,
+  getAddressDisplayLines,
+  INDIAN_STATES,
+  mapAddressResponseToForm,
+  normalizeMobileNumber,
+  normalizePincode,
+  normalizeStateValue,
+  validateAddressForm as validateStructuredAddressForm,
+} from "@/utils/addressForm";
 import {
   clearPendingCouponCode,
   readPendingCouponCode,
@@ -25,12 +41,14 @@ import { getDisplayTaxBreakup } from "@/utils/shippingDisplay";
 import {
   Alert,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
@@ -160,25 +178,9 @@ const Checkout = () => {
   const [editingAddress, setEditingAddress] = useState(null);
   const [addressSaving, setAddressSaving] = useState(false);
   const [locationPayload, setLocationPayload] = useState(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    address_line1: "",
-    city: "",
-    state: "",
-    pincode: "",
-    mobile: "",
-    landmark: "",
-    addressType: "Home",
-  });
+  const [formData, setFormData] = useState(() => createEmptyAddressForm());
   const [formErrors, setFormErrors] = useState({});
-  const [guestDetails, setGuestDetails] = useState({
-    fullName: "",
-    phone: "",
-    address: "",
-    pincode: "",
-    state: "",
-    email: "",
-  });
+  const [guestDetails, setGuestDetails] = useState(() => createEmptyAddressForm());
   const [guestLocationPayload, setGuestLocationPayload] = useState(null);
   const [checkoutLocationPayload, setCheckoutLocationPayload] = useState(null);
   const [guestErrors, setGuestErrors] = useState({});
@@ -188,52 +190,44 @@ const Checkout = () => {
   const [gstSavedValue, setGstSavedValue] = useState("");
   const checkoutStartTrackedRef = useRef(false);
 
-  const INDIAN_STATES = [
-    "Andhra Pradesh",
-    "Arunachal Pradesh",
-    "Assam",
-    "Bihar",
-    "Chhattisgarh",
-    "Goa",
-    "Gujarat",
-    "Haryana",
-    "Himachal Pradesh",
-    "Jharkhand",
-    "Karnataka",
-    "Kerala",
-    "Madhya Pradesh",
-    "Maharashtra",
-    "Manipur",
-    "Meghalaya",
-    "Mizoram",
-    "Nagaland",
-    "Odisha",
-    "Punjab",
-    "Rajasthan",
-    "Sikkim",
-    "Tamil Nadu",
-    "Telangana",
-    "Tripura",
-    "Uttar Pradesh",
-    "Uttarakhand",
-    "West Bengal",
-    "Delhi",
-    "Jammu and Kashmir",
-    "Ladakh",
-    "Chandigarh",
-    "Puducherry",
-  ];
+  const {
+    lookup: addressPincodeLookup,
+    lookupPincode: lookupAddressPincode,
+    resetLookup: resetAddressPincodeLookup,
+  } = useIndiaPincodeLookup({
+    onResolved: (lookupData) => {
+      setFormData((prev) => applyPincodeLookupToForm(prev, lookupData));
+    },
+  });
 
-  const normalizeStateValue = (value) => {
-    const incoming = String(value || "")
-      .trim()
-      .toLowerCase();
-    if (!incoming) return "";
-    const match = INDIAN_STATES.find(
-      (s) => String(s).trim().toLowerCase() === incoming,
-    );
-    return match || "";
+  const {
+    lookup: guestPincodeLookup,
+    lookupPincode: lookupGuestPincode,
+    resetLookup: resetGuestPincodeLookup,
+  } = useIndiaPincodeLookup({
+    onResolved: (lookupData) => {
+      setGuestDetails((prev) => applyPincodeLookupToForm(prev, lookupData));
+    },
+  });
+
+  const getLookupHelperText = (lookupState) => {
+    if (lookupState.status === "loading") {
+      return "Looking up city/state from pincode...";
+    }
+    if (lookupState.status === "error" || lookupState.status === "empty") {
+      return lookupState.message;
+    }
+    if (lookupState.status !== "success") return "";
+
+    const city = lookupState.data?.city || "";
+    const state = lookupState.data?.state || "";
+    return [city, state].filter(Boolean).join(", ");
   };
+
+  const hasResolvedPincodeDetails = (form) =>
+    Boolean(
+      String(form?.city || "").trim() && String(form?.state || "").trim(),
+    );
 
   // Keep client checkout GST aligned with backend pricing calculation.
   const gstRatePercent = CHECKOUT_GST_RATE_PERCENT;
@@ -559,19 +553,11 @@ const Checkout = () => {
 
   // Address form handlers
   const resetAddressForm = () => {
-    setFormData({
-      name: "",
-      address_line1: "",
-      city: "",
-      state: "",
-      pincode: "",
-      mobile: "",
-      landmark: "",
-      addressType: "Home",
-    });
+    setFormData(createEmptyAddressForm());
     setFormErrors({});
     setEditingAddress(null);
     setLocationPayload(null);
+    resetAddressPincodeLookup();
   };
 
   const handleAddNewAddress = () => {
@@ -581,45 +567,55 @@ const Checkout = () => {
 
   const handleEditAddress = (address) => {
     setEditingAddress(address);
-    setFormData({
-      name: address.name || "",
-      address_line1: address.address_line1 || "",
-      city: address.city || "",
-      state: address.state || "",
-      pincode: address.pincode || "",
-      mobile: address.mobile?.toString() || "",
-      landmark: address.landmark || "",
-      addressType: address.addressType || "Home",
-    });
+    setFormData(mapAddressResponseToForm(address));
     setFormErrors({});
     setLocationPayload(null);
+    resetAddressPincodeLookup();
     setIsAddressDialogOpen(true);
   };
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const nextValue =
+      name === "mobileNumber"
+        ? normalizeMobileNumber(value)
+        : name === "pincode"
+          ? normalizePincode(value)
+          : value;
+
+    setFormData((prev) => ({ ...prev, [name]: nextValue }));
+
+    if (name === "pincode") {
+      if (nextValue.length === 6) {
+        lookupAddressPincode(nextValue);
+      } else {
+        resetAddressPincodeLookup();
+      }
+    }
+
     if (formErrors[name]) {
       setFormErrors((prev) => ({ ...prev, [name]: "" }));
     }
   };
 
   const validateAddressForm = () => {
-    const errors = {};
-    if (!formData.name.trim()) errors.name = "Name is required";
-    if (!formData.address_line1.trim())
-      errors.address_line1 = "Address is required";
-    if (!formData.city.trim()) errors.city = "City is required";
-    if (!formData.state) errors.state = "State is required";
-    if (!formData.pincode.trim()) errors.pincode = "Pincode is required";
-    else if (!/^\d{6}$/.test(formData.pincode))
-      errors.pincode = "Enter valid 6-digit pincode";
-    if (!formData.mobile.trim()) errors.mobile = "Mobile is required";
-    else if (!/^\d{10}$/.test(formData.mobile.replace(/\D/g, "")))
-      errors.mobile = "Enter valid 10-digit mobile";
+    const validation = validateStructuredAddressForm(formData);
+    setFormErrors(validation.errors);
+    return validation.isValid;
+  };
 
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+  const handleAddressLocationResolved = async (location) => {
+    setLocationPayload(location);
+    const nextForm = applyGoogleLocationToForm(formData, location);
+    setFormData(nextForm);
+    if (
+      normalizePincode(nextForm.pincode).length === 6 &&
+      !hasResolvedPincodeDetails(nextForm)
+    ) {
+      await lookupAddressPincode(nextForm.pincode);
+    } else {
+      resetAddressPincodeLookup();
+    }
   };
 
   const handleSaveAddress = async () => {
@@ -635,10 +631,12 @@ const Checkout = () => {
         method: editingAddress ? "PUT" : "POST",
         headers: buildAuthHeaders({ "Content-Type": "application/json" }),
         credentials: "include",
-        body: JSON.stringify({
-          ...formData,
-          location: locationPayload,
-        }),
+        body: JSON.stringify(
+          buildAddressPayload({
+            form: formData,
+            location: locationPayload,
+          }),
+        ),
       });
 
       if (response.status === 401) {
@@ -656,7 +654,13 @@ const Checkout = () => {
       if (data.success) {
         setSnackbar({
           open: true,
-          message: editingAddress ? "Address updated!" : "Address added!",
+          message: editingAddress
+            ? data.duplicate
+              ? "Matching address already exists."
+              : "Address updated!"
+            : data.duplicate
+              ? "Address already saved."
+              : "Address added!",
           severity: "success",
         });
         setIsAddressDialogOpen(false);
@@ -698,9 +702,39 @@ const Checkout = () => {
 
   const handleGuestChange = (e) => {
     const { name, value } = e.target;
-    setGuestDetails((prev) => ({ ...prev, [name]: value }));
+    const nextValue =
+      name === "mobileNumber"
+        ? normalizeMobileNumber(value)
+        : name === "pincode"
+          ? normalizePincode(value)
+          : value;
+
+    setGuestDetails((prev) => ({ ...prev, [name]: nextValue }));
+
+    if (name === "pincode") {
+      if (nextValue.length === 6) {
+        lookupGuestPincode(nextValue);
+      } else {
+        resetGuestPincodeLookup();
+      }
+    }
+
     if (guestErrors[name]) {
       setGuestErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  const handleGuestLocationResolved = async (location) => {
+    setGuestLocationPayload(location);
+    const nextForm = applyGoogleLocationToForm(guestDetails, location);
+    setGuestDetails(nextForm);
+    if (
+      normalizePincode(nextForm.pincode).length === 6 &&
+      !hasResolvedPincodeDetails(nextForm)
+    ) {
+      await lookupGuestPincode(nextForm.pincode);
+    } else {
+      resetGuestPincodeLookup();
     }
   };
 
@@ -790,23 +824,11 @@ const Checkout = () => {
   };
 
   const validateGuestCheckoutForm = () => {
-    const errors = {};
-    if (!guestDetails.fullName.trim())
-      errors.fullName = "Full name is required";
-    if (!/^\d{10}$/.test(guestDetails.phone.trim())) {
-      errors.phone = "Enter valid 10-digit phone number";
-    }
-    if (!guestDetails.address.trim()) errors.address = "Address is required";
-    if (!/^\d{6}$/.test(guestDetails.pincode.trim())) {
-      errors.pincode = "Enter valid 6-digit pincode";
-    }
-    if (!guestDetails.state.trim()) errors.state = "State is required";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestDetails.email.trim())) {
-      errors.email = "Enter valid email address";
-    }
-
-    setGuestErrors(errors);
-    return Object.keys(errors).length === 0;
+    const validation = validateStructuredAddressForm(guestDetails, {
+      requireEmail: true,
+    });
+    setGuestErrors(validation.errors);
+    return validation.isValid;
   };
 
   const applyCouponCode = useCallback(
@@ -978,17 +1000,53 @@ const Checkout = () => {
       };
     });
 
+  const getSelectedAddressForm = (address) =>
+    address ? mapAddressResponseToForm(address) : createEmptyAddressForm();
+
+  const buildShippingAddressPayload = (address) => {
+    if (address) {
+      const savedForm = getSelectedAddressForm(address);
+      return {
+        name: address.full_name || address.name || savedForm.fullName,
+        address:
+          address.address_line1 ||
+          composeAddressLine1({
+            flatHouse: savedForm.flatHouse,
+            areaStreetSector: savedForm.areaStreetSector,
+          }),
+        landmark: savedForm.landmark,
+        city: savedForm.city,
+        state: savedForm.state,
+        pincode: savedForm.pincode,
+        mobile:
+          address.mobile_number ||
+          address.mobile ||
+          savedForm.mobileNumber,
+        addressType: address.addressType || savedForm.addressType,
+      };
+    }
+
+    if (!isGuestCheckout) return null;
+
+    const guestPayload = buildGuestDetailsPayload();
+    return {
+      name: guestPayload.fullName,
+      address: guestPayload.address,
+      landmark: guestPayload.landmark || guestDetails.landmark,
+      city: guestPayload.city,
+      state: guestPayload.state,
+      pincode: guestPayload.pincode,
+      mobile: guestPayload.phone,
+      addressType: guestDetails.addressType || "Home",
+    };
+  };
+
   const buildGuestDetailsPayload = () => {
     if (isGuestCheckout) {
-      return {
-        fullName: guestDetails.fullName,
-        phone: guestDetails.phone,
-        address: guestDetails.address,
-        pincode: guestDetails.pincode,
-        state: guestDetails.state,
-        email: guestDetails.email,
-        gst: gstNumber || "",
-      };
+      return buildGuestCheckoutPayload({
+        form: guestDetails,
+        gstNumber,
+      });
     }
     if (gstNumber) {
       return {
@@ -1167,6 +1225,9 @@ const Checkout = () => {
       if (isGuestCheckout && !validateGuestCheckoutForm()) {
         throw new Error("Please complete all required guest details");
       }
+      if (!isGuestCheckout && !selectedAddress) {
+        throw new Error("Please select or add a delivery address");
+      }
 
       const insufficientItems = (cartItems || [])
         .map((item) => getItemData(item))
@@ -1252,27 +1313,7 @@ const Checkout = () => {
             : runtimeDefaultProvider,
         guestDetails: buildGuestDetailsPayload(),
         purchaseOrderId,
-        shippingAddress: selectedAddrObj
-          ? {
-              name: selectedAddrObj.name,
-              address: selectedAddrObj.address_line1,
-              landmark: selectedAddrObj.landmark,
-              city: selectedAddrObj.city,
-              state: selectedAddrObj.state,
-              pincode: selectedAddrObj.pincode,
-              mobile: selectedAddrObj.mobile,
-              addressType: selectedAddrObj.addressType,
-            }
-          : isGuestCheckout
-            ? {
-                name: guestDetails.fullName,
-                address: guestDetails.address,
-                city: "",
-                state: guestDetails.state,
-                pincode: guestDetails.pincode,
-                mobile: guestDetails.phone,
-              }
-            : null,
+        shippingAddress: buildShippingAddressPayload(selectedAddrObj),
       };
 
       const response = await fetch(`${API_URL}/api/orders`, {
@@ -1338,6 +1379,9 @@ const Checkout = () => {
       if (isGuestCheckout && !validateGuestCheckoutForm()) {
         throw new Error("Please complete all required guest details");
       }
+      if (!isGuestCheckout && !selectedAddress) {
+        throw new Error("Please select or add a delivery address");
+      }
 
       const insufficientItems = (cartItems || [])
         .map((item) => getItemData(item))
@@ -1378,26 +1422,8 @@ const Checkout = () => {
         delivery_address: isValidObjectId ? selectedAddress : null,
         location: isGuestCheckout ? guestLocationPayload : null,
         shippingAddress: selectedAddrObj
-          ? {
-              name: selectedAddrObj.name,
-              address: selectedAddrObj.address_line1,
-              landmark: selectedAddrObj.landmark,
-              city: selectedAddrObj.city,
-              state: selectedAddrObj.state,
-              pincode: selectedAddrObj.pincode,
-              mobile: selectedAddrObj.mobile,
-              addressType: selectedAddrObj.addressType,
-            }
-          : isGuestCheckout
-            ? {
-                name: guestDetails.fullName,
-                address: guestDetails.address,
-                city: "",
-                state: guestDetails.state,
-                pincode: guestDetails.pincode,
-                mobile: guestDetails.phone,
-              }
-            : null,
+          ? buildShippingAddressPayload(selectedAddrObj)
+          : buildShippingAddressPayload(null),
         guestDetails: buildGuestDetailsPayload(),
         // Coupon details
         couponCode: appliedCoupon?.code || null,
@@ -1496,18 +1522,26 @@ const Checkout = () => {
           `Only ${first.availableQuantity} left for ${first.name}. Update your cart to continue.`,
         );
       }
+      if (!selectedAddress) {
+        throw new Error("Select a saved delivery address to create a demo order.");
+      }
 
       const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
+      const guestPayload = buildGuestDetailsPayload();
       const demoPayload = {
         products: buildOrderProductsPayload(),
         influencerCode: activeInfluencerCode,
-        state: selectedAddrObj?.state || guestDetails.state || "",
-        pincode: selectedAddrObj?.pincode || guestDetails.pincode || "",
+        state: selectedAddrObj?.state || guestPayload.state || "",
+        pincode: selectedAddrObj?.pincode || guestPayload.pincode || "",
         address:
           selectedAddrObj?.address_line1 ||
-          guestDetails.address ||
+          guestPayload.address ||
           "Demo test order address",
-        phone: selectedAddrObj?.mobile || guestDetails.phone || "",
+        phone:
+          selectedAddrObj?.mobile_number ||
+          selectedAddrObj?.mobile ||
+          guestPayload.phone ||
+          "",
         gstNumber: gstSavedValue || gstNumber || "",
         notes: orderNote || "Demo influencer order from checkout",
       };
@@ -1684,11 +1718,11 @@ const Checkout = () => {
                     />
                     <TextField
                       label="Phone *"
-                      name="phone"
-                      value={guestDetails.phone}
+                      name="mobileNumber"
+                      value={guestDetails.mobileNumber}
                       onChange={handleGuestChange}
-                      error={!!guestErrors.phone}
-                      helperText={guestErrors.phone}
+                      error={!!guestErrors.mobileNumber}
+                      helperText={guestErrors.mobileNumber}
                       variant="outlined"
                       fullWidth
                       InputProps={{
@@ -1717,19 +1751,7 @@ const Checkout = () => {
                     <div className="md:col-span-2 space-y-4 p-5 bg-gray-50/50 rounded-3xl border border-gray-100">
                       <div className="flex items-center gap-3">
                         <UseCurrentLocationGoogleMaps
-                          onResolved={(loc) => {
-                            setGuestLocationPayload(loc);
-                            setGuestDetails((prev) => ({
-                              ...prev,
-                              address:
-                                loc.street ||
-                                loc.formattedAddress ||
-                                prev.address,
-                              pincode: loc.pincode || prev.pincode,
-                              state:
-                                normalizeStateValue(loc.state) || prev.state,
-                            }));
-                          }}
+                          onResolved={handleGuestLocationResolved}
                           onError={(message) =>
                             setSnackbar({
                               open: true,
@@ -1745,29 +1767,91 @@ const Checkout = () => {
                         )}
                       </div>
 
-                      <TextField
-                        label="Full Address *"
-                        name="address"
-                        value={guestDetails.address}
-                        onChange={handleGuestChange}
-                        error={!!guestErrors.address}
-                        helperText={guestErrors.address}
-                        variant="outlined"
-                        fullWidth
-                        multiline
-                        rows={2}
-                        InputProps={{
-                          sx: { borderRadius: "16px", bgcolor: "white" },
-                        }}
-                      />
-                      <div className="grid grid-cols-2 gap-4 mt-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1">
                         <TextField
                           label="Pincode *"
                           name="pincode"
                           value={guestDetails.pincode}
                           onChange={handleGuestChange}
-                          error={!!guestErrors.pincode}
-                          helperText={guestErrors.pincode}
+                          onBlur={() => {
+                            if (guestDetails.pincode.length === 6) {
+                              lookupGuestPincode(guestDetails.pincode);
+                            }
+                          }}
+                        error={
+                          !!guestErrors.pincode ||
+                          (guestPincodeLookup.status === "error" &&
+                            !hasResolvedPincodeDetails(guestDetails))
+                        }
+                        helperText={
+                          guestErrors.pincode ||
+                          (guestPincodeLookup.status === "error" &&
+                          hasResolvedPincodeDetails(guestDetails)
+                            ? ""
+                            : getLookupHelperText(guestPincodeLookup))
+                        }
+                          variant="outlined"
+                          fullWidth
+                          size="small"
+                          InputProps={{
+                            sx: { borderRadius: "16px", bgcolor: "white" },
+                          }}
+                        />
+                        <TextField
+                          label="Flat / House / Building *"
+                          name="flatHouse"
+                          value={guestDetails.flatHouse}
+                          onChange={handleGuestChange}
+                          error={!!guestErrors.flatHouse}
+                          helperText={guestErrors.flatHouse}
+                          variant="outlined"
+                          fullWidth
+                          size="small"
+                          InputProps={{
+                            sx: { borderRadius: "16px", bgcolor: "white" },
+                          }}
+                        />
+                      </div>
+
+                      <div className="mt-3">
+                        <TextField
+                          label="Area / Street / Sector *"
+                          name="areaStreetSector"
+                          value={guestDetails.areaStreetSector}
+                          onChange={handleGuestChange}
+                          error={!!guestErrors.areaStreetSector}
+                          helperText={guestErrors.areaStreetSector}
+                          variant="outlined"
+                          fullWidth
+                          sx={{ mb: 2 }}
+                          InputProps={{
+                            sx: { borderRadius: "16px", bgcolor: "white" },
+                          }}
+                        />
+
+                        <TextField
+                          label="Landmark (Optional)"
+                          name="landmark"
+                          value={guestDetails.landmark}
+                          onChange={handleGuestChange}
+                          variant="outlined"
+                          fullWidth
+                          size="small"
+                          sx={{ mb: 2 }}
+                          InputProps={{
+                            sx: { borderRadius: "16px", bgcolor: "white" },
+                          }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <TextField
+                          label="Town / City *"
+                          name="city"
+                          value={guestDetails.city}
+                          onChange={handleGuestChange}
+                          error={!!guestErrors.city}
+                          helperText={guestErrors.city}
                           variant="outlined"
                           fullWidth
                           size="small"
@@ -1835,61 +1919,83 @@ const Checkout = () => {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {addresses.map((addr) => (
-                          <div
-                            key={addr._id}
-                            onClick={() => setSelectedAddress(addr._id)}
-                            className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all duration-300 ${
-                              selectedAddress === addr._id
-                                ? "border-primary bg-[var(--flavor-glass)] shadow-lg shadow-primary/10"
-                                : "border-gray-100 bg-white hover:border-primary/40"
-                            }`}
-                          >
-                            <div className="flex justify-between items-start mb-3">
-                              <span
-                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                                  selectedAddress === addr._id
-                                    ? "bg-[var(--flavor-glass)] text-primary"
-                                    : "bg-gray-100 text-gray-500"
-                                }`}
-                              >
-                                {getAddressIcon(addr.addressType)}
-                                {addr.addressType || "Home"}
-                              </span>
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleEditAddress(addr);
-                                }}
-                                className="p-2 text-gray-400 hover:text-primary hover:bg-[var(--flavor-glass)] rounded-full transition-colors"
-                              >
-                                <FiEdit2 size={16} />
-                              </button>
-                            </div>
+                        {addresses.map((addr) => {
+                          const display = getAddressDisplayLines(
+                            mapAddressResponseToForm(addr),
+                          );
 
-                            <h3 className="font-bold text-gray-900 mb-1">
-                              {addr.name}
-                            </h3>
-                            <p className="text-sm text-gray-500 leading-relaxed mb-3">
-                              {addr.address_line1}{" "}
-                              {addr.landmark && `, ${addr.landmark}`} <br />
-                              {addr.city}, {addr.state} - {addr.pincode}
-                            </p>
-                            <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-primary" />{" "}
-                              +91 {addr.mobile}
-                            </p>
-
-                            {selectedAddress === addr._id && (
-                              <div className="absolute top-4 right-4 text-primary">
-                                <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                                  <FiCheck size={14} className="text-white" />
+                          return (
+                            <div
+                              key={addr._id}
+                              onClick={() => setSelectedAddress(addr._id)}
+                              className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all duration-300 ${
+                                selectedAddress === addr._id
+                                  ? "border-primary bg-[var(--flavor-glass)] shadow-lg shadow-primary/10"
+                                  : "border-gray-100 bg-white hover:border-primary/40"
+                              }`}
+                            >
+                              <div className="flex justify-between items-start mb-3 gap-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                                      selectedAddress === addr._id
+                                        ? "bg-[var(--flavor-glass)] text-primary"
+                                        : "bg-gray-100 text-gray-500"
+                                    }`}
+                                  >
+                                    {getAddressIcon(addr.addressType)}
+                                    {addr.addressType || "Home"}
+                                  </span>
+                                  {addr.selected && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-primary">
+                                      Default
+                                    </span>
+                                  )}
                                 </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleEditAddress(addr);
+                                  }}
+                                  className="p-2 text-gray-400 hover:text-primary hover:bg-[var(--flavor-glass)] rounded-full transition-colors"
+                                >
+                                  <FiEdit2 size={16} />
+                                </button>
                               </div>
-                            )}
-                          </div>
-                        ))}
+
+                              <h3 className="font-bold text-gray-900 mb-1">
+                                {addr.full_name || addr.name}
+                              </h3>
+                              <p className="text-sm text-gray-500 leading-relaxed">
+                                {display.line1 || "Address not available"}
+                              </p>
+                              {display.line2 && (
+                                <p className="text-sm text-gray-500 leading-relaxed">
+                                  {display.line2}
+                                </p>
+                              )}
+                              <p className="text-sm text-gray-500 leading-relaxed mb-3">
+                                {[addr.city, addr.state]
+                                  .filter(Boolean)
+                                  .join(", ")}{" "}
+                                - {addr.pincode}
+                              </p>
+                              <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-primary" />{" "}
+                                +91 {addr.mobile_number || addr.mobile}
+                              </p>
+
+                              {selectedAddress === addr._id && (
+                                <div className="absolute top-4 right-4 text-primary">
+                                  <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                                    <FiCheck size={14} className="text-white" />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2290,25 +2396,25 @@ const Checkout = () => {
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <div className="grid grid-cols-1 gap-5 mt-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <TextField
-                name="name"
+                name="fullName"
                 label="Full Name"
-                value={formData.name}
+                value={formData.fullName}
                 onChange={handleFormChange}
-                error={!!formErrors.name}
-                helperText={formErrors.name}
+                error={!!formErrors.fullName}
+                helperText={formErrors.fullName}
                 fullWidth
                 size="medium"
                 InputProps={{ sx: { borderRadius: "12px" } }}
               />
               <TextField
-                name="mobile"
+                name="mobileNumber"
                 label="Mobile"
-                value={formData.mobile}
+                value={formData.mobileNumber}
                 onChange={handleFormChange}
-                error={!!formErrors.mobile}
-                helperText={formErrors.mobile}
+                error={!!formErrors.mobileNumber}
+                helperText={formErrors.mobileNumber}
                 fullWidth
                 size="medium"
                 InputProps={{ sx: { borderRadius: "12px" } }}
@@ -2317,50 +2423,84 @@ const Checkout = () => {
 
             <div className="flex flex-col gap-2">
               <UseCurrentLocationGoogleMaps
-                onResolved={(loc) => {
-                  setLocationPayload(loc);
-                  setFormData((prev) => ({
-                    ...prev,
-                    address_line1:
-                      loc.street || loc.formattedAddress || prev.address_line1,
-                    city: loc.city || prev.city,
-                    pincode: loc.pincode || prev.pincode,
-                    state: normalizeStateValue(loc.state) || prev.state,
-                  }));
-                }}
+                onResolved={handleAddressLocationResolved}
                 onError={(message) =>
                   setSnackbar({ open: true, message, severity: "error" })
                 }
               />
             </div>
 
-            <TextField
-              name="address_line1"
-              label="Full Address"
-              value={formData.address_line1}
-              onChange={handleFormChange}
-              error={!!formErrors.address_line1}
-              helperText={formErrors.address_line1}
-              fullWidth
-              multiline
-              rows={2}
-              InputProps={{ sx: { borderRadius: "12px" } }}
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-1">
+              <TextField
+                name="pincode"
+                label="Pincode"
+                value={formData.pincode}
+                onChange={handleFormChange}
+                onBlur={() => {
+                  if (formData.pincode.length === 6) {
+                    lookupAddressPincode(formData.pincode);
+                  }
+                }}
+                error={
+                  !!formErrors.pincode ||
+                  (addressPincodeLookup.status === "error" &&
+                    !hasResolvedPincodeDetails(formData))
+                }
+                helperText={
+                  formErrors.pincode ||
+                  (addressPincodeLookup.status === "error" &&
+                  hasResolvedPincodeDetails(formData)
+                    ? ""
+                    : getLookupHelperText(addressPincodeLookup))
+                }
+                fullWidth
+                size="small"
+                InputProps={{ sx: { borderRadius: "12px" } }}
+              />
+              <TextField
+                name="flatHouse"
+                label="Flat / House / Building"
+                value={formData.flatHouse}
+                onChange={handleFormChange}
+                error={!!formErrors.flatHouse}
+                helperText={formErrors.flatHouse}
+                fullWidth
+                size="small"
+                InputProps={{ sx: { borderRadius: "12px" } }}
+              />
+            </div>
 
-            <TextField
-              name="landmark"
-              label="Landmark (Optional)"
-              value={formData.landmark}
-              onChange={handleFormChange}
-              fullWidth
-              size="small"
-              InputProps={{ sx: { borderRadius: "12px" } }}
-            />
+            <div className="mt-3">
+              <TextField
+                name="areaStreetSector"
+                label="Area / Street / Sector"
+                value={formData.areaStreetSector}
+                onChange={handleFormChange}
+                error={!!formErrors.areaStreetSector}
+                helperText={formErrors.areaStreetSector}
+                fullWidth
+                multiline
+                rows={2}
+                sx={{ mb: 2 }}
+                InputProps={{ sx: { borderRadius: "12px" } }}
+              />
 
-            <div className="grid grid-cols-2 gap-4 mt-1">
+              <TextField
+                name="landmark"
+                label="Landmark (Optional)"
+                value={formData.landmark}
+                onChange={handleFormChange}
+                fullWidth
+                size="small"
+                sx={{ mb: 2 }}
+                InputProps={{ sx: { borderRadius: "12px" } }}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <TextField
                 name="city"
-                label="City"
+                label="Town / City"
                 value={formData.city}
                 onChange={handleFormChange}
                 error={!!formErrors.city}
@@ -2369,21 +2509,6 @@ const Checkout = () => {
                 size="small"
                 InputProps={{ sx: { borderRadius: "12px" } }}
               />
-              <TextField
-                name="pincode"
-                label="Pincode"
-                value={formData.pincode}
-                onChange={handleFormChange}
-                error={!!formErrors.pincode}
-                helperText={formErrors.pincode}
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-                InputProps={{ sx: { borderRadius: "12px" } }}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <FormControl fullWidth size="small" error={!!formErrors.state}>
                 <InputLabel sx={{ bgcolor: "white", px: 0.5 }}>
                   State
@@ -2402,7 +2527,9 @@ const Checkout = () => {
                   ))}
                 </Select>
               </FormControl>
+            </div>
 
+            <div className="grid grid-cols-1 gap-4">
               <FormControl fullWidth size="small">
                 <InputLabel>Type</InputLabel>
                 <Select
@@ -2418,6 +2545,22 @@ const Checkout = () => {
                 </Select>
               </FormControl>
             </div>
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  name="isDefault"
+                  checked={Boolean(formData.isDefault)}
+                  onChange={(event) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isDefault: event.target.checked,
+                    }))
+                  }
+                />
+              }
+              label="Make this my default delivery address"
+            />
           </div>
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1 }}>
@@ -2449,4 +2592,3 @@ const Checkout = () => {
 };
 
 export default Checkout;
-

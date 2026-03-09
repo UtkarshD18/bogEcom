@@ -3,15 +3,30 @@
 import { API_BASE_URL, getStoredAccessToken } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import UseCurrentLocationGoogleMaps from "@/components/UseCurrentLocationGoogleMaps";
+import useIndiaPincodeLookup from "@/hooks/useIndiaPincodeLookup";
+import {
+  applyGoogleLocationToForm,
+  applyPincodeLookupToForm,
+  buildAddressPayload,
+  createEmptyAddressForm,
+  getAddressDisplayLines,
+  INDIAN_STATES,
+  mapAddressResponseToForm,
+  normalizeMobileNumber,
+  normalizePincode,
+  validateAddressForm as validateStructuredAddressForm,
+} from "@/utils/addressForm";
 import {
   Alert,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
@@ -23,7 +38,9 @@ import { useCallback, useEffect, useState } from "react";
 import { FiCheck, FiEdit2, FiMapPin, FiPlus, FiTrash2 } from "react-icons/fi";
 import { MdHome, MdLocationOn, MdWork } from "react-icons/md";
 
-const API_URL = API_BASE_URL;
+const API_URL = API_BASE_URL.endsWith("/api")
+  ? API_BASE_URL.slice(0, -4)
+  : API_BASE_URL;
 
 const parseResponse = async (response) => {
   const contentType = response.headers.get("content-type") || "";
@@ -41,44 +58,19 @@ const buildAuthHeaders = (extraHeaders = {}) => {
     : extraHeaders;
 };
 
-const INDIAN_STATES = [
-  "Andhra Pradesh",
-  "Arunachal Pradesh",
-  "Assam",
-  "Bihar",
-  "Chhattisgarh",
-  "Goa",
-  "Gujarat",
-  "Haryana",
-  "Himachal Pradesh",
-  "Jharkhand",
-  "Karnataka",
-  "Kerala",
-  "Madhya Pradesh",
-  "Maharashtra",
-  "Manipur",
-  "Meghalaya",
-  "Mizoram",
-  "Nagaland",
-  "Odisha",
-  "Punjab",
-  "Rajasthan",
-  "Sikkim",
-  "Tamil Nadu",
-  "Telangana",
-  "Tripura",
-  "Uttar Pradesh",
-  "Uttarakhand",
-  "West Bengal",
-  "Andaman and Nicobar Islands",
-  "Chandigarh",
-  "Dadra and Nagar Haveli and Daman and Diu",
-  "Delhi",
-  "Jammu and Kashmir",
-  "Ladakh",
-  "Lakshadweep",
-  "Puducherry",
-];
+const getLookupHelperText = (lookup) => {
+  if (lookup.status === "loading") return "Looking up city/state from pincode...";
+  if (lookup.status === "error") return lookup.message;
+  if (lookup.status === "empty") return lookup.message;
+  if (lookup.status !== "success") return "";
+
+  const city = lookup.data?.city || "";
+  const state = lookup.data?.state || "";
+  return [city, state].filter(Boolean).join(", ");
+};
+
+const hasResolvedPincodeDetails = (form) =>
+  Boolean(String(form?.city || "").trim() && String(form?.state || "").trim());
 
 const AddressPage = () => {
   const router = useRouter();
@@ -94,21 +86,19 @@ const AddressPage = () => {
     message: "",
     severity: "success",
   });
-
-  // Form state
-  const [formData, setFormData] = useState({
-    name: "",
-    address_line1: "",
-    city: "",
-    state: "",
-    pincode: "",
-    mobile: "",
-    landmark: "",
-    addressType: "Home",
-  });
+  const [formData, setFormData] = useState(() => createEmptyAddressForm());
   const [formErrors, setFormErrors] = useState({});
 
-  // Fetch addresses
+  const {
+    lookup: pincodeLookup,
+    lookupPincode,
+    resetLookup,
+  } = useIndiaPincodeLookup({
+    onResolved: (lookupData) => {
+      setFormData((prev) => applyPincodeLookupToForm(prev, lookupData));
+    },
+  });
+
   const fetchAddresses = useCallback(async () => {
     try {
       const response = await fetch(`${API_URL}/api/address`, {
@@ -120,22 +110,19 @@ const AddressPage = () => {
       const data = await parseResponse(response);
       if (response.ok && data.success) {
         setAddresses(data.data || []);
+      } else if (response.status === 401) {
+        router.push("/login?redirect=/address");
       } else {
-        if (response.status === 401) {
-          router.push("/login?redirect=/address");
-        } else {
-          setSnackbar({
-            open: true,
-            message: data.message || "Failed to load addresses",
-            severity: "error",
-          });
-        }
+        setSnackbar({
+          open: true,
+          message: data.message || "Failed to load addresses",
+          severity: "error",
+        });
       }
-    } catch (error) {
+    } catch (_error) {
       setSnackbar({
         open: true,
-        message:
-          "Unable to reach server. Please check the backend and API URL.",
+        message: "Unable to reach server. Please check the backend and API URL.",
         severity: "error",
       });
     } finally {
@@ -147,87 +134,78 @@ const AddressPage = () => {
     fetchAddresses();
   }, [fetchAddresses]);
 
-  // Reset form
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      address_line1: "",
-      city: "",
-      state: "",
-      pincode: "",
-      mobile: "",
-      landmark: "",
-      addressType: "Home",
-    });
+  const resetForm = useCallback(() => {
+    setFormData(createEmptyAddressForm());
     setFormErrors({});
     setEditingAddress(null);
     setLocationPayload(null);
-  };
+    resetLookup();
+  }, [resetLookup]);
 
-  // Open dialog for new address
   const handleAddNew = () => {
     resetForm();
     setIsDialogOpen(true);
   };
 
-  // Open dialog for editing
   const handleEdit = (address) => {
     setEditingAddress(address);
-    setFormData({
-      name: address.name || "",
-      address_line1: address.address_line1 || "",
-      city: address.city || "",
-      state: address.state || "",
-      pincode: address.pincode || "",
-      mobile: address.mobile?.toString() || "",
-      landmark: address.landmark || "",
-      addressType: address.addressType || "Home",
-    });
+    setFormData(mapAddressResponseToForm(address));
     setFormErrors({});
     setLocationPayload(null);
+    resetLookup();
     setIsDialogOpen(true);
   };
 
-  const normalizeStateValue = (value) => {
-    const incoming = String(value || "").trim().toLowerCase();
-    if (!incoming) return "";
-    const match = INDIAN_STATES.find(
-      (s) => String(s).trim().toLowerCase() === incoming,
-    );
-    return match || "";
-  };
+  const handleChange = (event) => {
+    const { name, value, checked, type } = event.target;
+    const nextValue =
+      type === "checkbox"
+        ? checked
+        : name === "mobileNumber"
+          ? normalizeMobileNumber(value)
+          : name === "pincode"
+            ? normalizePincode(value)
+            : value;
 
-  // Handle form change
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (formErrors[name]) {
-      setFormErrors((prev) => ({ ...prev, [name]: "" }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: nextValue,
+    }));
+
+    if (name === "pincode") {
+      if (nextValue.length === 6) {
+        lookupPincode(nextValue);
+      } else {
+        resetLookup();
+      }
+    }
+
+    const normalizedErrorKey = name === "mobileNumber" ? "mobileNumber" : name;
+    if (formErrors[normalizedErrorKey]) {
+      setFormErrors((prev) => ({ ...prev, [normalizedErrorKey]: "" }));
     }
   };
 
-  // Validate form
-  const validateForm = () => {
-    const errors = {};
-    if (!formData.name.trim()) errors.name = "Name is required";
-    if (!formData.address_line1.trim())
-      errors.address_line1 = "Address is required";
-    if (!formData.city.trim()) errors.city = "City is required";
-    if (!formData.state) errors.state = "State is required";
-    if (!formData.pincode.trim()) errors.pincode = "Pincode is required";
-    else if (!/^\d{6}$/.test(formData.pincode))
-      errors.pincode = "Enter valid 6-digit pincode";
-    if (!formData.mobile.trim()) errors.mobile = "Mobile is required";
-    else if (!/^\d{10}$/.test(formData.mobile.replace(/\D/g, "")))
-      errors.mobile = "Enter valid 10-digit mobile";
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+  const handleUseLocationResolved = async (location) => {
+    setLocationPayload(location);
+    const nextForm = applyGoogleLocationToForm(formData, location);
+    setFormData(nextForm);
+    if (
+      normalizePincode(nextForm.pincode).length === 6 &&
+      !hasResolvedPincodeDetails(nextForm)
+    ) {
+      await lookupPincode(nextForm.pincode);
+    } else {
+      resetLookup();
+    }
   };
 
-  // Save address
   const handleSave = async () => {
-    if (!validateForm()) return;
+    const validation = validateStructuredAddressForm(formData);
+    if (!validation.isValid) {
+      setFormErrors(validation.errors);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -239,10 +217,12 @@ const AddressPage = () => {
         method: editingAddress ? "PUT" : "POST",
         headers: buildAuthHeaders({ "Content-Type": "application/json" }),
         credentials: "include",
-        body: JSON.stringify({
-          ...formData,
-          location: locationPayload,
-        }),
+        body: JSON.stringify(
+          buildAddressPayload({
+            form: formData,
+            location: locationPayload,
+          }),
+        ),
       });
 
       const data = await parseResponse(response);
@@ -255,21 +235,26 @@ const AddressPage = () => {
       if (data.success) {
         setSnackbar({
           open: true,
-          message: editingAddress ? "Address updated!" : "Address added!",
+          message: editingAddress
+            ? data.duplicate
+              ? "Matching address already exists."
+              : "Address updated."
+            : data.duplicate
+              ? "Address already saved."
+              : "Address added.",
           severity: "success",
         });
         setIsDialogOpen(false);
         resetForm();
-        fetchAddresses();
+        await fetchAddresses();
       } else {
         setSnackbar({
           open: true,
-          message: data.message || "Failed to save",
+          message: data.message || "Failed to save address",
           severity: "error",
         });
       }
-    } catch (error) {
-      console.warn("Address save failed:", error);
+    } catch (_error) {
       setSnackbar({
         open: true,
         message: "Failed to save address",
@@ -280,7 +265,6 @@ const AddressPage = () => {
     }
   };
 
-  // Delete address
   const handleDelete = async (addressId) => {
     if (!confirm("Are you sure you want to delete this address?")) return;
 
@@ -305,16 +289,15 @@ const AddressPage = () => {
           message: "Address deleted",
           severity: "success",
         });
-        fetchAddresses();
+        await fetchAddresses();
       } else {
         setSnackbar({
           open: true,
-          message: data.message || "Failed to delete",
+          message: data.message || "Failed to delete address",
           severity: "error",
         });
       }
-    } catch (error) {
-      console.warn("Address delete failed:", error);
+    } catch (_error) {
       setSnackbar({
         open: true,
         message: "Failed to delete address",
@@ -325,7 +308,6 @@ const AddressPage = () => {
     }
   };
 
-  // Set as default
   const handleSetDefault = async (addressId) => {
     try {
       const response = await fetch(
@@ -350,16 +332,15 @@ const AddressPage = () => {
           message: "Default address updated",
           severity: "success",
         });
-        fetchAddresses();
+        await fetchAddresses();
       } else {
         setSnackbar({
           open: true,
-          message: data.message || "Failed to update",
+          message: data.message || "Failed to update default address",
           severity: "error",
         });
       }
-    } catch (error) {
-      console.warn("Address default update failed:", error);
+    } catch (_error) {
       setSnackbar({
         open: true,
         message: "Failed to update default address",
@@ -368,7 +349,6 @@ const AddressPage = () => {
     }
   };
 
-  // Get address type icon
   const getAddressIcon = (type) => {
     switch (type) {
       case "Work":
@@ -410,7 +390,8 @@ const AddressPage = () => {
                   My Addresses
                 </h4>
                 <p className="text-sm text-gray-500">
-                  Manage your delivery addresses
+                  Manage delivery addresses with auto-filled area, city, and
+                  state details.
                 </p>
               </div>
               <Button
@@ -435,7 +416,7 @@ const AddressPage = () => {
                     No addresses yet
                   </h3>
                   <p className="text-gray-500 mb-4">
-                    Add your first delivery address
+                    Save your first address to speed up checkout.
                   </p>
                   <Button
                     onClick={handleAddNew}
@@ -451,87 +432,101 @@ const AddressPage = () => {
                   </Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {addresses.map((address) => (
-                    <div
-                      key={address._id}
-                      className={`relative p-4 rounded-lg border-2 transition-all ${address.selected
-                        ? "border-orange-500 bg-orange-50"
-                        : "border-gray-200 bg-gray-50 hover:border-orange-300"
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {addresses.map((address) => {
+                    const display = getAddressDisplayLines(
+                      mapAddressResponseToForm(address),
+                    );
+
+                    return (
+                      <div
+                        key={address._id}
+                        className={`relative p-4 rounded-lg border-2 transition-all ${
+                          address.selected
+                            ? "border-orange-500 bg-orange-50"
+                            : "border-gray-200 bg-gray-50 hover:border-orange-300"
                         }`}
-                    >
-                      {address.selected && (
-                        <span className="absolute top-2 right-2 bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <FiCheck size={12} /> Default
+                      >
+                        {address.selected && (
+                          <span className="absolute top-2 right-2 bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <FiCheck size={12} /> Default
+                          </span>
+                        )}
+
+                        <span className="inline-flex items-center gap-1 bg-gray-200 text-gray-700 text-sm px-2 py-1 rounded-md mb-2">
+                          {getAddressIcon(address.addressType)}
+                          {address.addressType || "Home"}
                         </span>
-                      )}
 
-                      <span className="inline-flex items-center gap-1 bg-gray-200 text-gray-700 text-sm px-2 py-1 rounded-md mb-2">
-                        {getAddressIcon(address.addressType)}
-                        {address.addressType || "Home"}
-                      </span>
+                        <h3 className="text-lg font-medium text-gray-800 mb-1">
+                          {address.full_name || address.name}
+                        </h3>
+                        <p className="text-sm text-gray-600 mb-1">
+                          {display.line1 || "Address not available"}
+                        </p>
+                        {display.line2 && (
+                          <p className="text-sm text-gray-600 mb-1">
+                            {display.line2}
+                          </p>
+                        )}
+                        <p className="text-sm text-gray-600 mb-1">
+                          {[address.city, address.state]
+                            .filter(Boolean)
+                            .join(", ")}{" "}
+                          - {address.pincode}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          +91 {address.mobile_number || address.mobile}
+                        </p>
 
-                      <h3 className="text-lg font-medium text-gray-800 mb-1">
-                        {address.name}
-                      </h3>
-                      <p className="text-sm text-gray-600 mb-1">
-                        {address.address_line1}
-                        {address.landmark && `, ${address.landmark}`}
-                      </p>
-                      <p className="text-sm text-gray-600 mb-1">
-                        {address.city}, {address.state} - {address.pincode}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        +91 {address.mobile}
-                      </p>
-
-                      <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-200">
-                        <Button
-                          size="small"
-                          onClick={() => handleEdit(address)}
-                          sx={{
-                            textTransform: "none",
-                            color: "var(--primary)",
-                            minWidth: "auto",
-                          }}
-                        >
-                          <FiEdit2 className="mr-1" size={14} /> Edit
-                        </Button>
-                        <Button
-                          size="small"
-                          onClick={() => handleDelete(address._id)}
-                          disabled={deleting === address._id}
-                          sx={{
-                            textTransform: "none",
-                            color: "#dc2626",
-                            minWidth: "auto",
-                          }}
-                        >
-                          {deleting === address._id ? (
-                            <CircularProgress size={14} />
-                          ) : (
-                            <>
-                              <FiTrash2 className="mr-1" size={14} /> Delete
-                            </>
-                          )}
-                        </Button>
-                        {!address.selected && (
+                        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-200">
                           <Button
                             size="small"
-                            onClick={() => handleSetDefault(address._id)}
+                            onClick={() => handleEdit(address)}
                             sx={{
                               textTransform: "none",
                               color: "var(--primary)",
                               minWidth: "auto",
-                              marginLeft: "auto",
                             }}
                           >
-                            Set Default
+                            <FiEdit2 className="mr-1" size={14} /> Edit
                           </Button>
-                        )}
+                          <Button
+                            size="small"
+                            onClick={() => handleDelete(address._id)}
+                            disabled={deleting === address._id}
+                            sx={{
+                              textTransform: "none",
+                              color: "#dc2626",
+                              minWidth: "auto",
+                            }}
+                          >
+                            {deleting === address._id ? (
+                              <CircularProgress size={14} />
+                            ) : (
+                              <>
+                                <FiTrash2 className="mr-1" size={14} /> Delete
+                              </>
+                            )}
+                          </Button>
+                          {!address.selected && (
+                            <Button
+                              size="small"
+                              onClick={() => handleSetDefault(address._id)}
+                              sx={{
+                                textTransform: "none",
+                                color: "var(--primary)",
+                                minWidth: "auto",
+                                marginLeft: "auto",
+                              }}
+                            >
+                              Set Default
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -539,7 +534,6 @@ const AddressPage = () => {
         </div>
       </div>
 
-      {/* Add/Edit Dialog */}
       <Dialog
         open={isDialogOpen}
         onClose={() => setIsDialogOpen(false)}
@@ -551,41 +545,34 @@ const AddressPage = () => {
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <div className="grid grid-cols-1 gap-4 mt-2">
-            <TextField
-              name="name"
-              label="Full Name *"
-              value={formData.name}
-              onChange={handleChange}
-              error={!!formErrors.name}
-              helperText={formErrors.name}
-              fullWidth
-              size="small"
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <TextField
+                name="fullName"
+                label="Full Name *"
+                value={formData.fullName}
+                onChange={handleChange}
+                error={!!formErrors.fullName}
+                helperText={formErrors.fullName}
+                fullWidth
+                size="small"
+              />
 
-            <TextField
-              name="mobile"
-              label="Mobile Number *"
-              value={formData.mobile}
-              onChange={handleChange}
-              error={!!formErrors.mobile}
-              helperText={formErrors.mobile}
-              fullWidth
-              size="small"
-              placeholder="10-digit mobile number"
-            />
+              <TextField
+                name="mobileNumber"
+                label="Mobile Number *"
+                value={formData.mobileNumber}
+                onChange={handleChange}
+                error={!!formErrors.mobileNumber}
+                helperText={formErrors.mobileNumber}
+                fullWidth
+                size="small"
+                placeholder="10-digit mobile number"
+              />
+            </div>
 
             <div className="flex items-center gap-2 flex-wrap">
               <UseCurrentLocationGoogleMaps
-                onResolved={(loc) => {
-                  setLocationPayload(loc);
-                  setFormData((prev) => ({
-                    ...prev,
-                    address_line1: loc.street || loc.formattedAddress || prev.address_line1,
-                    city: loc.city || prev.city,
-                    pincode: loc.pincode || prev.pincode,
-                    state: normalizeStateValue(loc.state) || prev.state,
-                  }));
-                }}
+                onResolved={handleUseLocationResolved}
                 onError={(message) =>
                   setSnackbar({
                     open: true,
@@ -596,22 +583,60 @@ const AddressPage = () => {
               />
               {locationPayload?.formattedAddress && (
                 <span className="text-xs text-gray-500">
-                  Location selected
+                  Location selected from Google Maps
                 </span>
               )}
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <TextField
+                name="pincode"
+                label="Pincode *"
+                value={formData.pincode}
+                onChange={handleChange}
+                onBlur={() => {
+                  if (formData.pincode.length === 6) {
+                    lookupPincode(formData.pincode);
+                  }
+                }}
+                error={
+                  !!formErrors.pincode ||
+                  (pincodeLookup.status === "error" &&
+                    !hasResolvedPincodeDetails(formData))
+                }
+                helperText={
+                  formErrors.pincode ||
+                  (pincodeLookup.status === "error" &&
+                  hasResolvedPincodeDetails(formData)
+                    ? ""
+                    : getLookupHelperText(pincodeLookup))
+                }
+                fullWidth
+                size="small"
+                placeholder="6-digit pincode"
+              />
+
+              <TextField
+                name="flatHouse"
+                label="Flat / House / Building *"
+                value={formData.flatHouse}
+                onChange={handleChange}
+                error={!!formErrors.flatHouse}
+                helperText={formErrors.flatHouse}
+                fullWidth
+                size="small"
+              />
+            </div>
+
             <TextField
-              name="address_line1"
-              label="Address (House No, Building, Street) *"
-              value={formData.address_line1}
+              name="areaStreetSector"
+              label="Area / Street / Sector *"
+              value={formData.areaStreetSector}
               onChange={handleChange}
-              error={!!formErrors.address_line1}
-              helperText={formErrors.address_line1}
+              error={!!formErrors.areaStreetSector}
+              helperText={formErrors.areaStreetSector}
               fullWidth
               size="small"
-              multiline
-              rows={2}
             />
 
             <TextField
@@ -624,10 +649,10 @@ const AddressPage = () => {
               placeholder="Near park, mall, etc."
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <TextField
                 name="city"
-                label="City *"
+                label="Town / City *"
                 value={formData.city}
                 onChange={handleChange}
                 error={!!formErrors.city}
@@ -635,61 +660,61 @@ const AddressPage = () => {
                 fullWidth
                 size="small"
               />
-
-              <TextField
-                name="pincode"
-                label="Pincode *"
-                value={formData.pincode}
-                onChange={handleChange}
-                error={!!formErrors.pincode}
-                helperText={formErrors.pincode}
-                fullWidth
-                size="small"
-                placeholder="6-digit pincode"
-              />
+              <FormControl fullWidth size="small" error={!!formErrors.state}>
+                <InputLabel>State *</InputLabel>
+                <Select
+                  name="state"
+                  value={formData.state}
+                  onChange={handleChange}
+                  label="State *"
+                >
+                  {INDIAN_STATES.map((state) => (
+                    <MenuItem key={state} value={state}>
+                      {state}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </div>
 
-            <FormControl fullWidth size="small" error={!!formErrors.state}>
-              <InputLabel>State *</InputLabel>
-              <Select
-                name="state"
-                value={formData.state}
-                onChange={handleChange}
-                label="State *"
-              >
-                {INDIAN_STATES.map((state) => (
-                  <MenuItem key={state} value={state}>
-                    {state}
+            <div className="grid grid-cols-1 gap-4">
+              <FormControl fullWidth size="small">
+                <InputLabel>Address Type</InputLabel>
+                <Select
+                  name="addressType"
+                  value={formData.addressType}
+                  onChange={handleChange}
+                  label="Address Type"
+                >
+                  <MenuItem value="Home">
+                    <span className="flex items-center gap-2">
+                      <MdHome /> Home
+                    </span>
                   </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                  <MenuItem value="Work">
+                    <span className="flex items-center gap-2">
+                      <MdWork /> Work
+                    </span>
+                  </MenuItem>
+                  <MenuItem value="Other">
+                    <span className="flex items-center gap-2">
+                      <MdLocationOn /> Other
+                    </span>
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </div>
 
-            <FormControl fullWidth size="small">
-              <InputLabel>Address Type</InputLabel>
-              <Select
-                name="addressType"
-                value={formData.addressType}
-                onChange={handleChange}
-                label="Address Type"
-              >
-                <MenuItem value="Home">
-                  <span className="flex items-center gap-2">
-                    <MdHome /> Home
-                  </span>
-                </MenuItem>
-                <MenuItem value="Work">
-                  <span className="flex items-center gap-2">
-                    <MdWork /> Work
-                  </span>
-                </MenuItem>
-                <MenuItem value="Other">
-                  <span className="flex items-center gap-2">
-                    <MdLocationOn /> Other
-                  </span>
-                </MenuItem>
-              </Select>
-            </FormControl>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  name="isDefault"
+                  checked={Boolean(formData.isDefault)}
+                  onChange={handleChange}
+                />
+              }
+              label="Make this my default delivery address"
+            />
           </div>
         </DialogContent>
         <DialogActions sx={{ p: 2, borderTop: "1px solid #e5e7eb" }}>
@@ -721,7 +746,6 @@ const AddressPage = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
