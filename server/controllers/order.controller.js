@@ -35,8 +35,12 @@ import {
   awardCoinsToUser,
 } from "../services/coin.service.js";
 import {
+  createPaytmPayment,
+  getPaytmStatus,
+} from "../services/paytm.service.js";
+import {
   createPhonePePayment,
-  getPhonePeStatus,
+  getPhonePeOrderStatus,
 } from "../services/phonepe.service.js";
 import {
   getShippingQuote,
@@ -86,27 +90,99 @@ import {
   restoreInventory,
 } from "../services/inventory.service.js";
 import { autoCreateShipmentForPaidOrder } from "../services/automatedShipping.service.js";
+import { emitTrackingEvent } from "../services/analytics/trackingEmitter.service.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
-const DEFAULT_PAYMENT_PROVIDER = "PHONEPE";
+const PAYMENT_PROVIDERS = Object.freeze({
+  PAYTM: "PAYTM",
+  PHONEPE: "PHONEPE",
+});
+const DEFAULT_PAYMENT_PROVIDER = PAYMENT_PROVIDERS.PAYTM;
 const configuredPaymentProvider = String(
   process.env.PAYMENT_PROVIDER || DEFAULT_PAYMENT_PROVIDER,
-).toUpperCase();
-// Unsupported providers are coerced to PhonePe to keep runtime deterministic.
-const PAYMENT_PROVIDER =
-  configuredPaymentProvider === "PHONEPE"
-    ? configuredPaymentProvider
-    : DEFAULT_PAYMENT_PROVIDER;
-const PHONEPE_MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || "";
-const PHONEPE_SALT_KEY = process.env.PHONEPE_SALT_KEY || "";
-const PHONEPE_SALT_INDEX = process.env.PHONEPE_SALT_INDEX || "";
-const PAYMENT_ENV_ENABLED =
-  PAYMENT_PROVIDER === "PHONEPE" &&
-  process.env.PHONEPE_ENABLED === "true" &&
-  PHONEPE_MERCHANT_ID &&
-  PHONEPE_SALT_KEY &&
-  PHONEPE_SALT_INDEX;
+)
+  .trim()
+  .toUpperCase();
+const PAYTM_MERCHANT_ID = String(process.env.PAYTM_MERCHANT_ID || "").trim();
+const PAYTM_MERCHANT_KEY = String(process.env.PAYTM_MERCHANT_KEY || "").trim();
+const PHONEPE_CLIENT_ID = String(process.env.PHONEPE_CLIENT_ID || "").trim();
+const PHONEPE_CLIENT_SECRET = String(process.env.PHONEPE_CLIENT_SECRET || "").trim();
+const isValidPaytmMerchantKey = (value) =>
+  [16, 24, 32].includes(String(value || "").trim().length);
+const isTruthyEnv = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
+};
+const PAYMENT_PROVIDER_ENV_ENABLED = Object.freeze({
+  PAYTM: Boolean(
+    isTruthyEnv(process.env.PAYTM_ENABLED) &&
+      PAYTM_MERCHANT_ID &&
+      isValidPaytmMerchantKey(PAYTM_MERCHANT_KEY),
+  ),
+  PHONEPE: Boolean(
+    isTruthyEnv(process.env.PHONEPE_ENABLED) &&
+      PHONEPE_CLIENT_ID &&
+      PHONEPE_CLIENT_SECRET,
+  ),
+});
+const getEnabledPaymentProviders = () =>
+  Object.entries(PAYMENT_PROVIDER_ENV_ENABLED)
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([provider]) => provider);
+const resolveDefaultPaymentProvider = () => {
+  const requested = configuredPaymentProvider;
+  const isSupported = Object.values(PAYMENT_PROVIDERS).includes(requested);
+  if (isSupported && PAYMENT_PROVIDER_ENV_ENABLED[requested]) {
+    return requested;
+  }
+
+  const orderedProviders =
+    requested === PAYMENT_PROVIDERS.PHONEPE
+      ? [PAYMENT_PROVIDERS.PHONEPE, PAYMENT_PROVIDERS.PAYTM]
+      : [PAYMENT_PROVIDERS.PAYTM, PAYMENT_PROVIDERS.PHONEPE];
+  return (
+    orderedProviders.find(
+      (provider) => PAYMENT_PROVIDER_ENV_ENABLED[provider],
+    ) || null
+  );
+};
+const PAYMENT_PROVIDER = resolveDefaultPaymentProvider();
+const PAYMENT_ENV_ENABLED = Boolean(
+  Object.values(PAYMENT_PROVIDER_ENV_ENABLED).some(Boolean),
+);
+const resolvePaymentProviderForRequest = (requestedProvider) => {
+  const normalized = String(requestedProvider || "")
+    .trim()
+    .toUpperCase();
+  if (normalized) {
+    if (!Object.values(PAYMENT_PROVIDERS).includes(normalized)) {
+      throw new AppError("INVALID_PAYMENT_METHOD", {
+        provider: normalized,
+      });
+    }
+    if (!PAYMENT_PROVIDER_ENV_ENABLED[normalized]) {
+      throw new AppError("PAYMENT_DISABLED", {
+        provider: normalized,
+        enabledProviders: getEnabledPaymentProviders(),
+      });
+    }
+    return normalized;
+  }
+
+  if (PAYMENT_PROVIDER) return PAYMENT_PROVIDER;
+
+  throw new AppError("PAYMENT_DISABLED", {
+    enabledProviders: getEnabledPaymentProviders(),
+  });
+};
 
 const SETTINGS_CACHE_TTL_MS = 30 * 1000;
 const settingsCache = new Map();
@@ -476,6 +552,109 @@ const persistInvoiceSnapshotToDisk = async ({
 
 const formatInr = (value) => `Rs. ${round2(value).toFixed(2)}`;
 
+const resolveDisplayOrderNumber = (order = {}) => {
+  const explicitDisplayId =
+    order?.displayOrderId ||
+    order?.orderNumber ||
+    order?.order_id ||
+    order?.orderId ||
+    "";
+  if (String(explicitDisplayId || "").trim()) {
+    return String(explicitDisplayId).trim().toUpperCase();
+  }
+
+  const rawOrderId = String(order?._id || "").trim();
+  if (!rawOrderId) return "N/A";
+  return `BOG-${rawOrderId.slice(-8).toUpperCase()}`;
+};
+
+const emitPurchaseCompletedTrackingEvent = ({
+  req,
+  order,
+  source = "unknown",
+}) => {
+  if (!req || !order) return;
+  if (String(order?.analyticsConsent || "").toLowerCase() === "denied") return;
+
+  const orderId = String(order?._id || "").trim();
+  if (!orderId) return;
+
+  const lineItems = Array.isArray(order?.products)
+    ? order.products.slice(0, 100).map((item) => ({
+        productId: String(item?.productId || "").trim(),
+        productTitle: String(item?.productTitle || "").trim(),
+        quantity: Number(item?.quantity || 0),
+        price: Number(item?.price || 0),
+        subTotal: Number(item?.subTotal || 0),
+      }))
+    : [];
+
+  emitTrackingEvent({
+    req,
+    eventType: "purchase_completed",
+    userId: order?.user ? String(order.user) : null,
+    sessionId: String(order?.trackingSessionId || req.analyticsSessionId || ""),
+    metadata: {
+      source,
+      orderId,
+      orderNumber:
+        String(order?.orderNumber || order?.displayOrderId || "").trim() || null,
+      paymentMethod: String(order?.paymentMethod || "").trim() || "unknown",
+      paymentStatus: String(order?.payment_status || "").trim() || "unknown",
+      orderStatus: String(order?.order_status || "").trim() || "unknown",
+      revenue: Number(order?.finalAmount || order?.totalAmt || 0),
+      subtotal: Number(order?.subtotal || 0),
+      tax: Number(order?.tax || 0),
+      shipping: Number(order?.shipping || 0),
+      discount: Number(order?.discount || order?.discountAmount || 0),
+      influencerCode: String(order?.influencerCode || "").trim() || null,
+      couponCode: String(order?.couponCode || "").trim() || null,
+      items: lineItems,
+    },
+    pageUrl: "/checkout",
+    referrer: "",
+    async: true,
+  });
+};
+
+const resolveAnalyticsConsentFromRequest = (req) => {
+  const normalized = String(
+    req?.headers?.["x-analytics-consent"] ||
+      req?.cookies?.analytics_consent ||
+      req?.body?.consent ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (["granted", "allow", "opt_in", "yes", "true"].includes(normalized)) {
+    return "granted";
+  }
+  if (["denied", "disallow", "opt_out", "no", "false"].includes(normalized)) {
+    return "denied";
+  }
+  return "unknown";
+};
+
+const formatOrderDateForEmail = (value) => {
+  const parsed = new Date(value || Date.now());
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toLocaleString("en-IN");
+  }
+
+  return parsed
+    .toLocaleString("en-IN", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .replace(/\bam\b/g, "AM")
+    .replace(/\bpm\b/g, "PM");
+};
+
 const stringifyOrderItemsForEmail = (order) => {
   const items = Array.isArray(order?.products) ? order.products : [];
   if (items.length === 0) return "No items found for this order.";
@@ -512,6 +691,14 @@ const sendOrderConfirmationEmail = async (order) => {
           order?.guestDetails?.fullName ||
           "Customer",
       ).trim() || "Customer";
+    const rawOrderId = String(order?._id || "").trim();
+    const displayOrderNumber = resolveDisplayOrderNumber(order);
+    const supportContact = "healthyonegram.com";
+    const supportUrl = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportContact)
+      ? `mailto:${supportContact}`
+      : /^https?:\/\//i.test(supportContact)
+        ? supportContact
+        : `https://${supportContact.replace(/^\/+/, "")}`;
 
     const originalSubtotal = round2(
       Number(
@@ -530,29 +717,24 @@ const sendOrderConfirmationEmail = async (order) => {
     const finalAmount = round2(Number(order?.finalAmount || order?.totalAmt || 0));
 
     const text = [
-      `Order ${order?._id} created successfully.`,
+      `Order No: ${displayOrderNumber}`,
+      `Order ID: ${rawOrderId || "N/A"}`,
+      `Order created successfully.`,
       `Status: ${order?.order_status || "pending"}`,
       `Payment: ${order?.payment_status || "pending"}`,
       `Final Amount: ${formatInr(finalAmount)}`,
+      `Support: ${supportContact}`,
     ].join("\n");
 
     const result = await sendTemplatedEmail({
       to: recipientEmail,
-      subject: `Order Confirmation - ${order?._id}`,
+      subject: `Order Confirmation - ${displayOrderNumber}`,
       templateFile: "orderConfirmation.html",
       templateData: {
         customer_name: customerName,
-        order_id: String(order?._id || ""),
-        order_date: new Date(order?.createdAt || Date.now()).toLocaleString(
-          "en-IN",
-          {
-            year: "numeric",
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          },
-        ),
+        order_number: displayOrderNumber,
+        order_id: rawOrderId || "N/A",
+        order_date: formatOrderDateForEmail(order?.createdAt),
         order_status: String(order?.order_status || "pending"),
         payment_status: String(order?.payment_status || "pending"),
         items_text: stringifyOrderItemsForEmail(order),
@@ -563,13 +745,8 @@ const sendOrderConfirmationEmail = async (order) => {
         shipping_amount: formatInr(shippingAmount),
         final_amount: formatInr(finalAmount),
         site_url: getPrimaryStoreUrl(),
-        support_email: String(
-          process.env.SUPPORT_EMAIL ||
-            process.env.EMAIL_FROM_ADDRESS ||
-            process.env.SMTP_USER ||
-            process.env.EMAIL ||
-            "support@healthyonegram.com",
-        ).trim(),
+        support_contact: supportContact,
+        support_url: supportUrl,
         year: String(new Date().getFullYear()),
       },
       text,
@@ -606,72 +783,259 @@ const toObjectIdOrNull = (value) => {
   return mongoose.Types.ObjectId.isValid(asString) ? candidate : null;
 };
 
-const decodePhonePeWebhookEnvelope = (body = {}) => {
-  if (!body || typeof body !== "object") return {};
+const decodePaytmWebhookEnvelope = (body = {}) => {
+  if (!body) return {};
 
-  const base64Candidates = [];
-  if (typeof body.response === "string") {
-    base64Candidates.push(body.response);
-  }
-  if (typeof body.data === "string") {
-    base64Candidates.push(body.data);
-  }
-
-  for (const candidate of base64Candidates) {
+  if (typeof body === "string") {
     try {
-      const decoded = JSON.parse(
-        Buffer.from(candidate, "base64").toString("utf8"),
-      );
-      if (decoded && typeof decoded === "object") {
-        return decoded;
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
       }
     } catch {
-      // Continue with next shape candidate.
+      return {};
     }
   }
 
-  if (body.data && typeof body.data === "object") {
-    return body.data;
+  if (body.BODY && typeof body.BODY === "string") {
+    try {
+      const parsed = JSON.parse(body.BODY);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    } catch {
+      // fallback to raw payload
+    }
+  }
+
+  if (body.body && typeof body.body === "string") {
+    try {
+      const parsed = JSON.parse(body.body);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    } catch {
+      // fallback to raw payload
+    }
+  }
+
+  if (body.body && typeof body.body === "object") {
+    return body.body;
   }
 
   return body;
 };
 
-const extractPhonePeWebhookFields = (payload = {}) => {
+const extractPaytmWebhookFields = (payload = {}) => {
+  const resultInfo =
+    payload?.resultInfo && typeof payload.resultInfo === "object"
+      ? payload.resultInfo
+      : payload?.RESULTINFO && typeof payload.RESULTINFO === "object"
+        ? payload.RESULTINFO
+        : {};
+
   const merchantTransactionId =
     payload?.merchantTransactionId ||
-    payload?.merchant_transaction_id ||
-    payload?.merchantOrderId ||
+    payload?.merchant_order_id ||
+    payload?.ORDERID ||
     payload?.orderId ||
+    payload?.orderid ||
+    payload?.order_id ||
     null;
+
   const transactionId =
     payload?.transactionId ||
-    payload?.transaction_id ||
+    payload?.TXNID ||
+    payload?.txnId ||
+    payload?.txn_id ||
     payload?.providerReferenceId ||
-    payload?.paymentTransactionId ||
+    payload?.BANKTXNID ||
     null;
+
   const state =
-    payload?.state ||
-    payload?.code ||
+    resultInfo?.resultStatus ||
+    payload?.STATUS ||
     payload?.status ||
-    payload?.paymentState ||
+    payload?.state ||
+    payload?.resultStatus ||
     null;
 
   return { merchantTransactionId, transactionId, state };
 };
 
-const verifyPhonePeWebhookState = async (merchantTransactionId) => {
-  try {
-    const statusResponse = await getPhonePeStatus({ merchantTransactionId });
-    const payload =
-      statusResponse?.data && typeof statusResponse.data === "object"
-        ? statusResponse.data
-        : statusResponse || {};
+const extractOrderIdFromMerchantTransactionId = (merchantTransactionId) => {
+  const normalized = String(merchantTransactionId || "").trim();
+  if (!normalized || !normalized.startsWith("BOG_")) return null;
 
-    return extractPhonePeWebhookFields(payload);
+  const directOrderId = normalized.replace(/^BOG_/, "");
+  if (mongoose.Types.ObjectId.isValid(directOrderId)) {
+    return directOrderId;
+  }
+
+  const withSuffixMatch = normalized.match(/^BOG_([a-fA-F0-9]{24})(?:[_-].+)?$/);
+  if (!withSuffixMatch?.[1]) return null;
+
+  return withSuffixMatch[1];
+};
+
+const verifyPaytmWebhookState = async (merchantTransactionId) => {
+  try {
+    const statusResponse = await getPaytmStatus({ orderId: merchantTransactionId });
+    const payload =
+      statusResponse && typeof statusResponse === "object"
+        ? statusResponse
+        : {};
+    return extractPaytmWebhookFields(payload);
+  } catch (error) {
+    logger.warn("handlePaytmWebhook", "Paytm status verification failed", {
+      merchantTransactionId,
+      error: error?.message || String(error),
+    });
+    return null;
+  }
+};
+
+const getClientBaseUrl = () => {
+  const configured = String(process.env.CLIENT_URL || "")
+    .split(",")[0]
+    .trim()
+    .replace(/\/+$/, "");
+
+  if (/^https?:\/\//i.test(configured)) {
+    return configured;
+  }
+
+  return "https://healthyonegram.com";
+};
+
+const isBrowserNavigationRequest = (req) => {
+  const method = String(req?.method || "")
+    .trim()
+    .toUpperCase();
+  const accept = String(req?.headers?.accept || "").toLowerCase();
+  const secFetchDest = String(req?.headers?.["sec-fetch-dest"] || "").toLowerCase();
+  const secFetchMode = String(req?.headers?.["sec-fetch-mode"] || "").toLowerCase();
+  const secFetchUser = String(req?.headers?.["sec-fetch-user"] || "").toLowerCase();
+  const userAgent = String(req?.headers?.["user-agent"] || "").toLowerCase();
+
+  if (method === "GET") return true;
+
+  const hasNavigationHints =
+    secFetchDest === "document" ||
+    secFetchMode === "navigate" ||
+    secFetchUser === "?1";
+  const browserUserAgent =
+    userAgent.includes("mozilla") ||
+    userAgent.includes("chrome") ||
+    userAgent.includes("safari") ||
+    userAgent.includes("firefox") ||
+    userAgent.includes("edg") ||
+    userAgent.includes("opera");
+
+  return accept.includes("text/html") || hasNavigationHints || browserUserAgent;
+};
+
+const redirectPaytmWebhookToClient = (res, { orderId, paymentState }) => {
+  const path = orderId
+    ? `/orders/${encodeURIComponent(String(orderId))}`
+    : "/my-orders";
+
+  try {
+    const target = new URL(path, `${getClientBaseUrl()}/`);
+    target.searchParams.set("paymentProvider", "PAYTM");
+    if (paymentState) {
+      target.searchParams.set("paymentState", String(paymentState).toLowerCase());
+    }
+    return res.redirect(303, target.toString());
+  } catch {
+    const fallback = new URL("/my-orders", "https://healthyonegram.com/");
+    fallback.searchParams.set("paymentProvider", "PAYTM");
+    if (paymentState) {
+      fallback.searchParams.set("paymentState", String(paymentState).toLowerCase());
+    }
+    return res.redirect(303, fallback.toString());
+  }
+};
+
+const decodeMaybeJson = (value) => {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const decodeMaybeBase64Json = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  try {
+    const decoded = Buffer.from(normalized, "base64").toString("utf-8");
+    return decodeMaybeJson(decoded);
+  } catch {
+    return null;
+  }
+};
+
+const extractPhonePeWebhookMerchantOrderId = (req, payload = {}) => {
+  const payloadObj = payload && typeof payload === "object" ? payload : {};
+  const nestedPayload =
+    decodeMaybeJson(payloadObj.payload) ||
+    decodeMaybeBase64Json(payloadObj.payload) ||
+    null;
+  const nestedResponse =
+    decodeMaybeJson(payloadObj.response) ||
+    decodeMaybeBase64Json(payloadObj.response) ||
+    null;
+
+  return (
+    payloadObj.merchantOrderId ||
+    payloadObj.merchant_order_id ||
+    payloadObj.orderId ||
+    payloadObj.order_id ||
+    payloadObj.transactionId ||
+    nestedPayload?.merchantOrderId ||
+    nestedPayload?.merchant_order_id ||
+    nestedPayload?.data?.merchantOrderId ||
+    nestedResponse?.merchantOrderId ||
+    nestedResponse?.data?.merchantOrderId ||
+    req?.query?.merchantOrderId ||
+    req?.body?.merchantOrderId ||
+    null
+  );
+};
+
+const normalizePhonePeState = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
+
+const verifyPhonePeWebhookState = async (merchantOrderId) => {
+  try {
+    const statusResponse = await getPhonePeOrderStatus({ merchantOrderId });
+    const state = normalizePhonePeState(statusResponse?.state);
+    const paymentDetails = Array.isArray(statusResponse?.paymentDetails)
+      ? statusResponse.paymentDetails
+      : [];
+    const firstPayment = paymentDetails[0] || {};
+
+    return {
+      state,
+      merchantOrderId: String(merchantOrderId || "").trim(),
+      phonepeOrderId: String(statusResponse?.orderId || "").trim() || null,
+      transactionId:
+        firstPayment?.transactionId ||
+        firstPayment?.providerReferenceId ||
+        firstPayment?.utr ||
+        null,
+      raw: statusResponse,
+    };
   } catch (error) {
     logger.warn("handlePhonePeWebhook", "PhonePe status verification failed", {
-      merchantTransactionId,
+      merchantOrderId,
       error: error?.message || String(error),
     });
     return null;
@@ -925,7 +1289,11 @@ const authorizePurchaseOrderForCheckout = async ({
 
 logger.info(
   "Payment System",
-  `Provider: ${PAYMENT_PROVIDER}, EnvEnabled: ${PAYMENT_ENV_ENABLED}`,
+  `DefaultProvider: ${PAYMENT_PROVIDER || "NONE"}, EnvEnabled: ${PAYMENT_ENV_ENABLED}`,
+  {
+    configuredProvider: configuredPaymentProvider,
+    providerReadiness: PAYMENT_PROVIDER_ENV_ENABLED,
+  },
 );
 
 const isInvoiceEligible = (order) => {
@@ -1547,14 +1915,25 @@ export const getAllOrders = asyncHandler(async (req, res) => {
       }
     }
 
-    // Search by paymentId, PhonePe IDs, or user email
+    // Search by payment identifiers or user email
     if (search) {
-      filter.$or = [
-        { paymentId: { $regex: search, $options: "i" } },
-        { phonepeTransactionId: { $regex: search, $options: "i" } },
-        { phonepeMerchantTransactionId: { $regex: search, $options: "i" } },
-        { "user.email": { $regex: search, $options: "i" } },
+      const normalizedSearch = String(search || "").trim();
+      const searchFilters = [
+        { paymentId: { $regex: normalizedSearch, $options: "i" } },
+        { paytmTransactionId: { $regex: normalizedSearch, $options: "i" } },
+        { paytmOrderId: { $regex: normalizedSearch, $options: "i" } },
+        { orderNumber: { $regex: normalizedSearch, $options: "i" } },
+        { displayOrderId: { $regex: normalizedSearch, $options: "i" } },
+        { "billingDetails.email": { $regex: normalizedSearch, $options: "i" } },
+        { "guestDetails.email": { $regex: normalizedSearch, $options: "i" } },
+        { "user.email": { $regex: normalizedSearch, $options: "i" } },
       ];
+
+      if (mongoose.Types.ObjectId.isValid(normalizedSearch)) {
+        searchFilters.push({ _id: new mongoose.Types.ObjectId(normalizedSearch) });
+      }
+
+      filter.$or = searchFilters;
     }
 
     logger.debug("getAllOrders", "Fetching orders", {
@@ -2211,7 +2590,7 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
 // ==================== ORDER CREATION & PAYMENT ENDPOINTS ====================
 
 /**
- * Create order (Checkout) - PhonePe Integration
+ * Create order (Checkout) - Paytm / PhonePe integration
  * @route POST /api/orders
  * @access User (authenticated) / Guest
  * @param {Array} products - Product array with details
@@ -2251,8 +2630,12 @@ export const createOrder = asyncHandler(async (req, res) => {
       coinRedeem,
       purchaseOrderId,
       paymentType,
+      paymentProvider: requestedPaymentProvider,
     } = req.validatedData;
     const userId = req.user || null;
+    const selectedPaymentProvider = resolvePaymentProviderForRequest(
+      requestedPaymentProvider,
+    );
 
     logger.debug("createOrder", "Creating order", {
       userId,
@@ -2348,7 +2731,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       statusTimeline: [
         { status: ORDER_STATUS.PENDING, source: "ORDER_CREATE", timestamp: new Date() },
       ],
-      paymentMethod: PAYMENT_PROVIDER,
+      paymentMethod: selectedPaymentProvider,
       originalPrice: pricing.originalAmount,
       finalAmount: computedFinalAmount,
       couponCode: normalizedCouponCode,
@@ -2370,6 +2753,10 @@ export const createOrder = asyncHandler(async (req, res) => {
       billingDetails,
       deliveryAddressSnapshot: checkoutContact.addressSnapshot,
       guestDetails: guestOrderDetails,
+      trackingSessionId:
+        String(req.analyticsSessionId || req.cookies?.hog_sid || "")
+          .trim() || null,
+      analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       coinRedemption: {
         coinsUsed: Number(redemption.coinsUsed || 0),
         amount: Number(redemption.redeemAmount || 0),
@@ -2499,84 +2886,128 @@ export const createOrder = asyncHandler(async (req, res) => {
 
     await sendOrderConfirmationEmail(order);
 
-    if (PAYMENT_PROVIDER === "PHONEPE") {
-      const primaryOrigin = String(process.env.CLIENT_URL || "")
-        .split(",")[0]
-        .trim()
-        .replace(/\/+$/, "");
-      const backendUrl = String(
-        process.env.BACKEND_URL ||
-          process.env.API_BASE_URL ||
-          (process.env.GAE_DEFAULT_HOSTNAME
-            ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
-            : ""),
-      )
-        .trim()
-        .replace(/\/+$/, "");
+    const primaryOrigin = String(process.env.CLIENT_URL || "")
+      .split(",")[0]
+      .trim()
+      .replace(/\/+$/, "");
+    const backendUrl = String(
+      process.env.BACKEND_URL ||
+        process.env.API_BASE_URL ||
+        (process.env.GAE_DEFAULT_HOSTNAME
+          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
+          : ""),
+    )
+      .trim()
+      .replace(/\/+$/, "");
+    const merchantTransactionId = `BOG_${order._id}`;
 
-      const merchantTransactionId = `BOG_${order._id}`;
-      const merchantUserId = userId ? String(userId) : "guest";
-      const amount = payableAmount;
-      const redirectUrl =
-        process.env.PHONEPE_ORDER_REDIRECT_URL ||
-        process.env.PHONEPE_REDIRECT_URL ||
-        `${primaryOrigin}/payment/phonepe`;
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
       const callbackUrl =
-        process.env.PHONEPE_ORDER_CALLBACK_URL ||
-        process.env.PHONEPE_CALLBACK_URL ||
-        `${backendUrl}/api/orders/webhook/phonepe`;
+        process.env.PAYTM_ORDER_CALLBACK_URL ||
+        process.env.PAYTM_CALLBACK_URL ||
+        `${backendUrl}/api/orders/webhook/paytm`;
 
-      const phonepeResponse = await createPhonePePayment({
-        amount,
-        merchantTransactionId,
-        merchantUserId,
-        redirectUrl,
+      const paytmResponse = await createPaytmPayment({
+        amount: payableAmount,
+        orderId: merchantTransactionId,
         callbackUrl,
+        customerId: userId ? String(userId) : "guest",
         mobileNumber:
           checkoutContact.contact.phone ||
           req.body?.shippingAddress?.mobile ||
           null,
+        email:
+          checkoutContact.contact.email ||
+          req.body?.billingDetails?.email ||
+          req.body?.guestDetails?.email ||
+          null,
       });
+      const gatewayBase = (() => {
+        try {
+          return new URL(String(paytmResponse.gatewayUrl || "")).origin;
+        } catch {
+          return "";
+        }
+      })();
 
-      const paymentUrl =
-        phonepeResponse?.data?.instrumentResponse?.redirectInfo?.url ||
-        phonepeResponse?.data?.redirectInfo?.url ||
-        null;
+      const paymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
+        paytmResponse.mid,
+      )}&orderId=${encodeURIComponent(
+        paytmResponse.orderId,
+      )}&txnToken=${encodeURIComponent(
+        paytmResponse.txnToken,
+      )}&amount=${encodeURIComponent(Number(payableAmount).toFixed(2))}`;
+      const paymentUrlWithGateway = gatewayBase
+        ? `${paymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
+        : paymentUrl;
 
-      if (!paymentUrl) {
-        throw new AppError("PAYMENT_GATEWAY_ERROR", {
-          message: "PhonePe payment URL not received",
-        });
-      }
-
-      order.phonepeMerchantTransactionId = merchantTransactionId;
       order.paymentId = merchantTransactionId;
-      order.phonepeTransactionId = phonepeResponse?.data?.transactionId || null;
+      order.paytmOrderId = merchantTransactionId;
       await order.save();
 
       return sendSuccess(
         res,
         {
           orderId: order._id,
-          paymentProvider: "PHONEPE",
-          paymentUrl,
+          paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+          paymentUrl: paymentUrlWithGateway,
           merchantTransactionId,
+          txnToken: paytmResponse.txnToken,
+          paytmGatewayUrl: paytmResponse.gatewayUrl,
         },
         "Order created successfully",
         201,
       );
     }
 
-    return sendSuccess(
-      res,
-      {
-        orderId: order._id,
-        status: "pending",
-        message: "Order created. Payment provider not configured.",
-      },
-      "Order created successfully",
-      201,
-    );
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PHONEPE) {
+      const defaultPhonePeCallback = `${backendUrl}/api/orders/webhook/phonepe`;
+      const callbackUrl =
+        process.env.PHONEPE_ORDER_CALLBACK_URL ||
+        `${defaultPhonePeCallback}?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}`;
+      const defaultPhonePeRedirect =
+        `${primaryOrigin}/payment/phonepe?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}&orderId=${encodeURIComponent(String(order._id))}&paymentProvider=${encodeURIComponent(
+          PAYMENT_PROVIDERS.PHONEPE,
+        )}&flow=order&returnPath=${encodeURIComponent("/my-orders")}`;
+      const redirectUrl =
+        process.env.PHONEPE_REDIRECT_URL || defaultPhonePeRedirect;
+
+      const phonepeResponse = await createPhonePePayment({
+        amount: payableAmount,
+        merchantOrderId: merchantTransactionId,
+        redirectUrl,
+        callbackUrl,
+        customerId: userId ? String(userId) : "guest",
+      });
+
+      order.paymentId = merchantTransactionId;
+      order.phonepeMerchantOrderId = merchantTransactionId;
+      order.phonepeOrderId = phonepeResponse.phonepeOrderId || null;
+      await order.save();
+
+      return sendSuccess(
+        res,
+        {
+          orderId: order._id,
+          paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+          paymentUrl: phonepeResponse.redirectUrl,
+          merchantTransactionId,
+          phonepeOrderId: phonepeResponse.phonepeOrderId,
+          state: phonepeResponse.state,
+          expiresAt: phonepeResponse.expireAt,
+        },
+        "Order created successfully",
+        201,
+      );
+    }
+
+    throw new AppError("INVALID_PAYMENT_METHOD", {
+      provider: selectedPaymentProvider,
+    });
   } catch (error) {
     if (error instanceof AppError) {
       return sendError(res, error);
@@ -2864,6 +3295,10 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       billingDetails,
       deliveryAddressSnapshot: checkoutContact.addressSnapshot,
       guestDetails: guestOrderDetails,
+      trackingSessionId:
+        String(req.analyticsSessionId || req.cookies?.hog_sid || "")
+          .trim() || null,
+      analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       coinRedemption: {
         coinsUsed: Number(redemption.coinsUsed || 0),
         amount: Number(redemption.redeemAmount || 0),
@@ -3055,20 +3490,32 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
 export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
   try {
     const paymentEnabled = await isPaymentEnabled();
+    const enabledProviders = getEnabledPaymentProviders();
+    const defaultProvider = PAYMENT_PROVIDER || enabledProviders[0] || null;
+    const providerStatus = Object.fromEntries(
+      Object.entries(PAYMENT_PROVIDER_ENV_ENABLED).map(([provider, enabled]) => [
+        provider,
+        Boolean(enabled),
+      ]),
+    );
 
     logger.info("getPaymentGatewayStatus", "Status check", {
-      provider: PAYMENT_PROVIDER,
+      provider: defaultProvider,
       enabled: paymentEnabled,
+      enabledProviders,
     });
 
     return sendSuccess(res, {
       paymentEnabled,
-      provider: PAYMENT_PROVIDER,
+      provider: defaultProvider,
+      defaultProvider,
+      enabledProviders,
+      providers: providerStatus,
       message: paymentEnabled
-        ? `${PAYMENT_PROVIDER} payment gateway is active`
-        : `${PAYMENT_PROVIDER} is currently unavailable. You can still save orders for later.`,
+        ? `${defaultProvider || "Payment gateway"} is active`
+        : "Payment gateways are currently unavailable. You can still save orders for later.",
       canSaveOrder: true,
-      onboardingStatus: paymentEnabled ? "complete" : "in_progress",
+      configurationStatus: paymentEnabled ? "configured" : "not_configured",
     });
   } catch (error) {
     logger.error("getPaymentGatewayStatus", "Error checking payment status", {
@@ -3078,85 +3525,449 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Retry payment for an existing unpaid order
+ * @route POST /api/orders/:orderId/retry-payment
+ * @access User (authenticated + owner)
+ */
+export const retryOrderPayment = asyncHandler(async (req, res) => {
+  try {
+    const userId = req.user;
+    const orderId = req.params.orderId || req.params.id;
+
+    if (!userId) {
+      throw new AppError("UNAUTHORIZED");
+    }
+
+    validateMongoId(orderId, "orderId");
+
+    const maintenanceMode = await isMaintenanceMode();
+    if (maintenanceMode) {
+      return res.status(503).json({
+        error: true,
+        success: false,
+        message:
+          "Checkout is temporarily unavailable due to maintenance. Please try again later.",
+      });
+    }
+
+    if (!(await isPaymentEnabled())) {
+      throw new AppError("PAYMENT_DISABLED");
+    }
+
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      throw new AppError("ORDER_NOT_FOUND");
+    }
+
+    const orderUserId = order.user?._id?.toString() || order.user?.toString();
+    if (orderUserId !== userId?.toString()) {
+      throw new AppError("FORBIDDEN");
+    }
+
+    const normalizedPaymentStatus = String(order.payment_status || "")
+      .trim()
+      .toLowerCase();
+    if (normalizedPaymentStatus === "paid") {
+      throw new AppError("CONFLICT", {
+        field: "payment_status",
+        message: "Order is already paid",
+      });
+    }
+
+    const normalizedOrderStatus = normalizeOrderStatus(order.order_status);
+    const terminalStatuses = new Set([
+      ORDER_STATUS.CANCELLED,
+      ORDER_STATUS.DELIVERED,
+      ORDER_STATUS.COMPLETED,
+      ORDER_STATUS.RTO,
+      ORDER_STATUS.RTO_COMPLETED,
+    ]);
+    if (terminalStatuses.has(normalizedOrderStatus)) {
+      throw new AppError("INVALID_STATUS", {
+        field: "order_status",
+        status: normalizedOrderStatus,
+        message: "Order is not eligible for payment retry",
+      });
+    }
+
+    const requestedPaymentProvider = String(
+      req.body?.paymentProvider || order.paymentMethod || "",
+    )
+      .trim()
+      .toUpperCase();
+    const selectedPaymentProvider = resolvePaymentProviderForRequest(
+      requestedPaymentProvider,
+    );
+
+    const payableAmount = Math.max(
+      Number(order.finalAmount || order.totalAmt || 0),
+      1,
+    );
+
+    const primaryOrigin = String(process.env.CLIENT_URL || "")
+      .split(",")[0]
+      .trim()
+      .replace(/\/+$/, "");
+    const backendUrl = String(
+      process.env.BACKEND_URL ||
+        process.env.API_BASE_URL ||
+        (process.env.GAE_DEFAULT_HOSTNAME
+          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
+          : ""),
+    )
+      .trim()
+      .replace(/\/+$/, "");
+
+    const contact = order.billingDetails || order.guestDetails || {};
+
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
+      const merchantTransactionId =
+        String(order.paytmOrderId || order.paymentId || `BOG_${order._id}`).trim() ||
+        `BOG_${order._id}`;
+      const callbackUrl =
+        process.env.PAYTM_ORDER_CALLBACK_URL ||
+        process.env.PAYTM_CALLBACK_URL ||
+        `${backendUrl}/api/orders/webhook/paytm`;
+
+      const paytmResponse = await createPaytmPayment({
+        amount: payableAmount,
+        orderId: merchantTransactionId,
+        callbackUrl,
+        customerId: userId ? String(userId) : "guest",
+        mobileNumber: contact.phone || null,
+        email: contact.email || null,
+      });
+
+      const gatewayBase = (() => {
+        try {
+          return new URL(String(paytmResponse.gatewayUrl || "")).origin;
+        } catch {
+          return "";
+        }
+      })();
+
+      const paymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
+        paytmResponse.mid,
+      )}&orderId=${encodeURIComponent(
+        paytmResponse.orderId,
+      )}&txnToken=${encodeURIComponent(
+        paytmResponse.txnToken,
+      )}&amount=${encodeURIComponent(Number(payableAmount).toFixed(2))}`;
+      const paymentUrlWithGateway = gatewayBase
+        ? `${paymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
+        : paymentUrl;
+
+      order.paymentMethod = PAYMENT_PROVIDERS.PAYTM;
+      order.payment_status = "pending";
+      order.paymentId = merchantTransactionId;
+      order.paytmOrderId = merchantTransactionId;
+      order.failureReason = "";
+      order.updatedAt = new Date();
+      await order.save();
+
+      syncOrderToFirestore(order, "update").catch((err) =>
+        logger.error("retryOrderPayment", "Failed to sync order to Firestore", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+
+      return sendSuccess(res, {
+        orderId: order._id,
+        paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+        paymentUrl: paymentUrlWithGateway,
+        merchantTransactionId,
+        txnToken: paytmResponse.txnToken,
+        paytmGatewayUrl: paytmResponse.gatewayUrl,
+      });
+    }
+
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PHONEPE) {
+      const merchantTransactionId = `BOG_${order._id}_${Date.now().toString(36).toUpperCase()}`;
+      const defaultPhonePeCallback = `${backendUrl}/api/orders/webhook/phonepe`;
+      const callbackUrl =
+        process.env.PHONEPE_ORDER_CALLBACK_URL ||
+        `${defaultPhonePeCallback}?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}`;
+      const defaultPhonePeRedirect =
+        `${primaryOrigin}/payment/phonepe?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}&orderId=${encodeURIComponent(String(order._id))}&paymentProvider=${encodeURIComponent(
+          PAYMENT_PROVIDERS.PHONEPE,
+        )}&flow=order&returnPath=${encodeURIComponent("/my-orders")}`;
+      const redirectUrl =
+        process.env.PHONEPE_REDIRECT_URL || defaultPhonePeRedirect;
+
+      const phonepeResponse = await createPhonePePayment({
+        amount: payableAmount,
+        merchantOrderId: merchantTransactionId,
+        redirectUrl,
+        callbackUrl,
+        customerId: userId ? String(userId) : "guest",
+      });
+
+      order.paymentMethod = PAYMENT_PROVIDERS.PHONEPE;
+      order.payment_status = "pending";
+      order.paymentId = merchantTransactionId;
+      order.phonepeMerchantOrderId = merchantTransactionId;
+      order.phonepeOrderId = phonepeResponse.phonepeOrderId || null;
+      order.failureReason = "";
+      order.updatedAt = new Date();
+      await order.save();
+
+      syncOrderToFirestore(order, "update").catch((err) =>
+        logger.error("retryOrderPayment", "Failed to sync order to Firestore", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+
+      return sendSuccess(res, {
+        orderId: order._id,
+        paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+        paymentUrl: phonepeResponse.redirectUrl,
+        merchantTransactionId,
+        phonepeOrderId: phonepeResponse.phonepeOrderId,
+        state: phonepeResponse.state,
+        expiresAt: phonepeResponse.expireAt,
+      });
+    }
+
+    throw new AppError("INVALID_PAYMENT_METHOD", {
+      provider: selectedPaymentProvider,
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      return sendError(res, error);
+    }
+
+    const dbError = handleDatabaseError(error, "retryOrderPayment");
+    return sendError(res, dbError);
+  }
+});
+
+const runPostPaymentSuccessTasks = async ({
+  order,
+  webhookContext = "paymentWebhook",
+  shipmentSource = "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
+}) => {
+  if (!order) return;
+
+  if (order.user && Number(order.coinRedemption?.coinsUsed || 0) > 0) {
+    try {
+      await applyRedemptionToUser({
+        userId: order.user,
+        coinsUsed: Number(order.coinRedemption.coinsUsed || 0),
+        source: "order",
+        referenceId: String(order._id),
+        meta: {
+          orderId: String(order._id),
+          paymentId: order.paymentId || null,
+        },
+      });
+    } catch (coinError) {
+      logger.error(webhookContext, "Failed to deduct redeemed coins", {
+        orderId: order._id,
+        error: coinError.message,
+      });
+    }
+  }
+
+  if (order.couponCode) {
+    recordCouponUsage(order).catch((err) =>
+      logger.error(webhookContext, "Failed to record coupon usage", {
+        orderId: order._id,
+        error: err.message,
+      }),
+    );
+  }
+
+  if (order.influencerId && !order.influencerStatsSynced) {
+    const effectiveAmount = order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
+    const commissionBaseAmount = resolveInfluencerCommissionBase(order);
+    let commission = order.influencerCommission || 0;
+    if (!commission && order.influencerId) {
+      commission = await calculateInfluencerCommission(
+        order.influencerId,
+        commissionBaseAmount,
+      );
+      order.influencerCommission = commission;
+    }
+
+    try {
+      const influencerStatsSynced = await updateInfluencerStats(
+        order.influencerId,
+        effectiveAmount,
+        commission,
+      );
+      if (influencerStatsSynced) {
+        order.influencerStatsSynced = true;
+        await order.save();
+      }
+    } catch (err) {
+      logger.error(webhookContext, "Failed to update influencer stats", {
+        orderId: order._id,
+        error: err.message,
+      });
+    }
+  }
+
+  if (order.user) {
+    try {
+      const effectiveAmount = Math.max(
+        Number(order.subtotal || 0) - Number(order.discount || 0),
+        0,
+      );
+      const awardResult = await awardCoinsToUser({
+        userId: order.user,
+        orderAmount: effectiveAmount,
+        source: "order",
+        referenceId: String(order._id),
+      });
+      if (awardResult.coinsAwarded > 0) {
+        order.coinsAwarded = awardResult.coinsAwarded;
+        await order.save();
+      }
+    } catch (coinError) {
+      logger.error(webhookContext, "Failed to award coins", {
+        orderId: order._id,
+        error: coinError.message,
+      });
+    }
+  }
+
+  const autoShipmentResult = await autoCreateShipmentForPaidOrder({
+    orderId: order._id,
+    source: shipmentSource,
+  });
+  if (!autoShipmentResult.ok && !autoShipmentResult.skipped) {
+    logger.error(webhookContext, "Automatic shipment booking failed", {
+      orderId: order._id,
+      reason: autoShipmentResult.reason || "SHIPMENT_CREATION_FAILED",
+      error: autoShipmentResult.error?.message || null,
+    });
+  }
+
+  if (autoShipmentResult?.order) {
+    order.awb_number = autoShipmentResult.order.awb_number;
+    order.awbNumber = autoShipmentResult.order.awbNumber;
+    order.shipment_status = autoShipmentResult.order.shipment_status;
+    order.shipmentStatus = autoShipmentResult.order.shipmentStatus;
+    order.shipping_provider = autoShipmentResult.order.shipping_provider;
+    order.courierName = autoShipmentResult.order.courierName;
+    order.trackingUrl = autoShipmentResult.order.trackingUrl;
+    order.shipmentId = autoShipmentResult.order.shipmentId;
+    order.manifestId = autoShipmentResult.order.manifestId;
+  }
+};
+
 // ==================== WEBHOOK HANDLERS ====================
 
 /**
- * PhonePe Webhook Handler
- * @route POST /api/orders/webhook/phonepe
- * @access Public (payment state verified via PhonePe status API)
+ * Paytm Webhook Handler
+ * @route POST /api/orders/webhook/paytm
+ * @access Public (payment state verified via Paytm status API)
  */
-export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
+export const handlePaytmWebhook = asyncHandler(async (req, res) => {
   try {
-    logger.debug("handlePhonePeWebhook", "Webhook received");
+    logger.debug("handlePaytmWebhook", "Webhook received");
+    const wantsBrowserRedirect = isBrowserNavigationRequest(req);
+    const bodyHasPayload =
+      req.body && typeof req.body === "object" && Object.keys(req.body).length > 0;
+    const incomingPayload = bodyHasPayload ? req.body : req.query || {};
 
-    if (!(await isPaymentEnabled())) {
-      logger.warn("handlePhonePeWebhook", "PhonePe not enabled");
-      return sendSuccess(res, {}, "Webhook received");
+    if (!PAYMENT_PROVIDER_ENV_ENABLED.PAYTM) {
+      logger.warn("handlePaytmWebhook", "Paytm environment not enabled");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { paymentState: "unavailable" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
-    const payload = decodePhonePeWebhookEnvelope(req.body || {});
-    const webhookData = extractPhonePeWebhookFields(payload);
+    const payload = decodePaytmWebhookEnvelope(incomingPayload);
+    const webhookData = extractPaytmWebhookFields(payload);
     const merchantTransactionId = webhookData.merchantTransactionId;
 
     if (!merchantTransactionId) {
-      logger.warn("handlePhonePeWebhook", "Missing merchantTransactionId");
-      return sendSuccess(res, {}, "Webhook received");
+      logger.warn("handlePaytmWebhook", "Missing merchantTransactionId");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { paymentState: "pending" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
     if (!String(merchantTransactionId).startsWith("BOG_")) {
-      logger.warn("handlePhonePeWebhook", "Ignoring non-order transaction", {
+      logger.warn("handlePaytmWebhook", "Ignoring non-order transaction", {
         merchantTransactionId,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { paymentState: "pending" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
-    const orderId = String(merchantTransactionId).replace("BOG_", "");
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      logger.warn("handlePhonePeWebhook", "Invalid orderId in transaction", {
+    const orderId = extractOrderIdFromMerchantTransactionId(merchantTransactionId);
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+      logger.warn("handlePaytmWebhook", "Invalid orderId in transaction", {
         merchantTransactionId,
         orderId,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { paymentState: "pending" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
     const order = await OrderModel.findById(orderId);
 
     if (!order) {
-      logger.warn("handlePhonePeWebhook", "Order not found", {
+      logger.warn("handlePaytmWebhook", "Order not found", {
         merchantTransactionId,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, { orderId, paymentState: "pending" })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
-    if (
-      order.phonepeMerchantTransactionId &&
-      String(order.phonepeMerchantTransactionId) !== String(merchantTransactionId)
-    ) {
-      logger.warn("handlePhonePeWebhook", "Transaction/order mismatch", {
+    if (order.paytmOrderId && String(order.paytmOrderId) !== String(merchantTransactionId)) {
+      logger.warn("handlePaytmWebhook", "Transaction/order mismatch", {
         orderId: order._id,
         merchantTransactionId,
-        expected: order.phonepeMerchantTransactionId,
+        expected: order.paytmOrderId,
       });
-      return sendSuccess(res, {}, "Webhook received");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, {
+            orderId: order._id,
+            paymentState: String(order.payment_status || "pending").toLowerCase(),
+          })
+        : sendSuccess(res, {}, "Webhook received");
     }
 
-    const verifiedStatus = await verifyPhonePeWebhookState(
-      merchantTransactionId,
-    );
+    const verifiedStatus = await verifyPaytmWebhookState(merchantTransactionId);
     if (!verifiedStatus) {
-      return sendSuccess(res, {}, "Webhook acknowledged");
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, {
+            orderId: order._id,
+            paymentState: String(order.payment_status || "pending").toLowerCase(),
+          })
+        : sendSuccess(res, {}, "Webhook acknowledged");
     }
 
     const transactionId =
       verifiedStatus.transactionId || webhookData.transactionId || null;
     const normalizedState = String(
       verifiedStatus.state || webhookData.state || "",
-    ).toLowerCase();
+    )
+      .toLowerCase()
+      .trim();
     const wasPaid = order.payment_status === "paid";
     let orderMutated = false;
 
-    if (transactionId && String(order.phonepeTransactionId || "") !== String(transactionId)) {
-      order.phonepeTransactionId = transactionId;
+    if (String(order.paytmOrderId || "") !== String(merchantTransactionId)) {
+      order.paytmOrderId = merchantTransactionId;
+      orderMutated = true;
+    }
+
+    if (transactionId && String(order.paytmTransactionId || "") !== String(transactionId)) {
+      order.paytmTransactionId = transactionId;
       order.paymentId = transactionId;
       orderMutated = true;
     }
@@ -3173,7 +3984,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     } else if (normalizedState.includes("fail")) {
       if (!wasPaid) {
         order.payment_status = "failed";
-        order.failureReason = "PhonePe payment failed";
+        order.failureReason = "Paytm payment failed";
         await releaseInventory(order, "PAYMENT_WEBHOOK");
         orderMutated = true;
       }
@@ -3183,9 +3994,199 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         orderMutated = true;
       }
     } else {
-      logger.warn("handlePhonePeWebhook", "Unknown payment state", {
+      logger.warn("handlePaytmWebhook", "Unknown payment state", {
         merchantTransactionId,
         state: verifiedStatus.state || webhookData.state || null,
+      });
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, {
+            orderId: order._id,
+            paymentState: String(order.payment_status || "pending").toLowerCase(),
+          })
+        : sendSuccess(res, {}, "Webhook received");
+    }
+
+    if (!orderMutated) {
+      return wantsBrowserRedirect
+        ? redirectPaytmWebhookToClient(res, {
+            orderId: order._id,
+            paymentState: String(order.payment_status || "pending").toLowerCase(),
+          })
+        : sendSuccess(res, {}, "Webhook already processed");
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+
+    if (isInvoiceEligible(order)) {
+      ensureOrderInvoice(order).catch((err) =>
+        logger.error("handlePaytmWebhook", "Failed to generate invoice", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+    }
+
+    if (!wasPaid && order.payment_status === "paid") {
+      emitPurchaseCompletedTrackingEvent({
+        req,
+        order,
+        source: "paytm_webhook",
+      });
+
+      await runPostPaymentSuccessTasks({
+        order,
+        webhookContext: "handlePaytmWebhook",
+        shipmentSource: "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
+      });
+    }
+
+    syncOrderToFirestore(order, "update").catch((err) =>
+      logger.error("handlePaytmWebhook", "Failed to sync to Firestore", {
+        orderId: order._id,
+        error: err.message,
+      }),
+    );
+
+    emitOrderStatusUpdate(order, "PAYMENT_WEBHOOK");
+
+    return wantsBrowserRedirect
+      ? redirectPaytmWebhookToClient(res, {
+          orderId: order._id,
+          paymentState: String(order.payment_status || "pending").toLowerCase(),
+        })
+      : sendSuccess(res, {}, "Webhook processed");
+  } catch (error) {
+    logger.error("handlePaytmWebhook", "Webhook processing error", {
+      error: error.message,
+    });
+    if (isBrowserNavigationRequest(req)) {
+      return redirectPaytmWebhookToClient(res, { paymentState: "failed" });
+    }
+    return sendError(res, error);
+  }
+});
+
+/**
+ * PhonePe Webhook Handler
+ * @route POST /api/orders/webhook/phonepe
+ * @access Public (payment state verified via PhonePe status API)
+ */
+export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
+  try {
+    logger.debug("handlePhonePeWebhook", "Webhook received");
+
+    if (!PAYMENT_PROVIDER_ENV_ENABLED.PHONEPE) {
+      logger.warn("handlePhonePeWebhook", "PhonePe environment not enabled");
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    const merchantTransactionId = String(
+      extractPhonePeWebhookMerchantOrderId(req, req.body || {}) || "",
+    ).trim();
+
+    if (!merchantTransactionId) {
+      logger.warn("handlePhonePeWebhook", "Missing merchantOrderId");
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    if (!merchantTransactionId.startsWith("BOG_")) {
+      logger.warn("handlePhonePeWebhook", "Ignoring non-order transaction", {
+        merchantTransactionId,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    const orderId = extractOrderIdFromMerchantTransactionId(merchantTransactionId);
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+      logger.warn("handlePhonePeWebhook", "Invalid orderId in transaction", {
+        merchantTransactionId,
+        orderId,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      logger.warn("handlePhonePeWebhook", "Order not found", {
+        merchantTransactionId,
+      });
+      return sendSuccess(res, {}, "Webhook received");
+    }
+
+    if (
+      order.phonepeMerchantOrderId &&
+      String(order.phonepeMerchantOrderId) !== String(merchantTransactionId)
+    ) {
+      logger.info("handlePhonePeWebhook", "Processing alternate retry transaction id", {
+        orderId: order._id,
+        merchantTransactionId,
+        previous: order.phonepeMerchantOrderId,
+      });
+    }
+
+    const verifiedStatus = await verifyPhonePeWebhookState(merchantTransactionId);
+    if (!verifiedStatus) {
+      return sendSuccess(res, {}, "Webhook acknowledged");
+    }
+
+    const normalizedState = normalizePhonePeState(verifiedStatus.state);
+    const transactionId = verifiedStatus.transactionId || null;
+    const wasPaid = order.payment_status === "paid";
+    let orderMutated = false;
+
+    if (
+      String(order.phonepeMerchantOrderId || "") !== String(merchantTransactionId)
+    ) {
+      order.phonepeMerchantOrderId = merchantTransactionId;
+      orderMutated = true;
+    }
+
+    if (
+      verifiedStatus.phonepeOrderId &&
+      String(order.phonepeOrderId || "") !== String(verifiedStatus.phonepeOrderId)
+    ) {
+      order.phonepeOrderId = verifiedStatus.phonepeOrderId;
+      orderMutated = true;
+    }
+
+    if (transactionId && String(order.phonepeTransactionId || "") !== String(transactionId)) {
+      order.phonepeTransactionId = transactionId;
+      order.paymentId = transactionId;
+      orderMutated = true;
+    }
+
+    if (normalizedState.includes("COMPLETED") || normalizedState.includes("SUCCESS")) {
+      if (!wasPaid) {
+        order.payment_status = "paid";
+        applyOrderStatusTransition(order, ORDER_STATUS.ACCEPTED, {
+          source: "PHONEPE_WEBHOOK",
+        });
+        await confirmInventory(order, "PHONEPE_WEBHOOK");
+        orderMutated = true;
+      }
+    } else if (
+      normalizedState.includes("FAIL") ||
+      normalizedState.includes("DECLINED")
+    ) {
+      if (!wasPaid) {
+        order.payment_status = "failed";
+        order.failureReason = "PhonePe payment failed";
+        await releaseInventory(order, "PHONEPE_WEBHOOK");
+        orderMutated = true;
+      }
+    } else if (
+      normalizedState.includes("PENDING") ||
+      normalizedState.includes("CREATED")
+    ) {
+      if (!wasPaid) {
+        order.payment_status = "pending";
+        orderMutated = true;
+      }
+    } else {
+      logger.warn("handlePhonePeWebhook", "Unknown payment state", {
+        merchantTransactionId,
+        state: normalizedState || null,
       });
       return sendSuccess(res, {}, "Webhook received");
     }
@@ -3207,124 +4208,11 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     }
 
     if (!wasPaid && order.payment_status === "paid") {
-      // Deduct redeemed coins only after payment is successful.
-      if (order.user && Number(order.coinRedemption?.coinsUsed || 0) > 0) {
-        try {
-          await applyRedemptionToUser({
-            userId: order.user,
-            coinsUsed: Number(order.coinRedemption.coinsUsed || 0),
-            source: "order",
-            referenceId: String(order._id),
-            meta: {
-              orderId: String(order._id),
-              paymentId: order.paymentId || null,
-            },
-          });
-        } catch (coinError) {
-          logger.error(
-            "handlePhonePeWebhook",
-            "Failed to deduct redeemed coins",
-            {
-              orderId: order._id,
-              error: coinError.message,
-            },
-          );
-        }
-      }
-
-      // Record coupon usage (idempotent)
-      if (order.couponCode) {
-        recordCouponUsage(order).catch((err) =>
-          logger.error(
-            "handlePhonePeWebhook",
-            "Failed to record coupon usage",
-            {
-              orderId: order._id,
-              error: err.message,
-            },
-          ),
-        );
-      }
-
-      // Update influencer stats if applicable (idempotent per order).
-      if (order.influencerId && !order.influencerStatsSynced) {
-        const effectiveAmount =
-          order.finalAmount > 0 ? order.finalAmount : order.totalAmt;
-        const commissionBaseAmount = resolveInfluencerCommissionBase(order);
-        let commission = order.influencerCommission || 0;
-        if (!commission && order.influencerId) {
-          commission = await calculateInfluencerCommission(
-            order.influencerId,
-            commissionBaseAmount,
-          );
-          order.influencerCommission = commission;
-        }
-
-        try {
-          const influencerStatsSynced = await updateInfluencerStats(
-            order.influencerId,
-            effectiveAmount,
-            commission,
-          );
-          if (influencerStatsSynced) {
-            order.influencerStatsSynced = true;
-            await order.save();
-          }
-        } catch (err) {
-          logger.error("handlePhonePeWebhook", "Failed to update influencer stats", {
-            orderId: order._id,
-            error: err.message,
-          });
-        }
-      }
-
-      if (order.user) {
-        try {
-          const effectiveAmount = Math.max(
-            Number(order.subtotal || 0) - Number(order.discount || 0),
-            0,
-          );
-          const awardResult = await awardCoinsToUser({
-            userId: order.user,
-            orderAmount: effectiveAmount,
-            source: "order",
-            referenceId: String(order._id),
-          });
-          if (awardResult.coinsAwarded > 0) {
-            order.coinsAwarded = awardResult.coinsAwarded;
-            await order.save();
-          }
-        } catch (coinError) {
-          logger.error("handlePhonePeWebhook", "Failed to award coins", {
-            orderId: order._id,
-            error: coinError.message,
-          });
-        }
-      }
-
-      const autoShipmentResult = await autoCreateShipmentForPaidOrder({
-        orderId: order._id,
-        source: "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
+      await runPostPaymentSuccessTasks({
+        order,
+        webhookContext: "handlePhonePeWebhook",
+        shipmentSource: "PHONEPE_WEBHOOK_AUTO_SHIPMENT",
       });
-      if (!autoShipmentResult.ok && !autoShipmentResult.skipped) {
-        logger.error("handlePhonePeWebhook", "Automatic shipment booking failed", {
-          orderId: order._id,
-          reason: autoShipmentResult.reason || "SHIPMENT_CREATION_FAILED",
-          error: autoShipmentResult.error?.message || null,
-        });
-      }
-
-      if (autoShipmentResult?.order) {
-        order.awb_number = autoShipmentResult.order.awb_number;
-        order.awbNumber = autoShipmentResult.order.awbNumber;
-        order.shipment_status = autoShipmentResult.order.shipment_status;
-        order.shipmentStatus = autoShipmentResult.order.shipmentStatus;
-        order.shipping_provider = autoShipmentResult.order.shipping_provider;
-        order.courierName = autoShipmentResult.order.courierName;
-        order.trackingUrl = autoShipmentResult.order.trackingUrl;
-        order.shipmentId = autoShipmentResult.order.shipmentId;
-        order.manifestId = autoShipmentResult.order.manifestId;
-      }
     }
 
     syncOrderToFirestore(order, "update").catch((err) =>
@@ -3334,7 +4222,7 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
       }),
     );
 
-    emitOrderStatusUpdate(order, "PAYMENT_WEBHOOK");
+    emitOrderStatusUpdate(order, "PHONEPE_WEBHOOK");
 
     return sendSuccess(res, {}, "Webhook processed");
   } catch (error) {
@@ -3344,6 +4232,23 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     return sendError(res, error);
   }
 });
+
+const createPhonePePassiveWebhookHandler = (context) =>
+  asyncHandler(async (req, res) => {
+    logger.info(context, "Webhook received", {
+      bodyKeys: Object.keys(req.body || {}),
+    });
+    return sendSuccess(res, {}, "Webhook received");
+  });
+
+export const handlePhonePeRefundSuccessWebhook =
+  createPhonePePassiveWebhookHandler("handlePhonePeRefundSuccessWebhook");
+export const handlePhonePeRefundAcceptWebhook =
+  createPhonePePassiveWebhookHandler("handlePhonePeRefundAcceptWebhook");
+export const handlePhonePeChargebackWebhook =
+  createPhonePePassiveWebhookHandler("handlePhonePeChargebackWebhook");
+export const handlePhonePeSubscriptionPreWebhook =
+  createPhonePePassiveWebhookHandler("handlePhonePeSubscriptionPreWebhook");
 
 // ==================== TEST ENDPOINTS (Development Only) ====================
 
@@ -3509,6 +4414,10 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       billingDetails,
       deliveryAddressSnapshot: checkoutContact.addressSnapshot,
       guestDetails: {},
+      trackingSessionId:
+        String(req.analyticsSessionId || req.cookies?.hog_sid || "")
+          .trim() || null,
+      analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       isSavedOrder: true,
       isDemoOrder: true,
       notes:
@@ -3517,6 +4426,12 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     });
 
     await testOrder.save();
+
+    emitPurchaseCompletedTrackingEvent({
+      req,
+      order: testOrder,
+      source: "test_order",
+    });
 
     let influencerStatsSynced = false;
     if (testOrder.influencerId && !testOrder.influencerStatsSynced) {

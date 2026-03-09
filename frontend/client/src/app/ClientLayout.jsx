@@ -5,6 +5,8 @@ import CoinRewardLayer from "../components/CoinRewardLayer";
 import ErrorBoundary from "../components/ErrorBoundary";
 import Footer from "../components/Footer";
 import Header from "../components/Header";
+import AnalyticsTracker from "../components/AnalyticsTracker";
+import ManagedPopup from "../components/ManagedPopup";
 import NotificationHandler from "../components/NotificationHandler";
 import OfferPopup from "../components/OfferPopup";
 import { CartProvider } from "../context/CartContext";
@@ -13,7 +15,7 @@ import { ReferralProvider } from "../context/ReferralContext";
 import { SettingsProvider, useSettings } from "../context/SettingsContext";
 import { WishlistProvider } from "../context/WishlistContext";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { Toaster } from "react-hot-toast";
 
 const MaintenanceScreen = ({ storeName }) => {
@@ -56,6 +58,7 @@ const ClientShell = ({ children, isAffiliateRoute }) => {
         {children}
       </main>
       <Footer />
+      <ManagedPopup />
       <OfferPopup />
       <NotificationHandler />
       <CartDrawer />
@@ -94,6 +97,9 @@ export default function ClientLayout({ children }) {
             <CartProvider>
               <WishlistProvider>
                 <ErrorBoundary>
+                  <Suspense fallback={null}>
+                    <AnalyticsTracker />
+                  </Suspense>
                   <ClientShell isAffiliateRoute={isAffiliateRoute}>
                     {children}
                   </ClientShell>

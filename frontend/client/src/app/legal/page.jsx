@@ -150,7 +150,7 @@ export default function LegalPage() {
               We're here to help clarify any legal concerns
             </p>
             <a
-              href="mailto:support@healthyonegram.com"
+              href="https://healthyonegram.com"
               className="inline-block bg-orange-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-orange-700 transition"
             >
               📧 Contact Legal Team

@@ -10,6 +10,10 @@ const API_URL = API_BASE_URL;
 // Public VAPID key fallback for environments where env injection is missed.
 const FALLBACK_VAPID_KEY =
   "BL22YBdvb5TkydQ5LsnePfUgLQsf61THj-Ja72oli6FMb1U7lh-GYJJ__gjIvf8nZjAJ7s8aBQzq1ahFBxpSTi8";
+const ENABLE_PUSH_IN_DEV =
+  String(process.env.NEXT_PUBLIC_ENABLE_PUSH_IN_DEV || "")
+    .trim()
+    .toLowerCase() === "true";
 
 /**
  * useNotifications Hook
@@ -37,6 +41,7 @@ export const useNotifications = (options = {}) => {
 
   const messagingRef = useRef(null);
   const lastRegisterKeyRef = useRef(null);
+  const isLocalhostRef = useRef(false);
 
   const getAuthToken = useCallback(() => {
     if (typeof window === "undefined") return null;
@@ -47,6 +52,22 @@ export const useNotifications = (options = {}) => {
     );
   }, []);
 
+  const getSessionId = useCallback(() => {
+    if (typeof window === "undefined") return null;
+
+    let sessionId = localStorage.getItem("cartSessionId");
+    if (!sessionId) {
+      sessionId = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      localStorage.setItem("cartSessionId", sessionId);
+    }
+
+    if (sessionId) {
+      document.cookie = `sessionId=${encodeURIComponent(sessionId)}; path=/; max-age=31536000; samesite=lax`;
+    }
+
+    return sessionId;
+  }, []);
+
   const registerTokenWithBackend = useCallback(
     async (fcmToken) => {
       const headers = {
@@ -54,8 +75,12 @@ export const useNotifications = (options = {}) => {
       };
 
       const authToken = getAuthToken();
+      const sessionId = getSessionId();
       if (authToken) {
         headers["Authorization"] = `Bearer ${authToken}`;
+      }
+      if (sessionId) {
+        headers["X-Session-Id"] = sessionId;
       }
 
       const response = await fetch(`${API_URL}/api/notifications/register`, {
@@ -64,9 +89,8 @@ export const useNotifications = (options = {}) => {
         credentials: "include",
         body: JSON.stringify({
           token: fcmToken,
-          userType,
-          userId: userType === "user" ? userId : null,
           platform: "web",
+          sessionId,
         }),
       });
 
@@ -83,7 +107,7 @@ export const useNotifications = (options = {}) => {
 
       return true;
     },
-    [getAuthToken, userId, userType],
+    [getAuthToken, getSessionId],
   );
 
   const getFirebasePublicConfig = useCallback(() => {
@@ -144,10 +168,40 @@ export const useNotifications = (options = {}) => {
     return raw;
   }, []);
 
+  const isExpectedPushRegistrationFailure = useCallback((err) => {
+    const raw = String(err?.message || err || "").toLowerCase();
+    return (
+      raw.includes("push service error") ||
+      raw.includes("token-subscribe-failed") ||
+      raw.includes("failed-service-worker-registration") ||
+      raw.includes("messaging/permission-blocked") ||
+      raw.includes("registration failed")
+    );
+  }, []);
+
+  const shouldDisablePushInCurrentRuntime = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    const host = String(window.location.hostname || "").toLowerCase();
+    const isLocalhost = host === "localhost" || host === "127.0.0.1";
+    isLocalhostRef.current = isLocalhost;
+
+    if (process.env.NODE_ENV === "production") {
+      return false;
+    }
+
+    return isLocalhost && !ENABLE_PUSH_IN_DEV;
+  }, []);
+
   // Check if notifications are supported
   useEffect(() => {
     const checkSupport = async () => {
       if (typeof window === "undefined") return;
+
+      if (shouldDisablePushInCurrentRuntime()) {
+        setIsSupported(false);
+        setPermission("default");
+        return;
+      }
 
       const supported =
         "Notification" in window &&
@@ -162,7 +216,13 @@ export const useNotifications = (options = {}) => {
     };
 
     checkSupport();
-  }, []);
+  }, [shouldDisablePushInCurrentRuntime]);
+
+  // Ensure every visitor gets a stable guest session ID from first load.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    getSessionId();
+  }, [getSessionId]);
 
   // Initialize messaging and set up foreground listener
   useEffect(() => {
@@ -176,12 +236,28 @@ export const useNotifications = (options = {}) => {
         // Listen for foreground messages
         const unsubscribe = onMessage(messaging, (payload) => {
           console.log("Foreground message received:", payload);
-          setForegroundMessage({
+          const nextMessage = {
             title: payload.notification?.title || payload.data?.title || "Notification",
             body: payload.notification?.body || payload.data?.body || "",
             data: payload.data,
             timestamp: Date.now(),
-          });
+          };
+
+          // Show native browser notification in foreground so users see a real popup.
+          if (typeof window !== "undefined" && Notification.permission === "granted") {
+            try {
+              new Notification(nextMessage.title, {
+                body: nextMessage.body,
+                icon: "/logo.png",
+                badge: "/logo.png",
+                tag: nextMessage.data?.notificationId || nextMessage.data?.type || "foreground",
+              });
+            } catch (nativeError) {
+              // Best-effort only; toast fallback still runs.
+            }
+          }
+
+          setForegroundMessage(nextMessage);
         });
 
         return () => unsubscribe();
@@ -206,6 +282,66 @@ export const useNotifications = (options = {}) => {
     }
   }, [permission, token]);
 
+  // Self-heal token state when permission is granted but local token is missing.
+  // This can happen after storage clear / profile reset while browser push subscription still exists.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isSupported || permission !== "granted" || !firebaseApp) return;
+    if (token || localStorage.getItem("fcmToken")) return;
+
+    let cancelled = false;
+
+    const restoreToken = async () => {
+      try {
+        const swUrl = buildServiceWorkerUrl();
+        const registration = await navigator.serviceWorker.register(swUrl, {
+          scope: "/",
+        });
+        await navigator.serviceWorker.ready;
+
+        const messaging = getMessaging(firebaseApp);
+        const tokenOptions = { serviceWorkerRegistration: registration };
+        const vapidKey = (
+          process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || FALLBACK_VAPID_KEY
+        ).trim();
+        if (vapidKey) {
+          tokenOptions.vapidKey = vapidKey;
+        }
+
+        const recoveredToken = await getToken(messaging, tokenOptions);
+        if (!recoveredToken || cancelled) return;
+
+        setToken(recoveredToken);
+        localStorage.setItem("fcmToken", recoveredToken);
+        localStorage.setItem("notificationPermission", "granted");
+
+        await registerTokenWithBackend(recoveredToken);
+      } catch (restoreError) {
+        if (isExpectedPushRegistrationFailure(restoreError)) {
+          console.warn(
+            "Push token restore skipped in current environment:",
+            restoreError?.message || restoreError,
+          );
+          return;
+        }
+        console.error("Error restoring FCM token:", restoreError);
+      }
+    };
+
+    void restoreToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    buildServiceWorkerUrl,
+    isSupported,
+    isExpectedPushRegistrationFailure,
+    permission,
+    registerTokenWithBackend,
+    token,
+  ]);
+
   // Keep backend registration in sync (e.g., login/logout changes)
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -215,9 +351,10 @@ export const useNotifications = (options = {}) => {
     if (!storedToken) return;
 
     const authToken = getAuthToken();
+    const sessionId = getSessionId();
     const registerKey = `${storedToken}|${userType}|${userId || ""}|${
       authToken ? "auth" : "guest"
-    }`;
+    }|${sessionId || ""}`;
 
     if (lastRegisterKeyRef.current === registerKey) return;
     lastRegisterKeyRef.current = registerKey;
@@ -225,13 +362,28 @@ export const useNotifications = (options = {}) => {
     registerTokenWithBackend(storedToken).catch((err) => {
       console.error("Error syncing notification token:", err);
     });
-  }, [getAuthToken, permission, registerTokenWithBackend, token, userId, userType]);
+  }, [
+    getAuthToken,
+    getSessionId,
+    permission,
+    registerTokenWithBackend,
+    token,
+    userId,
+    userType,
+  ]);
 
   /**
    * Request notification permission and register token
    * Call this only after user interaction (button click, etc.)
    */
   const requestPermission = useCallback(async () => {
+    if (shouldDisablePushInCurrentRuntime()) {
+      setError(
+        "Push notifications are disabled on localhost by default. Set NEXT_PUBLIC_ENABLE_PUSH_IN_DEV=true to test locally.",
+      );
+      return false;
+    }
+
     if (!isSupported) {
       setError("Notifications not supported in this browser");
       return false;
@@ -312,7 +464,11 @@ export const useNotifications = (options = {}) => {
 
       return true;
     } catch (err) {
-      console.error("Error requesting permission:", err);
+      if (isExpectedPushRegistrationFailure(err)) {
+        console.warn("Push registration failed:", err?.message || err);
+      } else {
+        console.error("Error requesting permission:", err);
+      }
       setError(normalizePushErrorMessage(err));
       return false;
     } finally {
@@ -321,9 +477,11 @@ export const useNotifications = (options = {}) => {
   }, [
     buildServiceWorkerUrl,
     isSupported,
+    isExpectedPushRegistrationFailure,
     normalizePushErrorMessage,
     permission,
     registerTokenWithBackend,
+    shouldDisablePushInCurrentRuntime,
   ]);
 
   /**
@@ -331,6 +489,8 @@ export const useNotifications = (options = {}) => {
    */
   const unregister = useCallback(async () => {
     const storedToken = token || localStorage.getItem("fcmToken");
+    const authToken = getAuthToken();
+    const sessionId = getSessionId();
 
     if (!storedToken) return;
 
@@ -348,12 +508,21 @@ export const useNotifications = (options = {}) => {
         }
       }
 
+      const headers = {
+        "Content-Type": "application/json",
+      };
+      if (authToken) {
+        headers.Authorization = `Bearer ${authToken}`;
+      }
+      if (sessionId) {
+        headers["X-Session-Id"] = sessionId;
+      }
+
       await fetch(`${API_URL}/api/notifications/unregister`, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ token: storedToken }),
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ token: storedToken, sessionId }),
       });
 
       localStorage.removeItem("fcmToken");
@@ -362,7 +531,7 @@ export const useNotifications = (options = {}) => {
     } catch (err) {
       console.error("Error unregistering:", err);
     }
-  }, [token]);
+  }, [getAuthToken, getSessionId, token]);
 
   /**
    * Check if already registered

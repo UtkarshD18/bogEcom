@@ -30,6 +30,11 @@ import {
   normalizeStateValue,
   validateAddressForm as validateStructuredAddressForm,
 } from "@/utils/addressForm";
+import {
+  clearPendingCouponCode,
+  readPendingCouponCode,
+} from "@/utils/couponIntent";
+import { trackEvent } from "@/utils/analyticsTracker";
 import { calculateOrderTotals } from "@/utils/calculateOrderTotals.mjs";
 import { round2 } from "@/utils/gst";
 import { getDisplayTaxBreakup } from "@/utils/shippingDisplay";
@@ -52,7 +57,7 @@ import {
 } from "@mui/material";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { FiCheck, FiEdit2, FiPlus, FiTag, FiX } from "react-icons/fi";
 import { HiOutlineFire } from "react-icons/hi";
 import { IoCartOutline } from "react-icons/io5";
@@ -76,7 +81,7 @@ const buildAuthHeaders = (extraHeaders = {}) => {
  * Checkout Page
  *
  * Mobile-first, production-ready checkout with:
- * - PhonePe payment modal (payments temporarily unavailable)
+ * - Paytm payment modal (payments temporarily unavailable)
  * - Coupon validation (backend)
  * - Influencer/Referral tracking (automatic discount)
  * - Affiliate tracking
@@ -139,6 +144,9 @@ const Checkout = () => {
   const [isPayButtonDisabled, setIsPayButtonDisabled] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [paymentGatewayEnabled, setPaymentGatewayEnabled] = useState(true);
+  const [paymentProviders, setPaymentProviders] = useState([]);
+  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState("PAYTM");
   const [isCreatingDemoOrder, setIsCreatingDemoOrder] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -151,6 +159,7 @@ const Checkout = () => {
   const [couponLoading, setCouponLoading] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState("");
+  const [couponIntentProcessed, setCouponIntentProcessed] = useState(false);
 
   // Affiliate State
   const [affiliateData, setAffiliateData] = useState(null);
@@ -173,11 +182,13 @@ const Checkout = () => {
   const [formErrors, setFormErrors] = useState({});
   const [guestDetails, setGuestDetails] = useState(() => createEmptyAddressForm());
   const [guestLocationPayload, setGuestLocationPayload] = useState(null);
+  const [checkoutLocationPayload, setCheckoutLocationPayload] = useState(null);
   const [guestErrors, setGuestErrors] = useState({});
   const [gstNumber, setGstNumber] = useState("");
   const [gstError, setGstError] = useState("");
   const [gstSaving, setGstSaving] = useState(false);
   const [gstSavedValue, setGstSavedValue] = useState("");
+  const checkoutStartTrackedRef = useRef(false);
 
   const {
     lookup: addressPincodeLookup,
@@ -379,6 +390,70 @@ const Checkout = () => {
     }
     fetchAddresses();
   }, [fetchAddresses]);
+
+  useEffect(() => {
+    if (checkoutStartTrackedRef.current) return;
+    if (!Array.isArray(cartItems) || cartItems.length === 0) return;
+
+    trackEvent("checkout_started", {
+      itemCount: cartItems.length,
+      isGuestCheckout,
+      total,
+    });
+    checkoutStartTrackedRef.current = true;
+  }, [cartItems, isGuestCheckout, total]);
+
+  useEffect(() => {
+    let active = true;
+
+    const fetchPaymentGatewayStatus = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/orders/payment-status`);
+        const data = await response.json();
+        if (!active) return;
+
+        const payload = data?.data || {};
+        const providersFromObject = Object.entries(payload?.providers || {})
+          .filter(([, enabled]) => Boolean(enabled))
+          .map(([provider]) => String(provider).toUpperCase());
+        const enabledProviders = (
+          Array.isArray(payload?.enabledProviders) &&
+          payload.enabledProviders.length > 0
+            ? payload.enabledProviders
+            : providersFromObject
+        )
+          .map((provider) => String(provider || "").trim().toUpperCase())
+          .filter(Boolean);
+        const defaultProvider = String(
+          payload?.defaultProvider ||
+            payload?.provider ||
+            enabledProviders[0] ||
+            "PAYTM",
+        )
+          .trim()
+          .toUpperCase();
+
+        setPaymentGatewayEnabled(Boolean(payload?.paymentEnabled));
+        setPaymentProviders(enabledProviders);
+        setSelectedPaymentProvider((prev) => {
+          if (enabledProviders.includes(prev)) return prev;
+          if (enabledProviders.includes(defaultProvider)) return defaultProvider;
+          return enabledProviders[0] || "PAYTM";
+        });
+      } catch (error) {
+        if (!active) return;
+        // Keep checkout usable even if the status endpoint is unreachable.
+        setPaymentGatewayEnabled(true);
+        setPaymentProviders(["PAYTM"]);
+        setSelectedPaymentProvider("PAYTM");
+      }
+    };
+
+    fetchPaymentGatewayStatus();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!authToken || gstSavedValue) return;
@@ -756,54 +831,64 @@ const Checkout = () => {
     return validation.isValid;
   };
 
-  // Validate coupon with backend
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) {
-      setCouponError("Please enter a coupon code");
-      return;
-    }
+  const applyCouponCode = useCallback(
+    async (rawCode, { source = "manual" } = {}) => {
+      const normalizedCode = String(rawCode || "")
+        .trim()
+        .toUpperCase();
 
-    setCouponLoading(true);
-    setCouponError("");
+      if (!normalizedCode) {
+        setCouponError("Please enter a coupon code");
+        return { success: false };
+      }
 
-    try {
-      const token = getStoredAccessToken();
-      const response = await fetch(`${API_URL}/api/coupons/validate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-        body: JSON.stringify({
-          code: couponCode.trim(),
-          // Backend validates coupon against the GST-exclusive base amount
-          // (after membership/referral, before coupon/shipping).
-          orderAmount: baseBeforeCoupon,
-          influencerCode: activeInfluencerCode || null,
-        }),
-      });
+      setCouponLoading(true);
+      setCouponError("");
 
-      const data = await response.json();
-
-      if (data.success) {
-        setAppliedCoupon(data.data);
-        setCouponCode("");
-        setSnackbar({
-          open: true,
-          message: `Coupon applied! You save Rs.${data.data.discountAmount}`,
-          severity: "success",
+      try {
+        const token = getStoredAccessToken();
+        const response = await fetch(`${API_URL}/api/coupons/validate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+          body: JSON.stringify({
+            code: normalizedCode,
+            // Backend validates coupon against the GST-exclusive base amount
+            // (after membership/referral, before coupon/shipping).
+            orderAmount: baseBeforeCoupon,
+            influencerCode: activeInfluencerCode || null,
+          }),
         });
 
-        // Track if it's an affiliate coupon
-        if (data.data.isAffiliateCoupon) {
-          setAffiliateFromCoupon(data.data.code, data.data.affiliateSource);
-          setAffiliateData({
-            code: data.data.code,
-            source: data.data.affiliateSource,
-            fromCoupon: true,
+        const data = await response.json();
+
+        if (data.success) {
+          setAppliedCoupon(data.data);
+          setCouponCode("");
+          setSnackbar({
+            open: true,
+            message:
+              source === "intent"
+                ? `Coupon ${data.data.code} applied from notification`
+                : `Coupon applied! You save Rs.${data.data.discountAmount}`,
+            severity: "success",
           });
+
+          // Track if it's an affiliate coupon
+          if (data.data.isAffiliateCoupon) {
+            setAffiliateFromCoupon(data.data.code, data.data.affiliateSource);
+            setAffiliateData({
+              code: data.data.code,
+              source: data.data.affiliateSource,
+              fromCoupon: true,
+            });
+          }
+
+          return { success: true, data: data.data };
         }
-      } else {
+
         const validationMessage = String(data?.message || "").toLowerCase();
         const looksLikeUnknownCoupon =
           response.status === 404 ||
@@ -813,7 +898,7 @@ const Checkout = () => {
         const shouldTryReferral = looksLikeUnknownCoupon;
         if (shouldTryReferral && applyReferralCode) {
           const referralResult = await applyReferralCode(
-            couponCode.trim(),
+            normalizedCode,
             "manual",
           );
 
@@ -826,19 +911,71 @@ const Checkout = () => {
               message: "Referral code applied successfully",
               severity: "success",
             });
-            return;
+            return { success: true, viaReferral: true };
           }
         }
 
         setCouponError(data.message || "Invalid coupon");
+        return { success: false, message: data.message || "Invalid coupon" };
+      } catch (error) {
+        console.error("Coupon validation error:", error);
+        setCouponError("Failed to validate coupon. Please try again.");
+        return {
+          success: false,
+          message: "Failed to validate coupon. Please try again.",
+        };
+      } finally {
+        setCouponLoading(false);
       }
-    } catch (error) {
-      console.error("Coupon validation error:", error);
-      setCouponError("Failed to validate coupon. Please try again.");
-    } finally {
-      setCouponLoading(false);
+    },
+    [activeInfluencerCode, applyReferralCode, baseBeforeCoupon],
+  );
+
+  // Validate coupon with backend
+  const handleApplyCoupon = () => applyCouponCode(couponCode, { source: "manual" });
+
+  // Consume queued coupon intent from notification toast and auto-apply once.
+  useEffect(() => {
+    if (couponIntentProcessed) return;
+    if (couponLoading) return;
+    if (appliedCoupon?.code) {
+      setCouponIntentProcessed(true);
+      return;
     }
-  };
+
+    const pendingCouponCode = readPendingCouponCode();
+    if (!pendingCouponCode) {
+      setCouponIntentProcessed(true);
+      return;
+    }
+
+    // If cart is still empty/loading, keep intent and wait until products exist.
+    if (!Array.isArray(cartItems) || cartItems.length === 0) {
+      setCouponCode((prev) => prev || pendingCouponCode);
+      return;
+    }
+
+    let isDisposed = false;
+    const run = async () => {
+      setCouponCode((prev) => prev || pendingCouponCode);
+      await applyCouponCode(pendingCouponCode, { source: "intent" });
+      if (isDisposed) return;
+      clearPendingCouponCode();
+      setCouponIntentProcessed(true);
+    };
+
+    void run();
+
+    return () => {
+      isDisposed = true;
+    };
+  }, [
+    appliedCoupon?.code,
+    applyCouponCode,
+    cartItems,
+    couponIntentProcessed,
+    couponLoading,
+  ]);
 
   // Remove applied coupon
   const handleRemoveCoupon = () => {
@@ -1069,7 +1206,7 @@ const Checkout = () => {
     return null;
   };
 
-  // Handle Pay Now click - PhonePe redirect flow
+  // Handle Pay Now click - provider redirect flow (Paytm / PhonePe)
   const handlePayNow = async () => {
     if (isPayButtonDisabled) return;
 
@@ -1107,8 +1244,25 @@ const Checkout = () => {
 
       const statusRes = await fetch(`${API_URL}/api/orders/payment-status`);
       const statusData = await statusRes.json();
+      const statusPayload = statusData?.data || {};
+      const runtimeEnabledProviders = (
+        Array.isArray(statusPayload?.enabledProviders)
+          ? statusPayload.enabledProviders
+          : []
+      )
+        .map((provider) => String(provider || "").trim().toUpperCase())
+        .filter(Boolean);
+      const runtimeDefaultProvider = String(
+        statusPayload?.defaultProvider ||
+          statusPayload?.provider ||
+          runtimeEnabledProviders[0] ||
+          selectedPaymentProvider ||
+          "PAYTM",
+      )
+        .trim()
+        .toUpperCase();
 
-      if (!statusData?.data?.paymentEnabled) {
+      if (!statusPayload?.paymentEnabled) {
         setShowPaymentModal(true);
         return;
       }
@@ -1153,6 +1307,10 @@ const Checkout = () => {
           coins: 0,
         },
         paymentType: "prepaid",
+        paymentProvider:
+          runtimeEnabledProviders.includes(selectedPaymentProvider)
+            ? selectedPaymentProvider
+            : runtimeDefaultProvider,
         guestDetails: buildGuestDetailsPayload(),
         purchaseOrderId,
         shippingAddress: buildShippingAddressPayload(selectedAddrObj),
@@ -1997,6 +2155,42 @@ const Checkout = () => {
                         </p>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="mb-5">
+                    {paymentProviders.length > 1 ? (
+                      <div className="space-y-2">
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                          Payment Method
+                        </p>
+                        <select
+                          value={selectedPaymentProvider}
+                          onChange={(event) =>
+                            setSelectedPaymentProvider(
+                              String(event.target.value || "").toUpperCase(),
+                            )
+                          }
+                          className="w-full bg-white/10 border border-white/20 text-white rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        >
+                          {paymentProviders.map((provider) => (
+                            <option
+                              key={provider}
+                              value={provider}
+                              className="text-gray-900"
+                            >
+                              {provider === "PHONEPE" ? "PhonePe" : "Paytm"}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-gray-300 font-semibold">
+                        Pay via{" "}
+                        {selectedPaymentProvider === "PHONEPE"
+                          ? "PhonePe"
+                          : "Paytm"}
+                      </p>
+                    )}
                   </div>
 
                   <button

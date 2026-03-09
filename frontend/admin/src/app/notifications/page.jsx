@@ -79,7 +79,7 @@ const NotificationsPage = () => {
         body: form.body.trim(),
         includeUsers: form.includeUsers,
         data: {
-          couponCode: form.couponCode.trim().toUpperCase() || "SPECIAL",
+          couponCode: form.couponCode.trim().toUpperCase(),
           discountValue: Number(form.discountValue || 10),
         },
       };
@@ -94,6 +94,7 @@ const NotificationsPage = () => {
         const sent = response.data?.sent ?? 0;
         const failed = response.data?.failed ?? 0;
         const totalTokens = response.data?.totalTokens ?? sent + failed;
+        const liveDelivered = response.data?.liveDelivered ?? 0;
         const failureCodes = response.data?.failureCodes || {};
         const codeEntries = Object.entries(failureCodes);
         const codesLabel =
@@ -104,15 +105,17 @@ const NotificationsPage = () => {
                 .join(", ")}${codeEntries.length > 2 ? ", ..." : ""})`
             : "";
 
-        if (sent === 0 && failed > 0) {
+        if (sent === 0 && failed > 0 && liveDelivered === 0) {
           toast.error(
             `No devices received the notification (${failed} failed)${codesLabel}`,
           );
         } else {
+          const liveLabel =
+            liveDelivered > 0 ? `, live ${liveDelivered} active` : "";
           toast.success(
             `Notification sent (${sent}/${totalTokens} delivered${
               failed ? `, ${failed} failed` : ""
-            })${codesLabel}`,
+            }${liveLabel})${codesLabel}`,
           );
         }
         fetchStats();
@@ -168,6 +171,9 @@ const NotificationsPage = () => {
               <p>Guest Tokens: {stats?.guestTokens || 0}</p>
               <p>User Tokens: {stats?.userTokens || 0}</p>
               <p>Inactive Tokens: {stats?.inactiveTokens || 0}</p>
+              <p>Live Guests: {stats?.liveGuestConnections || 0}</p>
+              <p>Live Users: {stats?.liveUserConnections || 0}</p>
+              <p>Live Total: {stats?.liveAllConnections || 0}</p>
 
               {(stats?.totalActive || 0) === 0 && (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">

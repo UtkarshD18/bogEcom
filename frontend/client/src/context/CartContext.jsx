@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL } from "@/utils/api";
+import { trackEvent } from "@/utils/analyticsTracker";
 
 import { useSettings } from "@/context/SettingsContext";
 import { round2 } from "@/utils/gst";
@@ -68,6 +69,22 @@ const parseStoredCart = (savedCart) => {
   return [];
 };
 
+const SUPPRESSED_CART_FETCH_TOAST_PATHS = [
+  "/checkout",
+  "/payment/paytm",
+  "/payment/phonepe",
+  "/membership/checkout",
+];
+
+const shouldShowCartFetchErrorToast = () => {
+  if (typeof window === "undefined") return false;
+
+  const pathname = String(window.location?.pathname || "").toLowerCase();
+  return !SUPPRESSED_CART_FETCH_TOAST_PATHS.some((prefix) =>
+    pathname.startsWith(prefix),
+  );
+};
+
 // Generate or get session ID for guest carts
 const getSessionId = () => {
   if (typeof window === "undefined") return null;
@@ -76,6 +93,9 @@ const getSessionId = () => {
   if (!sessionId) {
     sessionId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     localStorage.setItem("cartSessionId", sessionId);
+  }
+  if (sessionId) {
+    document.cookie = `sessionId=${encodeURIComponent(sessionId)}; path=/; max-age=31536000; samesite=lax`;
   }
   return sessionId;
 };
@@ -140,8 +160,10 @@ export const CartProvider = ({ children }) => {
       }
     } catch (error) {
       console.error("Error fetching cart:", error);
-      toast.error("Failed to fetch cart. Using local data.");
-      loadFromLocalStorage();
+      const restoredFromLocal = loadFromLocalStorage();
+      if (!restoredFromLocal && shouldShowCartFetchErrorToast()) {
+        toast.error("Unable to sync cart right now. Please refresh.");
+      }
     } finally {
       setLoading(false);
       setIsInitialized(true);
@@ -150,14 +172,14 @@ export const CartProvider = ({ children }) => {
 
   // Load cart from local storage (fallback)
   const loadFromLocalStorage = () => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") return false;
 
     const savedCart = localStorage.getItem("cart");
     if (!savedCart) {
       setCartItems([]);
       setCartCount(0);
       setCartTotal(0);
-      return;
+      return false;
     }
 
     try {
@@ -165,12 +187,14 @@ export const CartProvider = ({ children }) => {
       setCartItems(items);
       calculateTotals(items);
       saveToLocalStorage(items);
+      return items.length > 0;
     } catch (e) {
       console.error("Error parsing cart from localStorage:", e);
       localStorage.removeItem("cart");
       setCartItems([]);
       setCartCount(0);
       setCartTotal(0);
+      return false;
     }
   };
 
@@ -220,6 +244,13 @@ export const CartProvider = ({ children }) => {
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
 
+        trackEvent("add_to_cart", {
+          productId: String(product._id || product.id || ""),
+          quantity: Number(quantity || 1),
+          price: Number(product.price || 0),
+          variantId: String(product.variantId || product.selectedVariant?._id || ""),
+        });
+
         // Auto-open drawer only if it was the first item added
         if (cartItems.length === 0) {
           setIsDrawerOpen(true);
@@ -244,6 +275,13 @@ export const CartProvider = ({ children }) => {
         }
 
         addToCartLocal(product, quantity);
+        trackEvent("add_to_cart", {
+          productId: String(product._id || product.id || ""),
+          quantity: Number(quantity || 1),
+          price: Number(product.price || 0),
+          variantId: String(product.variantId || product.selectedVariant?._id || ""),
+          source: "local_fallback",
+        });
         if (cartItems.length === 0) {
           setIsDrawerOpen(true);
         }
@@ -252,6 +290,13 @@ export const CartProvider = ({ children }) => {
     } catch (error) {
       console.error("Error adding to cart:", error);
       addToCartLocal(product, quantity);
+      trackEvent("add_to_cart", {
+        productId: String(product._id || product.id || ""),
+        quantity: Number(quantity || 1),
+        price: Number(product.price || 0),
+        variantId: String(product.variantId || product.selectedVariant?._id || ""),
+        source: "local_fallback",
+      });
       if (cartItems.length === 0) {
         setIsDrawerOpen(true);
       }
@@ -450,13 +495,27 @@ export const CartProvider = ({ children }) => {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
+        trackEvent("remove_from_cart", {
+          productId: String(productId || ""),
+          variantId: String(resolvedVariantId || ""),
+        });
         // toast.success("Item removed from cart");
       } else {
         removeFromCartLocal(productId, resolvedVariantId);
+        trackEvent("remove_from_cart", {
+          productId: String(productId || ""),
+          variantId: String(resolvedVariantId || ""),
+          source: "local_fallback",
+        });
       }
     } catch (error) {
       console.error("Error removing from cart:", error);
       removeFromCartLocal(productId, resolvedVariantId);
+      trackEvent("remove_from_cart", {
+        productId: String(productId || ""),
+        variantId: String(resolvedVariantId || ""),
+        source: "local_fallback",
+      });
     } finally {
       setLoading(false);
     }

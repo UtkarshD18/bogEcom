@@ -30,7 +30,7 @@ const ExclusivePreviewCard = ({
       className={`group relative transition-all duration-500 ${
         isLocked
           ? "opacity-50 pointer-events-none"
-          : `cursor-pointer hover:scale-[1.03] hover:shadow-xl hover:shadow-black/10 hover:ring-1 ${resolvedTheme.border}`
+          : `cursor-pointer ring-1 ring-transparent hover:shadow-xl hover:shadow-black/10 hover:ring-slate-200/70`
       }`}
       style={{ transitionDelay: `${animationDelayMs}ms` }}
       onClick={isLocked ? undefined : onClick}

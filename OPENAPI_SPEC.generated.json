@@ -22808,14 +22808,14 @@
         ]
       }
     },
-    "/api/membership/webhook/phonepe": {
+    "/api/membership/webhook/paytm": {
       "post": {
         "tags": [
           "Membership"
         ],
-        "operationId": "post_api_membership_webhook_phonepe",
-        "summary": "Handle Membership Phone Pe Callback",
-        "description": "Generated from: server/routes/membership.route.js:29\nHandler: handleMembershipPhonePeCallback\nLimiter: generalLimiter\nMiddleware chain: none\nController source: server/controllers/membership.controller.js#handleMembershipPhonePeCallback",
+        "operationId": "post_api_membership_webhook_paytm",
+        "summary": "Handle Membership Paytm Callback",
+        "description": "Generated from: server/routes/membership.route.js:29\nHandler: handleMembershipPaytmCallback\nLimiter: generalLimiter\nMiddleware chain: none\nController source: server/controllers/membership.controller.js#handleMembershipPaytmCallback",
         "parameters": [],
         "responses": {
           "200": {
@@ -26742,14 +26742,14 @@
         ]
       }
     },
-    "/api/orders/webhook/phonepe": {
+    "/api/orders/webhook/paytm": {
       "post": {
         "tags": [
           "Orders"
         ],
-        "operationId": "post_api_orders_webhook_phonepe",
-        "summary": "Handle Phone Pe Webhook",
-        "description": "Generated from: server/routes/order.route.js:48\nHandler: handlePhonePeWebhook\nLimiter: generalLimiter\nMiddleware chain: none\nController source: server/controllers/order.controller.js#handlePhonePeWebhook",
+        "operationId": "post_api_orders_webhook_paytm",
+        "summary": "Handle Paytm Webhook",
+        "description": "Generated from: server/routes/order.route.js:48\nHandler: handlePaytmWebhook\nLimiter: generalLimiter\nMiddleware chain: none\nController source: server/controllers/order.controller.js#handlePaytmWebhook",
         "parameters": [],
         "responses": {
           "200": {

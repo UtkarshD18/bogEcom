@@ -1,0 +1,174 @@
+# Advanced Event-Driven User Behavior Tracking (Google Cloud + MongoDB)
+
+## Architecture
+Frontend tracker script
+-> in-browser event queue
+-> batch send every 5-10s (`navigator.sendBeacon`, fallback `fetch keepalive`)
+-> backend tracking endpoint (`POST /api/track`)
+-> async Pub/Sub publish (`user-behavior-events`)
+-> analytics worker subscriber
+-> MongoDB analytics collections
+-> admin behavior dashboard (`/behavior-analytics`)
+
+Main ecommerce API logic never waits for analytics DB writes.
+
+## Folder Structure
+
+### Publisher (Backend)
+- `server/routes/tracking.route.js`
+- `server/controllers/analytics.controller.js`
+- `server/middlewares/analyticsSession.js`
+- `server/services/analytics/eventPublisher.service.js`
+- `server/services/analytics/trackingEvent.service.js`
+- `server/services/analytics/trackingEmitter.service.js`
+- `server/services/analytics/constants.js`
+
+### Worker
+- `analytics-worker/index.js`
+- `analytics-worker/.env.example`
+- `analytics-worker/Dockerfile`
+
+### Analytics DB and Admin Query Layer
+- `server/services/analytics/analyticsDb.service.js`
+- `server/services/analytics/collectionResolver.service.js`
+- `server/services/analytics/timeline.service.js`
+- `server/controllers/adminAnalytics.controller.js`
+- `server/routes/adminAnalytics.route.js`
+- `server/models/analytics/*`
+
+### Dashboard
+- `frontend/admin/src/app/behavior-analytics/page.jsx`
+- `frontend/admin/src/components/Sidebar.jsx`
+
+### Frontend Tracker
+- `frontend/client/src/utils/analyticsTracker.js`
+- `frontend/client/src/components/AnalyticsTracker.jsx`
+
+## Session and Event Model
+
+### Session collection (`sessions`)
+- `sessionId`, `userId`, `ipAddress`, `userAgent`, `deviceType`, `browser`
+- `location { country, city }`
+- `startedAt`, `endedAt`, `totalActiveTime`, `isActive`
+- `pageViews`, `eventCount`, `maxScrollDepth`
+
+### Event envelope (`/api/track`)
+```json
+{
+  "sessionId": "uuid",
+  "events": [
+    {
+      "eventId": "uuid",
+      "eventType": "page_view_started",
+      "sessionId": "uuid",
+      "userId": null,
+      "timestamp": "2026-02-28T12:00:00.000Z",
+      "pageUrl": "https://...",
+      "referrer": "https://...",
+      "ipAddress": "...",
+      "deviceType": "desktop",
+      "browser": "Chrome",
+      "metadata": {}
+    }
+  ]
+}
+```
+
+## Mongo Collections
+- `events_raw` (dedupe source of truth, unique `eventId`)
+- `sessions`
+- `page_views`
+- `section_views`
+- `product_events`
+- `cart_events`
+- `purchases`
+- `search_events`
+- `worker_health`
+
+### Core indexes
+- `events_raw`: `eventId` unique, `sessionId`, `userId`, `eventType`, `timestamp`, TTL on `expiresAt`
+- `sessions`: `sessionId` unique, `userId`, `startedAt`
+- `page_views`: `sessionId`, `pageUrl`, `startedAt`
+- `product_events/cart_events/purchases/search_events`: query indexes on entity fields + timestamp
+
+## Tracked Event Types
+- `page_view_started`, `page_view_ended`, `active_heartbeat`
+- `section_view_start`, `section_view_end`, `section_visible_duration`
+- `scroll_depth`, `click_event`, `rage_click`, `hover_duration`
+- `product_view`, `add_to_cart`, `remove_from_cart`, `checkout_started`, `purchase_completed`
+- `search_query`, `results_count`
+- `login`, `signup`, `logout`
+- `session_start`, `session_end`
+
+## Pub/Sub Setup (GCP)
+```bash
+PROJECT_ID="your-project-id"
+TOPIC="user-behavior-events"
+SUB="user-behavior-events-sub"
+DLQ="user-behavior-events-dead-letter"
+
+# APIs
+gcloud services enable pubsub.googleapis.com run.googleapis.com artifactregistry.googleapis.com --project "$PROJECT_ID"
+
+# Topic + DLQ
+gcloud pubsub topics create "$TOPIC" --project "$PROJECT_ID"
+gcloud pubsub topics create "$DLQ" --project "$PROJECT_ID"
+
+# Subscription with retry/dead-letter
+gcloud pubsub subscriptions create "$SUB" \
+  --topic="$TOPIC" \
+  --dead-letter-topic="$DLQ" \
+  --max-delivery-attempts=10 \
+  --min-retry-delay=10s \
+  --max-retry-delay=600s \
+  --ack-deadline=30 \
+  --project "$PROJECT_ID"
+```
+
+## Cloud Run Deployment (Recommended)
+Cloud Run is recommended for this worker because it is operationally simple, supports service account auth natively, and scales by demand without idle VM/GKE overhead.
+
+```bash
+REGION="us-central1"
+WORKER_SA="analytics-worker-sa"
+
+gcloud iam service-accounts create "$WORKER_SA" --project "$PROJECT_ID"
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${WORKER_SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/pubsub.subscriber"
+
+gcloud builds submit --tag "gcr.io/$PROJECT_ID/analytics-worker:latest" analytics-worker
+
+gcloud run deploy analytics-worker \
+  --image "gcr.io/$PROJECT_ID/analytics-worker:latest" \
+  --region "$REGION" \
+  --service-account "${WORKER_SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,ANALYTICS_PUBSUB_TOPIC=$TOPIC,ANALYTICS_PUBSUB_SUBSCRIPTION=$SUB,ANALYTICS_PUBSUB_DEAD_LETTER_TOPIC=$DLQ,ANALYTICS_MONGO_URI=__SET__,ANALYTICS_DB_NAME=analytics" \
+  --memory 1Gi --cpu 1 --max-instances 25 --min-instances 0 \
+  --no-allow-unauthenticated
+```
+
+## Admin Dashboard Endpoints
+- `GET /api/admin/analytics/behavior/overview`
+- `GET /api/admin/analytics/behavior/engagement`
+- `GET /api/admin/analytics/behavior/performance`
+- `GET /api/admin/analytics/behavior/user-activity?userId=...|sessionId=...`
+- `GET /api/admin/analytics/behavior/timeline?userId=...|sessionId=...`
+
+## Performance Design
+- Tracking endpoint is async/non-blocking and returns `202` quickly
+- Browser batches events (no per-click network writes)
+- Worker uses `bulkWrite` with high-throughput batches
+- Idempotency by unique `eventId` and upsert logic
+- Connection pooling enabled in backend and worker
+- Duplicate Pub/Sub deliveries are safely ignored
+- Worker health snapshots expose queue depth + throughput
+
+## Security and Privacy
+- Sensitive metadata fields are redacted
+- No password/token secrets stored in analytics payloads
+- Consent endpoint: `POST /api/track/consent`
+- DNT/GPC respected (`dnt: 1` / `sec-gpc: 1`)
+- Optional IP anonymization via `ANALYTICS_MASK_IP=true`
+- Optional raw-event retention via TTL (`ANALYTICS_RAW_EVENTS_TTL_DAYS`)

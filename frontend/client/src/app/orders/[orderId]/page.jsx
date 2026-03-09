@@ -41,6 +41,7 @@ const API_URL = API_BASE_URL.endsWith("/api")
 const SOCKET_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL.slice(0, -4)
   : API_BASE_URL;
+const SOCKET_TRANSPORTS = ["polling"];
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: MdAccessTime },
@@ -130,7 +131,7 @@ const getStepIndex = (status) => {
  * - Order status
  * - Payment status
  * - Pending payment messaging (if applicable)
- * - Retry payment button (stub - disabled until PhonePe)
+ * - Retry payment button (stub - disabled until Paytm)
  */
 const OrderDetailsPage = () => {
   const params = useParams();
@@ -290,7 +291,12 @@ const OrderDetailsPage = () => {
 
     const socket = io(SOCKET_URL, {
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      // Polling is reliable behind current production ingress where websocket upgrades fail.
+      transports: SOCKET_TRANSPORTS,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       auth: { token },
     });
 
@@ -961,9 +967,8 @@ const OrderDetailsPage = () => {
                     Payment Pending
                   </h3>
                   <p className="text-amber-700 mb-4">
-                    Payments are temporarily unavailable as we onboard{" "}
-                    <strong>PhonePe</strong> as our payment partner. Your order
-                    is saved and will be payable once payments go live.
+                    Payments are temporarily unavailable. Your order is saved
+                    and will be payable once the gateway is live again.
                   </p>
                   <Button
                     onClick={handleRetryPayment}
@@ -1310,8 +1315,8 @@ const OrderDetailsPage = () => {
             Payments are temporarily unavailable.
           </p>
           <p className="text-gray-600">
-            We are currently onboarding <strong>PhonePe</strong> as our payment
-            partner. You will be notified once payments are enabled.
+            Please try again shortly. You can still save orders for later and
+            complete payment once the gateway is available.
           </p>
         </DialogContent>
         <DialogActions sx={{ justifyContent: "center", pb: 3, px: 3 }}>

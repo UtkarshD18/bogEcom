@@ -4,11 +4,18 @@ import { INDIA_COUNTRY } from "../utils/addressUtils.js";
 const LEGACY_GATEWAY_METHOD = String.fromCharCode(82, 65, 90, 79, 82, 80, 65, 89);
 const ORDER_PAYMENT_METHODS = [
   LEGACY_GATEWAY_METHOD,
+  "PAYTM",
   "PHONEPE",
   "COD",
   "PENDING",
   "TEST",
 ];
+
+const deriveDisplayOrderNumber = (orderId) => {
+  const rawOrderId = String(orderId || "").trim();
+  if (!rawOrderId) return "";
+  return `BOG-${rawOrderId.slice(-8).toUpperCase()}`;
+};
 
 /**
  * Order Schema
@@ -22,6 +29,20 @@ const orderSchema = new mongoose.Schema(
       type: mongoose.Schema.ObjectId,
       ref: "User",
       default: null, // Allow guest checkout
+    },
+
+    // Persisted user-facing order number (separate from Mongo _id)
+    orderNumber: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // Backward-compatible alias used by some legacy consumers
+    displayOrderId: {
+      type: String,
+      default: null,
+      trim: true,
     },
 
     // Products in Order
@@ -68,7 +89,7 @@ const orderSchema = new mongoose.Schema(
     // Payment Information
     paymentId: {
       type: String,
-      default: null, // Payment identifier (PhonePe transaction ID)
+      default: null, // Payment identifier from the active provider
       // Note: index is defined in compound indexes below
     },
 
@@ -84,8 +105,27 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Paytm identifiers
+    paytmOrderId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    paytmTransactionId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
     // PhonePe identifiers
-    phonepeMerchantTransactionId: {
+    phonepeMerchantOrderId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    phonepeOrderId: {
       type: String,
       default: null,
       index: true,
@@ -276,7 +316,7 @@ const orderSchema = new mongoose.Schema(
       default: "",
     },
 
-    // ==================== NEW FIELDS FOR PHONEPE INTEGRATION ====================
+    // ==================== PAYMENT INTEGRATION FIELDS ====================
 
     // Payment method tracking.
     // Keep `LEGACY_GATEWAY_METHOD` temporarily to allow safe rollouts
@@ -433,6 +473,20 @@ const orderSchema = new mongoose.Schema(
       country: { type: String, default: INDIA_COUNTRY },
       email: { type: String, default: "" },
       gst: { type: String, default: "" },
+    },
+
+    trackingSessionId: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+
+    analyticsConsent: {
+      type: String,
+      enum: ["granted", "denied", "unknown"],
+      default: "unknown",
+      index: true,
     },
 
     // ==================== SHIPPING (XPRESSBEES) ====================
@@ -600,6 +654,8 @@ shipment_status: {
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ payment_status: 1, order_status: 1 });
 orderSchema.index({ paymentId: 1 });
+orderSchema.index({ orderNumber: 1 }, { sparse: true });
+orderSchema.index({ displayOrderId: 1 }, { sparse: true });
 orderSchema.index({ invoiceNumber: 1 }, { sparse: true });
 orderSchema.index({ "gst.state": 1, createdAt: -1 });
 orderSchema.index({ purchaseOrder: 1 }, { sparse: true });
@@ -609,11 +665,33 @@ orderSchema.index({ shipment_status: 1, order_status: 1 });
 orderSchema.index({ shipmentStatus: 1, order_status: 1 });
 orderSchema.index({ isInvoiceGenerated: 1, invoiceGeneratedAt: -1 });
 orderSchema.index({ deliveryDate: -1 }, { sparse: true });
+orderSchema.index({ trackingSessionId: 1, createdAt: -1 }, { sparse: true });
 
 // Normalize legacy payment_status before validation
 orderSchema.pre("validate", function () {
   if (this.payment_status === "confirmed") {
     this.payment_status = "paid";
+  }
+
+  const normalizedOrderNumber = String(this.orderNumber || "")
+    .trim()
+    .toUpperCase();
+  if (!normalizedOrderNumber) {
+    const generatedOrderNumber = deriveDisplayOrderNumber(this._id);
+    if (generatedOrderNumber) {
+      this.orderNumber = generatedOrderNumber;
+    }
+  } else if (normalizedOrderNumber !== this.orderNumber) {
+    this.orderNumber = normalizedOrderNumber;
+  }
+
+  const normalizedDisplayOrderId = String(this.displayOrderId || "")
+    .trim()
+    .toUpperCase();
+  if (!normalizedDisplayOrderId) {
+    this.displayOrderId = String(this.orderNumber || "").trim().toUpperCase() || null;
+  } else if (normalizedDisplayOrderId !== this.displayOrderId) {
+    this.displayOrderId = normalizedDisplayOrderId;
   }
 });
 

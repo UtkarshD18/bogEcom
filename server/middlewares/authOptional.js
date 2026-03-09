@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { getAccessTokenSecret } from "../config/authSecrets.js";
+import { getAccessTokenSecret, getRefreshTokenSecret } from "../config/authSecrets.js";
 
 /**
  * Optional auth middleware.
@@ -11,7 +11,7 @@ import { getAccessTokenSecret } from "../config/authSecrets.js";
  * (e.g., registering push notification tokens).
  */
 const authOptional = async (req, res, next) => {
-  let token = null;
+  let accessToken = null;
 
   try {
     // Try Authorization header first (Bearer token)
@@ -27,28 +27,48 @@ const authOptional = async (req, res, next) => {
         typeof authHeaderValue === "string" &&
         authHeaderValue.toLowerCase().startsWith("bearer ")
       ) {
-        token = authHeaderValue.slice(7).trim();
+        accessToken = authHeaderValue.slice(7).trim();
       }
     }
 
     // If no Bearer token, try cookies
-    if (!token && req.cookies?.accessToken) {
+    if (!accessToken && req.cookies?.accessToken) {
       const cookieToken = req.cookies.accessToken;
-      token = typeof cookieToken === "string" ? cookieToken : null;
+      accessToken = typeof cookieToken === "string" ? cookieToken : null;
     }
 
-    if (!token || typeof token !== "string") {
+    if (accessToken && typeof accessToken === "string") {
+      const accessSecretKey = getAccessTokenSecret();
+      if (accessSecretKey) {
+        try {
+          const accessPayload = jwt.verify(accessToken.trim(), accessSecretKey);
+          if (accessPayload?.id) {
+            req.user = accessPayload.id;
+            return next();
+          }
+        } catch (error) {
+          // Fall through to refresh-token resolution for expired access tokens.
+        }
+      }
+    }
+
+    const refreshCookieToken =
+      typeof req.cookies?.refreshToken === "string"
+        ? req.cookies.refreshToken.trim()
+        : "";
+
+    if (!refreshCookieToken) {
       return next();
     }
 
-    const secretKey = getAccessTokenSecret();
-    if (!secretKey) {
+    const refreshSecretKey = getRefreshTokenSecret();
+    if (!refreshSecretKey) {
       return next();
     }
 
-    const decode = jwt.verify(token.trim(), secretKey);
-    if (decode?.id) {
-      req.user = decode.id;
+    const refreshPayload = jwt.verify(refreshCookieToken, refreshSecretKey);
+    if (refreshPayload?.id) {
+      req.user = refreshPayload.id;
     }
   } catch (error) {
     // Best-effort only: fall back to guest behavior.

@@ -57,7 +57,7 @@ settingsSchema.statics.defaultSettings = [
   {
     key: "paymentGatewayEnabled",
     value: true,
-    description: "Enable/disable payment gateway (PhonePe)",
+    description: "Enable/disable payment gateway (Paytm)",
     category: "payment",
   },
   {
@@ -103,6 +103,25 @@ settingsSchema.statics.defaultSettings = [
     value: "Get Discount",
     description: "Discount text for offer popup header",
     category: "notification",
+  },
+  {
+    key: "popupSettings",
+    value: {
+      title: "Limited Time Offer",
+      description: "Discover our latest products and exclusive offers.",
+      imageUrl: "",
+      redirectType: "custom",
+      redirectValue: "",
+      startDate: new Date(),
+      expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      isActive: false,
+      showOncePerSession: true,
+      backgroundColor: "#fff7ed",
+      buttonText: "Shop Now",
+      couponCode: "",
+    },
+    description: "Homepage popup configuration",
+    category: "display",
   },
   // ========== SHIPPING SETTINGS ==========
   {
@@ -166,7 +185,7 @@ settingsSchema.statics.defaultSettings = [
     key: "storeInfo",
     value: {
       name: "BuyOneGram",
-      email: "support@buyonegram.com",
+      email: "healthyonegram.com",
       phone: "+91 9876541234",
       address: "Sitapura Industrial Area, Jaipur, Rajasthan 302019",
       gstNumber: "",

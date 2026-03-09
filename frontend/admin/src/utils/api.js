@@ -131,9 +131,15 @@ const buildHeaders = (token, extraHeaders = {}) => {
 };
 
 const toErrorPayload = (error, fallbackMessage) => {
+  const details = error?.response?.data?.details || null;
   const message =
     error?.response?.data?.message || error?.message || fallbackMessage;
-  return { error: true, success: false, message };
+  return {
+    error: true,
+    success: false,
+    message,
+    ...(details ? { details: String(details) } : {}),
+  };
 };
 
 const requestWithRetry = async ({

@@ -1,6 +1,7 @@
 "use client";
 
 import { fetchDataFromApi } from "@/utils/api";
+import { trackEvent } from "@/utils/analyticsTracker";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IoSearchOutline } from "react-icons/io5";
@@ -81,6 +82,15 @@ const Search = ({
       return;
     }
 
+    trackEvent("search_query", {
+      query: normalizedTerm,
+      resultsCount: suggestions.length,
+    });
+    trackEvent("results_count", {
+      query: normalizedTerm,
+      resultsCount: suggestions.length,
+    });
+
     if (onSearch) {
       onSearch(normalizedTerm);
     } else {
@@ -90,6 +100,17 @@ const Search = ({
 
   // Handle suggestion click
   const handleSuggestionClick = (product) => {
+    trackEvent("search_query", {
+      query: searchTerm.trim(),
+      selectedProductId: String(product?._id || product?.id || ""),
+      selectedProductName: String(product?.name || ""),
+      resultsCount: suggestions.length,
+    });
+    trackEvent("results_count", {
+      query: searchTerm.trim(),
+      selectedProductId: String(product?._id || product?.id || ""),
+      resultsCount: suggestions.length,
+    });
     setSearchTerm("");
     setSuggestions([]);
     setShowDropdown(false);

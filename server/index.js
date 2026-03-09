@@ -17,11 +17,13 @@ import {
 import connectDb from "./config/connectDb.js";
 import createCookieCsrfGuard from "./middlewares/csrfGuard.js";
 import {
+  analyticsLimiter,
   adminLimiter,
   generalLimiter,
   uploadLimiter,
 } from "./middlewares/rateLimiter.js";
 import { UPLOAD_ROOT } from "./middlewares/upload.js";
+import analyticsSession from "./middlewares/analyticsSession.js";
 
 dotenv.config();
 
@@ -156,7 +158,9 @@ import aboutPageRouter from "./routes/aboutPage.route.js";
 import addressRouter from "./routes/address.route.js";
 import adminMembershipRouter from "./routes/adminMembership.route.js";
 import adminOrdersRouter from "./routes/adminOrders.route.js";
+import adminAnalyticsRouter from "./routes/adminAnalytics.route.js";
 import adminReviewRouter from "./routes/adminReview.route.js";
+import analyticsRouter from "./routes/analytics.route.js";
 import bannerRouter from "./routes/banner.route.js";
 import blogRouter from "./routes/blog.route.js";
 import cancellationPolicyRouter from "./routes/cancellationPolicy.routes.js";
@@ -175,6 +179,7 @@ import newsletterRouter from "./routes/newsletter.route.js";
 import notificationRouter from "./routes/notification.route.js";
 import orderRouter from "./routes/order.route.js";
 import policyRouter from "./routes/policy.route.js";
+import popupRouter from "./routes/popup.route.js";
 import productRouter from "./routes/product.route.js";
 import purchaseOrderRouter from "./routes/purchaseOrder.route.js";
 import refundRouter from "./routes/refund.route.js";
@@ -183,6 +188,7 @@ import settingsRouter from "./routes/settings.route.js";
 import shippingRouter from "./routes/shipping.route.js";
 import supportRouter from "./routes/support.route.js";
 import statisticsRouter from "./routes/statistics.route.js";
+import trackingRouter from "./routes/tracking.route.js";
 import uploadRouter from "./routes/upload.route.js";
 import userRouter from "./routes/user.route.js";
 import userLocationLogRouter from "./routes/userLocationLog.route.js";
@@ -203,7 +209,8 @@ const server = http.createServer(app);
 app.disable("x-powered-by");
 
 if (isProductionEnv) {
-  app.set("trust proxy", 1);
+  // App Engine/Cloud Run can add multiple proxy hops before Express.
+  app.set("trust proxy", true);
 }
 
 // Redirect duplicate slashes in request paths (e.g., //api/cart -> /api/cart)
@@ -235,7 +242,13 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Session-Id"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Session-Id",
+      "X-Analytics-Consent",
+      "X-Page-Url",
+    ],
   }),
 );
 
@@ -257,6 +270,7 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
+app.use(analyticsSession);
 app.use(
   createCookieCsrfGuard({
     allowedOrigins,
@@ -288,6 +302,8 @@ app.get("/", (req, res) => {
 
 // API routes with rate limiting
 app.use("/api/about", generalLimiter, aboutPageRouter);
+app.use("/api", analyticsLimiter, trackingRouter);
+app.use("/api/analytics", analyticsLimiter, analyticsRouter);
 app.use("/api/user", generalLimiter, userRouter);
 app.use("/api/address", generalLimiter, addressRouter);
 app.use("/api/products", generalLimiter, productRouter);
@@ -297,6 +313,7 @@ app.use("/api/home-slides", adminLimiter, homeSlideRouter);
 app.use("/api/blogs", adminLimiter, blogRouter);
 app.use("/api/orders", generalLimiter, orderRouter);
 app.use("/api/admin/orders", adminLimiter, adminOrdersRouter);
+app.use("/api/admin/analytics", adminLimiter, adminAnalyticsRouter);
 app.use("/api/admin", adminLimiter, adminMembershipRouter);
 app.use("/api/cart", generalLimiter, cartRouter);
 app.use("/api/wishlist", generalLimiter, wishlistRouter);
@@ -319,6 +336,7 @@ app.use("/api/settings", generalLimiter, settingsRouter);
 app.use("/api/shipping", generalLimiter, shippingRouter);
 app.use("/api/webhooks", generalLimiter, webhookRouter);
 app.use("/api/policies", generalLimiter, policyRouter);
+app.use("/api", generalLimiter, popupRouter);
 app.use("/api/cancellation", generalLimiter, cancellationPolicyRouter);
 app.use("/api/location-logs", adminLimiter, userLocationLogRouter);
 app.use("/api/purchase-orders", generalLimiter, purchaseOrderRouter);

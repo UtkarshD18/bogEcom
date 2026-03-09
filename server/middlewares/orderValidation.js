@@ -131,6 +131,7 @@ export const validateCreateOrderRequest = (req, res, next) => {
       coinRedeem,
       purchaseOrderId,
       paymentType,
+      paymentProvider,
       location,
     } = req.body;
 
@@ -202,6 +203,19 @@ export const validateCreateOrderRequest = (req, res, next) => {
       throw new AppError("INVALID_FORMAT", {
         field: "paymentType",
         validValues: allowedPaymentTypes,
+      });
+    }
+
+    const normalizedPaymentProvider = paymentProvider
+      ? String(paymentProvider).trim().toUpperCase()
+      : null;
+    if (
+      normalizedPaymentProvider &&
+      !["PAYTM", "PHONEPE"].includes(normalizedPaymentProvider)
+    ) {
+      throw new AppError("INVALID_FORMAT", {
+        field: "paymentProvider",
+        validValues: ["PAYTM", "PHONEPE"],
       });
     }
 
@@ -285,6 +299,7 @@ export const validateCreateOrderRequest = (req, res, next) => {
       coinRedeem: validatedCoinRedeem,
       purchaseOrderId: purchaseOrderId || null,
       paymentType: normalizedPaymentType,
+      paymentProvider: normalizedPaymentProvider,
     };
 
     next();
@@ -329,6 +344,7 @@ export const validateSaveOrderRequest = (req, res, next) => {
       coinRedeem,
       purchaseOrderId,
       paymentType,
+      paymentProvider,
       location,
     } = req.body;
 
@@ -407,6 +423,19 @@ export const validateSaveOrderRequest = (req, res, next) => {
       });
     }
 
+    const normalizedPaymentProvider = paymentProvider
+      ? String(paymentProvider).trim().toUpperCase()
+      : null;
+    if (
+      normalizedPaymentProvider &&
+      !["PAYTM", "PHONEPE"].includes(normalizedPaymentProvider)
+    ) {
+      throw new AppError("INVALID_FORMAT", {
+        field: "paymentProvider",
+        validValues: ["PAYTM", "PHONEPE"],
+      });
+    }
+
     // Validate coupon code format (alphanumeric, max 50 chars)
     if (couponCode && typeof couponCode === "string") {
       if (couponCode.length > 50 || !/^[a-zA-Z0-9_-]+$/.test(couponCode)) {
@@ -473,6 +502,7 @@ export const validateSaveOrderRequest = (req, res, next) => {
       coinRedeem: validatedCoinRedeem,
       purchaseOrderId: purchaseOrderId || null,
       paymentType: normalizedPaymentType,
+      paymentProvider: normalizedPaymentProvider,
     };
 
     next();

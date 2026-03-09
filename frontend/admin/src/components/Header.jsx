@@ -61,7 +61,7 @@ const Header = () => {
         </Badge>
       </Tooltip>
       <Button onClick={handleProfileClick}>
-        <Avatar src="/profile.png" />
+        <Avatar src="/placeholder.png" />
       </Button>
       <Menu anchorEl={anchorEl} open={open} onClose={handleProfileClose}>
         <MenuItem onClick={handleProfileMenu}>

@@ -84,6 +84,21 @@ export const getPublicSettings = async (req, res) => {
 
     // Enforce fixed GST settings (admin cannot disable GST)
     settingsObject.taxSettings = FIXED_TAX_SETTINGS;
+    if (settingsObject.storeInfo && typeof settingsObject.storeInfo === "object") {
+      const currentStoreEmail = String(settingsObject.storeInfo.email || "")
+        .trim()
+        .toLowerCase();
+      if (
+        !currentStoreEmail ||
+        currentStoreEmail === "support@buyonegram.com" ||
+        currentStoreEmail.startsWith("support@")
+      ) {
+        settingsObject.storeInfo = {
+          ...settingsObject.storeInfo,
+          email: "healthyonegram.com",
+        };
+      }
+    }
 
     debugLog(
       "[Settings] Public settings:",
@@ -360,6 +375,7 @@ export const deleteSetting = async (req, res) => {
       "orderSettings",
       "storeInfo",
       "discountSettings",
+      "popupSettings",
       "headerSettings",
     ];
     if (protectedKeys.includes(key)) {
