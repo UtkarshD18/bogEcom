@@ -5,6 +5,7 @@ import path from "path";
 import PDFDocument from "pdfkit";
 import { fileURLToPath } from "url";
 import { UPLOAD_ROOT } from "../middlewares/upload.js";
+import { INDIA_COUNTRY, snapshotToDisplayAddress } from "./addressUtils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -343,6 +344,10 @@ const buildAddressLines = (address) => {
 };
 
 const resolveBuyerAddress = (order) => {
+  if (order?.deliveryAddressSnapshot) {
+    return snapshotToDisplayAddress(order.deliveryAddressSnapshot);
+  }
+
   const deliveryAddress = order?.delivery_address;
   if (deliveryAddress) {
     return {
@@ -390,6 +395,10 @@ const resolveBuyerAddress = (order) => {
 };
 
 const resolveConsigneeAddress = (order) => {
+  if (order?.deliveryAddressSnapshot) {
+    return snapshotToDisplayAddress(order.deliveryAddressSnapshot);
+  }
+
   const deliveryAddress = order?.delivery_address;
   if (deliveryAddress) {
     return {
@@ -1517,8 +1526,10 @@ export const generateInvoicePdf = async ({
 };
 
 export default {
+  buildAddressLines,
   generateInvoicePdf,
   getInvoiceAbsolutePath,
   getInvoiceRelativePath,
   getAbsolutePathFromStoredInvoicePath,
+  prepareInvoiceData,
 };

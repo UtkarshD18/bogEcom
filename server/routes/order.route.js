@@ -11,6 +11,7 @@ import {
   getUserOrderById,
   getUserOrders,
   handlePhonePeWebhook,
+  previewOrderPricing,
   saveClientTestInvoiceToDisk,
   saveOrderForLater,
   updateOrderStatus,
@@ -53,6 +54,9 @@ router.post("/webhook/phonepe", handlePhonePeWebhook);
 router.get("/payment-status", getPaymentGatewayStatus);
 
 // ==================== USER ROUTES ====================
+
+// Preview checkout pricing
+router.post("/preview", optionalAuth, previewOrderPricing);
 
 // Create order (Checkout) - with validation
 router.post(

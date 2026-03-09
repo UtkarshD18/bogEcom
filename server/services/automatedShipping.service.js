@@ -4,11 +4,17 @@ import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
 import { bookShipment } from "./xpressbees.service.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import {
+  buildShippingLabelData,
+  buildXpressbeesShipmentPayload,
+  generateShippingLabelPdf,
+} from "../utils/shippingLabel.js";
+import {
   applyOrderStatusTransition,
   mapExpressbeesToShipmentStatus,
   ORDER_STATUS,
 } from "../utils/orderStatus.js";
 import { logger } from "../utils/errorHandler.js";
+import { snapshotToDisplayAddress } from "../utils/addressUtils.js";
 
 const DEFAULT_PRODUCT_WEIGHT_GRAMS = 500;
 const DEFAULT_PACKAGE_DIMENSION_CM = 10;
@@ -122,6 +128,21 @@ const normalizeText = (value, fallback = "") => {
 };
 
 const resolveAddress = (order) => {
+  const snapshot = order?.deliveryAddressSnapshot || null;
+  if (snapshot) {
+    const display = snapshotToDisplayAddress(snapshot);
+    return {
+      name: display.name,
+      phone: display.mobile,
+      addressLine1: display.address_line1,
+      addressLine2: display.address_line2 || "",
+      city: display.city,
+      state: display.state,
+      pincode: display.pincode,
+      email: display.email,
+    };
+  }
+
   const delivery = order?.delivery_address || {};
   const billing = order?.billingDetails || {};
   const guest = order?.guestDetails || {};
@@ -376,6 +397,10 @@ const buildShipmentPayload = (order, prepared) => {
     Math.max(totalWeightGrams, DEFAULT_PRODUCT_WEIGHT_GRAMS),
   );
 
+  const consignee = buildXpressbeesShipmentPayload(
+    order?.deliveryAddressSnapshot || {},
+  );
+
   return {
     order_number: resolveOrderDisplayId(order),
     payment_type: paymentType,
@@ -397,13 +422,13 @@ const buildShipmentPayload = (order, prepared) => {
     ),
     request_auto_pickup: "yes",
     consignee: {
-      name: prepared.address.name,
-      address: prepared.address.addressLine1,
-      address_2: prepared.address.addressLine2,
-      city: prepared.address.city,
-      state: prepared.address.state,
-      pincode: prepared.address.pincode,
-      phone: prepared.address.phone,
+      name: consignee.name || prepared.address.name,
+      address: consignee.address_line1 || prepared.address.addressLine1,
+      address_2: consignee.address_line2 || prepared.address.addressLine2,
+      city: consignee.city || prepared.address.city,
+      state: consignee.state || prepared.address.state,
+      pincode: consignee.pincode || prepared.address.pincode,
+      phone: consignee.mobile || prepared.address.phone,
       email: prepared.address.email,
     },
     pickup: prepared.pickup,
@@ -433,6 +458,18 @@ const updateOrderAfterShipmentSuccess = async ({
     responsePayload?.data?.label || responsePayload?.data?.label_url || order.shipping_label;
   order.shipping_manifest =
     responsePayload?.data?.manifest || responsePayload?.data?.manifest_url || order.shipping_manifest;
+  try {
+    const localLabel = await generateShippingLabelPdf({
+      order,
+      snapshot: order.deliveryAddressSnapshot,
+    });
+    order.shipping_label_local_path = localLabel.relativePath;
+  } catch (labelError) {
+    logger.warn("autoShipping", "Local shipping label generation failed", {
+      orderId: order?._id,
+      error: labelError?.message || String(labelError),
+    });
+  }
 
   applyOrderStatusTransition(order, ORDER_STATUS.IN_WAREHOUSE, {
     source,
@@ -631,6 +668,8 @@ export const autoCreateShipmentForPaidOrder = async ({
 
 export default {
   autoCreateShipmentForPaidOrder,
+  buildShippingLabelData,
+  buildXpressbeesShipmentPayload,
   mapCanonicalShipmentStatus,
   mapLegacyShipmentStatus,
   syncShipmentStateOnOrder,
