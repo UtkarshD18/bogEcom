@@ -1058,6 +1058,27 @@ const decodePaytmWebhookEnvelope = (body = {}) => {
   return body;
 };
 
+const parsePaytmRawBody = (rawBody) => {
+  const trimmed = String(rawBody || "").trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const params = new URLSearchParams(trimmed);
+  const parsed = {};
+  for (const [key, value] of params.entries()) {
+    parsed[key] = value;
+  }
+  return parsed;
+};
+
 const extractPaytmWebhookFields = (payload = {}) => {
   const resultInfo =
     payload?.resultInfo && typeof payload.resultInfo === "object"
@@ -1169,6 +1190,33 @@ const getClientBaseUrl = () => {
   return "https://healthyonegram.com";
 };
 
+const getBackendBaseUrl = (req) => {
+  const configured = String(
+    process.env.BACKEND_URL ||
+      process.env.API_BASE_URL ||
+      (process.env.GAE_DEFAULT_HOSTNAME
+        ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
+        : ""),
+  )
+    .trim()
+    .replace(/\/+$/, "");
+
+  if (/^https?:\/\//i.test(configured)) {
+    return configured;
+  }
+
+  const host = String(req?.headers?.host || "").trim();
+  if (!host) return "";
+  const forwardedProto = String(req?.headers?.["x-forwarded-proto"] || "")
+    .trim()
+    .toLowerCase();
+  const protocol =
+    forwardedProto === "https" || forwardedProto === "http"
+      ? forwardedProto
+      : String(req?.protocol || "https").trim() || "https";
+  return `${protocol}://${host}`;
+};
+
 const isBrowserNavigationRequest = (req) => {
   const method = String(req?.method || "")
     .trim()
@@ -1177,6 +1225,9 @@ const isBrowserNavigationRequest = (req) => {
     .trim()
     .toLowerCase();
   const accept = String(req?.headers?.accept || "").toLowerCase();
+  const contentType = String(req?.headers?.["content-type"] || "").toLowerCase();
+  const origin = String(req?.headers?.origin || "").toLowerCase();
+  const referer = String(req?.headers?.referer || "").toLowerCase();
   const secFetchDest = String(req?.headers?.["sec-fetch-dest"] || "").toLowerCase();
   const secFetchMode = String(req?.headers?.["sec-fetch-mode"] || "").toLowerCase();
   const secFetchUser = String(req?.headers?.["sec-fetch-user"] || "").toLowerCase();
@@ -1202,8 +1253,17 @@ const isBrowserNavigationRequest = (req) => {
     userAgent.includes("firefox") ||
     userAgent.includes("edg") ||
     userAgent.includes("opera");
+  const isFormPost =
+    contentType.includes("application/x-www-form-urlencoded") ||
+    contentType.includes("multipart/form-data");
+  const hasOriginHint = Boolean(origin || referer);
 
-  return accept.includes("text/html") || hasNavigationHints || browserUserAgent;
+  return (
+    accept.includes("text/html") ||
+    hasNavigationHints ||
+    browserUserAgent ||
+    (isFormPost && hasOriginHint)
+  );
 };
 
 const redirectPaytmWebhookToClient = (res, { orderId, paymentState }) => {
@@ -3206,22 +3266,15 @@ export const createOrder = asyncHandler(async (req, res) => {
       .split(",")[0]
       .trim()
       .replace(/\/+$/, "");
-    const backendUrl = String(
-      process.env.BACKEND_URL ||
-        process.env.API_BASE_URL ||
-        (process.env.GAE_DEFAULT_HOSTNAME
-          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
-          : ""),
-    )
-      .trim()
-      .replace(/\/+$/, "");
+    const backendUrl = getBackendBaseUrl(req);
     const merchantTransactionId = `BOG_${order._id}`;
 
     if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
+      const callbackBase = backendUrl || getClientBaseUrl();
       const callbackUrl =
         process.env.PAYTM_ORDER_CALLBACK_URL ||
         process.env.PAYTM_CALLBACK_URL ||
-        `${backendUrl}/api/orders/webhook/paytm`;
+        `${callbackBase}/api/orders/webhook/paytm`;
 
       const paytmResponse = await createPaytmPayment({
         amount: payableAmount,
@@ -3925,15 +3978,7 @@ export const retryOrderPayment = asyncHandler(async (req, res) => {
       .split(",")[0]
       .trim()
       .replace(/\/+$/, "");
-    const backendUrl = String(
-      process.env.BACKEND_URL ||
-        process.env.API_BASE_URL ||
-        (process.env.GAE_DEFAULT_HOSTNAME
-          ? `https://${process.env.GAE_DEFAULT_HOSTNAME}`
-          : ""),
-    )
-      .trim()
-      .replace(/\/+$/, "");
+    const backendUrl = getBackendBaseUrl(req);
 
     const contact = order.billingDetails || order.guestDetails || {};
 
@@ -3941,10 +3986,11 @@ export const retryOrderPayment = asyncHandler(async (req, res) => {
       const merchantTransactionId =
         String(order.paytmOrderId || order.paymentId || `BOG_${order._id}`).trim() ||
         `BOG_${order._id}`;
+      const callbackBase = backendUrl || getClientBaseUrl();
       const callbackUrl =
         process.env.PAYTM_ORDER_CALLBACK_URL ||
         process.env.PAYTM_CALLBACK_URL ||
-        `${backendUrl}/api/orders/webhook/paytm`;
+        `${callbackBase}/api/orders/webhook/paytm`;
 
       const paytmResponse = await createPaytmPayment({
         amount: payableAmount,
@@ -4629,7 +4675,23 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     const wantsBrowserRedirect = isBrowserNavigationRequest(req);
     const bodyHasPayload =
       req.body && typeof req.body === "object" && Object.keys(req.body).length > 0;
-    const incomingPayload = bodyHasPayload ? req.body : req.query || {};
+    const rawBodyPayload =
+      !bodyHasPayload && req.rawBody ? parsePaytmRawBody(req.rawBody) : null;
+    const queryPayload =
+      req.query && typeof req.query === "object" ? req.query : null;
+    const hasQueryPayload = queryPayload && Object.keys(queryPayload).length > 0;
+    if (
+      wantsBrowserRedirect &&
+      String(req?.method || "").toUpperCase() === "GET" &&
+      !bodyHasPayload &&
+      !rawBodyPayload &&
+      !hasQueryPayload
+    ) {
+      return redirectPaytmWebhookToClient(res, { paymentState: "pending" });
+    }
+    const incomingPayload = bodyHasPayload
+      ? req.body
+      : rawBodyPayload || queryPayload || {};
 
     if (!PAYMENT_PROVIDER_ENV_ENABLED.PAYTM) {
       logger.warn("handlePaytmWebhook", "Paytm environment not enabled");
@@ -5126,7 +5188,7 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       commissionPaid: false,
       influencerStatsSynced: false,
       affiliateCode: pricing.influencerCode || null,
-      affiliateSource: pricing.influencerCode ? "referral" : "demo",
+      affiliateSource: pricing.influencerCode ? "referral" : "organic",
       gst: {
         rate: Number(pricing.taxData?.rate ?? CHECKOUT_GST_RATE),
         state: pricing.taxData?.state || selectedState || "",

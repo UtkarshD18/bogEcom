@@ -5,6 +5,7 @@ import ProductZoom from "@/components/ProductZoom";
 import QtyBox from "@/components/QtyBox";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
+import { formatPrice } from "@/config/siteConfig";
 import { fetchDataFromApi } from "@/utils/api";
 import { trackEvent } from "@/utils/analyticsTracker";
 import { sanitizeHTML } from "@/utils/sanitize";
@@ -463,11 +464,11 @@ const ProductDetailPage = () => {
                             {variant.name}
                           </span>
                           <span className="text-base font-extrabold text-gray-900 mt-1">
-                            ₹{variant.price}
+                            {formatPrice(Number(variant.price || 0))}
                           </span>
                           {variant.originalPrice && variant.originalPrice > variant.price && (
                             <span className="text-xs text-gray-400 line-through">
-                              ₹{variant.originalPrice}
+                              {formatPrice(Number(variant.originalPrice || 0))}
                             </span>
                           )}
                           <span className={`text-[11px] font-semibold mt-1 ${vStock > 0 ? "text-green-600" : "text-red-500"}`}>
@@ -488,19 +489,23 @@ const ProductDetailPage = () => {
                 data-track-role="price"
               >
                 <span className="text-2xl sm:text-3xl font-extrabold text-gray-900">
-                  ₹{activePrice || product.salePrice}
+                  {formatPrice(Number(activePrice || product.salePrice || 0))}
                 </span>
                 {(activeOriginalPrice || product.regularPrice) &&
                   (activeOriginalPrice || product.regularPrice) > (activePrice || 0) && (
                   <span className="text-lg sm:text-xl text-gray-400 line-through">
-                    ₹{activeOriginalPrice || product.regularPrice}
+                    {formatPrice(Number(activeOriginalPrice || product.regularPrice || 0))}
                   </span>
                 )}
                 {discount > 0 && (
                   <span className="text-sm font-bold text-primary bg-[var(--flavor-glass)] px-2 py-1 rounded">
-                    Save ₹
-                    {(activeOriginalPrice || product.regularPrice || 0) -
-                      (activePrice || product.salePrice || 0)}
+                    Save{" "}
+                    {formatPrice(
+                      Number(
+                        (activeOriginalPrice || product.regularPrice || 0) -
+                          (activePrice || product.salePrice || 0),
+                      ),
+                    )}
                   </span>
                 )}
               </div>
