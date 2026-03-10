@@ -18,6 +18,7 @@ const EditBlog = () => {
   const [excerpt, setExcerpt] = useState("");
   const [category, setCategory] = useState("");
   const [image, setImage] = useState("");
+  const [isPublished, setIsPublished] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,6 +43,7 @@ const EditBlog = () => {
         setExcerpt(data.blog.excerpt || "");
         setCategory(data.blog.category || "");
         setImage(data.blog.image || "");
+        setIsPublished(data.blog.isPublished !== false);
       } else {
         setError("Failed to fetch blog details");
       }
@@ -87,6 +89,7 @@ const EditBlog = () => {
           content,
           excerpt,
           category,
+          isPublished,
         }),
       });
 
@@ -197,6 +200,23 @@ const EditBlog = () => {
               className="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-400 outline-none"
               required
             />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="block text-sm font-medium text-gray-600">
+              Publish Status
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPublished}
+                onChange={(e) => setIsPublished(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded"
+              />
+              <span className="text-gray-700">
+                {isPublished ? "Published" : "Draft"}
+              </span>
+            </label>
           </div>
 
           {image && (

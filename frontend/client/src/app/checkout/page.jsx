@@ -66,8 +66,33 @@ const ORDER_PENDING_PAYMENT_KEY = "orderPaymentPending";
 const TEST_INVOICE_STORAGE_KEY = "bog_test_invoices";
 const CHECKOUT_GST_RATE_PERCENT = 5;
 
-const buildAuthHeaders = (extraHeaders = {}) => {
+const decodeJwtPayload = (token) => {
+  try {
+    const tokenPart = String(token || "").split(".")[1];
+    if (!tokenPart) return null;
+    const normalized = tokenPart
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(tokenPart.length / 4) * 4, "=");
+    return JSON.parse(atob(normalized));
+  } catch {
+    return null;
+  }
+};
+
+const isTokenValid = (token) => {
+  if (!token) return false;
+  const payload = decodeJwtPayload(token);
+  return Boolean(payload?.exp && payload.exp * 1000 > Date.now());
+};
+
+const getValidAccessToken = () => {
   const token = getStoredAccessToken();
+  return isTokenValid(token) ? token : null;
+};
+
+const buildAuthHeaders = (extraHeaders = {}) => {
+  const token = getValidAccessToken();
   return token
     ? { ...extraHeaders, Authorization: `Bearer ${token}` }
     : extraHeaders;
@@ -87,7 +112,7 @@ const Checkout = () => {
   const context = useContext(MyContext);
   const { cartItems, clearCart, orderNote, setOrderNote } = useCart();
   const router = useRouter();
-  const authToken = getStoredAccessToken();
+  const authToken = getValidAccessToken();
   const isGuestCheckout = !authToken;
 
   // Get referral/influencer data from context

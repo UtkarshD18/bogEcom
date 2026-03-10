@@ -844,11 +844,11 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
     Math.max(storedGrandTotalWithShipping - persistedShippingTotal, 0),
   );
   const fallbackGrandTotalFromGoods = roundMoney(Math.max(grossSubtotal, 0));
+  // Use stored totals (post-discount) when available; only fall back to goods total
+  // when we have no reliable stored total. This preserves coupon-discounted totals.
   const grandTotal =
     storedGrandTotalWithShipping > 0
-      ? roundMoney(
-          Math.max(derivedGrandTotalWithoutShipping, fallbackGrandTotalFromGoods),
-        )
+      ? derivedGrandTotalWithoutShipping
       : fallbackGrandTotalFromGoods;
 
   const netInclusiveSubtotal = roundMoney(Math.max(grandTotal, 0));

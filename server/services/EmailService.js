@@ -13,11 +13,13 @@ const DEFAULT_SMTP_PORT = 587;
 const DEFAULT_SMTP_SECURE = false;
 const DEFAULT_EMAIL_RETRY_COUNT = 2;
 const DEFAULT_EMAIL_RETRY_DELAY_MS = 700;
+const DEFAULT_EMAIL_OPERATION_TIMEOUT_MS = 20000;
 
 let transporter = null;
 let currentFingerprint = "";
 let verified = false;
 let verifyPromise = null;
+let loggedConfigSummary = false;
 
 const toBool = (value, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
@@ -36,6 +38,17 @@ const wait = (ms) =>
   new Promise((resolve) => {
     setTimeout(resolve, Math.max(Number(ms || 0), 0));
   });
+
+const withTimeout = (promise, ms, label) => {
+  const timeoutMs = Math.max(Number(ms || 0), 0);
+  if (!timeoutMs) return promise;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs),
+    ),
+  ]);
+};
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -62,6 +75,15 @@ const normalizeEnvString = (value) => {
     normalized = normalized.slice(1, -1).trim();
   }
   return normalized;
+};
+
+const maskEmail = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const [name, domain] = raw.split("@");
+  if (!domain) return raw.slice(0, 2) + "***";
+  const safeName = name.length <= 2 ? `${name[0] || ""}*` : `${name[0]}***`;
+  return `${safeName}@${domain}`;
 };
 
 const isGmailHost = (host) => {
@@ -150,6 +172,14 @@ const getEmailConfig = () => {
     toInt(process.env.EMAIL_RETRY_DELAY_MS, DEFAULT_EMAIL_RETRY_DELAY_MS),
     0,
   );
+  const operationTimeoutMs = Math.max(
+    toInt(
+      process.env.EMAIL_OPERATION_TIMEOUT_MS ||
+        process.env.SMTP_OPERATION_TIMEOUT_MS,
+      DEFAULT_EMAIL_OPERATION_TIMEOUT_MS,
+    ),
+    0,
+  );
 
   return {
     host,
@@ -163,6 +193,7 @@ const getEmailConfig = () => {
     fromAddress,
     retryCount,
     retryDelayMs,
+    operationTimeoutMs,
   };
 };
 
@@ -179,6 +210,21 @@ const configFingerprint = (config) =>
 
 const ensureTransporter = () => {
   const config = getEmailConfig();
+
+  if (!loggedConfigSummary) {
+    loggedConfigSummary = true;
+    logger.info("EmailService", "SMTP config summary", {
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      authCandidates: config.authCandidates?.length || 0,
+      activeAuthSource: config.activeAuthSource || "NONE",
+      fromAddress: maskEmail(config.fromAddress),
+      hasUser: Boolean(config.user),
+      hasPass: Boolean(config.pass),
+      userMasked: maskEmail(config.user),
+    });
+  }
 
   if (!config.user || !config.pass || !config.authCandidates?.length) {
     return {
@@ -222,7 +268,11 @@ const verifyTransporter = async (config = {}) => {
     verifyPromise = (async () => {
       const tryVerifyCurrentTransport = async () => {
         try {
-          await transporter.verify();
+          await withTimeout(
+            transporter.verify(),
+            config.operationTimeoutMs,
+            "SMTP verify",
+          );
           verified = true;
           logger.info("EmailService", "SMTP connected and authenticated", {
             user: config.user || "",
@@ -364,21 +414,25 @@ export const sendEmail = async ({
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const info = await transporter.sendMail({
-        from: from || buildFromHeader(config),
-        to,
-        subject,
-        text,
-        html,
-      });
+      const infoWithTimeout = await withTimeout(
+        transporter.sendMail({
+          from: from || buildFromHeader(config),
+          to,
+          subject,
+          text,
+          html,
+        }),
+        config.operationTimeoutMs,
+        "SMTP send",
+      );
       logger.info("EmailService", "Email sent", {
         context,
         to,
         subject,
         attempt,
-        messageId: info?.messageId,
+        messageId: infoWithTimeout?.messageId,
       });
-      return { success: true, messageId: info?.messageId };
+      return { success: true, messageId: infoWithTimeout?.messageId };
     } catch (error) {
       lastError = error;
       logger.warn("EmailService", "Email send failed attempt", {

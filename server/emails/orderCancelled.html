@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Order Confirmation</title>
+    <title>Order Cancelled</title>
   </head>
   <body
     style="
@@ -35,7 +35,7 @@
               <td
                 style="
                   padding: 24px 28px;
-                  background: linear-gradient(135deg, #2b6b4e 0%, #1f3d5b 100%);
+                  background: linear-gradient(135deg, #6b3f2a 0%, #3f2a20 100%);
                   color: #ffffff;
                 "
               >
@@ -50,10 +50,10 @@
                   HealthyOneGram
                 </div>
                 <h1 style="margin: 8px 0 0; font-size: 26px; line-height: 1.2">
-                  Order Confirmed
+                  Order Cancelled
                 </h1>
                 <p style="margin: 8px 0 0; font-size: 14px; opacity: 0.95">
-                  Your order has been created successfully.
+                  Your order has been cancelled.
                 </p>
               </td>
             </tr>
@@ -63,24 +63,23 @@
                   Hello <strong>{{customer_name}}</strong>,
                 </p>
                 <p style="margin: 0 0 12px">
-                  Order No. <strong>{{order_number}}</strong> was created on
-                  <strong>{{order_date}}</strong>.
+                  Order No. <strong>{{order_number}}</strong> has been cancelled.
                 </p>
 
                 <div
                   style="
                     background: #f9f5f0;
-                    border-left: 4px solid #2b6b4e;
+                    border-left: 4px solid #6b3f2a;
                     padding: 12px 14px;
                     border-radius: 12px;
                     margin: 12px 0 16px;
                   "
                 >
-                  <p style="margin: 0 0 6px; font-weight: 700">Order Snapshot</p>
+                  <p style="margin: 0 0 6px; font-weight: 700">Order Summary</p>
                   <p style="margin: 0; font-size: 13px; color: #51443a">
                     Reference Order ID: <strong>{{order_id}}</strong><br />
-                    Order status: <strong>{{order_status}}</strong> |
-                    Payment status: <strong>{{payment_status}}</strong>
+                    Order date: <strong>{{order_date}}</strong><br />
+                    Status: <strong>{{order_status}}</strong>
                   </p>
                 </div>
 
@@ -101,68 +100,16 @@
                   {{items_text}}
                 </div>
 
-                <table
-                  role="presentation"
-                  width="100%"
-                  cellspacing="0"
-                  cellpadding="0"
-                  style="font-size: 14px; margin-top: 18px"
-                >
-                  <tr>
-                    <td style="padding: 6px 0">Subtotal</td>
-                    <td style="padding: 6px 0; text-align: right">{{subtotal}}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 6px 0">Discount</td>
-                    <td style="padding: 6px 0; text-align: right">{{discount}}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 6px 0">Taxable Amount</td>
-                    <td style="padding: 6px 0; text-align: right">
-                      {{taxable_amount}}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 6px 0">GST</td>
-                    <td style="padding: 6px 0; text-align: right">{{tax_amount}}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 6px 0">Shipping</td>
-                    <td style="padding: 6px 0; text-align: right">
-                      {{shipping_amount}}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td
-                      style="
-                        padding: 10px 0;
-                        font-weight: 700;
-                        border-top: 1px solid #e6ded3;
-                      "
-                    >
-                      Final Amount
-                    </td>
-                    <td
-                      style="
-                        padding: 10px 0;
-                        text-align: right;
-                        font-weight: 700;
-                        border-top: 1px solid #e6ded3;
-                      "
-                    >
-                      {{final_amount}}
-                    </td>
-                  </tr>
-                </table>
-
                 <p style="margin: 16px 0 0; font-size: 13px; color: #6b5b4d">
-                  Track your order at
-                  <a href="{{site_url}}" style="color: #2b6b4e">{{site_url}}</a
-                  >.
+                  Need help or want to place a new order?
+                  <a href="{{site_url}}" style="color: #6b3f2a"
+                    >Visit our store</a
+                  >
+                  or contact support.
                 </p>
                 <p style="margin: 6px 0 0; font-size: 13px; color: #6b5b4d">
                   Support:
-                  <a href="{{support_url}}" style="color: #2b6b4e"
+                  <a href="{{support_url}}" style="color: #6b3f2a"
                     >{{support_contact}}</a
                   >
                 </p>

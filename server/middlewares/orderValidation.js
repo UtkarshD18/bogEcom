@@ -79,9 +79,17 @@ const normalizeLocationPayload = (location = null) => {
   };
 };
 
-const validateGuestDetails = (guestDetails) => {
+const validateGuestDetails = (guestDetails, { require = false } = {}) => {
   const hasAnyGuestField = Object.values(guestDetails).some(Boolean);
-  if (!hasAnyGuestField) return;
+  if (!hasAnyGuestField) {
+    if (require) {
+      throw new AppError("INVALID_FORMAT", {
+        field: "guestDetails",
+        message: "Guest details are required for checkout",
+      });
+    }
+    return;
+  }
 
   const validation = validateStructuredAddress(
     {
@@ -192,7 +200,7 @@ export const validateCreateOrderRequest = (req, res, next) => {
       "email",
     ].some((field) => Boolean(normalizedGuest[field]));
     if (!req.user || hasGuestIdentity) {
-      validateGuestDetails(normalizedGuest);
+      validateGuestDetails(normalizedGuest, { require: !req.user });
     }
 
     const allowedPaymentTypes = ["prepaid", "cod", "reverse"];
@@ -400,7 +408,7 @@ export const validateSaveOrderRequest = (req, res, next) => {
       "email",
     ].some((field) => Boolean(normalizedGuest[field]));
     if (!req.user || hasGuestIdentity) {
-      validateGuestDetails(normalizedGuest);
+      validateGuestDetails(normalizedGuest, { require: !req.user });
     }
 
     const validatedCoinRedeem =
