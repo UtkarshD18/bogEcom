@@ -47,7 +47,7 @@ const defaultPopupSettings = {
   startDate: "",
   expiryDate: "",
   isActive: false,
-  showOncePerSession: true,
+  showOncePerSession: false,
   backgroundColor: "#f7f1ef",
   buttonText: "Shop Now",
   couponCode: "",
@@ -247,6 +247,7 @@ const SettingsPage = () => {
     return {
       ...defaultPopupSettings,
       ...popupData,
+      showOncePerSession: false,
       startDate: toDateTimeLocal(popupData.startDate),
       expiryDate: toDateTimeLocal(popupData.expiryDate),
     };
@@ -339,7 +340,7 @@ const SettingsPage = () => {
           startDate: toIsoIfPresent(value.startDate),
           expiryDate: toIsoIfPresent(value.expiryDate),
           isActive: !!value.isActive,
-          showOncePerSession: !!value.showOncePerSession,
+          showOncePerSession: false,
           backgroundColor: String(value.backgroundColor || "").trim(),
           buttonText: String(value.buttonText || "").trim(),
           couponCode: String(value.couponCode || "")
@@ -1219,22 +1220,6 @@ const SettingsPage = () => {
               />
             }
             label="Popup Active"
-          />
-
-          <FormControlLabel
-            control={
-              <Switch
-                checked={popupSettings.showOncePerSession}
-                onChange={(e) =>
-                  setPopupSettings((prev) => ({
-                    ...prev,
-                    showOncePerSession: e.target.checked,
-                  }))
-                }
-                color="warning"
-              />
-            }
-            label="Show Once Per Session"
           />
 
           <TextField

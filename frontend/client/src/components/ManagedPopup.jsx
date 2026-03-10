@@ -12,28 +12,6 @@ const API_ROOT = API_BASE_URL.endsWith("/api")
   : `${API_BASE_URL}/api`;
 const ACTIVE_POPUP_ENDPOINT = `${API_ROOT}/popup/active`;
 
-const getSessionSeenKey = (popupId) =>
-  `hog_managed_popup_seen_${String(popupId || "default").trim()}`;
-
-const getPopupSessionFingerprint = (popup) =>
-  [
-    popup?.id || "default",
-    popup?.title || "",
-    popup?.description || "",
-    popup?.imageUrl || "",
-    popup?.redirectType || "",
-    popup?.redirectValue || "",
-    popup?.buttonText || "",
-    popup?.couponCode || "",
-    popup?.startDate || "",
-    popup?.expiryDate || "",
-  ]
-    .map((value) => String(value || "").trim())
-    .join("|");
-
-const getSessionSeenValue = (popup) =>
-  popup ? getPopupSessionFingerprint(popup) : "";
-
 const normalizeTarget = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -78,22 +56,10 @@ const ManagedPopup = () => {
   );
   const isClickable = Boolean(targetUrl);
 
-  const markSeen = useCallback((nextPopup) => {
-    if (typeof window === "undefined") return;
-    if (!nextPopup?.showOncePerSession) return;
-    sessionStorage.setItem(
-      getSessionSeenKey(nextPopup.id),
-      getSessionSeenValue(nextPopup),
-    );
-  }, []);
-
   const handleDismiss = useCallback(() => {
-    if (popup) {
-      markSeen(popup);
-    }
     setVisible(false);
     setPopup(null);
-  }, [markSeen, popup]);
+  }, []);
 
   const handleCta = useCallback(() => {
     if (popupCouponCode) {
@@ -132,14 +98,6 @@ const ManagedPopup = () => {
           payload?.data && typeof payload.data === "object" ? payload.data : null;
         if (!nextPopup || disposed) return;
 
-        const seenKey = getSessionSeenKey(nextPopup.id);
-        const seenValue = getSessionSeenValue(nextPopup);
-        const alreadySeen =
-          nextPopup.showOncePerSession &&
-          typeof window !== "undefined" &&
-          sessionStorage.getItem(seenKey) === seenValue;
-        if (alreadySeen) return;
-
         setPopup(nextPopup);
         showTimer = window.setTimeout(() => {
           if (!disposed) {
@@ -159,7 +117,7 @@ const ManagedPopup = () => {
         window.clearTimeout(showTimer);
       }
     };
-  }, [markSeen]);
+  }, []);
 
   if (!popup || !visible) return null;
 
