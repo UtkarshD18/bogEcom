@@ -29,6 +29,11 @@ const toBoolean = (value) => {
   return Boolean(value);
 };
 
+const roundWholeNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+};
+
 /**
  * Product Controller
  *
@@ -657,6 +662,11 @@ export const createProduct = async (req, res) => {
         message: "Please enter a valid price",
       });
     }
+    const roundedPrice = Math.round(normalizedPrice);
+    const roundedOriginalPrice =
+      originalPrice === undefined || originalPrice === null
+        ? undefined
+        : roundWholeNumber(originalPrice);
 
     // Check if category exists
     const categoryExists = await CategoryModel.findById(category);
@@ -694,6 +704,23 @@ export const createProduct = async (req, res) => {
           message: "Duplicate variant weights are not allowed",
         });
       }
+      processedVariants = processedVariants.map((variant) => {
+        const variantPrice = roundWholeNumber(variant.price);
+        const variantOriginalPrice =
+          variant.originalPrice === undefined || variant.originalPrice === null
+            ? undefined
+            : roundWholeNumber(variant.originalPrice);
+        const discountPercent =
+          variantOriginalPrice && variantPrice !== null && variantOriginalPrice > variantPrice
+            ? Math.round(((variantOriginalPrice - variantPrice) / variantOriginalPrice) * 100)
+            : 0;
+        return {
+          ...variant,
+          price: variantPrice ?? 0,
+          originalPrice: variantOriginalPrice,
+          discountPercent,
+        };
+      });
       // Ensure exactly one default
       const defaults = processedVariants.filter((v) => v.isDefault);
       if (defaults.length === 0) {
@@ -708,11 +735,9 @@ export const createProduct = async (req, res) => {
       description,
       shortDescription,
       brand,
-      price: normalizedPrice,
+      price: roundedPrice,
       originalPrice:
-        originalPrice === undefined || originalPrice === null
-          ? undefined
-          : Number(originalPrice),
+        roundedOriginalPrice === null ? undefined : roundedOriginalPrice,
       images: images || [],
       thumbnail,
       category,
@@ -831,6 +856,22 @@ export const updateProduct = async (req, res) => {
     if ("isBestSeller" in updateData) {
       updateData.isBestSeller = toBoolean(updateData.isBestSeller);
     }
+    if ("price" in updateData) {
+      const rounded = roundWholeNumber(updateData.price);
+      if (rounded !== null) {
+        updateData.price = rounded;
+      } else {
+        delete updateData.price;
+      }
+    }
+    if ("originalPrice" in updateData) {
+      const rounded = roundWholeNumber(updateData.originalPrice);
+      if (rounded !== null) {
+        updateData.originalPrice = rounded;
+      } else {
+        delete updateData.originalPrice;
+      }
+    }
 
     const product = await ProductModel.findById(id);
     if (!product) {
@@ -853,6 +894,23 @@ export const updateProduct = async (req, res) => {
           message: "Duplicate variant weights are not allowed",
         });
       }
+      updateData.variants = updateData.variants.map((variant) => {
+        const variantPrice = roundWholeNumber(variant.price);
+        const variantOriginalPrice =
+          variant.originalPrice === undefined || variant.originalPrice === null
+            ? undefined
+            : roundWholeNumber(variant.originalPrice);
+        const discountPercent =
+          variantOriginalPrice && variantPrice !== null && variantOriginalPrice > variantPrice
+            ? Math.round(((variantOriginalPrice - variantPrice) / variantOriginalPrice) * 100)
+            : 0;
+        return {
+          ...variant,
+          price: variantPrice ?? variant.price,
+          originalPrice: variantOriginalPrice,
+          discountPercent,
+        };
+      });
       // Ensure exactly one default
       const defaults = updateData.variants.filter((v) => v.isDefault);
       if (defaults.length === 0) {
