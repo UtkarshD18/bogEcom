@@ -1,5 +1,6 @@
 "use client";
 
+import { useSettings } from "@/context/SettingsContext";
 import { API_BASE_URL, postData } from "@/utils/api";
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -14,8 +15,35 @@ import { IoLocationSharp } from "react-icons/io5";
 import { LiaGiftSolid, LiaShippingFastSolid } from "react-icons/lia";
 
 const API_URL = API_BASE_URL;
+const FALLBACK_STORE_INFO = {
+  name: "BuyOneGram",
+  email: "healthyonegram.com",
+  phone: "+91 8619641968",
+  address: "G-220,225, RIICO, Sitapura Industrial Area, Jaipur, Rajasthan 302022",
+};
+
+const normalizeStoreLink = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (normalized.includes("@")) {
+    return `mailto:${normalized}`;
+  }
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized;
+  }
+  if (!normalized.includes(" ")) {
+    return `https://${normalized.replace(/^\/+/, "")}`;
+  }
+  return "";
+};
+
+const normalizePhoneHref = (value) => {
+  const digits = String(value || "").replace(/[^\d+]/g, "");
+  return digits ? `tel:${digits}` : "";
+};
 
 const Footer = () => {
+  const { storeInfo: liveStoreInfo } = useSettings();
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null);
   const [message, setMessage] = useState("");
@@ -82,6 +110,13 @@ const Footer = () => {
     };
     fetchPolicyLinks();
   }, []);
+
+  const storeInfo = {
+    ...FALLBACK_STORE_INFO,
+    ...(liveStoreInfo || {}),
+  };
+  const supportLink = normalizeStoreLink(storeInfo.email);
+  const supportPhoneHref = normalizePhoneHref(storeInfo.phone);
 
   const features = [
     {
@@ -198,22 +233,38 @@ const Footer = () => {
               Contact Us
             </h3>
             <p className="text-[13px] sm:text-[14px] leading-relaxed text-gray-400">
-              G-220,225, RIICO, Sitapura Industrial Area, <br />
-              Jaipur, Rajasthan 302022
+              {storeInfo.address}
             </p>
-            <a
-              href="mailto:healthyonegram@gmail.com"
-              className="text-[14px] font-semibold text-gray-400 hover:text-primary transition-colors duration-300"
-            >
-              healthyonegram@gmail.com
-            </a>
-            <a
-              href="tel:+918619641968"
-              className="text-[18px] font-extrabold tracking-tight hover:underline transition-colors"
-              style={{ color: "var(--primary)" }}
-            >
-              (+91) 8619-641-968
-            </a>
+            {supportLink ? (
+              <a
+                href={supportLink}
+                className="text-[14px] font-semibold text-gray-400 hover:text-primary transition-colors duration-300"
+                target={supportLink.startsWith("http") ? "_blank" : undefined}
+                rel={supportLink.startsWith("http") ? "noreferrer" : undefined}
+              >
+                {storeInfo.email}
+              </a>
+            ) : (
+              <span className="text-[14px] font-semibold text-gray-400">
+                {storeInfo.email}
+              </span>
+            )}
+            {supportPhoneHref ? (
+              <a
+                href={supportPhoneHref}
+                className="text-[18px] font-extrabold tracking-tight hover:underline transition-colors"
+                style={{ color: "var(--primary)" }}
+              >
+                {storeInfo.phone}
+              </a>
+            ) : (
+              <span
+                className="text-[18px] font-extrabold tracking-tight"
+                style={{ color: "var(--primary)" }}
+              >
+                {storeInfo.phone}
+              </span>
+            )}
 
             {/* Map Card */}
             <Link

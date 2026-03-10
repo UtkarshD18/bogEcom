@@ -355,7 +355,7 @@ const NotificationHandler = () => {
     <NotificationToast
       message={messageToDisplay}
       onDismiss={handleDismiss}
-      duration={6000}
+      duration={8500}
     />
   );
 };

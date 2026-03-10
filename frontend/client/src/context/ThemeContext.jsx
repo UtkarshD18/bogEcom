@@ -22,7 +22,7 @@ export const FLAVORS = {
     badge: "#D2BB92",
   },
   chocolate: {
-    name: "Cholocate",
+    name: "Chocolate",
     color: "#5A3A2E",
     hover: "#472C23",
     text: "#FFFFFF",
@@ -56,8 +56,8 @@ export const FLAVORS = {
   },
 };
 
-// Default flavor is Creamy
-const DEFAULT_FLAVOR = FLAVORS.creamy;
+// Default flavor is Chocolate
+const DEFAULT_FLAVOR = FLAVORS.chocolate;
 const resolveStoredFlavor = () => {
   if (typeof window === "undefined") {
     return DEFAULT_FLAVOR;
@@ -188,7 +188,7 @@ const ThemeProvider = ({ children }) => {
           .then((data) => {
             const newToken = data?.data?.accessToken;
             if (newToken) {
-              Cookies.set("accessToken", newToken, { expires: 7 });
+              Cookies.set("accessToken", newToken, { expires: 365 });
               if (typeof window !== "undefined") {
                 localStorage.setItem("accessToken", newToken);
                 localStorage.setItem("token", newToken);

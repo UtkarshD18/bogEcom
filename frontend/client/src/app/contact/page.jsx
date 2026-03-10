@@ -1,4 +1,5 @@
 "use client";
+import { useSettings } from "@/context/SettingsContext";
 import {
   Button,
   CircularProgress,
@@ -50,8 +51,30 @@ const createFileId = (file) =>
   `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`;
 
 const formatFileSize = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+const FALLBACK_STORE_INFO = {
+  email: "healthyonegram.com",
+  phone: "+91 8619641968",
+  address: "G-220,225, RIICO, Sitapura Industrial Area, Jaipur, Rajasthan 302022",
+};
+const normalizeStoreLink = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (normalized.includes("@")) return `mailto:${normalized}`;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (!normalized.includes(" ")) return `https://${normalized}`;
+  return "";
+};
+const normalizePhoneHref = (value) => {
+  const digits = String(value || "").replace(/[^\d+]/g, "");
+  return digits ? `tel:${digits}` : "";
+};
+const normalizeWhatsappHref = (value) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits ? `https://wa.me/${digits}?text=Hello%20Healthy%20One%20Gram,%20I%20need%20help%20with...` : "";
+};
 
 const Contact = () => {
+  const { storeInfo: liveStoreInfo } = useSettings();
   const [formData, setFormData] = useState(defaultFormState);
   const [fieldErrors, setFieldErrors] = useState({});
   const [uploadErrors, setUploadErrors] = useState({ images: "", videos: "" });
@@ -66,6 +89,13 @@ const Contact = () => {
   const previewUrlsRef = useRef(new Set());
   const submitInProgressRef = useRef(false);
   const lastSubmitRef = useRef({ signature: "", submittedAt: 0 });
+  const storeInfo = {
+    ...FALLBACK_STORE_INFO,
+    ...(liveStoreInfo || {}),
+  };
+  const supportLink = normalizeStoreLink(storeInfo.email);
+  const supportPhoneHref = normalizePhoneHref(storeInfo.phone);
+  const whatsappHref = normalizeWhatsappHref(storeInfo.phone);
 
   useEffect(() => {
     let isActive = true;
@@ -375,9 +405,7 @@ const Contact = () => {
                 <div>
                   <h3 className="font-bold text-gray-800 mb-2">Our Address</h3>
                   <p className="text-gray-600 text-sm leading-relaxed">
-                    G-220,225, RIICO, Sitapura Industrial Area,
-                    <br />
-                    Jaipur, Rajasthan 302022
+                    {storeInfo.address}
                   </p>
                 </div>
               </div>
@@ -391,12 +419,18 @@ const Contact = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-800 mb-2">Phone Number</h3>
-                  <a
-                    href="tel:+918619641968"
-                    className="text-primary font-semibold hover:underline"
-                  >
-                    (+91) 8619-641-968
-                  </a>
+                  {supportPhoneHref ? (
+                    <a
+                      href={supportPhoneHref}
+                      className="text-primary font-semibold hover:underline"
+                    >
+                      {storeInfo.phone}
+                    </a>
+                  ) : (
+                    <span className="text-primary font-semibold">
+                      {storeInfo.phone}
+                    </span>
+                  )}
                   <p className="text-gray-500 text-sm mt-1">
                     Mon - Sat: 9:00 AM - 6:00 PM
                   </p>
@@ -414,12 +448,20 @@ const Contact = () => {
                   <h3 className="font-bold text-gray-800 mb-2">
                     Email Address
                   </h3>
-                  <a
-                    href="https://healthyonegram.com"
-                    className="text-primary font-semibold hover:underline"
-                  >
-                    healthyonegram.com
-                  </a>
+                  {supportLink ? (
+                    <a
+                      href={supportLink}
+                      className="text-primary font-semibold hover:underline"
+                      target={supportLink.startsWith("http") ? "_blank" : undefined}
+                      rel={supportLink.startsWith("http") ? "noreferrer" : undefined}
+                    >
+                      {storeInfo.email}
+                    </a>
+                  ) : (
+                    <span className="text-primary font-semibold">
+                      {storeInfo.email}
+                    </span>
+                  )}
                   <p className="text-gray-500 text-sm mt-1">
                     We reply within 24 hours
                   </p>
@@ -429,8 +471,8 @@ const Contact = () => {
 
             {/* WhatsApp Card */}
             <Link
-              href="https://wa.me/918619641968?text=Hello%20Healthy%20One%20Gram,%20I%20need%20help%20with..."
-              target="_blank"
+              href={whatsappHref || "/contact"}
+              target={whatsappHref ? "_blank" : undefined}
               className="block bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-6 shadow-md hover:shadow-lg transition-all hover:-translate-y-1"
             >
               <div className="flex items-center gap-4 text-white">

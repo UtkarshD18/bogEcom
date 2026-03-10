@@ -10,6 +10,44 @@
 import { API_BASE_URL } from "@/utils/api";
 
 const API_URL = API_BASE_URL;
+const DEFAULT_PLACEHOLDER = "/placeholder.png";
+
+const normalizeImageInput = (imageValue) => {
+  if (!imageValue) return "";
+
+  if (typeof imageValue === "string") {
+    return imageValue.trim();
+  }
+
+  if (typeof imageValue === "object") {
+    if (typeof imageValue.url === "string") return imageValue.url.trim();
+    if (typeof imageValue.secure_url === "string") {
+      return imageValue.secure_url.trim();
+    }
+    if (typeof imageValue.src === "string") return imageValue.src.trim();
+  }
+
+  return "";
+};
+
+const buildCloudinaryUrl = (imageUrl, transformations = []) => {
+  const normalizedUrl = normalizeImageInput(imageUrl);
+  if (!normalizedUrl || !normalizedUrl.includes("res.cloudinary.com")) {
+    return normalizedUrl;
+  }
+
+  const parts = normalizedUrl.split("/upload/");
+  if (parts.length !== 2) {
+    return normalizedUrl;
+  }
+
+  const serializedTransforms = transformations.filter(Boolean).join(",");
+  if (!serializedTransforms) {
+    return normalizedUrl;
+  }
+
+  return `${parts[0]}/upload/${serializedTransforms}/${parts[1]}`;
+};
 
 /**
  * Get the proper image URL for display
@@ -17,22 +55,51 @@ const API_URL = API_BASE_URL;
  * @param {string} fallback - Fallback image path
  * @returns {string} - Resolved image URL
  */
-export const getImageUrl = (imageUrl, fallback = "/placeholder.png") => {
-  if (!imageUrl) return fallback;
+export const getImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
+  const normalizedValue = normalizeImageInput(imageUrl);
+  if (!normalizedValue) return fallback;
+
+  const normalizedPath = normalizedValue.replace(/\\/g, "/");
+
+  if (normalizedPath.startsWith("data:")) {
+    return normalizedPath;
+  }
+
+  if (normalizedPath.startsWith("//")) {
+    return `https:${normalizedPath}`;
+  }
 
   // Already a full URL (Cloudinary or external)
-  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
-    return imageUrl;
+  if (
+    normalizedPath.startsWith("http://") ||
+    normalizedPath.startsWith("https://")
+  ) {
+    if (normalizedPath.includes("res.cloudinary.com")) {
+      return buildCloudinaryUrl(normalizedPath, [
+        "f_auto",
+        "q_auto:good",
+        "dpr_auto",
+      ]);
+    }
+    return normalizedPath;
   }
 
   // Local server uploads
-  if (imageUrl.startsWith("/uploads/")) {
-    return `${API_URL}${imageUrl}`;
+  if (normalizedPath.startsWith("/uploads/")) {
+    return `${API_URL}${normalizedPath}`;
+  }
+
+  if (normalizedPath.startsWith("uploads/")) {
+    return `${API_URL}/${normalizedPath}`;
   }
 
   // Local public folder image (like /product_1.png)
-  if (imageUrl.startsWith("/")) {
-    return imageUrl;
+  if (normalizedPath.startsWith("/")) {
+    return normalizedPath;
+  }
+
+  if (!normalizedPath.includes("/")) {
+    return `/${normalizedPath}`;
   }
 
   return fallback;
@@ -46,21 +113,45 @@ export const getImageUrl = (imageUrl, fallback = "/placeholder.png") => {
  */
 export const getOptimizedImageUrl = (
   imageUrl,
-  { width = 400, height = 400, quality = "auto", format = "auto" } = {},
+  {
+    width = 400,
+    height = 400,
+    quality = "auto:good",
+    format = "auto",
+    crop,
+    gravity = "",
+    dpr = "auto",
+  } = {},
 ) => {
-  if (!imageUrl) return "/placeholder.png";
+  const normalizedUrl = normalizeImageInput(imageUrl);
+  if (!normalizedUrl) return DEFAULT_PLACEHOLDER;
 
   // Only apply transformations to Cloudinary URLs
-  if (imageUrl.includes("res.cloudinary.com")) {
-    // Insert transformation parameters before /upload/
-    const parts = imageUrl.split("/upload/");
-    if (parts.length === 2) {
-      const transformations = `w_${width},h_${height},c_fill,q_${quality},f_${format}`;
-      return `${parts[0]}/upload/${transformations}/${parts[1]}`;
-    }
+  if (normalizedUrl.includes("res.cloudinary.com")) {
+    const safeWidth = Number(width);
+    const safeHeight = Number(height);
+    const resolvedCrop =
+      crop ||
+      (Number.isFinite(safeWidth) && Number.isFinite(safeHeight)
+        ? "fill"
+        : "limit");
+
+    const transformations = [
+      Number.isFinite(safeWidth) && safeWidth > 0 ? `w_${Math.round(safeWidth)}` : "",
+      Number.isFinite(safeHeight) && safeHeight > 0
+        ? `h_${Math.round(safeHeight)}`
+        : "",
+      resolvedCrop ? `c_${resolvedCrop}` : "",
+      gravity ? `g_${gravity}` : "",
+      quality ? `q_${quality}` : "",
+      format ? `f_${format}` : "",
+      dpr ? `dpr_${dpr}` : "",
+    ];
+
+    return buildCloudinaryUrl(normalizedUrl, transformations);
   }
 
-  return getImageUrl(imageUrl);
+  return getImageUrl(normalizedUrl);
 };
 
 /**
@@ -70,10 +161,9 @@ export const getOptimizedImageUrl = (
  */
 export const getThumbnailUrl = (imageUrl) => {
   return getOptimizedImageUrl(imageUrl, {
-    width: 300,
-    height: 300,
-    quality: "auto",
-    format: "auto",
+    width: 420,
+    height: 420,
+    crop: "limit",
   });
 };
 
@@ -84,10 +174,9 @@ export const getThumbnailUrl = (imageUrl) => {
  */
 export const getProductImageUrl = (imageUrl) => {
   return getOptimizedImageUrl(imageUrl, {
-    width: 800,
-    height: 800,
-    quality: "auto",
-    format: "auto",
+    width: 900,
+    height: 900,
+    crop: "limit",
   });
 };
 
@@ -98,12 +187,34 @@ export const getProductImageUrl = (imageUrl) => {
  */
 export const getBannerImageUrl = (imageUrl) => {
   return getOptimizedImageUrl(imageUrl, {
-    width: 1920,
-    height: 600,
-    quality: "auto",
-    format: "auto",
+    width: 1600,
+    height: 720,
+    crop: "fill",
+    gravity: "auto",
   });
 };
+
+export const getHeroImageUrl = (imageUrl) =>
+  getOptimizedImageUrl(imageUrl, {
+    width: 1800,
+    height: 1200,
+    crop: "fill",
+    gravity: "auto",
+  });
+
+export const getCategoryImageUrl = (imageUrl) =>
+  getOptimizedImageUrl(imageUrl, {
+    width: 320,
+    height: 320,
+    crop: "limit",
+  });
+
+export const getProductCardImageUrl = (imageUrl) =>
+  getOptimizedImageUrl(imageUrl, {
+    width: 520,
+    height: 520,
+    crop: "limit",
+  });
 
 /**
  * Check if an image URL is a Cloudinary URL
@@ -120,5 +231,8 @@ export default {
   getThumbnailUrl,
   getProductImageUrl,
   getBannerImageUrl,
+  getHeroImageUrl,
+  getCategoryImageUrl,
+  getProductCardImageUrl,
   isCloudinaryUrl,
 };

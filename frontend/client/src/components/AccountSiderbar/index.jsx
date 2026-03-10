@@ -32,6 +32,7 @@ const AccountSidebar = () => {
   const [userPhoto, setUserPhoto] = useState("");
   const [userPhone, setUserPhone] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const profilePhoneRef = useRef(false);
   const getAuthToken = () =>
     cookies.get("accessToken") ||
     (typeof window !== "undefined"
@@ -103,7 +104,7 @@ const AccountSidebar = () => {
     setUserPhoto(resolved);
     if (photoValue) {
       if (persistCookie) {
-        cookies.set("userPhoto", photoValue, { expires: 7 });
+        cookies.set("userPhoto", photoValue, { expires: 365 });
       } else {
         cookies.remove("userPhoto");
       }
@@ -175,6 +176,7 @@ const AccountSidebar = () => {
         const name = data.data?.name || "User";
         const email = data.data?.email || "";
         const avatar = data.data?.avatar || "";
+        const mobile = data.data?.mobile ? formatPhone(data.data.mobile) : "";
         const expiry = data.data?.membershipExpiry
           ? new Date(data.data.membershipExpiry)
           : null;
@@ -184,8 +186,12 @@ const AccountSidebar = () => {
           Boolean(data.data?.isMember) &&
             (!expiry || !Number.isNaN(expiry.getTime()) && expiry > new Date()),
         );
-        cookies.set("userName", name, { expires: 7 });
-        cookies.set("userEmail", email, { expires: 7 });
+        profilePhoneRef.current = Boolean(mobile);
+        if (mobile) {
+          setUserPhone(mobile);
+        }
+        cookies.set("userName", name, { expires: 365 });
+        cookies.set("userEmail", email, { expires: 365 });
         const removalOverride = isPhotoRemovalOverride(email);
         if (avatar && !removalOverride) {
           setPhotoEverywhere(avatar, {
@@ -219,7 +225,9 @@ const AccountSidebar = () => {
         const preferred =
           data.data.find((addr) => addr.selected) || data.data[0];
         const phone = preferred?.mobile ? formatPhone(preferred.mobile) : "";
-        setUserPhone(phone);
+        if (!profilePhoneRef.current) {
+          setUserPhone(phone);
+        }
       }
     } catch (error) {
       // Silent failure for phone display
@@ -229,6 +237,7 @@ const AccountSidebar = () => {
   // Load user data from cookies + API
   useEffect(() => {
     const handleAuthChange = () => {
+      profilePhoneRef.current = false;
       syncFromCookies();
       fetchProfile();
       fetchPrimaryPhone();

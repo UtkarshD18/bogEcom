@@ -126,6 +126,7 @@ const defaultSettings = {
   maintenanceMode: false,
   // Payment
   paymentGatewayEnabled: true,
+  defaultPaymentProvider: "PHONEPE",
 };
 
 /**
@@ -186,6 +187,17 @@ export const SettingsProvider = ({ children }) => {
   // Fetch settings on mount
   useEffect(() => {
     fetchSettings();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleWindowFocus = () => {
+      fetchSettings();
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    return () => window.removeEventListener("focus", handleWindowFocus);
   }, []);
 
   /**
@@ -319,6 +331,7 @@ export const SettingsProvider = ({ children }) => {
     highTrafficNotice: settings.highTrafficNotice,
     maintenanceMode: settings.maintenanceMode,
     paymentGatewayEnabled: settings.paymentGatewayEnabled,
+    defaultPaymentProvider: settings.defaultPaymentProvider,
   };
 
   return (

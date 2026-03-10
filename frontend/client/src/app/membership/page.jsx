@@ -28,7 +28,7 @@ const getStoredAuthToken = () => {
 const ensureAccessTokenCookie = (token) => {
   if (!token) return;
   if (!cookies.get("accessToken")) {
-    cookies.set("accessToken", token, { expires: 7 });
+    cookies.set("accessToken", token, { expires: 365 });
   }
 };
 

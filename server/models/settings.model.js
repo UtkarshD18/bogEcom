@@ -57,7 +57,13 @@ settingsSchema.statics.defaultSettings = [
   {
     key: "paymentGatewayEnabled",
     value: true,
-    description: "Enable/disable payment gateway (Paytm)",
+    description: "Enable or disable online payment gateway availability",
+    category: "payment",
+  },
+  {
+    key: "defaultPaymentProvider",
+    value: "PHONEPE",
+    description: "Default online payment provider shown at checkout",
     category: "payment",
   },
   {
@@ -116,7 +122,7 @@ settingsSchema.statics.defaultSettings = [
       expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       isActive: false,
       showOncePerSession: true,
-      backgroundColor: "#fff7ed",
+      backgroundColor: "#f7f1ef",
       buttonText: "Shop Now",
       couponCode: "",
     },

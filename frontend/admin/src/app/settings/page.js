@@ -48,7 +48,7 @@ const defaultPopupSettings = {
   expiryDate: "",
   isActive: false,
   showOncePerSession: true,
-  backgroundColor: "#fff7ed",
+  backgroundColor: "#f7f1ef",
   buttonText: "Shop Now",
   couponCode: "",
 };
@@ -120,6 +120,7 @@ const SettingsPage = () => {
 
   const [siteControls, setSiteControls] = useState({
     paymentGatewayEnabled: false,
+    defaultPaymentProvider: "PHONEPE",
     maintenanceMode: false,
   });
   const [offerPopupSettings, setOfferPopupSettings] = useState({
@@ -221,7 +222,7 @@ const SettingsPage = () => {
     ) {
       return {
         valid: false,
-        message: "Background color must be a valid hex color (e.g. #fff7ed).",
+        message: "Background color must be a valid hex color (e.g. #f7f1ef).",
       };
     }
 
@@ -437,6 +438,15 @@ const SettingsPage = () => {
                 paymentGatewayEnabled: !!setting.value,
               }));
               break;
+            case "defaultPaymentProvider":
+              setSiteControls((prev) => ({
+                ...prev,
+                defaultPaymentProvider:
+                  String(setting.value || "").trim().toUpperCase() === "PAYTM"
+                    ? "PAYTM"
+                    : "PHONEPE",
+              }));
+              break;
             case "maintenanceMode":
               setSiteControls((prev) => ({
                 ...prev,
@@ -548,6 +558,7 @@ const SettingsPage = () => {
         storeSaved,
         trafficSaved,
         paymentSaved,
+        defaultPaymentProviderSaved,
         maintenanceSaved,
         showOfferPopupSaved,
         offerCouponCodeSaved,
@@ -562,6 +573,12 @@ const SettingsPage = () => {
         saveSetting("storeInfo", storeInfo),
         saveSetting("highTrafficNotice", highTrafficNotice),
         saveSetting("paymentGatewayEnabled", siteControls.paymentGatewayEnabled),
+        saveSetting(
+          "defaultPaymentProvider",
+          String(siteControls.defaultPaymentProvider || "PHONEPE")
+            .trim()
+            .toUpperCase(),
+        ),
         saveSetting("maintenanceMode", siteControls.maintenanceMode),
         saveSetting("showOfferPopup", !!offerPopupSettings.showOfferPopup),
         saveSetting(
@@ -591,6 +608,7 @@ const SettingsPage = () => {
         storeSaved &&
         trafficSaved &&
         paymentSaved &&
+        defaultPaymentProviderSaved &&
         maintenanceSaved &&
         showOfferPopupSaved &&
         offerCouponCodeSaved &&
@@ -668,10 +686,10 @@ const SettingsPage = () => {
         </div>
         <Divider className="mb-4" />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormControlLabel
-            control={
-              <Switch
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormControlLabel
+              control={
+                <Switch
                 checked={shippingSettings.freeShippingEnabled}
                 onChange={(e) =>
                   setShippingSettings({
@@ -1050,16 +1068,38 @@ const SettingsPage = () => {
                 }
                 color="warning"
               />
-            }
-            label="Maintenance Mode"
-          />
-        </div>
+              }
+              label="Maintenance Mode"
+            />
+            <FormControl fullWidth size="small">
+              <InputLabel id="default-payment-provider-label">
+                Default Payment Provider
+              </InputLabel>
+              <Select
+                labelId="default-payment-provider-label"
+                value={siteControls.defaultPaymentProvider}
+                label="Default Payment Provider"
+                onChange={(e) =>
+                  setSiteControls((prev) => ({
+                    ...prev,
+                    defaultPaymentProvider: String(e.target.value || "PHONEPE")
+                      .trim()
+                      .toUpperCase(),
+                  }))
+                }
+              >
+                <MenuItem value="PHONEPE">PhonePe</MenuItem>
+                <MenuItem value="PAYTM">Paytm</MenuItem>
+              </Select>
+            </FormControl>
+          </div>
 
-        <p className="text-sm text-gray-500 mt-3">
-          Payment gateway toggle respects environment credentials. Maintenance
-          mode disables checkout while enabled.
-        </p>
-      </div>
+          <p className="text-sm text-gray-500 mt-3">
+            Payment gateway toggle respects environment credentials. The default
+            provider is used across checkout when both gateways are available.
+            Maintenance mode disables checkout while enabled.
+          </p>
+        </div>
 
       {/* Welcome Offer Popup (Coupon) */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
@@ -1441,7 +1481,7 @@ const SettingsPage = () => {
           <div
             className="rounded-2xl border overflow-hidden"
             style={{
-              backgroundColor: popupSettings.backgroundColor || "#fff7ed",
+              backgroundColor: popupSettings.backgroundColor || "#f7f1ef",
               borderColor: "rgba(17, 24, 39, 0.1)",
             }}
           >

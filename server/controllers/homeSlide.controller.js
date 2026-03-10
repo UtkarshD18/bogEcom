@@ -31,6 +31,9 @@ export const getHomeSlides = async (req, res) => {
     };
 
     const slides = await HomeSlideModel.find(filter)
+      .select(
+        "title subtitle description image mobileImage buttonText buttonLink secondaryButtonText secondaryButtonLink backgroundColor textColor textPosition overlayOpacity sortOrder",
+      )
       .sort({ sortOrder: 1, createdAt: -1 })
       .limit(Number(limit))
       .lean();

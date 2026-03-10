@@ -10,26 +10,26 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #111111;
-  --primary: #5A3A22;
-  --secondary: #F8F6F2;
+  --foreground: #2c1a14;
+  --primary: #5a3a2e;
+  --secondary: #fcf8f6;
   --accent: #FF8C42;
 
   /* Header Height Variable */
   --header-height: 118px;
   --header-height-mobile: 128px;
-  --header-bg-color: #fffbf5;
+  --header-bg-color: #fcf5f1;
 
-  /* Flavor Theme Variables - Default: Creamy */
-  --flavor-color: #f5c16c;
-  --flavor-hover: #e5a84d;
-  --flavor-light: #fdf5e6;
-  --flavor-glass: rgba(245, 193, 108, 0.15);
-  --flavor-card-bg: #fffbf5;
-  --flavor-badge: #d4a84b;
-  --flavor-surface: #fff8ed;
-  --flavor-surface-hover: #fff3e0;
-  --flavor-gradient: linear-gradient(135deg, #fdf5e6 0%, #fff8ed 50%, #ffffff 100%);
+  /* Flavor Theme Variables - Default: Chocolate */
+  --flavor-color: #5a3a2e;
+  --flavor-hover: #472c23;
+  --flavor-light: #f7f1ef;
+  --flavor-glass: rgba(90, 58, 46, 0.14);
+  --flavor-card-bg: #fcf8f6;
+  --flavor-badge: #472c23;
+  --flavor-surface: #fcf8f6;
+  --flavor-surface-hover: #f5eeea;
+  --flavor-gradient: linear-gradient(135deg, #f7f1ef 0%, #fcf8f6 50%, #ffffff 100%);
   --flavor-page-bg: linear-gradient(180deg, var(--flavor-light) 0%, #ffffff 100%);
 }
 
@@ -522,3 +522,4 @@ input[type="number"] {
 .myAcc .active svg {
   color: var(--primary) !important;
 }
+

@@ -4,7 +4,8 @@ import { formatPrice } from "@/config/siteConfig";
 import { useCart } from "@/context/CartContext";
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { useWishlist } from "@/context/WishlistContext";
-import { getImageUrl } from "@/utils/imageUtils";
+import { getProductCardImageUrl } from "@/utils/imageUtils";
+import Image from "next/image";
 import Link from "next/link";
 import { useContext, useState } from "react";
 import { IoIosStar, IoIosStarHalf, IoMdCart, IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
@@ -140,10 +141,12 @@ const ProductItem = (props) => {
                     {isWishlisted ? <IoMdHeart className="text-red-500" /> : <IoMdHeartEmpty />}
                 </button>
 
-                <img
-                    src={getImageUrl(productData.images?.[0])}
+                <Image
+                    src={getProductCardImageUrl(productData.images?.[0])}
                     alt={productData.name}
-                    className="h-full w-full object-contain p-4 transition-transform duration-500 group-hover:scale-110 mix-blend-multiply"
+                    fill
+                    sizes="(max-width: 640px) 45vw, (max-width: 1024px) 25vw, 220px"
+                    className="object-contain p-4 transition-transform duration-500 group-hover:scale-110 mix-blend-multiply"
                 />
             </div>
 

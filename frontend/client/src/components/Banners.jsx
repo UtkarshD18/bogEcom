@@ -4,6 +4,7 @@ import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { getBannerImageUrl } from "@/utils/imageUtils";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 import { useContext, useEffect, useRef, useState } from "react";
 import { FiVolume2, FiVolumeX } from "react-icons/fi";
@@ -70,11 +71,24 @@ const BannerMedia = ({ banner, onMuteToggle, isMuted }) => {
   if (banner.image) {
     return (
       <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden rounded-3xl">
-        <img
-          src={getBannerImageUrl(banner.image)}
-          alt={banner.title}
-          className="h-full w-full object-cover transition-transform duration-700 hover:scale-105"
-        />
+        <div className="absolute inset-0 hidden md:block">
+          <Image
+            src={getBannerImageUrl(banner.image)}
+            alt={banner.title}
+            fill
+            sizes="(max-width: 768px) 100vw, 50vw"
+            className="object-cover transition-transform duration-700 hover:scale-105"
+          />
+        </div>
+        <div className="absolute inset-0 md:hidden">
+          <Image
+            src={getBannerImageUrl(banner.mobileImage || banner.image)}
+            alt={banner.title}
+            fill
+            sizes="100vw"
+            className="object-cover transition-transform duration-700 hover:scale-105"
+          />
+        </div>
       </div>
     );
   }
