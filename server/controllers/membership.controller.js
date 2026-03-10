@@ -165,13 +165,31 @@ const extractPaytmFields = (payload = {}) => {
       payload?.BANKTXNID ||
       null,
     state:
-      resultInfo?.resultStatus ||
+      payload?.txnStatus ||
+      payload?.TXNSTATUS ||
+      payload?.transactionStatus ||
+      payload?.transaction_status ||
       payload?.STATUS ||
       payload?.status ||
       payload?.state ||
       payload?.resultStatus ||
+      resultInfo?.resultStatus ||
       null,
   };
+};
+
+const normalizePaytmState = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "s") return "success";
+  if (normalized === "f") return "fail";
+  if (normalized === "p") return "pending";
+  if (normalized === "u") return "pending";
+  if (normalized.includes("success")) return "success";
+  if (normalized.includes("fail")) return "fail";
+  if (normalized.includes("pending")) return "pending";
+  if (normalized.includes("cancel")) return "fail";
+  return "";
 };
 
 const extractPhonePeState = (statusPayload = {}) =>
@@ -739,13 +757,16 @@ export const handleMembershipPaytmCallback = async (req, res) => {
       });
     }
 
-    let verifiedState = callbackData.state || null;
+    let verifiedState =
+      normalizePaytmState(callbackData.state) || callbackData.state || null;
     let verifiedTransactionId = callbackData.transactionId || null;
 
     try {
       const statusPayload = await getPaytmStatus({ orderId: merchantTransactionId });
       const normalized = extractPaytmFields(statusPayload || {});
-      verifiedState = normalized.state || verifiedState;
+      const normalizedState =
+        normalizePaytmState(normalized.state) || normalized.state || null;
+      verifiedState = normalizedState || verifiedState;
       verifiedTransactionId = normalized.transactionId || verifiedTransactionId;
     } catch (statusError) {
       console.warn(
@@ -924,10 +945,8 @@ export const verifyMembershipPayment = async (req, res) => {
     if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
       const statusPayload = await getPaytmStatus({ orderId: merchantTransactionId });
       const statusFields = extractPaytmFields(statusPayload || {});
-      const state = String(statusFields.state || "")
-        .trim()
-        .toLowerCase();
-      paymentSuccessful = state.includes("success");
+      const state = normalizePaytmState(statusFields.state);
+      paymentSuccessful = state === "success";
     } else if (selectedPaymentProvider === PAYMENT_PROVIDERS.PHONEPE) {
       const statusPayload = await getPhonePeOrderStatus({
         merchantOrderId: merchantTransactionId,
