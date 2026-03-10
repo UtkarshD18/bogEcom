@@ -13,6 +13,7 @@
     "migrate:enterprise": "node migrations/2026-02-enterprise-upgrade.mjs",
     "migrate:inventory": "node migrations/2026-02-inventory-backfill.mjs",
     "migrate:payment-cleanup": "node migrations/2026-02-payment-provider-cleanup.mjs",
+    "backfill:addresses": "node scripts/backfillAddressStructures.mjs",
     "invoices:regenerate": "node scripts/regenerateAllInvoices.mjs"
   },
   "keywords": [],

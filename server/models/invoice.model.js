@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { INDIA_COUNTRY } from "../utils/addressUtils.js";
 
 const invoiceSchema = new mongoose.Schema(
   {
@@ -52,6 +53,28 @@ const invoiceSchema = new mongoose.Schema(
       address: { type: String, default: "" },
       pincode: { type: String, default: "" },
       state: { type: String, default: "" },
+      city: { type: String, default: "" },
+      flat_house: { type: String, default: "" },
+      area_street_sector: { type: String, default: "" },
+      landmark: { type: String, default: "" },
+      country: { type: String, default: INDIA_COUNTRY },
+    },
+    deliveryAddress: {
+      order_name: { type: String, default: "" },
+      order_mobile: { type: String, default: "" },
+      order_flat_house: { type: String, default: "" },
+      order_area: { type: String, default: "" },
+      order_landmark: { type: String, default: "" },
+      order_city: { type: String, default: "" },
+      order_state: { type: String, default: "" },
+      order_pincode: { type: String, default: "" },
+      order_district: { type: String, default: "" },
+      country: { type: String, default: INDIA_COUNTRY },
+      address_line1: { type: String, default: "" },
+      address_line2: { type: String, default: "" },
+      full_address: { type: String, default: "" },
+      email: { type: String, default: "" },
+      source: { type: String, default: "manual" },
     },
     invoicePath: {
       type: String,

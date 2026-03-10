@@ -4,9 +4,14 @@ import { API_BASE_URL, getStoredAccessToken } from "@/utils/api";
 import AccountSidebar from "@/components/AccountSiderbar";
 import AuthenticationMethods from "@/components/AuthenticationMethods";
 import MemberBadge from "@/components/MemberBadge";
+import {
+  getAddressDisplayLines,
+  mapAddressResponseToForm,
+} from "@/utils/addressForm";
 import { Button } from "@mui/material";
 import TextField from "@mui/material/TextField";
 import cookies from "js-cookie";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 
@@ -61,6 +66,7 @@ const MyAccount = () => {
     name: "",
     email: "",
   });
+  const [primaryAddress, setPrimaryAddress] = useState(null);
 
   useEffect(() => {
     const storedName = getStoredProfileField("userName");
@@ -115,7 +121,26 @@ const MyAccount = () => {
         // Silent fallback
       }
     };
+
+    const fetchPrimaryPhone = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/address`, {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        });
+        const data = await response.json();
+        if (data.success && Array.isArray(data.data)) {
+          const preferred =
+            data.data.find((addr) => addr.selected) || data.data[0];
+          setPrimaryAddress(preferred || null);
+        }
+      } catch (err) {
+        // Silent fallback
+      }
+    };
+
     fetchProfile();
+    fetchPrimaryPhone();
   }, [API_URL]);
 
   const handleSubmit = async (e) => {
@@ -256,6 +281,68 @@ const MyAccount = () => {
                 {saving ? "Updating..." : "Update Profile"}
               </Button>
             </form>
+          </div>
+
+          <div className="bg-white shadow-md rounded-md mb-5">
+            <div className="p-4 flex items-center justify-between border-b border-gray-200">
+              <div className="info">
+                <h4 className="text-[20px] font-[500] text-gray-700">
+                  My Addresses
+                </h4>
+                <p className="text-[14px] text-gray-500">
+                  Your default delivery address and checkout shortcut
+                </p>
+              </div>
+              <Link href="/address">
+                <Button className="btn-g !capitalize">Manage Addresses</Button>
+              </Link>
+            </div>
+            <div className="p-5">
+              {primaryAddress ? (
+                (() => {
+                  const display = getAddressDisplayLines(
+                    mapAddressResponseToForm(primaryAddress),
+                  );
+
+                  return (
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                      <p className="text-[12px] font-[700] uppercase tracking-[0.2em] text-[var(--primary)] mb-2">
+                        Default
+                      </p>
+                      <h5 className="text-[18px] font-[600] text-gray-800">
+                        {primaryAddress.full_name || primaryAddress.name}
+                      </h5>
+                      <p className="text-[14px] text-gray-600 mt-2">
+                        {display.line1 || "Address not available"}
+                      </p>
+                      {display.line2 && (
+                        <p className="text-[14px] text-gray-600">
+                          {display.line2}
+                        </p>
+                      )}
+                      <p className="text-[14px] text-gray-600">
+                        {[primaryAddress.city, primaryAddress.state]
+                          .filter(Boolean)
+                          .join(", ")}{" "}
+                        - {primaryAddress.pincode}
+                      </p>
+                      <p className="text-[14px] text-gray-700 font-[500] mt-2">
+                        +91 {primaryAddress.mobile_number || primaryAddress.mobile}
+                      </p>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-5 text-center">
+                  <p className="text-[15px] text-gray-600 mb-4">
+                    No delivery address saved yet.
+                  </p>
+                  <Link href="/address">
+                    <Button className="btn-g !capitalize">Add Address</Button>
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

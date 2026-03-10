@@ -18,7 +18,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import cookies from "js-cookie";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FiCreditCard, FiPackage } from "react-icons/fi";
@@ -136,7 +136,13 @@ const getStepIndex = (status) => {
 const OrderDetailsPage = () => {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const orderId = params?.orderId;
+  const paymentProviderParam = String(
+    searchParams?.get("paymentProvider") || "",
+  )
+    .trim()
+    .toUpperCase();
 
   // State
   const [order, setOrder] = useState(null);
@@ -324,6 +330,72 @@ const OrderDetailsPage = () => {
       socket.disconnect();
     };
   }, [orderId]);
+
+  useEffect(() => {
+    if (!orderId || !order) return;
+    if (!paymentProviderParam) return;
+
+    const normalizedPaymentStatus = normalizeStatus(order?.payment_status);
+    if (!["pending", "unavailable"].includes(normalizedPaymentStatus)) {
+      return;
+    }
+
+    let disposed = false;
+
+    const pollForPaymentConfirmation = async () => {
+      const token = getAuthToken();
+      if (!token) return;
+
+      const targetOrderId = canonicalOrderId || orderId;
+      if (!targetOrderId) return;
+
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        if (disposed) return;
+
+        try {
+          const response = await fetch(
+            `${API_URL}/orders/user/order/${targetOrderId}`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+              credentials: "include",
+            },
+          );
+
+          const data = await response.json();
+          if (!response.ok || !data?.success || !data?.data) {
+            await new Promise((resolve) => setTimeout(resolve, 1800));
+            continue;
+          }
+
+          const refreshedOrder = data.data;
+          setOrder(refreshedOrder);
+
+          const refreshedPaymentStatus = normalizeStatus(
+            refreshedOrder?.payment_status,
+          );
+          if (
+            refreshedPaymentStatus === "paid" ||
+            refreshedPaymentStatus === "failed"
+          ) {
+            return;
+          }
+        } catch {
+          // keep polling briefly after payment return
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1800));
+      }
+    };
+
+    void pollForPaymentConfirmation();
+
+    return () => {
+      disposed = true;
+    };
+  }, [canonicalOrderId, orderId, order?.payment_status, paymentProviderParam]);
 
   useEffect(() => {
     const fetchMyOrderReviews = async () => {
@@ -672,7 +744,10 @@ const OrderDetailsPage = () => {
       order?.invoicePath ||
       order?.invoiceGeneratedAt,
   );
-  const canDownloadInvoice = hasInvoiceHint || isDeliveredLikeOrder;
+  const canDownloadInvoice =
+    hasInvoiceHint ||
+    isDeliveredLikeOrder ||
+    normalizeStatus(order?.payment_status) === "paid";
   const isReviewEligibleOrder = (() => {
     return isDeliveredLikeOrder;
   })();
