@@ -227,6 +227,10 @@ export default function BlogPage() {
     fetchPage();
   }, []);
 
+  useEffect(() => {
+    fetchBlogs();
+  }, [fetchBlogs]);
+
   // Listen for blog updates from admin
   useEffect(() => {
     const handleBlogUpdate = (event) => {

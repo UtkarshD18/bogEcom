@@ -10,7 +10,10 @@ export const getAllBlogs = async (req, res) => {
     const { page = 1, limit = 10, category, search } = req.query;
     const skip = (page - 1) * limit;
 
-    let query = { isPublished: true };
+    const publishFilter = {
+      $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
+    };
+    let query = publishFilter;
 
     if (category) {
       query.category = category;
@@ -56,7 +59,10 @@ export const getBlogBySlug = async (req, res) => {
   try {
     const { slug } = req.params;
 
-    const blog = await BlogModel.findOne({ slug, isPublished: true });
+    const blog = await BlogModel.findOne({
+      slug,
+      $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
+    });
 
     if (!blog) {
       return res.status(404).json({

@@ -1,5 +1,6 @@
 "use client";
 import { useProducts } from "@/context/ProductContext";
+import { API_BASE_URL } from "@/utils/api";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -11,6 +12,7 @@ export default function BlogDetailPage() {
   const [blog, setBlog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [directFetchAttempted, setDirectFetchAttempted] = useState(false);
 
   useEffect(() => {
     if (blogs && blogs.length > 0) {
@@ -18,12 +20,55 @@ export default function BlogDetailPage() {
       if (foundBlog) {
         setBlog(foundBlog);
         setError(null);
-      } else {
-        setError("Blog not found");
       }
       setLoading(false);
     }
   }, [blogs, slug]);
+
+  useEffect(() => {
+    if (!blogs || blogs.length === 0) {
+      fetchBlogs();
+    }
+  }, [blogs, fetchBlogs]);
+
+  useEffect(() => {
+    const fetchBySlug = async () => {
+      if (!slug || directFetchAttempted) return;
+      setDirectFetchAttempted(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/blogs/${slug}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          setError("Blog not found");
+          setLoading(false);
+          return;
+        }
+        const data = await response.json();
+        if (data?.success && data?.data) {
+          setBlog(data.data);
+          setError(null);
+        } else {
+          setError("Blog not found");
+        }
+      } catch (err) {
+        console.error("Error fetching blog by slug:", err);
+        setError("Blog not found");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (!blog && (!blogs || blogs.length === 0)) {
+      fetchBySlug();
+      return;
+    }
+
+    if (!blog && blogs && blogs.length > 0) {
+      setError("Blog not found");
+      setLoading(false);
+    }
+  }, [API_BASE_URL, blog, blogs, directFetchAttempted, slug]);
 
   // Listen for blog updates from admin
   useEffect(() => {
