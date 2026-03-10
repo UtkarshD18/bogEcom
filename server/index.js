@@ -254,7 +254,11 @@ app.use(
 
 const shouldCaptureRawBody = (req) => {
   const requestPath = String(req?.originalUrl || req?.url || "");
-  return requestPath.startsWith("/api/webhooks/");
+  return (
+    requestPath.startsWith("/api/webhooks/") ||
+    requestPath.startsWith("/api/orders/webhook/") ||
+    requestPath.startsWith("/api/membership/webhook/")
+  );
 };
 
 app.use(
@@ -268,6 +272,70 @@ app.use(
     },
   }),
 );
+
+const isPaymentCallbackPath = (req) => {
+  const requestPath = String(req?.originalUrl || req?.url || "").toLowerCase();
+  return (
+    requestPath.startsWith("/api/orders/webhook/") ||
+    requestPath.startsWith("/api/membership/webhook/")
+  );
+};
+
+const parseWebhookFallbackBody = (rawBody) => {
+  const trimmed = String(rawBody || "").trim();
+  if (!trimmed) return {};
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      // Fall back to URL-encoded parsing
+    }
+  }
+
+  const params = new URLSearchParams(trimmed);
+  const parsed = {};
+  for (const [key, value] of params.entries()) {
+    parsed[key] = value;
+  }
+  return parsed;
+};
+
+// Paytm (and some gateways) may POST non-JSON payloads with an incorrect content-type.
+// If JSON parsing fails, salvage the raw body for webhook routes so we can still process
+// the callback and redirect the user back to the client.
+app.use((err, req, _res, next) => {
+  const isJsonParseError =
+    err &&
+    (err.type === "entity.parse.failed" || err instanceof SyntaxError) &&
+    Number(err.status) === 400;
+
+  if (!isJsonParseError || !isPaymentCallbackPath(req)) {
+    return next(err);
+  }
+
+  try {
+    const fallback = parseWebhookFallbackBody(req.rawBody);
+    req.body = fallback;
+    // Prevent later body parsers from running (e.g., urlencoded) after we recover.
+    req._body = true;
+    console.error("Recovered webhook body after JSON parse failure", {
+      path: req.originalUrl || req.url,
+      contentType: req.headers?.["content-type"] || null,
+      recoveredKeys: Object.keys(fallback || {}).slice(0, 20),
+      error: err?.message || String(err),
+    });
+    return next();
+  } catch (recoveryError) {
+    console.error("Failed to recover webhook body after JSON parse failure", {
+      path: req.originalUrl || req.url,
+      error: recoveryError?.message || String(recoveryError),
+      originalError: err?.message || String(err),
+    });
+    return next(err);
+  }
+});
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 app.use(analyticsSession);

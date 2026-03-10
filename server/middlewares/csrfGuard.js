@@ -3,6 +3,8 @@ const CSRF_EXEMPT_PATH_PREFIXES = [
   "/api/track",
   "/api/analytics/track",
   "/api/analytics/consent",
+  "/api/orders/webhook",
+  "/api/membership/webhook",
 ];
 
 const normalizeOrigin = (value) =>
