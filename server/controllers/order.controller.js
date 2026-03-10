@@ -2696,6 +2696,93 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Retry automatic shipment creation for a paid order
+ * Used when the original auto-shipment failed (e.g. missing pickup config)
+ * @route POST /api/admin/orders/:id/retry-shipment
+ * @access Admin
+ */
+export const retryOrderShipment = asyncHandler(async (req, res) => {
+  try {
+    const orderId = req.params.id || req.validatedData?.id;
+    if (!orderId) {
+      throw new AppError("MISSING_FIELD", { field: "id" });
+    }
+
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      throw new AppError("NOT_FOUND", { entity: "Order", id: orderId });
+    }
+
+    if (String(order.payment_status || "").trim().toLowerCase() !== "paid") {
+      return sendError(
+        res,
+        new AppError("VALIDATION_ERROR", {
+          message: `Order payment_status is "${order.payment_status}", not "paid". Cannot create shipment.`,
+        }),
+      );
+    }
+
+    if (hasBookedShipment(order)) {
+      return sendSuccess(
+        res,
+        {
+          alreadyBooked: true,
+          awb_number: order.awb_number || order.awbNumber,
+          shipping_provider: order.shipping_provider || order.courierName,
+        },
+        "Shipment already booked for this order",
+      );
+    }
+
+    const result = await repairPaidOrderArtifacts({
+      order,
+      syncContext: "retryOrderShipment",
+      shipmentSource: "ADMIN_RETRY_SHIPMENT",
+    });
+
+    if (!result.ok || !result.repaired) {
+      logger.error("retryOrderShipment", "Shipment retry failed", {
+        orderId,
+        reason: result.shipmentResult?.reason || "UNKNOWN",
+        error: result.shipmentResult?.error?.message || null,
+      });
+      return sendError(
+        res,
+        new AppError("INTERNAL_ERROR", {
+          message: `Shipment creation failed: ${result.shipmentResult?.reason || "UNKNOWN"}`,
+        }),
+      );
+    }
+
+    return sendSuccess(
+      res,
+      {
+        repaired: true,
+        awb_number:
+          result.order?.awb_number || result.order?.awbNumber || null,
+        shipping_provider:
+          result.order?.shipping_provider ||
+          result.order?.courierName ||
+          null,
+        shipmentResult: result.shipmentResult,
+        invoiceResult: result.invoiceResult,
+      },
+      "Shipment created successfully for order",
+    );
+  } catch (error) {
+    logger.error("retryOrderShipment", "Unhandled error", {
+      orderId: req.params.id,
+      error: error.message,
+    });
+    if (error instanceof AppError) {
+      return sendError(res, error);
+    }
+    const dbError = handleDatabaseError(error, "retryOrderShipment");
+    return sendError(res, dbError);
+  }
+});
+
 // ==================== USER ENDPOINTS ====================
 
 /**
