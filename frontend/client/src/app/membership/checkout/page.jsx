@@ -9,7 +9,7 @@ const API_URL = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL.slice(0, -4)
   : API_BASE_URL;
 const PENDING_PAYMENT_KEY = "membershipPaymentPending";
-const PAYMENT_PROVIDERS = ["PAYTM", "PHONEPE"];
+const PAYMENT_PROVIDERS = ["PHONEPE", "PAYTM"];
 
 const getStoredAuthToken = () => {
   const cookieToken = cookies.get("accessToken");
@@ -21,7 +21,7 @@ const getStoredAuthToken = () => {
 const ensureAccessTokenCookie = (token) => {
   if (!token) return;
   if (!cookies.get("accessToken")) {
-    cookies.set("accessToken", token, { expires: 7 });
+    cookies.set("accessToken", token, { expires: 365 });
   }
 };
 
@@ -96,8 +96,8 @@ export default function MembershipCheckoutPage() {
   const [requestedCoins, setRequestedCoins] = useState(0);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const [paymentProviders, setPaymentProviders] = useState(["PAYTM"]);
-  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState("PAYTM");
+  const [paymentProviders, setPaymentProviders] = useState(["PHONEPE"]);
+  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState("PHONEPE");
   const router = useRouter();
 
   const redeemRate = Number(coinSummary?.settings?.redeemRate || 0);
@@ -179,7 +179,7 @@ export default function MembershipCheckoutPage() {
           paymentStatusData?.data?.defaultProvider ||
             paymentStatusData?.data?.provider ||
             enabledProviders[0] ||
-            "PAYTM",
+            "PHONEPE",
         )
           .trim()
           .toUpperCase();
@@ -258,7 +258,7 @@ export default function MembershipCheckoutPage() {
         const normalizedProvider =
           normalizeProvider(pending?.paymentProvider) ||
           normalizeProvider(selectedPaymentProvider) ||
-          "PAYTM";
+            "PHONEPE";
 
         let verifyData = null;
         let verified = false;
@@ -397,7 +397,7 @@ export default function MembershipCheckoutPage() {
               ),
             },
             paymentProvider: String(
-              orderData?.data?.paymentProvider || selectedPaymentProvider || "PAYTM",
+              orderData?.data?.paymentProvider || selectedPaymentProvider || "PHONEPE",
             )
               .trim()
               .toUpperCase(),

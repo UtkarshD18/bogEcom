@@ -189,6 +189,43 @@ const buildMembershipReturnUrl = (params) => {
   return target.toString();
 };
 
+const syncPaytmFailureToServer = async (apiUrl, params) => {
+  const merchantTransactionId = String(params?.orderId || "").trim();
+  if (!merchantTransactionId || params?.flow !== "order") {
+    return {
+      orderId: "",
+      paymentState: "",
+    };
+  }
+
+  try {
+    const response = await fetch(`${apiUrl}/api/orders/webhook/paytm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "x-requested-with": "fetch",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        merchantTransactionId,
+        paymentState: normalizePaymentState(params?.paymentState || ""),
+        source: "return_page",
+      }),
+    });
+    const data = await response.json().catch(() => null);
+    return {
+      orderId: String(data?.data?.orderId || "").trim(),
+      paymentState: normalizePaymentState(data?.data?.paymentState || ""),
+    };
+  } catch {
+    return {
+      orderId: "",
+      paymentState: "",
+    };
+  }
+};
+
 const PaytmReturn = () => {
   const [message, setMessage] = useState(
     "We are preparing secure payment. Please wait...",
@@ -510,13 +547,23 @@ const PaytmReturn = () => {
         params.paymentState === "cancelled" ||
         params.paymentState === "canceled"
       ) {
+        const syncedFailure = await syncPaytmFailureToServer(API_URL, params);
+        const syncedState =
+          syncedFailure.paymentState || normalizePaymentState(params.paymentState);
+        const resolvedOrderId = String(syncedFailure.orderId || "").trim();
         localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
-        setMessage(getFailureMessage(params.paymentState));
+        setMessage(getFailureMessage(syncedState));
         if (!redirectedRef.current) {
           redirectedRef.current = true;
           setTimeout(() => {
+            if (resolvedOrderId) {
+              window.location.href = `/orders/${encodeURIComponent(
+                resolvedOrderId,
+              )}?paymentProvider=PAYTM&paymentState=${encodeURIComponent(syncedState)}`;
+              return;
+            }
             window.location.href = `/my-orders?paymentProvider=PAYTM&paymentState=${encodeURIComponent(
-              params.paymentState,
+              syncedState,
             )}`;
           }, 900);
         }

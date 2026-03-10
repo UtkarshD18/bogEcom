@@ -15,6 +15,25 @@ const ACTIVE_POPUP_ENDPOINT = `${API_ROOT}/popup/active`;
 const getSessionSeenKey = (popupId) =>
   `hog_managed_popup_seen_${String(popupId || "default").trim()}`;
 
+const getPopupSessionFingerprint = (popup) =>
+  [
+    popup?.id || "default",
+    popup?.title || "",
+    popup?.description || "",
+    popup?.imageUrl || "",
+    popup?.redirectType || "",
+    popup?.redirectValue || "",
+    popup?.buttonText || "",
+    popup?.couponCode || "",
+    popup?.startDate || "",
+    popup?.expiryDate || "",
+  ]
+    .map((value) => String(value || "").trim())
+    .join("|");
+
+const getSessionSeenValue = (popup) =>
+  popup ? getPopupSessionFingerprint(popup) : "";
+
 const normalizeTarget = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -62,7 +81,10 @@ const ManagedPopup = () => {
   const markSeen = useCallback((nextPopup) => {
     if (typeof window === "undefined") return;
     if (!nextPopup?.showOncePerSession) return;
-    sessionStorage.setItem(getSessionSeenKey(nextPopup.id), "true");
+    sessionStorage.setItem(
+      getSessionSeenKey(nextPopup.id),
+      getSessionSeenValue(nextPopup),
+    );
   }, []);
 
   const handleDismiss = useCallback(() => {
@@ -111,10 +133,11 @@ const ManagedPopup = () => {
         if (!nextPopup || disposed) return;
 
         const seenKey = getSessionSeenKey(nextPopup.id);
+        const seenValue = getSessionSeenValue(nextPopup);
         const alreadySeen =
           nextPopup.showOncePerSession &&
           typeof window !== "undefined" &&
-          sessionStorage.getItem(seenKey) === "true";
+          sessionStorage.getItem(seenKey) === seenValue;
         if (alreadySeen) return;
 
         setPopup(nextPopup);
@@ -136,7 +159,7 @@ const ManagedPopup = () => {
         window.clearTimeout(showTimer);
       }
     };
-  }, []);
+  }, [markSeen]);
 
   if (!popup || !visible) return null;
 
@@ -149,7 +172,7 @@ const ManagedPopup = () => {
       <div className={`${styles.wrapper} ${styles.visible}`}>
         <div
           className={`${styles.card} ${isClickable ? styles.cardClickable : ""}`}
-          style={{ backgroundColor: popup.backgroundColor || "#fff7ed" }}
+          style={{ backgroundColor: popup.backgroundColor || "#f7f1ef" }}
           role={isClickable ? "button" : "dialog"}
           tabIndex={isClickable ? 0 : -1}
           onClick={isClickable ? handleCta : undefined}

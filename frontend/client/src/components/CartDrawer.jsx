@@ -7,7 +7,7 @@ import { round2 } from "@/utils/gst";
 import { getImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IoBagCheckOutline, IoCartOutline, IoClose, IoFlashOutline } from "react-icons/io5";
 import { MdAdd, MdRemove, MdDeleteOutline } from "react-icons/md";
 
@@ -26,7 +26,7 @@ const CartDrawer = () => {
         orderNote,
         setOrderNote,
     } = useCart();
-    const { products } = useProducts();
+    const { products, fetchProducts } = useProducts();
     const { displayShippingCharge } = useShippingDisplayCharge();
     const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
     const [activeOfferId, setActiveOfferId] = useState(null);
@@ -49,6 +49,11 @@ const CartDrawer = () => {
         router.push("/checkout");
         setIsCheckoutLoading(false);
     };
+
+    useEffect(() => {
+        if (!isDrawerOpen || products.length > 0) return;
+        fetchProducts({ limit: 12 });
+    }, [fetchProducts, isDrawerOpen, products.length]);
 
     const resolveProductId = (item) => {
         if (!item) return null;

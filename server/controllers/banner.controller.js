@@ -35,6 +35,9 @@ export const getBanners = async (req, res) => {
     }
 
     const banners = await BannerModel.find(filter)
+      .select(
+        "title subtitle image mobileImage link linkText position backgroundColor textColor mediaType videoUrl buttonText sortOrder",
+      )
       .sort({ sortOrder: 1, createdAt: -1 })
       .limit(Number(limit))
       .lean();

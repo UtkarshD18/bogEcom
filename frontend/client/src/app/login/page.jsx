@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { MyContext } from "@/context/ThemeProvider";
 import { firebaseApp } from "@/firebase";
 import { postData } from "@/utils/api";
@@ -64,13 +64,13 @@ const persistSession = (payload, fallbackEmail = "") => {
     return false;
   }
 
-  cookies.set("accessToken", accessToken, { expires: 7 });
-  cookies.set("refreshToken", refreshToken, { expires: 7 });
-  cookies.set("userName", userName, { expires: 7 });
-  cookies.set("userEmail", userEmail, { expires: 7 });
+  cookies.set("accessToken", accessToken, { expires: 365 });
+  cookies.set("refreshToken", refreshToken, { expires: 365 });
+  cookies.set("userName", userName, { expires: 365 });
+  cookies.set("userEmail", userEmail, { expires: 365 });
 
   if (userPhoto) {
-    cookies.set("userPhoto", userPhoto, { expires: 7 });
+    cookies.set("userPhoto", userPhoto, { expires: 365 });
   } else {
     cookies.remove("userPhoto");
   }
@@ -196,7 +196,7 @@ const LoginForm = () => {
               sessionStorage.removeItem(GOOGLE_REDIRECT_ATTEMPT_KEY);
             }
           });
-        console.log("âœ“ Firebase auth initialized in login page");
+        console.log("✓ Firebase auth initialized in login page");
       } catch (error) {
         console.error("Firebase auth initialization error:", error);
       }
@@ -221,7 +221,7 @@ const LoginForm = () => {
           return;
         }
       } catch {}
-      // Token is expired or invalid â€” clear stale cookies so user can login fresh
+      // Token is expired or invalid — clear stale cookies so user can login fresh
       clearStoredSession();
     }
     cookies.remove("actionType");

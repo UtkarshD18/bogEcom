@@ -140,7 +140,7 @@ const refreshAccessToken = async () => {
 
       const token = response?.data?.data?.accessToken || null;
       if (token) {
-        Cookies.set("accessToken", token, { expires: 7 });
+        Cookies.set("accessToken", token, { expires: 365 });
         if (typeof window !== "undefined") {
           localStorage.setItem("accessToken", token);
           localStorage.setItem("token", token);

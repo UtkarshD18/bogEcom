@@ -116,6 +116,43 @@ const buildMembershipReturnUrl = (params) => {
   return target.toString();
 };
 
+const syncPhonePeReturnToServer = async (apiUrl, params) => {
+  const merchantOrderId = String(params?.merchantOrderId || "").trim();
+  if (!merchantOrderId || params?.flow !== "order") {
+    return {
+      orderId: "",
+      paymentState: "",
+    };
+  }
+
+  try {
+    const response = await fetch(`${apiUrl}/api/orders/webhook/phonepe`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "x-requested-with": "fetch",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        merchantOrderId,
+        paymentState: normalizePaymentState(params?.paymentState || ""),
+        source: "return_page",
+      }),
+    });
+    const data = await response.json().catch(() => null);
+    return {
+      orderId: String(data?.data?.orderId || "").trim(),
+      paymentState: normalizePaymentState(data?.data?.paymentState || ""),
+    };
+  } catch {
+    return {
+      orderId: "",
+      paymentState: "",
+    };
+  }
+};
+
 const PhonePeReturn = () => {
   const [message, setMessage] = useState(
     "We are verifying your payment status. Please wait...",
@@ -155,35 +192,28 @@ const PhonePeReturn = () => {
     let disposed = false;
 
     const syncWebhook = async () => {
-      if (isFailureState(params.paymentState)) {
-        setMessage(getFailureMessage(params.paymentState));
-        return;
-      }
-
       if (!params.merchantOrderId) {
         setMessage("Missing PhonePe session details. Please retry checkout.");
         return;
       }
 
-      setMessage("Checking payment status with PhonePe...");
+      setMessage(
+        isFailureState(params.paymentState)
+          ? "Updating your payment status..."
+          : "Checking payment status with PhonePe...",
+      );
 
       try {
-        await fetch(`${API_URL}/api/orders/webhook/phonepe`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include",
-          body: JSON.stringify({
-            merchantOrderId: params.merchantOrderId,
-            source: "return_page",
-          }),
-        });
+        await syncPhonePeReturnToServer(API_URL, params);
       } catch {
         // Webhook sync is best-effort; polling below still handles final state.
       }
 
       if (disposed) return;
+      if (isFailureState(params.paymentState)) {
+        setMessage(getFailureMessage(params.paymentState));
+        return;
+      }
       setMessage("Checking payment confirmation...");
     };
 
@@ -333,21 +363,24 @@ const PhonePeReturn = () => {
 
       if (isFailureState(params.paymentState)) {
         localStorage.removeItem(ORDER_PENDING_PAYMENT_KEY);
-        const resolvedOrderId = String(params.orderId || "").trim();
-        setMessage(getFailureMessage(params.paymentState));
+        const syncedFailure = await syncPhonePeReturnToServer(API_URL, params);
+        const syncedState =
+          syncedFailure.paymentState || normalizePaymentState(params.paymentState);
+        const resolvedOrderId = String(
+          syncedFailure.orderId || params.orderId || "",
+        ).trim();
+        setMessage(getFailureMessage(syncedState));
         if (!redirectedRef.current) {
           redirectedRef.current = true;
           setTimeout(() => {
             if (resolvedOrderId) {
               window.location.href = `/orders/${encodeURIComponent(
                 resolvedOrderId,
-              )}?paymentProvider=PHONEPE&paymentState=${encodeURIComponent(
-                normalizePaymentState(params.paymentState),
-              )}`;
+              )}?paymentProvider=PHONEPE&paymentState=${encodeURIComponent(syncedState)}`;
               return;
             }
             window.location.href = `/my-orders?paymentProvider=PHONEPE&paymentState=${encodeURIComponent(
-              normalizePaymentState(params.paymentState),
+              syncedState,
             )}`;
           }, 900);
         }

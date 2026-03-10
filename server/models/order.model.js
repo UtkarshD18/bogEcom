@@ -144,6 +144,23 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    paymentReminderEmailSentAt: {
+      type: Date,
+      default: null,
+    },
+
+    paymentReminderEmailFailureKind: {
+      type: String,
+      enum: ["", "failed", "cancelled"],
+      default: "",
+    },
+
+    paymentReminderEmailProvider: {
+      type: String,
+      enum: ["", "PAYTM", "PHONEPE"],
+      default: "",
+    },
+
     order_status: {
       type: String,
       enum: [

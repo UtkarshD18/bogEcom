@@ -1,5 +1,6 @@
 import MembershipPlanModel from "../models/membershipPlan.model.js";
 import MembershipUserModel from "../models/membershipUser.model.js";
+import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
 import { createPaytmPayment, getPaytmStatus } from "../services/paytm.service.js";
 import {
@@ -15,11 +16,11 @@ import { activateMembershipForUser } from "../services/membershipUser.service.js
  * Membership payment provider constants
  */
 const PAYMENT_PROVIDERS = Object.freeze({
-  PAYTM: "PAYTM",
   PHONEPE: "PHONEPE",
+  PAYTM: "PAYTM",
 });
 const configuredPaymentProvider = String(
-  process.env.PAYMENT_PROVIDER || PAYMENT_PROVIDERS.PAYTM,
+  process.env.PAYMENT_PROVIDER || PAYMENT_PROVIDERS.PHONEPE,
 )
   .trim()
   .toUpperCase();
@@ -60,6 +61,12 @@ const getEnabledPaymentProviders = () =>
   Object.entries(PAYMENT_PROVIDER_ENV_ENABLED)
     .filter(([, enabled]) => Boolean(enabled))
     .map(([provider]) => provider);
+const normalizeSupportedPaymentProvider = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  return Object.values(PAYMENT_PROVIDERS).includes(normalized) ? normalized : "";
+};
 const resolveDefaultPaymentProvider = () => {
   const requested = configuredPaymentProvider;
   const isSupported = Object.values(PAYMENT_PROVIDERS).includes(requested);
@@ -79,7 +86,46 @@ const resolveDefaultPaymentProvider = () => {
 const DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER = resolveDefaultPaymentProvider();
 const isPaymentEnabled = () =>
   Object.values(PAYMENT_PROVIDER_ENV_ENABLED).some(Boolean);
-const resolveMembershipPaymentProvider = (requestedProvider) => {
+const SETTINGS_CACHE_TTL_MS = 5 * 1000;
+const settingsCache = new Map();
+const getCachedSetting = async (key) => {
+  const cached = settingsCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < SETTINGS_CACHE_TTL_MS) {
+    return cached;
+  }
+
+  const setting = await SettingsModel.findOne({ key })
+    .select("value")
+    .lean();
+  const record = {
+    value: setting?.value,
+    fetchedAt: Date.now(),
+  };
+  settingsCache.set(key, record);
+  return record;
+};
+const getRuntimeDefaultMembershipProvider = async () => {
+  const paymentProviderSetting = await getCachedSetting("defaultPaymentProvider");
+  const preferredProvider =
+    normalizeSupportedPaymentProvider(paymentProviderSetting?.value) ||
+    DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER;
+
+  if (preferredProvider && PAYMENT_PROVIDER_ENV_ENABLED[preferredProvider]) {
+    return preferredProvider;
+  }
+
+  const orderedProviders =
+    preferredProvider === PAYMENT_PROVIDERS.PAYTM
+      ? [PAYMENT_PROVIDERS.PAYTM, PAYMENT_PROVIDERS.PHONEPE]
+      : [PAYMENT_PROVIDERS.PHONEPE, PAYMENT_PROVIDERS.PAYTM];
+
+  return (
+    orderedProviders.find((provider) => PAYMENT_PROVIDER_ENV_ENABLED[provider]) ||
+    getEnabledPaymentProviders()[0] ||
+    null
+  );
+};
+const resolveMembershipPaymentProvider = async (requestedProvider) => {
   const normalized = String(requestedProvider || "")
     .trim()
     .toUpperCase();
@@ -93,8 +139,9 @@ const resolveMembershipPaymentProvider = (requestedProvider) => {
     return normalized;
   }
 
-  if (DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER) {
-    return DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER;
+  const runtimeDefaultProvider = await getRuntimeDefaultMembershipProvider();
+  if (runtimeDefaultProvider) {
+    return runtimeDefaultProvider;
   }
 
   return null;
@@ -235,7 +282,7 @@ const redirectMembershipCallbackToClient = ({
   res,
   merchantTransactionId,
   state,
-  paymentProvider = PAYMENT_PROVIDERS.PAYTM,
+  paymentProvider = PAYMENT_PROVIDERS.PHONEPE,
 }) => {
   try {
     const target = new URL("/membership/checkout", `${getClientBaseUrl()}/`);
@@ -508,7 +555,8 @@ export const createMembershipOrder = async (req, res) => {
     }
 
     const enabledProviders = getEnabledPaymentProviders();
-    const selectedPaymentProvider = resolveMembershipPaymentProvider(
+    const defaultProvider = await getRuntimeDefaultMembershipProvider();
+    const selectedPaymentProvider = await resolveMembershipPaymentProvider(
       req.body?.paymentProvider,
     );
 
@@ -523,7 +571,7 @@ export const createMembershipOrder = async (req, res) => {
           coinRedemption: coinPreview,
           payableAmount: coinPreview.payableAmount,
           enabledProviders,
-          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+          defaultProvider,
         },
       });
     }
@@ -536,7 +584,7 @@ export const createMembershipOrder = async (req, res) => {
           "Selected payment provider is unavailable. Please choose another method.",
         data: {
           enabledProviders,
-          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+          defaultProvider,
         },
       });
     }
@@ -607,7 +655,7 @@ export const createMembershipOrder = async (req, res) => {
           planId: plan._id,
           payableAmount: coinPreview.payableAmount,
           enabledProviders,
-          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+          defaultProvider,
           coinRedemption: {
             coinsUsed: coinPreview.coinsUsed,
             redeemAmount: coinPreview.redeemAmount,
@@ -680,7 +728,7 @@ export const createMembershipOrder = async (req, res) => {
           planId: plan._id,
           payableAmount: coinPreview.payableAmount,
           enabledProviders,
-          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+          defaultProvider,
           coinRedemption: {
             coinsUsed: coinPreview.coinsUsed,
             redeemAmount: coinPreview.redeemAmount,
@@ -697,7 +745,7 @@ export const createMembershipOrder = async (req, res) => {
       message: "Unsupported payment provider selected",
       data: {
         enabledProviders,
-        defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+        defaultProvider,
       },
     });
   } catch (error) {
@@ -879,6 +927,7 @@ export const handleMembershipPhonePeCallback = async (req, res) => {
 export const verifyMembershipPayment = async (req, res) => {
   try {
     const enabledProviders = getEnabledPaymentProviders();
+    const defaultProvider = await getRuntimeDefaultMembershipProvider();
     if (!isPaymentEnabled() || enabledProviders.length === 0) {
       return res.status(503).json({
         error: true,
@@ -888,13 +937,13 @@ export const verifyMembershipPayment = async (req, res) => {
         paymentProvider: null,
         data: {
           enabledProviders,
-          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+          defaultProvider,
         },
       });
     }
 
     const { merchantTransactionId, planId } = req.body || {};
-    const selectedPaymentProvider = resolveMembershipPaymentProvider(
+    const selectedPaymentProvider = await resolveMembershipPaymentProvider(
       req.body?.paymentProvider,
     );
     const requestedCoins = floorInt(req.body?.coinRedeem?.coins || 0);
@@ -915,7 +964,7 @@ export const verifyMembershipPayment = async (req, res) => {
           "Selected payment provider is unavailable. Please choose another method.",
         data: {
           enabledProviders,
-          defaultProvider: DEFAULT_MEMBERSHIP_PAYMENT_PROVIDER,
+          defaultProvider,
         },
       });
     }

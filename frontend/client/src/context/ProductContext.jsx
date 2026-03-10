@@ -1,13 +1,19 @@
 "use client";
 
 import { fetchDataFromApi } from "@/utils/api";
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 
 /**
  * Product Context
  *
- * This context manages product data fetched from the backend API.
- * Admin panel manages products via backend, this context fetches and displays them.
+ * Keeps product-related lookups available to the client, but avoids
+ * preloading large datasets on every route. Consumers fetch what they need.
  */
 
 const ProductContext = createContext();
@@ -19,11 +25,10 @@ export const ProductProvider = ({ children }) => {
   const [homeSlides, setHomeSlides] = useState([]);
   const [banners, setBanners] = useState([]);
   const [blogs, setBlogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch all products from API
-  const fetchProducts = async (params = {}) => {
+  const fetchProducts = useCallback(async (params = {}) => {
     try {
       setLoading(true);
       const queryString = new URLSearchParams(params).toString();
@@ -39,10 +44,9 @@ export const ProductProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // Fetch single product by ID or slug
-  const fetchProductById = async (id) => {
+  const fetchProductById = useCallback(async (id) => {
     try {
       const response = await fetchDataFromApi(`/api/products/${id}`);
       return response?.data || null;
@@ -50,10 +54,9 @@ export const ProductProvider = ({ children }) => {
       console.error("Error fetching product:", err);
       return null;
     }
-  };
+  }, []);
 
-  // Fetch categories from API (admin manages these)
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       const response = await fetchDataFromApi("/api/categories");
       if (response?.error !== true) {
@@ -64,10 +67,9 @@ export const ProductProvider = ({ children }) => {
       console.error("Error fetching categories:", err);
       return { error: true, data: [] };
     }
-  };
+  }, []);
 
-  // Fetch featured products
-  const fetchFeaturedProducts = async () => {
+  const fetchFeaturedProducts = useCallback(async () => {
     try {
       const response = await fetchDataFromApi("/api/products?featured=true");
       if (response?.error !== true) {
@@ -78,10 +80,9 @@ export const ProductProvider = ({ children }) => {
       console.error("Error fetching featured products:", err);
       return { error: true, data: [] };
     }
-  };
+  }, []);
 
-  // Fetch home slides from API (admin manages these)
-  const fetchHomeSlides = async () => {
+  const fetchHomeSlides = useCallback(async () => {
     try {
       const response = await fetchDataFromApi("/api/home-slides");
       if (response?.error !== true) {
@@ -92,10 +93,9 @@ export const ProductProvider = ({ children }) => {
       console.error("Error fetching home slides:", err);
       return { error: true, data: [] };
     }
-  };
+  }, []);
 
-  // Fetch banners from API (admin manages these)
-  const fetchBanners = async () => {
+  const fetchBanners = useCallback(async () => {
     try {
       const response = await fetchDataFromApi("/api/banners");
       if (response?.error !== true) {
@@ -106,10 +106,9 @@ export const ProductProvider = ({ children }) => {
       console.error("Error fetching banners:", err);
       return { error: true, data: [] };
     }
-  };
+  }, []);
 
-  // Fetch blogs from API (admin manages these)
-  const fetchBlogs = async () => {
+  const fetchBlogs = useCallback(async () => {
     try {
       const response = await fetchDataFromApi("/api/blogs");
       if (response?.error !== true) {
@@ -120,10 +119,9 @@ export const ProductProvider = ({ children }) => {
       console.error("Error fetching blogs:", err);
       return { error: true, data: [] };
     }
-  };
+  }, []);
 
-  // Fetch products by category
-  const fetchProductsByCategory = async (categoryId) => {
+  const fetchProductsByCategory = useCallback(async (categoryId) => {
     try {
       const response = await fetchDataFromApi(
         `/api/products?category=${categoryId}`,
@@ -133,10 +131,9 @@ export const ProductProvider = ({ children }) => {
       console.error("Error fetching products by category:", err);
       return [];
     }
-  };
+  }, []);
 
-  // Search products
-  const searchProducts = async (query) => {
+  const searchProducts = useCallback(async (query) => {
     try {
       const response = await fetchDataFromApi(
         `/api/products?search=${encodeURIComponent(query)}`,
@@ -146,59 +143,56 @@ export const ProductProvider = ({ children }) => {
       console.error("Error searching products:", err);
       return [];
     }
-  };
-
-  // Initialize data on mount
-  useEffect(() => {
-    const initializeData = async () => {
-      setLoading(true);
-      await Promise.all([
-        fetchProducts(),
-        fetchCategories(),
-        fetchFeaturedProducts(),
-        fetchHomeSlides(),
-        fetchBanners(),
-        fetchBlogs(),
-      ]);
-      setLoading(false);
-    };
-
-    initializeData();
   }, []);
 
-  const value = {
-    // State
-    products,
-    categories,
-    featuredProducts,
-    homeSlides,
-    banners,
-    blogs,
-    loading,
-    error,
-
-    // Actions
-    fetchProducts,
-    fetchProductById,
-    fetchCategories,
-    fetchFeaturedProducts,
-    fetchHomeSlides,
-    fetchBanners,
-    fetchBlogs,
-    fetchProductsByCategory,
-    searchProducts,
-
-    // Setters (for local updates if needed)
-    setProducts,
-    setCategories,
-  };
+  const value = useMemo(
+    () => ({
+      products,
+      categories,
+      featuredProducts,
+      homeSlides,
+      banners,
+      blogs,
+      loading,
+      error,
+      fetchProducts,
+      fetchProductById,
+      fetchCategories,
+      fetchFeaturedProducts,
+      fetchHomeSlides,
+      fetchBanners,
+      fetchBlogs,
+      fetchProductsByCategory,
+      searchProducts,
+      setProducts,
+      setCategories,
+    }),
+    [
+      products,
+      categories,
+      featuredProducts,
+      homeSlides,
+      banners,
+      blogs,
+      loading,
+      error,
+      fetchProducts,
+      fetchProductById,
+      fetchCategories,
+      fetchFeaturedProducts,
+      fetchHomeSlides,
+      fetchBanners,
+      fetchBlogs,
+      fetchProductsByCategory,
+      searchProducts,
+    ],
+  );
 
   return (
     <ProductContext.Provider value={value}>{children}</ProductContext.Provider>
   );
 };
 
-// Custom hook to use product context
 export const useProducts = () => {
   const context = useContext(ProductContext);
   if (!context) {

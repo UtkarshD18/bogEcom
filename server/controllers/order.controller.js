@@ -83,10 +83,10 @@ import { emitTrackingEvent } from "../services/analytics/trackingEmitter.service
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
 const PAYMENT_PROVIDERS = Object.freeze({
-  PAYTM: "PAYTM",
   PHONEPE: "PHONEPE",
+  PAYTM: "PAYTM",
 });
-const DEFAULT_PAYMENT_PROVIDER = PAYMENT_PROVIDERS.PAYTM;
+const DEFAULT_PAYMENT_PROVIDER = PAYMENT_PROVIDERS.PHONEPE;
 const configuredPaymentProvider = String(
   process.env.PAYMENT_PROVIDER || DEFAULT_PAYMENT_PROVIDER,
 )
@@ -125,6 +125,12 @@ const getEnabledPaymentProviders = () =>
   Object.entries(PAYMENT_PROVIDER_ENV_ENABLED)
     .filter(([, enabled]) => Boolean(enabled))
     .map(([provider]) => provider);
+const normalizeSupportedPaymentProvider = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  return Object.values(PAYMENT_PROVIDERS).includes(normalized) ? normalized : "";
+};
 const resolveDefaultPaymentProvider = () => {
   const requested = configuredPaymentProvider;
   const isSupported = Object.values(PAYMENT_PROVIDERS).includes(requested);
@@ -146,7 +152,31 @@ const PAYMENT_PROVIDER = resolveDefaultPaymentProvider();
 const PAYMENT_ENV_ENABLED = Boolean(
   Object.values(PAYMENT_PROVIDER_ENV_ENABLED).some(Boolean),
 );
-const resolvePaymentProviderForRequest = (requestedProvider) => {
+const getRuntimeDefaultPaymentProvider = async () => {
+  const paymentProviderSetting = await getCachedSetting("defaultPaymentProvider");
+  const preferredProvider =
+    normalizeSupportedPaymentProvider(paymentProviderSetting?.value) ||
+    PAYMENT_PROVIDER ||
+    DEFAULT_PAYMENT_PROVIDER;
+
+  if (preferredProvider && PAYMENT_PROVIDER_ENV_ENABLED[preferredProvider]) {
+    return preferredProvider;
+  }
+
+  const orderedProviders =
+    preferredProvider === PAYMENT_PROVIDERS.PAYTM
+      ? [PAYMENT_PROVIDERS.PAYTM, PAYMENT_PROVIDERS.PHONEPE]
+      : [PAYMENT_PROVIDERS.PHONEPE, PAYMENT_PROVIDERS.PAYTM];
+
+  return (
+    orderedProviders.find(
+      (provider) => PAYMENT_PROVIDER_ENV_ENABLED[provider],
+    ) ||
+    getEnabledPaymentProviders()[0] ||
+    null
+  );
+};
+const resolvePaymentProviderForRequest = async (requestedProvider) => {
   const normalized = String(requestedProvider || "")
     .trim()
     .toUpperCase();
@@ -165,14 +195,15 @@ const resolvePaymentProviderForRequest = (requestedProvider) => {
     return normalized;
   }
 
-  if (PAYMENT_PROVIDER) return PAYMENT_PROVIDER;
+  const runtimeDefaultProvider = await getRuntimeDefaultPaymentProvider();
+  if (runtimeDefaultProvider) return runtimeDefaultProvider;
 
   throw new AppError("PAYMENT_DISABLED", {
     enabledProviders: getEnabledPaymentProviders(),
   });
 };
 
-const SETTINGS_CACHE_TTL_MS = 30 * 1000;
+const SETTINGS_CACHE_TTL_MS = 5 * 1000;
 const settingsCache = new Map();
 
 const getCachedSetting = async (key) => {
@@ -760,6 +791,207 @@ const sendOrderConfirmationEmail = async (order) => {
   }
 };
 
+const clearOrderPaymentReminderState = (order) => {
+  if (!order) return;
+  order.paymentReminderEmailSentAt = null;
+  order.paymentReminderEmailFailureKind = "";
+  order.paymentReminderEmailProvider = "";
+};
+
+const resolvePaymentProviderLabel = (provider) =>
+  String(provider || "").trim().toUpperCase() === PAYMENT_PROVIDERS.PAYTM
+    ? "Paytm"
+    : "PhonePe";
+
+const inferPaymentFailureKind = ({ hint = "", state = "", raw = null } = {}) => {
+  const fragments = [
+    hint,
+    state,
+    raw?.code,
+    raw?.message,
+    raw?.error,
+    raw?.status,
+    raw?.state,
+    raw?.responseCode,
+    raw?.resultCode,
+    raw?.resultStatus,
+    raw?.resultMsg,
+    raw?.resultInfo?.resultCode,
+    raw?.resultInfo?.resultStatus,
+    raw?.resultInfo?.resultMsg,
+    ...(Array.isArray(raw?.paymentDetails)
+      ? raw.paymentDetails.flatMap((entry) => [
+          entry?.state,
+          entry?.status,
+          entry?.message,
+          entry?.detailedErrorCode,
+          entry?.paymentMode,
+        ])
+      : []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    fragments.includes("cancel") ||
+    fragments.includes("abort") ||
+    fragments.includes("dropped") ||
+    fragments.includes("closed by user")
+  ) {
+    return "cancelled";
+  }
+
+  return "failed";
+};
+
+const buildPaymentFailureReason = ({ provider, failureKind }) => {
+  const providerLabel = resolvePaymentProviderLabel(provider);
+  return failureKind === "cancelled"
+    ? `${providerLabel} payment cancelled by customer`
+    : `${providerLabel} payment failed`;
+};
+
+const sendOrderPaymentReminderEmail = async (
+  order,
+  { failureKind = "failed", paymentProvider = PAYMENT_PROVIDERS.PHONEPE } = {},
+) => {
+  try {
+    const recipientEmail = String(
+      order?.billingDetails?.email || order?.guestDetails?.email || "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (!recipientEmail) {
+      return false;
+    }
+
+    const customerName =
+      String(
+        order?.billingDetails?.fullName ||
+          order?.guestDetails?.fullName ||
+          "Customer",
+      ).trim() || "Customer";
+    const rawOrderId = String(order?._id || "").trim();
+    const displayOrderNumber = resolveDisplayOrderNumber(order);
+    const supportContact = "healthyonegram.com";
+    const supportUrl = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportContact)
+      ? `mailto:${supportContact}`
+      : /^https?:\/\//i.test(supportContact)
+        ? supportContact
+        : `https://${supportContact.replace(/^\/+/, "")}`;
+    const siteUrl = getPrimaryStoreUrl();
+    const actionUrl =
+      order?.user && rawOrderId
+        ? `${siteUrl}/orders/${encodeURIComponent(rawOrderId)}`
+        : siteUrl;
+    const actionLabel = order?.user ? "View your order" : "Visit the store";
+    const finalAmount = round2(Number(order?.finalAmount || order?.totalAmt || 0));
+    const providerLabel = resolvePaymentProviderLabel(paymentProvider);
+    const normalizedFailureKind =
+      failureKind === "cancelled" ? "cancelled" : "failed";
+    const failureMessage =
+      normalizedFailureKind === "cancelled"
+        ? "Your payment was cancelled before completion. You can return and place the order again when ready."
+        : "Your payment did not complete successfully. You can retry from your order page or place the order again.";
+
+    const text = [
+      `Order No: ${displayOrderNumber}`,
+      `Order ID: ${rawOrderId || "N/A"}`,
+      `Payment provider: ${providerLabel}`,
+      `Payment status: ${normalizedFailureKind}`,
+      failureMessage,
+      `Order Total: ${formatInr(finalAmount)}`,
+      `Open: ${actionUrl}`,
+      `Support: ${supportContact}`,
+    ].join("\n");
+
+    const result = await sendTemplatedEmail({
+      to: recipientEmail,
+      subject: `Payment Reminder - ${displayOrderNumber}`,
+      templateFile: "orderPaymentReminder.html",
+      templateData: {
+        customer_name: customerName,
+        order_number: displayOrderNumber,
+        order_id: rawOrderId || "N/A",
+        order_date: formatOrderDateForEmail(order?.createdAt),
+        payment_provider: providerLabel,
+        failure_kind:
+          normalizedFailureKind === "cancelled"
+            ? "Cancelled"
+            : "Failed",
+        failure_message: failureMessage,
+        items_text: stringifyOrderItemsForEmail(order),
+        final_amount: formatInr(finalAmount),
+        action_label: actionLabel,
+        action_url: actionUrl,
+        site_url: siteUrl,
+        support_contact: supportContact,
+        support_url: supportUrl,
+        year: String(new Date().getFullYear()),
+      },
+      text,
+      context: "order.payment_reminder",
+    });
+
+    if (!result?.success) {
+      logger.warn("sendOrderPaymentReminderEmail", "Email send failed", {
+        orderId: order?._id,
+        recipientEmail,
+        error: result?.error || "Unknown error",
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error("sendOrderPaymentReminderEmail", "Unexpected email error", {
+      orderId: order?._id,
+      error: error?.message || String(error),
+    });
+    return false;
+  }
+};
+
+const maybeSendOrderPaymentReminderEmail = async ({
+  order,
+  failureKind = "failed",
+  paymentProvider = PAYMENT_PROVIDERS.PHONEPE,
+  logContext = "paymentWebhook",
+}) => {
+  if (!order) return false;
+  if (order.paymentReminderEmailSentAt) {
+    return false;
+  }
+
+  const sent = await sendOrderPaymentReminderEmail(order, {
+    failureKind,
+    paymentProvider,
+  });
+  if (!sent) {
+    return false;
+  }
+
+  order.paymentReminderEmailSentAt = new Date();
+  order.paymentReminderEmailFailureKind =
+    failureKind === "cancelled" ? "cancelled" : "failed";
+  order.paymentReminderEmailProvider = String(paymentProvider || "")
+    .trim()
+    .toUpperCase();
+
+  try {
+    await order.save();
+    return true;
+  } catch (error) {
+    logger.warn(logContext, "Failed to persist payment reminder metadata", {
+      orderId: order?._id,
+      error: error?.message || String(error),
+    });
+    return false;
+  }
+};
+
 const CHECKOUT_GST_RATE = 5;
 const DEFAULT_PRODUCT_WEIGHT_GRAMS = 500;
 
@@ -873,7 +1105,10 @@ const verifyPaytmWebhookState = async (merchantTransactionId) => {
       statusResponse && typeof statusResponse === "object"
         ? statusResponse
         : {};
-    return extractPaytmWebhookFields(payload);
+    return {
+      ...extractPaytmWebhookFields(payload),
+      raw: payload,
+    };
   } catch (error) {
     logger.warn("handlePaytmWebhook", "Paytm status verification failed", {
       merchantTransactionId,
@@ -900,6 +1135,9 @@ const isBrowserNavigationRequest = (req) => {
   const method = String(req?.method || "")
     .trim()
     .toUpperCase();
+  const requestedWith = String(req?.headers?.["x-requested-with"] || "")
+    .trim()
+    .toLowerCase();
   const accept = String(req?.headers?.accept || "").toLowerCase();
   const secFetchDest = String(req?.headers?.["sec-fetch-dest"] || "").toLowerCase();
   const secFetchMode = String(req?.headers?.["sec-fetch-mode"] || "").toLowerCase();
@@ -907,6 +1145,13 @@ const isBrowserNavigationRequest = (req) => {
   const userAgent = String(req?.headers?.["user-agent"] || "").toLowerCase();
 
   if (method === "GET") return true;
+  if (
+    requestedWith === "xmlhttprequest" ||
+    requestedWith === "fetch" ||
+    requestedWith === "api"
+  ) {
+    return false;
+  }
 
   const hasNavigationHints =
     secFetchDest === "document" ||
@@ -2505,7 +2750,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       paymentProvider: requestedPaymentProvider,
     } = req.validatedData;
     const userId = req.user || null;
-    const selectedPaymentProvider = resolvePaymentProviderForRequest(
+    const selectedPaymentProvider = await resolvePaymentProviderForRequest(
       requestedPaymentProvider,
     );
 
@@ -3355,7 +3600,7 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
   try {
     const paymentEnabled = await isPaymentEnabled();
     const enabledProviders = getEnabledPaymentProviders();
-    const defaultProvider = PAYMENT_PROVIDER || enabledProviders[0] || null;
+    const defaultProvider = await getRuntimeDefaultPaymentProvider();
     const providerStatus = Object.fromEntries(
       Object.entries(PAYMENT_PROVIDER_ENV_ENABLED).map(([provider, enabled]) => [
         provider,
@@ -3460,7 +3705,7 @@ export const retryOrderPayment = asyncHandler(async (req, res) => {
     )
       .trim()
       .toUpperCase();
-    const selectedPaymentProvider = resolvePaymentProviderForRequest(
+    const selectedPaymentProvider = await resolvePaymentProviderForRequest(
       requestedPaymentProvider,
     );
 
@@ -3527,6 +3772,7 @@ export const retryOrderPayment = asyncHandler(async (req, res) => {
       order.paymentId = merchantTransactionId;
       order.paytmOrderId = merchantTransactionId;
       order.failureReason = "";
+      clearOrderPaymentReminderState(order);
       order.updatedAt = new Date();
       await order.save();
 
@@ -3578,6 +3824,7 @@ export const retryOrderPayment = asyncHandler(async (req, res) => {
       order.phonepeMerchantOrderId = merchantTransactionId;
       order.phonepeOrderId = phonepeResponse.phonepeOrderId || null;
       order.failureReason = "";
+      clearOrderPaymentReminderState(order);
       order.updatedAt = new Date();
       await order.save();
 
@@ -3822,8 +4069,19 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     )
       .toLowerCase()
       .trim();
+    const paymentStateHint = String(
+      incomingPayload?.paymentState ||
+        incomingPayload?.payment_status ||
+        incomingPayload?.status ||
+        "",
+    )
+      .toLowerCase()
+      .trim();
     const wasPaid = order.payment_status === "paid";
     let orderMutated = false;
+    let clientPaymentState = String(order.payment_status || "pending")
+      .toLowerCase()
+      .trim();
 
     if (String(order.paytmOrderId || "") !== String(merchantTransactionId)) {
       order.paytmOrderId = merchantTransactionId;
@@ -3843,20 +4101,37 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
           source: "PAYMENT_WEBHOOK",
         });
         await confirmInventory(order, "PAYMENT_WEBHOOK");
+        clearOrderPaymentReminderState(order);
         orderMutated = true;
       }
-    } else if (normalizedState.includes("fail")) {
+      clientPaymentState = "paid";
+    } else if (
+      normalizedState.includes("fail") ||
+      normalizedState.includes("cancel") ||
+      paymentStateHint.includes("fail") ||
+      paymentStateHint.includes("cancel")
+    ) {
       if (!wasPaid) {
+        clientPaymentState = inferPaymentFailureKind({
+          hint: paymentStateHint,
+          state: normalizedState,
+          raw: verifiedStatus.raw || payload,
+        });
         order.payment_status = "failed";
-        order.failureReason = "Paytm payment failed";
+        order.failureReason = buildPaymentFailureReason({
+          provider: PAYMENT_PROVIDERS.PAYTM,
+          failureKind: clientPaymentState,
+        });
         await releaseInventory(order, "PAYMENT_WEBHOOK");
         orderMutated = true;
       }
     } else if (normalizedState.includes("pending")) {
       if (!wasPaid) {
         order.payment_status = "pending";
+        clearOrderPaymentReminderState(order);
         orderMutated = true;
       }
+      clientPaymentState = "pending";
     } else {
       logger.warn("handlePaytmWebhook", "Unknown payment state", {
         merchantTransactionId,
@@ -3874,9 +4149,13 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
       return wantsBrowserRedirect
         ? redirectPaytmWebhookToClient(res, {
             orderId: order._id,
-            paymentState: String(order.payment_status || "pending").toLowerCase(),
+            paymentState: clientPaymentState,
           })
-        : sendSuccess(res, {}, "Webhook already processed");
+        : sendSuccess(
+            res,
+            { orderId: order._id, paymentState: clientPaymentState },
+            "Webhook already processed",
+          );
     }
 
     order.updatedAt = new Date();
@@ -3903,6 +4182,13 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
         webhookContext: "handlePaytmWebhook",
         shipmentSource: "PAYMENT_WEBHOOK_AUTO_SHIPMENT",
       });
+    } else if (clientPaymentState === "failed" || clientPaymentState === "cancelled") {
+      await maybeSendOrderPaymentReminderEmail({
+        order,
+        failureKind: clientPaymentState,
+        paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+        logContext: "handlePaytmWebhook",
+      });
     }
 
     syncOrderToFirestore(order, "update").catch((err) =>
@@ -3917,9 +4203,13 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     return wantsBrowserRedirect
       ? redirectPaytmWebhookToClient(res, {
           orderId: order._id,
-          paymentState: String(order.payment_status || "pending").toLowerCase(),
+          paymentState: clientPaymentState,
         })
-      : sendSuccess(res, {}, "Webhook processed");
+      : sendSuccess(
+          res,
+          { orderId: order._id, paymentState: clientPaymentState },
+          "Webhook processed",
+        );
   } catch (error) {
     logger.error("handlePaytmWebhook", "Webhook processing error", {
       error: error.message,
@@ -3995,9 +4285,21 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     }
 
     const normalizedState = normalizePhonePeState(verifiedStatus.state);
+    const paymentStateHint = String(
+      req.body?.paymentState ||
+        req.query?.paymentState ||
+        req.body?.payment_status ||
+        req.query?.payment_status ||
+        "",
+    )
+      .toLowerCase()
+      .trim();
     const transactionId = verifiedStatus.transactionId || null;
     const wasPaid = order.payment_status === "paid";
     let orderMutated = false;
+    let clientPaymentState = String(order.payment_status || "pending")
+      .toLowerCase()
+      .trim();
 
     if (
       String(order.phonepeMerchantOrderId || "") !== String(merchantTransactionId)
@@ -4027,15 +4329,28 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
           source: "PHONEPE_WEBHOOK",
         });
         await confirmInventory(order, "PHONEPE_WEBHOOK");
+        clearOrderPaymentReminderState(order);
         orderMutated = true;
       }
+      clientPaymentState = "paid";
     } else if (
       normalizedState.includes("FAIL") ||
-      normalizedState.includes("DECLINED")
+      normalizedState.includes("DECLINED") ||
+      normalizedState.includes("CANCEL") ||
+      paymentStateHint.includes("fail") ||
+      paymentStateHint.includes("cancel")
     ) {
       if (!wasPaid) {
         order.payment_status = "failed";
-        order.failureReason = "PhonePe payment failed";
+        clientPaymentState = inferPaymentFailureKind({
+          hint: paymentStateHint,
+          state: normalizedState,
+          raw: verifiedStatus.raw,
+        });
+        order.failureReason = buildPaymentFailureReason({
+          provider: PAYMENT_PROVIDERS.PHONEPE,
+          failureKind: clientPaymentState,
+        });
         await releaseInventory(order, "PHONEPE_WEBHOOK");
         orderMutated = true;
       }
@@ -4045,8 +4360,10 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     ) {
       if (!wasPaid) {
         order.payment_status = "pending";
+        clearOrderPaymentReminderState(order);
         orderMutated = true;
       }
+      clientPaymentState = "pending";
     } else {
       logger.warn("handlePhonePeWebhook", "Unknown payment state", {
         merchantTransactionId,
@@ -4056,7 +4373,11 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
     }
 
     if (!orderMutated) {
-      return sendSuccess(res, {}, "Webhook already processed");
+      return sendSuccess(
+        res,
+        { orderId: order._id, paymentState: clientPaymentState },
+        "Webhook already processed",
+      );
     }
 
     order.updatedAt = new Date();
@@ -4077,6 +4398,13 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
         webhookContext: "handlePhonePeWebhook",
         shipmentSource: "PHONEPE_WEBHOOK_AUTO_SHIPMENT",
       });
+    } else if (clientPaymentState === "failed" || clientPaymentState === "cancelled") {
+      await maybeSendOrderPaymentReminderEmail({
+        order,
+        failureKind: clientPaymentState,
+        paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+        logContext: "handlePhonePeWebhook",
+      });
     }
 
     syncOrderToFirestore(order, "update").catch((err) =>
@@ -4088,7 +4416,11 @@ export const handlePhonePeWebhook = asyncHandler(async (req, res) => {
 
     emitOrderStatusUpdate(order, "PHONEPE_WEBHOOK");
 
-    return sendSuccess(res, {}, "Webhook processed");
+    return sendSuccess(
+      res,
+      { orderId: order._id, paymentState: clientPaymentState },
+      "Webhook processed",
+    );
   } catch (error) {
     logger.error("handlePhonePeWebhook", "Webhook processing error", {
       error: error.message,

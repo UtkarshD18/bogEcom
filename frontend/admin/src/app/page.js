@@ -5,13 +5,7 @@ import { getData } from "@/utils/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import {
-  FiGrid,
-  FiImage,
-  FiPackage,
-  FiShoppingCart,
-  FiUsers,
-} from "react-icons/fi";
+import { FiGrid, FiImage, FiPackage, FiShoppingCart, FiUsers } from "react-icons/fi";
 import { MdOutlineSlideshow } from "react-icons/md";
 import { RiVipCrownLine } from "react-icons/ri";
 
@@ -56,7 +50,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push("/login");
+      router.replace("/login");
     }
   }, [isAuthenticated, loading, router]);
 
