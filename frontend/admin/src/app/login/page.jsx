@@ -45,12 +45,11 @@ const Login = () => {
       email: user.email,
       avatar: user.photoURL || "",
       mobile: "",
-      role: "Admin",
       googleId: user.uid,
     };
 
     const backendResponse = await postData(
-      "/api/user/authWithGoogle",
+      "/api/admin/google-login",
       googleUserData,
     );
 
@@ -119,6 +118,12 @@ const Login = () => {
 
     if (!email || !password) {
       setError("Please fill in all fields");
+      setIsLoading(false);
+      return;
+    }
+
+    if (String(email || "").trim().toLowerCase() !== "admin@buyonegram.com") {
+      setError("Access denied. Admin privileges required.");
       setIsLoading(false);
       return;
     }
@@ -202,11 +207,6 @@ const Login = () => {
             <Link href={"/login"}>
               <Button className="!bg-gray-100 !px-5 !py-2 !rounded-full !border !text-gray-800">
                 SIGN IN
-              </Button>
-            </Link>
-            <Link href={"/register"}>
-              <Button className="!px-5 !py-2 !rounded-full !border !text-gray-800">
-                SIGN UP
               </Button>
             </Link>
           </div>
@@ -325,14 +325,8 @@ const Login = () => {
 
           <div className="flex items-center justify-between my-3">
             <span className="text-[15px] text-gray-800">
-              Don&apos;t have an account?
+              Admin access is managed by the primary administrator.
             </span>
-            <Link
-              href={"/register"}
-              className="text-blue-600 font-bold text-[15px] hover:text-gray-600"
-            >
-              Sign Up
-            </Link>
           </div>
 
           <Button

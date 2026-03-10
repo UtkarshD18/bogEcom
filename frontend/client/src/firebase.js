@@ -8,7 +8,11 @@ const resolveFirebaseAuthDomain = () => {
 
   if (typeof window !== "undefined") {
     const host = String(window.location.hostname || "").trim().toLowerCase();
-    if (host === "healthyonegram.com" || host === "www.healthyonegram.com") {
+    if (
+      host === "healthyonegram.com" ||
+      host === "www.healthyonegram.com" ||
+      host.endsWith(".healthyonegram.com")
+    ) {
       return "healthyonegram.com";
     }
   }

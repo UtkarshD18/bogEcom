@@ -121,7 +121,7 @@ settingsSchema.statics.defaultSettings = [
       startDate: new Date(),
       expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       isActive: false,
-      showOncePerSession: true,
+      showOncePerSession: false,
       backgroundColor: "#f7f1ef",
       buttonText: "Shop Now",
       couponCode: "",

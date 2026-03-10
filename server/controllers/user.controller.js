@@ -763,7 +763,7 @@ export async function resendOTPController(req, res) {
 
 export async function authWithGoogle(req, res) {
   try {
-    const { name, avatar, mobile, role, googleId } = req.body;
+    const { name, avatar, mobile, googleId } = req.body;
     const normalizedEmail = normalizeEmail(req.body?.email);
 
     if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
@@ -796,7 +796,7 @@ export async function authWithGoogle(req, res) {
         name: sanitizedName,
         verifyEmail: true, // Fixed field name
         signUpWithGoogle: true,
-        role: role === "Admin" ? "Admin" : "User",
+        role: "User",
         avatar: avatar || "",
         mobile: mobile || "",
         googleId: googleId || null,
