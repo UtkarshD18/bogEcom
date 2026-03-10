@@ -30,10 +30,6 @@ import {
   normalizeStateValue,
   validateAddressForm as validateStructuredAddressForm,
 } from "@/utils/addressForm";
-import {
-  clearPendingCouponCode,
-  readPendingCouponCode,
-} from "@/utils/couponIntent";
 import { trackEvent } from "@/utils/analyticsTracker";
 import { calculateOrderTotals } from "@/utils/calculateOrderTotals.mjs";
 import { round2 } from "@/utils/gst";
@@ -159,7 +155,6 @@ const Checkout = () => {
   const [couponLoading, setCouponLoading] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState("");
-  const [couponIntentProcessed, setCouponIntentProcessed] = useState(false);
 
   // Affiliate State
   const [affiliateData, setAffiliateData] = useState(null);
@@ -933,49 +928,6 @@ const Checkout = () => {
 
   // Validate coupon with backend
   const handleApplyCoupon = () => applyCouponCode(couponCode, { source: "manual" });
-
-  // Consume queued coupon intent from notification toast and auto-apply once.
-  useEffect(() => {
-    if (couponIntentProcessed) return;
-    if (couponLoading) return;
-    if (appliedCoupon?.code) {
-      setCouponIntentProcessed(true);
-      return;
-    }
-
-    const pendingCouponCode = readPendingCouponCode();
-    if (!pendingCouponCode) {
-      setCouponIntentProcessed(true);
-      return;
-    }
-
-    // If cart is still empty/loading, keep intent and wait until products exist.
-    if (!Array.isArray(cartItems) || cartItems.length === 0) {
-      setCouponCode((prev) => prev || pendingCouponCode);
-      return;
-    }
-
-    let isDisposed = false;
-    const run = async () => {
-      setCouponCode((prev) => prev || pendingCouponCode);
-      await applyCouponCode(pendingCouponCode, { source: "intent" });
-      if (isDisposed) return;
-      clearPendingCouponCode();
-      setCouponIntentProcessed(true);
-    };
-
-    void run();
-
-    return () => {
-      isDisposed = true;
-    };
-  }, [
-    appliedCoupon?.code,
-    applyCouponCode,
-    cartItems,
-    couponIntentProcessed,
-    couponLoading,
-  ]);
 
   // Remove applied coupon
   const handleRemoveCoupon = () => {
