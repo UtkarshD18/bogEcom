@@ -1,3 +1,7 @@
+/**
+ * Automated Shipping Service
+ * Handles automatic Xpressbees shipment creation after payment confirmation.
+ */
 import OrderModel from "../models/order.model.js";
 import { sendEmail } from "../config/emailService.js";
 import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
