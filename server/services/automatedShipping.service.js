@@ -721,12 +721,16 @@ export const autoCreateShipmentForPaidOrder = async ({
 
   const readiness = validateReadyForShipping(order);
   if (!readiness.ok) {
-    logger.info("autoShipping", "Skipped auto shipment booking", {
+    const isConfigIssue =
+      readiness.reason === "PICKUP_CONFIGURATION_MISSING" ||
+      readiness.reason === "DEMO_ORDER_SHIPPING_DISABLED";
+    const logLevel = isConfigIssue ? "error" : "info";
+    logger[logLevel]("autoShipping", "Skipped auto shipment booking", {
       orderId: order._id,
       reason: readiness.reason,
       source,
     });
-    return { ok: true, skipped: true, reason: readiness.reason, order };
+    return { ok: false, skipped: true, reason: readiness.reason, order };
   }
 
   const shipmentPayload = buildShipmentPayload(order, readiness);
