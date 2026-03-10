@@ -168,6 +168,18 @@ export const mapAddressResponseToForm = (address = {}) =>
     isDefault: Boolean(address.is_default ?? address.selected),
   });
 
+const coerceAddressForm = (value = {}) => {
+  if (!value || typeof value !== "object") return createEmptyAddressForm();
+
+  const isFormShape =
+    Object.prototype.hasOwnProperty.call(value, "fullName") ||
+    Object.prototype.hasOwnProperty.call(value, "mobileNumber") ||
+    Object.prototype.hasOwnProperty.call(value, "flatHouse") ||
+    Object.prototype.hasOwnProperty.call(value, "areaStreetSector");
+
+  return isFormShape ? createEmptyAddressForm(value) : mapAddressResponseToForm(value);
+};
+
 export const validateAddressForm = (form = {}, { requireEmail = false } = {}) => {
   const errors = {};
   if (!normalizeText(form.fullName)) {
@@ -210,7 +222,7 @@ export const validateAddressForm = (form = {}, { requireEmail = false } = {}) =>
 };
 
 export const buildAddressPayload = ({ form, location }) => {
-  const normalized = mapAddressResponseToForm(form);
+  const normalized = coerceAddressForm(form);
   return {
     full_name: normalizeText(normalized.fullName),
     mobile_number: normalizeMobileNumber(normalized.mobileNumber),
@@ -232,7 +244,7 @@ export const buildAddressPayload = ({ form, location }) => {
 };
 
 export const buildGuestDetailsPayload = ({ form, gstNumber = "" }) => {
-  const normalized = mapAddressResponseToForm(form);
+  const normalized = coerceAddressForm(form);
   return {
     fullName: normalizeText(normalized.fullName),
     phone: normalizeMobileNumber(normalized.mobileNumber),

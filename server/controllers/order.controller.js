@@ -853,14 +853,40 @@ const extractPaytmWebhookFields = (payload = {}) => {
     null;
 
   const state =
-    resultInfo?.resultStatus ||
+    payload?.txnStatus ||
+    payload?.TXNSTATUS ||
+    payload?.transactionStatus ||
+    payload?.transaction_status ||
     payload?.STATUS ||
     payload?.status ||
     payload?.state ||
     payload?.resultStatus ||
+    resultInfo?.resultStatus ||
     null;
 
   return { merchantTransactionId, transactionId, state };
+};
+
+const normalizePaytmState = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "s") return "success";
+  if (normalized === "f") return "fail";
+  if (normalized === "p") return "pending";
+  if (normalized === "u") return "pending";
+  if (normalized.includes("success")) return "success";
+  if (normalized.includes("fail")) return "fail";
+  if (normalized.includes("pending")) return "pending";
+  if (normalized.includes("cancel")) return "fail";
+  return "";
+};
+
+const resolvePaytmState = (...candidates) => {
+  for (const candidate of candidates) {
+    const normalized = normalizePaytmState(candidate);
+    if (normalized) return normalized;
+  }
+  return "";
 };
 
 const extractOrderIdFromMerchantTransactionId = (merchantTransactionId) => {
@@ -3953,11 +3979,10 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
 
     const transactionId =
       verifiedStatus.transactionId || webhookData.transactionId || null;
-    const normalizedState = String(
-      verifiedStatus.state || webhookData.state || "",
-    )
-      .toLowerCase()
-      .trim();
+    const normalizedState = resolvePaytmState(
+      verifiedStatus.state,
+      webhookData.state,
+    );
     const wasPaid = order.payment_status === "paid";
     let orderMutated = false;
 
@@ -3972,7 +3997,7 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
       orderMutated = true;
     }
 
-    if (normalizedState.includes("success")) {
+    if (normalizedState === "success") {
       if (!wasPaid) {
         order.payment_status = "paid";
         applyOrderStatusTransition(order, ORDER_STATUS.ACCEPTED, {
@@ -3981,14 +4006,14 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
         await confirmInventory(order, "PAYMENT_WEBHOOK");
         orderMutated = true;
       }
-    } else if (normalizedState.includes("fail")) {
+    } else if (normalizedState === "fail") {
       if (!wasPaid) {
         order.payment_status = "failed";
         order.failureReason = "Paytm payment failed";
         await releaseInventory(order, "PAYMENT_WEBHOOK");
         orderMutated = true;
       }
-    } else if (normalizedState.includes("pending")) {
+    } else if (normalizedState === "pending") {
       if (!wasPaid) {
         order.payment_status = "pending";
         orderMutated = true;
