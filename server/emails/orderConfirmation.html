@@ -1,42 +1,190 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Order Confirmation</title>
-</head>
-<body style="margin:0;padding:0;background:#f6f2ec;font-family:Segoe UI,Arial,sans-serif;color:#222;">
-  <div style="max-width:640px;margin:0 auto;background:#fff;">
-    <div style="padding:28px 24px;background:#1f3d5b;color:#fff;">
-      <h1 style="margin:0;font-size:24px;">Order Confirmation</h1>
-      <p style="margin:10px 0 0;font-size:14px;opacity:.95;">Your order has been created successfully.</p>
-    </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Order Confirmation</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background: #f6f1ea;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #1c1c1c;
+    "
+  >
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td align="center" style="padding: 32px 12px">
+          <table
+            role="presentation"
+            width="640"
+            cellspacing="0"
+            cellpadding="0"
+            style="
+              width: 100%;
+              max-width: 640px;
+              background: #ffffff;
+              border-radius: 18px;
+              overflow: hidden;
+              border: 1px solid #eadfd4;
+            "
+          >
+            <tr>
+              <td
+                style="
+                  padding: 24px 28px;
+                  background: linear-gradient(135deg, #2b6b4e 0%, #1f3d5b 100%);
+                  color: #ffffff;
+                "
+              >
+                <div
+                  style="
+                    font-size: 12px;
+                    letter-spacing: 2px;
+                    text-transform: uppercase;
+                    opacity: 0.9;
+                  "
+                >
+                  HealthyOneGram
+                </div>
+                <h1 style="margin: 8px 0 0; font-size: 26px; line-height: 1.2">
+                  Order Confirmed
+                </h1>
+                <p style="margin: 8px 0 0; font-size: 14px; opacity: 0.95">
+                  Your order has been created successfully.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 26px 28px">
+                <p style="margin: 0 0 6px">
+                  Hello <strong>{{customer_name}}</strong>,
+                </p>
+                <p style="margin: 0 0 12px">
+                  Order No. <strong>{{order_number}}</strong> was created on
+                  <strong>{{order_date}}</strong>.
+                </p>
 
-    <div style="padding:24px;">
-      <p style="margin:0 0 10px;">Hello <strong>{{customer_name}}</strong>,</p>
-      <p style="margin:0 0 10px;">Order No. <strong>{{order_number}}</strong> was created on <strong>{{order_date}}</strong>.</p>
-      <p style="margin:0 0 14px;font-size:13px;color:#555;">Reference Order ID: <strong>{{order_id}}</strong></p>
-      <p style="margin:0 0 14px;">Order status: <strong>{{order_status}}</strong> | Payment status: <strong>{{payment_status}}</strong></p>
+                <div
+                  style="
+                    background: #f9f5f0;
+                    border-left: 4px solid #2b6b4e;
+                    padding: 12px 14px;
+                    border-radius: 12px;
+                    margin: 12px 0 16px;
+                  "
+                >
+                  <p style="margin: 0 0 6px; font-weight: 700">Order Snapshot</p>
+                  <p style="margin: 0; font-size: 13px; color: #51443a">
+                    Reference Order ID: <strong>{{order_id}}</strong><br />
+                    Order status: <strong>{{order_status}}</strong> |
+                    Payment status: <strong>{{payment_status}}</strong>
+                  </p>
+                </div>
 
-      <h3 style="margin:18px 0 8px;font-size:16px;">Items</h3>
-      <pre style="white-space:pre-wrap;background:#f8f8f8;padding:12px;border-radius:6px;font-size:13px;line-height:1.5;margin:0 0 16px;">{{items_text}}</pre>
+                <h3 style="margin: 18px 0 10px; font-size: 16px">
+                  Items in your order
+                </h3>
+                <div
+                  style="
+                    background: #ffffff;
+                    border: 1px solid #ece3d8;
+                    border-radius: 12px;
+                    padding: 12px;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    white-space: pre-line;
+                  "
+                >
+                  {{items_text}}
+                </div>
 
-      <table style="width:100%;border-collapse:collapse;font-size:14px;">
-        <tr><td style="padding:6px 0;">Subtotal</td><td style="text-align:right;padding:6px 0;">{{subtotal}}</td></tr>
-        <tr><td style="padding:6px 0;">Discount</td><td style="text-align:right;padding:6px 0;">{{discount}}</td></tr>
-        <tr><td style="padding:6px 0;">Taxable Amount</td><td style="text-align:right;padding:6px 0;">{{taxable_amount}}</td></tr>
-        <tr><td style="padding:6px 0;">GST</td><td style="text-align:right;padding:6px 0;">{{tax_amount}}</td></tr>
-        <tr><td style="padding:6px 0;">Shipping</td><td style="text-align:right;padding:6px 0;">{{shipping_amount}}</td></tr>
-        <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #ddd;">Final Amount</td><td style="text-align:right;padding:10px 0;font-weight:700;border-top:1px solid #ddd;">{{final_amount}}</td></tr>
-      </table>
+                <table
+                  role="presentation"
+                  width="100%"
+                  cellspacing="0"
+                  cellpadding="0"
+                  style="font-size: 14px; margin-top: 18px"
+                >
+                  <tr>
+                    <td style="padding: 6px 0">Subtotal</td>
+                    <td style="padding: 6px 0; text-align: right">{{subtotal}}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0">Discount</td>
+                    <td style="padding: 6px 0; text-align: right">{{discount}}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0">Taxable Amount</td>
+                    <td style="padding: 6px 0; text-align: right">
+                      {{taxable_amount}}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0">GST</td>
+                    <td style="padding: 6px 0; text-align: right">{{tax_amount}}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0">Shipping</td>
+                    <td style="padding: 6px 0; text-align: right">
+                      {{shipping_amount}}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      style="
+                        padding: 10px 0;
+                        font-weight: 700;
+                        border-top: 1px solid #e6ded3;
+                      "
+                    >
+                      Final Amount
+                    </td>
+                    <td
+                      style="
+                        padding: 10px 0;
+                        text-align: right;
+                        font-weight: 700;
+                        border-top: 1px solid #e6ded3;
+                      "
+                    >
+                      {{final_amount}}
+                    </td>
+                  </tr>
+                </table>
 
-      <p style="margin:18px 0 0;">Track your account at <a href="{{site_url}}" style="color:#1f3d5b;">{{site_url}}</a>.</p>
-      <p style="margin:8px 0 0;">Support: <a href="{{support_url}}" style="color:#1f3d5b;">{{support_contact}}</a></p>
-    </div>
-
-    <div style="padding:18px 24px;background:#f3f3f3;font-size:12px;color:#666;">
-      <p style="margin:0;">&copy; {{year}} HealthyOneGram</p>
-    </div>
-  </div>
-</body>
+                <p style="margin: 16px 0 0; font-size: 13px; color: #6b5b4d">
+                  Track your order at
+                  <a href="{{site_url}}" style="color: #2b6b4e">{{site_url}}</a
+                  >.
+                </p>
+                <p style="margin: 6px 0 0; font-size: 13px; color: #6b5b4d">
+                  Support:
+                  <a href="{{support_url}}" style="color: #2b6b4e"
+                    >{{support_contact}}</a
+                  >
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td
+                style="
+                  padding: 16px 28px;
+                  background: #f3ebe1;
+                  font-size: 12px;
+                  color: #6b5b4d;
+                "
+              >
+                <p style="margin: 0">
+                  &copy; {{year}} HealthyOneGram. All rights reserved.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>

@@ -1,33 +1,137 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Order Cancelled</title>
-</head>
-<body style="margin:0;padding:0;background:#f6f2ec;font-family:Segoe UI,Arial,sans-serif;color:#222;">
-  <div style="max-width:640px;margin:0 auto;background:#fff;">
-    <div style="padding:28px 24px;background:#7c2d12;color:#fff;">
-      <h1 style="margin:0;font-size:24px;">Order Cancelled</h1>
-      <p style="margin:10px 0 0;font-size:14px;opacity:.95;">Your order has been cancelled.</p>
-    </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Order Cancelled</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background: #f6f1ea;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #1c1c1c;
+    "
+  >
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td align="center" style="padding: 32px 12px">
+          <table
+            role="presentation"
+            width="640"
+            cellspacing="0"
+            cellpadding="0"
+            style="
+              width: 100%;
+              max-width: 640px;
+              background: #ffffff;
+              border-radius: 18px;
+              overflow: hidden;
+              border: 1px solid #eadfd4;
+            "
+          >
+            <tr>
+              <td
+                style="
+                  padding: 24px 28px;
+                  background: linear-gradient(135deg, #6b3f2a 0%, #3f2a20 100%);
+                  color: #ffffff;
+                "
+              >
+                <div
+                  style="
+                    font-size: 12px;
+                    letter-spacing: 2px;
+                    text-transform: uppercase;
+                    opacity: 0.9;
+                  "
+                >
+                  HealthyOneGram
+                </div>
+                <h1 style="margin: 8px 0 0; font-size: 26px; line-height: 1.2">
+                  Order Cancelled
+                </h1>
+                <p style="margin: 8px 0 0; font-size: 14px; opacity: 0.95">
+                  Your order has been cancelled.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 26px 28px">
+                <p style="margin: 0 0 6px">
+                  Hello <strong>{{customer_name}}</strong>,
+                </p>
+                <p style="margin: 0 0 12px">
+                  Order No. <strong>{{order_number}}</strong> has been cancelled.
+                </p>
 
-    <div style="padding:24px;">
-      <p style="margin:0 0 10px;">Hello <strong>{{customer_name}}</strong>,</p>
-      <p style="margin:0 0 10px;">Order No. <strong>{{order_number}}</strong> has been cancelled.</p>
-      <p style="margin:0 0 14px;font-size:13px;color:#555;">Reference Order ID: <strong>{{order_id}}</strong></p>
-      <p style="margin:0 0 14px;">Status: <strong>{{order_status}}</strong></p>
+                <div
+                  style="
+                    background: #f9f5f0;
+                    border-left: 4px solid #6b3f2a;
+                    padding: 12px 14px;
+                    border-radius: 12px;
+                    margin: 12px 0 16px;
+                  "
+                >
+                  <p style="margin: 0 0 6px; font-weight: 700">Order Summary</p>
+                  <p style="margin: 0; font-size: 13px; color: #51443a">
+                    Reference Order ID: <strong>{{order_id}}</strong><br />
+                    Order date: <strong>{{order_date}}</strong><br />
+                    Status: <strong>{{order_status}}</strong>
+                  </p>
+                </div>
 
-      <h3 style="margin:18px 0 8px;font-size:16px;">Items</h3>
-      <pre style="white-space:pre-wrap;background:#f8f8f8;padding:12px;border-radius:6px;font-size:13px;line-height:1.5;margin:0 0 16px;">{{items_text}}</pre>
+                <h3 style="margin: 18px 0 10px; font-size: 16px">
+                  Items in your order
+                </h3>
+                <div
+                  style="
+                    background: #ffffff;
+                    border: 1px solid #ece3d8;
+                    border-radius: 12px;
+                    padding: 12px;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    white-space: pre-line;
+                  "
+                >
+                  {{items_text}}
+                </div>
 
-      <p style="margin:18px 0 0;">You can visit <a href="{{site_url}}" style="color:#7c2d12;">{{site_url}}</a> to place a new order.</p>
-      <p style="margin:8px 0 0;">Support: <a href="{{support_url}}" style="color:#7c2d12;">{{support_contact}}</a></p>
-    </div>
-
-    <div style="padding:18px 24px;background:#f3f3f3;font-size:12px;color:#666;">
-      <p style="margin:0;">&copy; {{year}} HealthyOneGram</p>
-    </div>
-  </div>
-</body>
+                <p style="margin: 16px 0 0; font-size: 13px; color: #6b5b4d">
+                  Need help or want to place a new order?
+                  <a href="{{site_url}}" style="color: #6b3f2a"
+                    >Visit our store</a
+                  >
+                  or contact support.
+                </p>
+                <p style="margin: 6px 0 0; font-size: 13px; color: #6b5b4d">
+                  Support:
+                  <a href="{{support_url}}" style="color: #6b3f2a"
+                    >{{support_contact}}</a
+                  >
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td
+                style="
+                  padding: 16px 28px;
+                  background: #f3ebe1;
+                  font-size: 12px;
+                  color: #6b5b4d;
+                "
+              >
+                <p style="margin: 0">
+                  &copy; {{year}} HealthyOneGram. All rights reserved.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>

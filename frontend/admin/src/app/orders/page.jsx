@@ -60,6 +60,65 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
     .trim()
     .toUpperCase();
   const internalOrderId = String(order?._id || order?.id || "").trim();
+  const guestDetails = order?.guestDetails || {};
+  const billingDetails = order?.billingDetails || {};
+  const addressSnapshot = order?.deliveryAddressSnapshot || {};
+  const deliveryAddress = order?.delivery_address || null;
+  const customerName =
+    order?.user?.name ||
+    guestDetails.fullName ||
+    billingDetails.fullName ||
+    addressSnapshot.order_name ||
+    "Guest";
+  const customerEmail =
+    order?.user?.email ||
+    guestDetails.email ||
+    billingDetails.email ||
+    addressSnapshot.email ||
+    "N/A";
+  const customerPhone =
+    order?.user?.mobile ||
+    guestDetails.phone ||
+    billingDetails.phone ||
+    addressSnapshot.order_mobile ||
+    deliveryAddress?.mobile ||
+    deliveryAddress?.mobile_number ||
+    "N/A";
+  const addressLine1 =
+    deliveryAddress?.address_line1 ||
+    deliveryAddress?.address_line ||
+    addressSnapshot.address_line1 ||
+    addressSnapshot.full_address ||
+    guestDetails.address ||
+    billingDetails.address ||
+    "";
+  const addressCity =
+    deliveryAddress?.city ||
+    addressSnapshot.order_city ||
+    guestDetails.city ||
+    billingDetails.city ||
+    "";
+  const addressState =
+    deliveryAddress?.state ||
+    addressSnapshot.order_state ||
+    guestDetails.state ||
+    billingDetails.state ||
+    "";
+  const addressDisplay = addressLine1
+    ? `${addressLine1}${
+        addressCity || addressState
+          ? `, ${[addressCity, addressState].filter(Boolean).join(", ")}`
+          : ""
+      }`
+    : "No address";
+  const addressTypeLabel =
+    deliveryAddress?.addressType || (addressLine1 ? "Guest" : "Home");
+  const pincodeDisplay =
+    deliveryAddress?.pincode ||
+    addressSnapshot.order_pincode ||
+    guestDetails.pincode ||
+    billingDetails.pincode ||
+    "N/A";
 
   const copyToClipboard = async (value, label = "value") => {
     const safeValue = String(value || "").trim();
@@ -260,10 +319,10 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             </div>
             <div className="info flex flex-col gap-0 min-w-0">
               <span className="text-gray-800 text-[14px] truncate">
-                {order?.user?.name || "Customer Name"}
+                {customerName}
               </span>
               <span className="text-gray-500 text-[13px] break-all leading-5">
-                {order?.user?.email || "customer@email.com"}
+                {customerEmail}
               </span>
             </div>
           </div>
@@ -272,22 +331,20 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
           {order?.paymentId || "N/A"}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2 break-all">
-          {order?.user?.mobile || order?.delivery_address?.mobile || "N/A"}
+          {customerPhone}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
           <div className="max-w-[190px] py-2">
             <span className="bg-gray-100 rounded-md px-2 py-1 border border-[rgba(0,0,0,0.1)]">
-              {order?.delivery_address?.addressType || "Home"}
+              {addressTypeLabel}
             </span>
             <p className="pt-2 break-words leading-6">
-              {order?.delivery_address
-                ? `${order.delivery_address.address_line1 || order.delivery_address.address_line || ""}, ${order.delivery_address.city || ""}, ${order.delivery_address.state || ""}`
-                : "No address"}
+              {addressDisplay}
             </p>
           </div>
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
-          {order?.delivery_address?.pincode || "N/A"}
+          {pincodeDisplay}
         </td>
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
           ₹{order?.finalAmount || order?.totalAmt || "0"}
