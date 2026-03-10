@@ -133,23 +133,33 @@ const normalizeText = (value, fallback = "") => {
 
 const resolveAddress = (order) => {
   const snapshot = order?.deliveryAddressSnapshot || null;
+  const delivery = order?.delivery_address || {};
+  const billing = order?.billingDetails || {};
+  const guest = order?.guestDetails || {};
+  const fallbackPhone = normalizePhone(
+    delivery?.mobile ||
+      delivery?.mobile_number ||
+      billing?.phone ||
+      guest?.phone ||
+      order?.user?.mobile ||
+      "",
+  );
+  const fallbackEmail = normalizeText(
+    billing?.email || guest?.email || order?.user?.email || "",
+  ).toLowerCase();
   if (snapshot) {
     const display = snapshotToDisplayAddress(snapshot);
     return {
       name: display.name,
-      phone: display.mobile,
+      phone: display.mobile || fallbackPhone,
       addressLine1: display.address_line1,
       addressLine2: display.address_line2 || "",
       city: display.city,
       state: display.state,
       pincode: display.pincode,
-      email: display.email,
+      email: display.email || fallbackEmail,
     };
   }
-
-  const delivery = order?.delivery_address || {};
-  const billing = order?.billingDetails || {};
-  const guest = order?.guestDetails || {};
 
   const name = normalizeText(
     delivery?.name || billing?.fullName || guest?.fullName || "Customer",

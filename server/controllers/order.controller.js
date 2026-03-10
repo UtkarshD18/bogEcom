@@ -803,6 +803,181 @@ const sendOrderConfirmationEmail = async (order) => {
   }
 };
 
+const sendOrderPaymentSuccessEmail = async (
+  order,
+  { paymentProvider = null } = {},
+) => {
+  try {
+    const recipientEmail = String(
+      order?.billingDetails?.email ||
+        order?.guestDetails?.email ||
+        order?.user?.email ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (!recipientEmail) {
+      return false;
+    }
+
+    const customerName =
+      String(
+        order?.billingDetails?.fullName ||
+          order?.guestDetails?.fullName ||
+          order?.user?.name ||
+          "Customer",
+      ).trim() || "Customer";
+    const rawOrderId = String(order?._id || "").trim();
+    const displayOrderNumber = resolveDisplayOrderNumber(order);
+    const supportContact = "healthyonegram.com";
+    const supportUrl = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportContact)
+      ? `mailto:${supportContact}`
+      : /^https?:\/\//i.test(supportContact)
+        ? supportContact
+        : `https://${supportContact.replace(/^\/+/, "")}`;
+    const siteUrl = getPrimaryStoreUrl();
+    const actionUrl =
+      order?.user && rawOrderId
+        ? `${siteUrl}/orders/${encodeURIComponent(rawOrderId)}`
+        : siteUrl;
+    const providerLabel = resolvePaymentProviderLabel(
+      paymentProvider || order?.paymentMethod,
+    );
+    const finalAmount = round2(
+      Number(order?.finalAmount || order?.totalAmt || 0),
+    );
+
+    const text = [
+      `Order No: ${displayOrderNumber}`,
+      `Order ID: ${rawOrderId || "N/A"}`,
+      `Payment provider: ${providerLabel}`,
+      `Payment status: paid`,
+      `Final Amount: ${formatInr(finalAmount)}`,
+      `Open: ${actionUrl}`,
+      `Support: ${supportContact}`,
+    ].join("\n");
+
+    const result = await sendTemplatedEmail({
+      to: recipientEmail,
+      subject: `Payment Received - ${displayOrderNumber}`,
+      templateFile: "orderPaymentSuccess.html",
+      templateData: {
+        customer_name: customerName,
+        order_number: displayOrderNumber,
+        order_id: rawOrderId || "N/A",
+        order_date: formatOrderDateForEmail(order?.createdAt),
+        order_status: String(order?.order_status || "accepted"),
+        payment_provider: providerLabel,
+        items_text: stringifyOrderItemsForEmail(order),
+        final_amount: formatInr(finalAmount),
+        action_url: actionUrl,
+        site_url: siteUrl,
+        support_contact: supportContact,
+        support_url: supportUrl,
+        year: String(new Date().getFullYear()),
+      },
+      text,
+      context: "order.payment_success",
+    });
+
+    if (!result?.success) {
+      logger.warn("sendOrderPaymentSuccessEmail", "Email send failed", {
+        orderId: order?._id,
+        recipientEmail,
+        error: result?.error || "Unknown error",
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error("sendOrderPaymentSuccessEmail", "Unexpected email error", {
+      orderId: order?._id,
+      error: error?.message || String(error),
+    });
+    return false;
+  }
+};
+
+const sendOrderCancelledEmail = async (order) => {
+  try {
+    const recipientEmail = String(
+      order?.billingDetails?.email ||
+        order?.guestDetails?.email ||
+        order?.user?.email ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (!recipientEmail) {
+      return false;
+    }
+
+    const customerName =
+      String(
+        order?.billingDetails?.fullName ||
+          order?.guestDetails?.fullName ||
+          order?.user?.name ||
+          "Customer",
+      ).trim() || "Customer";
+    const rawOrderId = String(order?._id || "").trim();
+    const displayOrderNumber = resolveDisplayOrderNumber(order);
+    const supportContact = "healthyonegram.com";
+    const supportUrl = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportContact)
+      ? `mailto:${supportContact}`
+      : /^https?:\/\//i.test(supportContact)
+        ? supportContact
+        : `https://${supportContact.replace(/^\/+/, "")}`;
+    const siteUrl = getPrimaryStoreUrl();
+
+    const text = [
+      `Order No: ${displayOrderNumber}`,
+      `Order ID: ${rawOrderId || "N/A"}`,
+      `Status: cancelled`,
+      `Support: ${supportContact}`,
+    ].join("\n");
+
+    const result = await sendTemplatedEmail({
+      to: recipientEmail,
+      subject: `Order Cancelled - ${displayOrderNumber}`,
+      templateFile: "orderCancelled.html",
+      templateData: {
+        customer_name: customerName,
+        order_number: displayOrderNumber,
+        order_id: rawOrderId || "N/A",
+        order_date: formatOrderDateForEmail(order?.createdAt),
+        order_status: "cancelled",
+        items_text: stringifyOrderItemsForEmail(order),
+        site_url: siteUrl,
+        support_contact: supportContact,
+        support_url: supportUrl,
+        year: String(new Date().getFullYear()),
+      },
+      text,
+      context: "order.cancelled",
+    });
+
+    if (!result?.success) {
+      logger.warn("sendOrderCancelledEmail", "Email send failed", {
+        orderId: order?._id,
+        recipientEmail,
+        error: result?.error || "Unknown error",
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error("sendOrderCancelledEmail", "Unexpected email error", {
+      orderId: order?._id,
+      error: error?.message || String(error),
+    });
+    return false;
+  }
+};
+
 const clearOrderPaymentReminderState = (order) => {
   if (!order) return;
   order.paymentReminderEmailSentAt = null;
@@ -2686,6 +2861,15 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
         logger.error("updateOrderStatus", "Failed to send notification", {
           orderId: id,
           error: err.message,
+        }),
+      );
+    }
+
+    if (transition.updated && normalizedNewStatus === ORDER_STATUS.CANCELLED) {
+      sendOrderCancelledEmail(order).catch((err) =>
+        logger.error("updateOrderStatus", "Failed to send cancellation email", {
+          orderId: id,
+          error: err?.message || String(err),
         }),
       );
     }
@@ -4619,6 +4803,15 @@ const applyResolvedPaymentStatus = async ({
       webhookContext: logContext,
       shipmentSource,
     });
+
+    sendOrderPaymentSuccessEmail(order, {
+      paymentProvider,
+    }).catch((err) =>
+      logger.error(logContext, "Failed to send payment success email", {
+        orderId: order?._id,
+        error: err?.message || String(err),
+      }),
+    );
   }
 
   if (orderMutated || invoiceResult?.ok) {
