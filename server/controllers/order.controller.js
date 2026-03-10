@@ -4206,10 +4206,12 @@ const runPostPaymentSuccessTasks = async ({
     orderId: order._id,
     source: shipmentSource,
   });
-  if (!autoShipmentResult.ok && !autoShipmentResult.skipped) {
-    logger.error(webhookContext, "Automatic shipment booking failed", {
+  if (!autoShipmentResult.ok) {
+    const logLevel = autoShipmentResult.skipped ? "warn" : "error";
+    logger[logLevel](webhookContext, "Automatic shipment booking failed", {
       orderId: order._id,
       reason: autoShipmentResult.reason || "SHIPMENT_CREATION_FAILED",
+      skipped: Boolean(autoShipmentResult.skipped),
       error: autoShipmentResult.error?.message || null,
     });
   }
