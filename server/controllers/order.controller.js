@@ -1441,28 +1441,62 @@ const isBrowserNavigationRequest = (req) => {
   );
 };
 
+const PAYTM_BROWSER_FIELD_KEYS = new Set([
+  "checksumhash",
+  "mid",
+  "orderid",
+  "order_id",
+  "merchanttransactionid",
+  "merchant_order_id",
+  "merchantorderid",
+  "txnid",
+  "txn_id",
+  "txnstatus",
+  "respcode",
+  "respmsg",
+  "status",
+  "resultstatus",
+  "resultcode",
+  "resultmsg",
+]);
+
+const hasPaytmFieldKeys = (payload) => {
+  if (!payload || typeof payload !== "object") return false;
+  return Object.keys(payload).some((key) =>
+    PAYTM_BROWSER_FIELD_KEYS.has(String(key || "").toLowerCase()),
+  );
+};
+
 const isPaytmBrowserCallback = (req) => {
   if (!req) return false;
   const body = req.body && typeof req.body === "object" ? req.body : {};
   const query = req.query && typeof req.query === "object" ? req.query : {};
-  const hasPaytmFields = Boolean(
-    body.CHECKSUMHASH ||
-      body.MID ||
-      body.ORDERID ||
-      body.TXNID ||
-      body.TXNSTATUS ||
-      body.RESPCODE ||
-      body.RESPMSG ||
-      query.CHECKSUMHASH ||
-      query.MID ||
-      query.ORDERID ||
-      query.TXNID ||
-      query.TXNSTATUS ||
-      query.RESPCODE ||
-      query.RESPMSG,
-  );
-  if (!hasPaytmFields) return false;
-  return true;
+  return hasPaytmFieldKeys(body) || hasPaytmFieldKeys(query);
+};
+
+const shouldRedirectPaytm = (req) => {
+  if (!req) return false;
+  if (isBrowserNavigationRequest(req) || isPaytmBrowserCallback(req)) {
+    return true;
+  }
+  if (req.rawBody) {
+    const rawPayload = parsePaytmRawBody(req.rawBody);
+    if (hasPaytmFieldKeys(rawPayload)) {
+      return true;
+    }
+  }
+  const method = String(req.method || "").toUpperCase();
+  if (method === "GET") return true;
+  const accept = String(req.headers?.accept || "").toLowerCase();
+  const userAgent = String(req.headers?.["user-agent"] || "").toLowerCase();
+  const isBrowser =
+    userAgent.includes("mozilla") ||
+    userAgent.includes("chrome") ||
+    userAgent.includes("safari") ||
+    userAgent.includes("firefox") ||
+    userAgent.includes("edg") ||
+    userAgent.includes("opera");
+  return isBrowser && !accept.includes("application/json");
 };
 
 const redirectPaytmWebhookToClient = (res, { orderId, paymentState }) => {
@@ -4889,8 +4923,7 @@ const reconcileOrdersForListing = async ({
 export const handlePaytmWebhook = asyncHandler(async (req, res) => {
   try {
     logger.debug("handlePaytmWebhook", "Webhook received");
-    const wantsBrowserRedirect =
-      isBrowserNavigationRequest(req) || isPaytmBrowserCallback(req);
+    const wantsBrowserRedirect = shouldRedirectPaytm(req);
     const bodyHasPayload =
       req.body && typeof req.body === "object" && Object.keys(req.body).length > 0;
     const rawBodyPayload =
@@ -5080,7 +5113,7 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     logger.error("handlePaytmWebhook", "Webhook processing error", {
       error: error.message,
     });
-    if (isBrowserNavigationRequest(req) || isPaytmBrowserCallback(req)) {
+    if (shouldRedirectPaytm(req)) {
       const orderIdCandidate =
         req?.body?.ORDERID ||
         req?.body?.orderId ||
