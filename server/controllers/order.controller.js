@@ -1467,11 +1467,24 @@ const hasPaytmFieldKeys = (payload) => {
   );
 };
 
+const resolvePaytmCandidatePayload = (payload) => {
+  if (!payload || typeof payload !== "object") return payload;
+  if (payload.BODY || payload.body) {
+    return decodePaytmWebhookEnvelope(payload);
+  }
+  return payload;
+};
+
 const isPaytmBrowserCallback = (req) => {
   if (!req) return false;
   const body = req.body && typeof req.body === "object" ? req.body : {};
+  const resolvedBody = resolvePaytmCandidatePayload(body);
   const query = req.query && typeof req.query === "object" ? req.query : {};
-  return hasPaytmFieldKeys(body) || hasPaytmFieldKeys(query);
+  return (
+    hasPaytmFieldKeys(body) ||
+    hasPaytmFieldKeys(resolvedBody) ||
+    hasPaytmFieldKeys(query)
+  );
 };
 
 const shouldRedirectPaytm = (req) => {
@@ -1479,9 +1492,20 @@ const shouldRedirectPaytm = (req) => {
   if (isBrowserNavigationRequest(req) || isPaytmBrowserCallback(req)) {
     return true;
   }
+  const referer = String(req.headers?.referer || "").toLowerCase();
+  const origin = String(req.headers?.origin || "").toLowerCase();
+  if (
+    referer.includes("paytm") ||
+    referer.includes("paytmpayments") ||
+    origin.includes("paytm") ||
+    origin.includes("paytmpayments")
+  ) {
+    return true;
+  }
   if (req.rawBody) {
     const rawPayload = parsePaytmRawBody(req.rawBody);
-    if (hasPaytmFieldKeys(rawPayload)) {
+    const resolvedRawPayload = resolvePaytmCandidatePayload(rawPayload);
+    if (hasPaytmFieldKeys(rawPayload) || hasPaytmFieldKeys(resolvedRawPayload)) {
       return true;
     }
   }
