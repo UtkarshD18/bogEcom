@@ -11,6 +11,8 @@ const API_ROOT = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
 const ACTIVE_POPUP_ENDPOINT = `${API_ROOT}/popup/active`;
+const POPUP_SESSION_VERSION = "v1";
+const CTA_COOLDOWN_MINUTES = 30;
 
 const normalizeTarget = (value) => {
   const raw = String(value || "").trim();
@@ -45,6 +47,30 @@ const normalizeCouponCode = (value) =>
     .toUpperCase()
     .replace(/\s+/g, "");
 
+const hashSeed = (value) => {
+  let hash = 0;
+  const str = String(value || "");
+  for (let i = 0; i < str.length; i += 1) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+};
+
+const buildPopupSeed = (popup) =>
+  hashSeed(
+    [
+      String(popup?.id || "").trim(),
+      normalizeCouponCode(popup?.couponCode),
+      String(popup?.title || "").trim(),
+    ].join("|"),
+  );
+
+const getSeenKey = (popup) =>
+  `managed_popup_seen_${POPUP_SESSION_VERSION}_${buildPopupSeed(popup)}`;
+const getCtaKey = (popup) =>
+  `managed_popup_cta_${POPUP_SESSION_VERSION}_${buildPopupSeed(popup)}`;
+
 const ManagedPopup = () => {
   const [popup, setPopup] = useState(null);
   const [visible, setVisible] = useState(false);
@@ -59,7 +85,14 @@ const ManagedPopup = () => {
   const handleDismiss = useCallback(() => {
     setVisible(false);
     setPopup(null);
-  }, []);
+    if (popup) {
+      try {
+        sessionStorage.setItem(getSeenKey(popup), "true");
+      } catch {
+        // Ignore storage failures.
+      }
+    }
+  }, [popup]);
 
   const handleCta = useCallback(() => {
     if (popupCouponCode) {
@@ -67,6 +100,15 @@ const ManagedPopup = () => {
         source: "managed_popup",
         notificationId: popup?.id || "",
       });
+    }
+
+    if (popup) {
+      try {
+        sessionStorage.setItem(getSeenKey(popup), "true");
+        sessionStorage.setItem(getCtaKey(popup), Date.now().toString());
+      } catch {
+        // Ignore storage failures.
+      }
     }
 
     if (!isClickable) {
@@ -78,7 +120,7 @@ const ManagedPopup = () => {
     if (typeof window !== "undefined") {
       window.location.assign(targetUrl);
     }
-  }, [handleDismiss, isClickable, popup?.id, popupCouponCode, targetUrl]);
+  }, [handleDismiss, isClickable, popup, popupCouponCode, targetUrl]);
 
   useEffect(() => {
     let disposed = false;
@@ -97,6 +139,26 @@ const ManagedPopup = () => {
         const nextPopup =
           payload?.data && typeof payload.data === "object" ? payload.data : null;
         if (!nextPopup || disposed) return;
+
+        const shouldShowOnce =
+          nextPopup?.showOncePerSession === true ||
+          nextPopup?.showOncePerSession === "true";
+        try {
+          const seenKey = getSeenKey(nextPopup);
+          const ctaKey = getCtaKey(nextPopup);
+          const seenValue = sessionStorage.getItem(seenKey);
+          const ctaValue = sessionStorage.getItem(ctaKey);
+          const ctaTimestamp = Number.parseInt(ctaValue || "", 10);
+          const inCtaCooldown =
+            Number.isFinite(ctaTimestamp) &&
+            Date.now() - ctaTimestamp < CTA_COOLDOWN_MINUTES * 60 * 1000;
+
+          if ((shouldShowOnce && seenValue === "true") || inCtaCooldown) {
+            return;
+          }
+        } catch {
+          // Ignore storage failures and allow popup to render.
+        }
 
         setPopup(nextPopup);
         showTimer = window.setTimeout(() => {
