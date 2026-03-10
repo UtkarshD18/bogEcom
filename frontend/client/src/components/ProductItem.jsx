@@ -1,5 +1,6 @@
 "use client";
 
+import { formatPrice } from "@/config/siteConfig";
 import { useCart } from "@/context/CartContext";
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { useWishlist } from "@/context/WishlistContext";
@@ -182,9 +183,13 @@ const ProductItem = (props) => {
                 <div className="mt-auto flex items-end justify-between pt-3">
                     <div>
                         {displayOriginalPrice > displayPrice && (
-                            <span className="block text-[10px] font-medium text-gray-400 line-through">₹{displayOriginalPrice}</span>
+                            <span className="block text-[10px] font-medium text-gray-400 line-through">
+                                {formatPrice(Number(displayOriginalPrice || 0))}
+                            </span>
                         )}
-                        <span className="block text-lg font-bold text-primary">₹{displayPrice}</span>
+                        <span className="block text-lg font-bold text-primary">
+                            {formatPrice(Number(displayPrice || 0))}
+                        </span>
                     </div>
 
                     <button

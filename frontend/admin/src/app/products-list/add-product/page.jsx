@@ -179,39 +179,46 @@ const AddProduct = () => {
       const variantData = hasVariants
         ? variants
             .filter((v) => v.price)
-            .map((v, i) => ({
-              name: v.name || `${v.weight}${v.unit || "g"}`,
-              sku:
-                v.sku ||
-                `${productName.substring(0, 3).toUpperCase()}-V${i + 1}`,
-              price: Number(v.price),
-              originalPrice: v.originalPrice
-                ? Number(v.originalPrice)
-                : undefined,
-              discountPercent:
-                v.originalPrice && Number(v.originalPrice) > Number(v.price)
-                  ? Math.round(
-                      ((Number(v.originalPrice) - Number(v.price)) /
-                        Number(v.originalPrice)) *
-                        100,
-                    )
-                  : 0,
-              weight: Number(v.weight) || 0,
-              unit: v.unit || "g",
-              isDefault: !!v.isDefault,
-              stock: v.stock ? Number(v.stock) : 0,
-              stock_quantity: v.stock ? Number(v.stock) : 0,
-            }))
+            .map((v, i) => {
+              const variantPrice = Math.round(Number(v.price));
+              const variantOriginalPrice = v.originalPrice
+                ? Math.round(Number(v.originalPrice))
+                : undefined;
+              return {
+                name: v.name || `${v.weight}${v.unit || "g"}`,
+                sku:
+                  v.sku ||
+                  `${productName.substring(0, 3).toUpperCase()}-V${i + 1}`,
+                price: variantPrice,
+                originalPrice: variantOriginalPrice,
+                discountPercent:
+                  variantOriginalPrice && variantOriginalPrice > variantPrice
+                    ? Math.round(
+                        ((variantOriginalPrice - variantPrice) /
+                          variantOriginalPrice) *
+                          100,
+                      )
+                    : 0,
+                weight: Number(v.weight) || 0,
+                unit: v.unit || "g",
+                isDefault: !!v.isDefault,
+                stock: v.stock ? Number(v.stock) : 0,
+                stock_quantity: v.stock ? Number(v.stock) : 0,
+              };
+            })
         : [];
 
       // Create product with uploaded image URLs
+      const normalizedPrice = Math.round(Number(price));
+      const normalizedOldPrice = oldPrice ? Math.round(Number(oldPrice)) : undefined;
+
       const productData = {
         name: productName,
         description,
         shortDescription,
         category: categoryVal,
-        price: Number(price),
-        originalPrice: oldPrice ? Number(oldPrice) : undefined,
+        price: normalizedPrice,
+        originalPrice: normalizedOldPrice,
         isFeatured,
         isNewArrival,
         isBestSeller,
@@ -341,9 +348,9 @@ const AddProduct = () => {
                 type="number"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
-                placeholder="0.00"
+                placeholder="0"
                 min="0"
-                step="0.01"
+                step="1"
                 className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
               />
             </div>
@@ -356,9 +363,9 @@ const AddProduct = () => {
                 type="number"
                 value={oldPrice}
                 onChange={(e) => setOldPrice(e.target.value)}
-                placeholder="0.00 (for strikethrough)"
+                placeholder="0 (for strikethrough)"
                 min="0"
-                step="0.01"
+                step="1"
                 className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
               />
             </div>
@@ -651,6 +658,7 @@ const AddProduct = () => {
                           }
                           placeholder="299"
                           min="0"
+                          step="1"
                           className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
                         />
                       </div>
@@ -666,6 +674,7 @@ const AddProduct = () => {
                           }
                           placeholder="499"
                           min="0"
+                          step="1"
                           className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
                         />
                       </div>

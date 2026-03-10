@@ -1,7 +1,7 @@
 import OrderModel from "../models/order.model.js";
 import { sendEmail } from "../config/emailService.js";
 import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
-import { bookShipment } from "./xpressbees.service.js";
+import { bookShipment, checkServiceability } from "./xpressbees.service.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import {
   buildShippingLabelData,
@@ -396,18 +396,19 @@ const buildShipmentPayload = (order, prepared) => {
   const billedWeightGrams = getWeightSlabGrams(
     Math.max(totalWeightGrams, DEFAULT_PRODUCT_WEIGHT_GRAMS),
   );
+  const packageWeight = resolvePackageWeightForCarrier(billedWeightGrams);
 
   const consignee = buildXpressbeesShipmentPayload(
     order?.deliveryAddressSnapshot || {},
   );
 
-  return {
+  const payload = {
     order_number: resolveOrderDisplayId(order),
     payment_type: paymentType,
     order_amount: totalAmount,
     collectable_amount: paymentType === "cod" ? totalAmount : 0,
     order_items: prepared.orderItems,
-    package_weight: resolvePackageWeightForCarrier(billedWeightGrams),
+    package_weight: packageWeight,
     package_length: toSafeNumber(
       process.env.XPRESSBEES_PACKAGE_LENGTH_CM,
       DEFAULT_PACKAGE_DIMENSION_CM,
@@ -433,6 +434,143 @@ const buildShipmentPayload = (order, prepared) => {
     },
     pickup: prepared.pickup,
   };
+
+  return {
+    payload,
+    billedWeightGrams,
+    packageWeight,
+  };
+};
+
+const resolveCourierOverride = () => {
+  const raw = String(process.env.XPRESSBEES_COURIER_ID || "").trim();
+  return raw ? raw : null;
+};
+
+const normalizeServiceabilityOptions = (response) => {
+  const list = Array.isArray(response?.data) ? response.data : [];
+  return list
+    .map((entry) => {
+      const id =
+        entry?.id ||
+        entry?.courier_id ||
+        entry?.courierId ||
+        entry?.courierID ||
+        null;
+      return {
+        id: id ? String(id).trim() : "",
+        name: normalizeText(entry?.name || entry?.courier_name || entry?.courierName || ""),
+        totalCharges: toSafeNumber(
+          entry?.total_charges ??
+            entry?.totalCharges ??
+            entry?.charges ??
+            entry?.freight_charges ??
+            0,
+        ),
+        minWeight: toSafeNumber(entry?.min_weight ?? entry?.minWeight ?? 0),
+        chargeableWeight: toSafeNumber(
+          entry?.chargeable_weight ?? entry?.chargeableWeight ?? 0,
+        ),
+      };
+    })
+    .filter((entry) => Boolean(entry.id));
+};
+
+const selectBestCourierOption = (options, weightGrams) => {
+  if (!options.length) return null;
+  const targetWeight = Math.max(toSafeNumber(weightGrams, 0), 0);
+  const eligible = targetWeight
+    ? options.filter((option) => {
+        const threshold = Math.max(
+          toSafeNumber(option.chargeableWeight, 0),
+          toSafeNumber(option.minWeight, 0),
+        );
+        return threshold <= 0 || threshold >= targetWeight;
+      })
+    : options;
+  const candidates = eligible.length ? eligible : options;
+
+  return candidates.reduce((best, current) => {
+    if (!best) return current;
+    const bestCharge = toSafeNumber(best.totalCharges, Number.POSITIVE_INFINITY);
+    const currentCharge = toSafeNumber(
+      current.totalCharges,
+      Number.POSITIVE_INFINITY,
+    );
+    if (currentCharge !== bestCharge) {
+      return currentCharge < bestCharge ? current : best;
+    }
+    const bestWeight = Math.max(
+      toSafeNumber(best.chargeableWeight, 0),
+      toSafeNumber(best.minWeight, 0),
+    );
+    const currentWeight = Math.max(
+      toSafeNumber(current.chargeableWeight, 0),
+      toSafeNumber(current.minWeight, 0),
+    );
+    if (currentWeight !== bestWeight) {
+      return currentWeight < bestWeight ? current : best;
+    }
+    return best;
+  }, null);
+};
+
+const resolveCourierFromServiceability = async ({
+  payload,
+  prepared,
+  billedWeightGrams,
+  order,
+  source,
+}) => {
+  const origin = normalizePincode(prepared?.pickup?.pincode || "");
+  const destination = normalizePincode(prepared?.address?.pincode || "");
+  if (!origin || !destination) {
+    return { courierId: null, reason: "MISSING_PINCODE" };
+  }
+
+  const serviceabilityPayload = {
+    origin,
+    destination,
+    payment_type: payload?.payment_type || "prepaid",
+    order_amount: toSafeNumber(payload?.order_amount, 0),
+    weight: Math.max(toSafeNumber(billedWeightGrams, 0), 1),
+    length: toSafeNumber(payload?.package_length, DEFAULT_PACKAGE_DIMENSION_CM),
+    breadth: toSafeNumber(payload?.package_breadth, DEFAULT_PACKAGE_DIMENSION_CM),
+    height: toSafeNumber(payload?.package_height, DEFAULT_PACKAGE_DIMENSION_CM),
+  };
+
+  try {
+    const response = await checkServiceability(serviceabilityPayload);
+    const options = normalizeServiceabilityOptions(response);
+    const selected = selectBestCourierOption(options, billedWeightGrams);
+    if (!selected?.id) {
+      return {
+        courierId: null,
+        reason: "NO_COURIER_OPTION",
+        optionsCount: options.length,
+      };
+    }
+    logger.info("autoShipping", "Selected courier via serviceability", {
+      orderId: order?._id,
+      source,
+      courierId: selected.id,
+      courierName: selected.name || null,
+      totalCharges: selected.totalCharges,
+      billedWeightGrams,
+    });
+    return {
+      courierId: selected.id,
+      courierName: selected.name || null,
+      optionsCount: options.length,
+    };
+  } catch (error) {
+    logger.warn("autoShipping", "Serviceability lookup failed", {
+      orderId: order?._id,
+      source,
+      error: error?.message || String(error),
+    });
+    return { courierId: null, reason: "SERVICEABILITY_FAILED" };
+  }
 };
 
 const updateOrderAfterShipmentSuccess = async ({
@@ -591,7 +729,8 @@ export const autoCreateShipmentForPaidOrder = async ({
     return { ok: true, skipped: true, reason: readiness.reason, order };
   }
 
-  const payload = buildShipmentPayload(order, readiness);
+  const shipmentPayload = buildShipmentPayload(order, readiness);
+  const payload = shipmentPayload.payload;
   const maxAttempts = Math.max(
     Number(process.env.XPRESSBEES_SHIPMENT_RETRY_ATTEMPTS || 3),
     1,
@@ -600,6 +739,22 @@ export const autoCreateShipmentForPaidOrder = async ({
     Number(process.env.XPRESSBEES_SHIPMENT_RETRY_DELAY_MS || 700),
     0,
   );
+
+  const courierOverride = resolveCourierOverride();
+  if (courierOverride) {
+    payload.courier_id = courierOverride;
+  } else {
+    const courierResolution = await resolveCourierFromServiceability({
+      payload,
+      prepared: readiness,
+      billedWeightGrams: shipmentPayload.billedWeightGrams,
+      order,
+      source,
+    });
+    if (courierResolution?.courierId) {
+      payload.courier_id = courierResolution.courierId;
+    }
+  }
 
   let responsePayload = null;
   let parsedShipment = null;

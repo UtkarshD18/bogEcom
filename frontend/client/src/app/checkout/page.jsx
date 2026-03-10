@@ -1183,29 +1183,6 @@ const Checkout = () => {
     }
   };
 
-  const createPurchaseOrderDraft = async ({ token, deliveryAddressId }) => {
-    const poPayload = {
-      products: buildOrderProductsPayload(),
-      delivery_address: deliveryAddressId || null,
-      guestDetails: buildGuestDetailsPayload(),
-      paymentType: "prepaid",
-    };
-
-    const poResponse = await fetch(`${API_URL}/api/purchase-orders`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      body: JSON.stringify(poPayload),
-    });
-    const poData = await poResponse.json();
-    if (poData.success) {
-      return poData?.data?.purchaseOrder?._id || null;
-    }
-    return null;
-  };
-
   // Handle Pay Now click - provider redirect flow (Paytm / PhonePe)
   const handlePayNow = async () => {
     if (isPayButtonDisabled) return;
@@ -1275,16 +1252,6 @@ const Checkout = () => {
       const currentAffiliate = getStoredAffiliateData();
       const originalAmount = round2(subtotal + tax + payableShipping);
 
-      let purchaseOrderId = null;
-      try {
-        purchaseOrderId = await createPurchaseOrderDraft({
-          token,
-          deliveryAddressId: isValidObjectId ? selectedAddress : null,
-        });
-      } catch (error) {
-        // Do not block checkout if PO generation fails.
-      }
-
       const orderData = {
         products: buildOrderProductsPayload(),
         totalAmt: total,
@@ -1312,7 +1279,6 @@ const Checkout = () => {
             ? selectedPaymentProvider
             : runtimeDefaultProvider,
         guestDetails: buildGuestDetailsPayload(),
-        purchaseOrderId,
         shippingAddress: buildShippingAddressPayload(selectedAddrObj),
       };
 
@@ -1406,16 +1372,6 @@ const Checkout = () => {
       // Find the full address object for order details
       const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
 
-      let purchaseOrderId = null;
-      try {
-        purchaseOrderId = await createPurchaseOrderDraft({
-          token,
-          deliveryAddressId: isValidObjectId ? selectedAddress : null,
-        });
-      } catch (error) {
-        // Do not block save-order flow if PO generation fails.
-      }
-
       const orderData = {
         products: buildOrderProductsPayload(),
         totalAmt: total,
@@ -1438,7 +1394,6 @@ const Checkout = () => {
           coins: 0,
         },
         paymentType: "prepaid",
-        purchaseOrderId,
         notes: orderNote,
       };
 
