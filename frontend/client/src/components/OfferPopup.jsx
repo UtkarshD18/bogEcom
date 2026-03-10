@@ -135,7 +135,6 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
 
     timeoutRef.current = setTimeout(() => {
       setIsVisible(true);
-      sessionStorage.setItem(shownKey, "true");
     }, 3000);
 
     return () => {

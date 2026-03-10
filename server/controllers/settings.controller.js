@@ -55,6 +55,7 @@ export const getPublicSettings = async (req, res) => {
     const publicKeys = [
       "highTrafficNotice",
       "paymentGatewayEnabled",
+      "defaultPaymentProvider",
       "maintenanceMode",
       // Offer popup settings
       "showOfferPopup",
@@ -261,6 +262,22 @@ export const updateSetting = async (req, res) => {
       req.body.value = normalizedCode;
     }
 
+    if (key === "defaultPaymentProvider") {
+      const normalizedProvider = String(req.body.value || "")
+        .trim()
+        .toUpperCase();
+
+      if (!["PAYTM", "PHONEPE"].includes(normalizedProvider)) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Default payment provider must be PAYTM or PHONEPE",
+        });
+      }
+
+      req.body.value = normalizedProvider;
+    }
+
     const updateData = {
       value: req.body.value,
       updatedBy: adminId,
@@ -369,6 +386,7 @@ export const deleteSetting = async (req, res) => {
     const protectedKeys = [
       "highTrafficNotice",
       "paymentGatewayEnabled",
+      "defaultPaymentProvider",
       "maintenanceMode",
       "shippingSettings",
       "taxSettings",

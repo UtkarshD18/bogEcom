@@ -20,7 +20,7 @@ import {
  * @param {Function} props.onDismiss - Callback when toast is dismissed
  * @param {Number} props.duration - Auto-dismiss duration (ms), 0 to disable
  */
-const NotificationToast = ({ message, onDismiss, duration = 5000 }) => {
+const NotificationToast = ({ message, onDismiss, duration = 7000 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [couponCopied, setCouponCopied] = useState(false);
 

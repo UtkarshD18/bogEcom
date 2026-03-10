@@ -146,7 +146,7 @@ const Checkout = () => {
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [paymentGatewayEnabled, setPaymentGatewayEnabled] = useState(true);
   const [paymentProviders, setPaymentProviders] = useState([]);
-  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState("PAYTM");
+  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState("PHONEPE");
   const [isCreatingDemoOrder, setIsCreatingDemoOrder] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -428,7 +428,7 @@ const Checkout = () => {
           payload?.defaultProvider ||
             payload?.provider ||
             enabledProviders[0] ||
-            "PAYTM",
+            "PHONEPE",
         )
           .trim()
           .toUpperCase();
@@ -438,14 +438,14 @@ const Checkout = () => {
         setSelectedPaymentProvider((prev) => {
           if (enabledProviders.includes(prev)) return prev;
           if (enabledProviders.includes(defaultProvider)) return defaultProvider;
-          return enabledProviders[0] || "PAYTM";
+          return enabledProviders[0] || "PHONEPE";
         });
       } catch (error) {
         if (!active) return;
         // Keep checkout usable even if the status endpoint is unreachable.
         setPaymentGatewayEnabled(true);
-        setPaymentProviders(["PAYTM"]);
-        setSelectedPaymentProvider("PAYTM");
+        setPaymentProviders(["PHONEPE"]);
+        setSelectedPaymentProvider("PHONEPE");
       }
     };
 
@@ -1257,7 +1257,7 @@ const Checkout = () => {
           statusPayload?.provider ||
           runtimeEnabledProviders[0] ||
           selectedPaymentProvider ||
-          "PAYTM",
+          "PHONEPE",
       )
         .trim()
         .toUpperCase();

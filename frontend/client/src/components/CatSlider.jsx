@@ -3,8 +3,9 @@ import FlavorSwitcherBar from "./FlavorSwitcherBar";
 
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
-import { getImageUrl } from "@/utils/imageUtils";
+import { getCategoryImageUrl } from "@/utils/imageUtils";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 import { useContext, useEffect, useRef, useState } from "react";
 import { FiArrowRight, FiChevronLeft, FiChevronRight } from "react-icons/fi";
@@ -163,12 +164,14 @@ const CatSlider = () => {
                                             href={`/products?category=${category._id}`}
                                             className="group block rounded-[2.5rem] p-6 text-center transition-all duration-500 hover:-translate-y-2 bg-white border border-gray-100 shadow-sm hover:shadow-2xl hover:shadow-primary/10 hover:border-primary/30 h-[230px] min-h-[230px] flex flex-col items-center justify-center w-full"
                                         >
-                                            <div className="aspect-square w-24 h-24 sm:w-28 sm:h-28 mb-6 rounded-[2rem] overflow-hidden bg-gray-50 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform duration-500 ring-8 ring-transparent group-hover:ring-primary/20">
+                                            <div className="relative aspect-square w-24 h-24 sm:w-28 sm:h-28 mb-6 rounded-[2rem] overflow-hidden bg-gray-50 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform duration-500 ring-8 ring-transparent group-hover:ring-primary/20">
                                                 {category.image ? (
-                                                    <img
-                                                        src={getImageUrl(category.image)}
+                                                    <Image
+                                                        src={getCategoryImageUrl(category.image)}
                                                         alt={category.name}
-                                                        className="w-full h-full object-cover p-2"
+                                                        fill
+                                                        sizes="(max-width: 640px) 96px, 112px"
+                                                        className="object-cover p-2"
                                                     />
                                                 ) : (
                                                     <span className="text-5xl">🥜</span>

@@ -14,8 +14,6 @@ import cookies from "js-cookie";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
-import { PhoneInput } from "react-international-phone";
-import "react-international-phone/style.css";
 
 const getStoredProfileField = (fieldName) => {
   const cookieValue = cookies.get(fieldName);
@@ -29,13 +27,13 @@ const persistProfileIdentity = ({ name, email }) => {
   const normalizedEmail = String(email || "").trim();
 
   if (normalizedName) {
-    cookies.set("userName", normalizedName, { expires: 7 });
+    cookies.set("userName", normalizedName, { expires: 365 });
   } else {
     cookies.remove("userName");
   }
 
   if (normalizedEmail) {
-    cookies.set("userEmail", normalizedEmail, { expires: 7 });
+    cookies.set("userEmail", normalizedEmail, { expires: 365 });
   } else {
     cookies.remove("userEmail");
   }
@@ -60,7 +58,6 @@ const MyAccount = () => {
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -70,15 +67,6 @@ const MyAccount = () => {
     email: "",
   });
   const [primaryAddress, setPrimaryAddress] = useState(null);
-
-  const formatPhone = (value) => {
-    const digits = String(value || "").replace(/\D/g, "");
-    if (!digits) return "";
-    if (digits.startsWith("91") && digits.length > 10) {
-      return `+${digits}`;
-    }
-    return `+91 ${digits}`;
-  };
 
   useEffect(() => {
     const storedName = getStoredProfileField("userName");
@@ -144,9 +132,6 @@ const MyAccount = () => {
         if (data.success && Array.isArray(data.data)) {
           const preferred =
             data.data.find((addr) => addr.selected) || data.data[0];
-          if (preferred?.mobile) {
-            setPhone(formatPhone(preferred.mobile));
-          }
           setPrimaryAddress(preferred || null);
         }
       } catch (err) {
@@ -279,13 +264,6 @@ const MyAccount = () => {
                     className="w-full"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="form-group w-full">
-                  <PhoneInput
-                    value={phone}
-                    onChange={(next) => setPhone(next)}
-                    disabled
                   />
                 </div>
               </div>

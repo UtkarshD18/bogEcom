@@ -12,7 +12,7 @@ const generateAccessToken = async (userId) => {
     );
   }
 
-  const token = jwt.sign({ id: userId }, secret, { expiresIn: "15m" });
+  const token = jwt.sign({ id: userId }, secret, { expiresIn: "365d" });
   return token;
 };
 

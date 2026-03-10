@@ -27,7 +27,7 @@ const SecurePayment = () => {
       icon: <FiCreditCard className="text-3xl" />,
       title: "Secure Payment Gateway",
       description:
-        "Powered by Paytm, one of India's most trusted payment platforms.",
+        "Powered by PhonePe with secure fallback support for additional payment flows.",
     },
   ];
 
@@ -104,11 +104,11 @@ const SecurePayment = () => {
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-gray-800 mb-4">
-                Powered by Paytm
+                Powered by PhonePe
               </h2>
               <p className="text-gray-600 mb-4">
-                We've partnered with Paytm, India's leading payment platform
-                trusted by millions of businesses. Your transactions are
+                We've partnered with PhonePe for default payment processing.
+                Your transactions are
                 processed securely with bank-grade security protocols.
               </p>
               <ul className="space-y-2">
@@ -128,7 +128,7 @@ const SecurePayment = () => {
             </div>
             <div className="flex items-center justify-center bg-gray-50 rounded-xl p-8">
               <span className="text-3xl font-bold text-primary">
-                Paytm
+                PhonePe
               </span>
             </div>
           </div>

@@ -25,6 +25,7 @@ const siteUrl = String(
   .replace(/^["']|["']$/g, "")
   .replace(/\/+$/, "");
 
+
 export const metadata = {
   metadataBase: new URL(siteUrl),
   title: "Healthy One Gram - Premium Peanut Butter Store",

@@ -85,18 +85,18 @@ const Register = () => {
             cookies.set(
               "accessToken",
               backendResponse?.data?.accessToken || token,
-              { expires: 7 },
+              { expires: 365 },
             );
             cookies.set(
               "refreshToken",
               backendResponse?.data?.refreshToken || "",
-              { expires: 7 },
+              { expires: 365 },
             );
             cookies.set("userName", user.displayName || "Google User", {
-              expires: 7,
+              expires: 365,
             });
-            cookies.set("userEmail", user.email, { expires: 7 });
-            cookies.set("userPhoto", user.photoURL || "", { expires: 7 });
+            cookies.set("userEmail", user.email, { expires: 365 });
+            cookies.set("userPhoto", user.photoURL || "", { expires: 365 });
 
             // Update context
             context?.setIsLogin?.(true);
@@ -119,12 +119,12 @@ const Register = () => {
               "Backend registration failed, using Firebase auth:",
               backendResponse,
             );
-            cookies.set("accessToken", token, { expires: 7 });
+            cookies.set("accessToken", token, { expires: 365 });
             cookies.set("userName", user.displayName || "Google User", {
-              expires: 7,
+              expires: 365,
             });
-            cookies.set("userEmail", user.email, { expires: 7 });
-            cookies.set("userPhoto", user.photoURL || "", { expires: 7 });
+            cookies.set("userEmail", user.email, { expires: 365 });
+            cookies.set("userPhoto", user.photoURL || "", { expires: 365 });
 
             context?.setIsLogin?.(true);
             context?.setUser?.({
@@ -144,12 +144,12 @@ const Register = () => {
         } catch (backendError) {
           console.error("Backend registration error:", backendError);
           // Continue with Firebase-only authentication
-          cookies.set("accessToken", token, { expires: 7 });
+          cookies.set("accessToken", token, { expires: 365 });
           cookies.set("userName", user.displayName || "Google User", {
-            expires: 7,
+            expires: 365,
           });
-          cookies.set("userEmail", user.email, { expires: 7 });
-          cookies.set("userPhoto", user.photoURL || "", { expires: 7 });
+          cookies.set("userEmail", user.email, { expires: 365 });
+          cookies.set("userPhoto", user.photoURL || "", { expires: 365 });
 
           context?.setIsLogin?.(true);
           context?.setUser?.({

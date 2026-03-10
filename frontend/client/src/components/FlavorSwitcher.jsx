@@ -8,7 +8,7 @@ const FLAVORS = [
     glass: "rgba(246,230,201,0.6)",
   },
   {
-    name: "Cholocate",
+    name: "Chocolate",
     color: "#5A3A2E",
     glass: "rgba(90,58,46,0.6)",
   },

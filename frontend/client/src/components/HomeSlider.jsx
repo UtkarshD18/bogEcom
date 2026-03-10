@@ -1,8 +1,9 @@
 "use client";
 
 import { useProducts } from "@/context/ProductContext";
-import { getImageUrl } from "@/utils/imageUtils";
+import { getHeroImageUrl } from "@/utils/imageUtils";
 import { AnimatePresence, motion } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Swiper, SwiperSlide } from "swiper/react";
@@ -38,15 +39,22 @@ const fallbackSlides = [
 ];
 
 const HomeSlider = () => {
-  const { homeSlides = [], loading } = useProducts();
+  const { homeSlides = [], fetchHomeSlides } = useProducts();
   const [displaySlides, setDisplaySlides] = useState(fallbackSlides);
   const [activeIndex, setActiveIndex] = useState(0);
   const swiperRef = useRef(null);
 
   useEffect(() => {
+    if (!homeSlides?.length) {
+      fetchHomeSlides();
+    }
+  }, [fetchHomeSlides, homeSlides?.length]);
+
+  useEffect(() => {
     if (homeSlides && homeSlides.length > 0) {
       const formattedSlides = homeSlides.map((slide) => ({
         image: slide.image,
+        mobileImage: slide.mobileImage || slide.image,
         title: slide.title,
         subtitle: slide.subtitle || slide.description,
         cta: slide.buttonText || "Shop Now",
@@ -84,14 +92,33 @@ const HomeSlider = () => {
           <SwiperSlide key={index} className="relative w-full h-full">
             {/* Background Image with Ken Burns zoom */}
             <div className="relative w-full h-full overflow-hidden">
-              <motion.img
-                src={getImageUrl(slide.image)}
-                alt={slide.title}
-                className="absolute inset-0 w-full h-full object-cover"
+              <motion.div
+                className="absolute inset-0"
                 initial={{ scale: 1 }}
                 animate={activeIndex === index ? { scale: 1.08 } : { scale: 1 }}
                 transition={{ duration: 6, ease: "easeOut" }}
-              />
+              >
+                <div className="absolute inset-0 hidden md:block">
+                  <Image
+                    src={getHeroImageUrl(slide.image)}
+                    alt={slide.title}
+                    fill
+                    priority={index === 0}
+                    sizes="100vw"
+                    className="object-cover"
+                  />
+                </div>
+                <div className="absolute inset-0 md:hidden">
+                  <Image
+                    src={getHeroImageUrl(slide.mobileImage || slide.image)}
+                    alt={slide.title}
+                    fill
+                    priority={index === 0}
+                    sizes="100vw"
+                    className="object-cover"
+                  />
+                </div>
+              </motion.div>
               <div
                 className="absolute inset-0"
                 style={{

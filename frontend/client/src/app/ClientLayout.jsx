@@ -84,9 +84,9 @@ export default function ClientLayout({ children }) {
       <Toaster
         position="top-right"
         toastOptions={{
-          duration: 3000,
+          duration: 5500,
           style: {
-            background: "#333",
+            background: "#472c23",
             color: "#fff",
           },
         }}

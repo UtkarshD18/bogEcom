@@ -14,7 +14,7 @@ const createDefaultPopupSettings = () => ({
   expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   isActive: false,
   showOncePerSession: true,
-  backgroundColor: "#fff7ed",
+  backgroundColor: "#f7f1ef",
   buttonText: "Shop Now",
   couponCode: "",
 });
@@ -32,7 +32,7 @@ const normalizeBoolean = (value, fallback = false) => {
   return fallback;
 };
 
-const normalizeColor = (value, fallback = "#fff7ed") => {
+const normalizeColor = (value, fallback = "#f7f1ef") => {
   const normalized = sanitizeText(value, fallback);
   if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(normalized)) {
     return normalized;

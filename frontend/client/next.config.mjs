@@ -10,6 +10,12 @@ if (!rawApiUrl) {
 
 const normalizedApiUrl = rawApiUrl.replace(/\/+$/, "").replace(/\/api$/i, "");
 const parsedApiUrl = new URL(normalizedApiUrl);
+const firebaseProjectId = String(
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
+).trim();
+const firebaseProjectHost = firebaseProjectId
+  ? `https://${firebaseProjectId}.firebaseapp.com`
+  : "";
 const apiImagePattern = [
   {
     protocol: parsedApiUrl.protocol.replace(":", ""),
@@ -24,6 +30,10 @@ const nextConfig = {
     root: __dirname,
   },
   images: {
+    deviceSizes: [360, 480, 640, 750, 828, 1080, 1200, 1600, 1920],
+    imageSizes: [32, 48, 64, 96, 128, 160, 240, 320, 420, 640],
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 2678400,
     remotePatterns: [
       ...apiImagePattern,
       {
@@ -34,11 +44,27 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    const rewrites = [];
+
+    if (firebaseProjectHost) {
+      rewrites.push(
+        {
+          source: "/__/auth/:path*",
+          destination: `${firebaseProjectHost}/__/auth/:path*`,
+        },
+        {
+          source: "/__/firebase/:path*",
+          destination: `${firebaseProjectHost}/__/firebase/:path*`,
+        },
+      );
+    }
+
     if (process.env.NODE_ENV === "production") {
-      return [];
+      return rewrites;
     }
 
     return [
+      ...rewrites,
       {
         source: "/api/:path*",
         destination: `${normalizedApiUrl}/api/:path*`,
