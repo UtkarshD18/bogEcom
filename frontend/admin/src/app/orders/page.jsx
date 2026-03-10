@@ -43,7 +43,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   const [reviewsLoading, setReviewsLoading] = useState(false);
 
   const canDownloadInvoice =
-    ["delivered", "completed"].includes(normalizeStatus(order?.order_status)) &&
+    normalizeStatus(order?.payment_status) === "paid" ||
     Boolean(
       order?.isInvoiceGenerated ||
         order?.invoiceUrl ||
