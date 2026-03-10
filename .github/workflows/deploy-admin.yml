@@ -34,6 +34,68 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Prune old App Engine versions (admin)
+        env:
+          SERVICE_NAME: admin
+          KEEP_VERSIONS: "5"
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          service = os.environ.get("SERVICE_NAME")
+          keep = int(os.environ.get("KEEP_VERSIONS", "5"))
+          if not service:
+            sys.exit(0)
+
+          try:
+            output = subprocess.check_output(
+              [
+                "gcloud",
+                "app",
+                "versions",
+                "list",
+                "--service",
+                service,
+                "--sort-by",
+                "~version.last_deployed_time",
+                "--format",
+                "json(version.id,traffic_split)",
+              ],
+              text=True,
+            )
+          except subprocess.CalledProcessError as exc:
+            print("Version list failed:", exc)
+            sys.exit(0)
+
+          data = json.loads(output or "[]")
+          versions = []
+          for item in data:
+            vid = item.get("version", {}).get("id") or item.get("id")
+            traffic = item.get("traffic_split", 0)
+            try:
+              traffic = float(traffic)
+            except Exception:
+              traffic = 0.0
+            if vid:
+              versions.append((vid, traffic))
+
+          for idx, (vid, traffic) in enumerate(versions):
+            if idx < keep:
+              continue
+            if traffic > 0:
+              continue
+            try:
+              subprocess.check_call(
+                ["gcloud", "app", "versions", "delete", vid, "--service", service, "--quiet"]
+              )
+              print("Deleted version:", vid)
+            except subprocess.CalledProcessError as exc:
+              print("Delete failed:", vid, exc)
+          PY
+
       - name: Build temporary admin deploy YAML
         env:
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
