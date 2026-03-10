@@ -26,6 +26,43 @@ export default function AdminLayout({ children }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const reloadKey = "hog_admin_chunk_reload_attempted";
+    const shouldReload = (message) =>
+      /ChunkLoadError|Loading chunk|failed to fetch dynamically imported module|CSS chunk/i.test(
+        String(message || ""),
+      );
+
+    const attemptReload = () => {
+      const attempts = Number(sessionStorage.getItem(reloadKey) || "0");
+      if (attempts >= 1) return;
+      sessionStorage.setItem(reloadKey, String(attempts + 1));
+      window.location.reload();
+    };
+
+    const onError = (event) => {
+      if (shouldReload(event?.message)) {
+        attemptReload();
+      }
+    };
+
+    const onRejection = (event) => {
+      if (shouldReload(event?.reason?.message || event?.reason)) {
+        attemptReload();
+      }
+    };
+
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, []);
+
   if (isPublicPage) {
     return <>{children}</>;
   }
