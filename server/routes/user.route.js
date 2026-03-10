@@ -29,6 +29,22 @@ import {
   verifyEmailController,
   verifyForgotPasswordOTPController,
 } from "../controllers/user.controller.js";
+
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const ADMIN_PRIMARY_EMAIL = normalizeEmail(
+  process.env.ADMIN_PRIMARY_EMAIL || "admin@buyonegram.com",
+);
+const isAdminEmail = (value) => normalizeEmail(value) === ADMIN_PRIMARY_EMAIL;
+const blockAdminEmailSignup = (req, res, next) => {
+  if (isAdminEmail(req.body?.email)) {
+    return res.status(403).json({
+      success: false,
+      error: true,
+      message: "Admin registration is not available here.",
+    });
+  }
+  return next();
+};
 import {
   getUserCoinsSummary,
   getUserCoinsTransactions,
@@ -36,7 +52,12 @@ import {
 
 const userRouter = Router();
 
-userRouter.post("/register", authLimiter, registerUserController);
+userRouter.post(
+  "/register",
+  authLimiter,
+  blockAdminEmailSignup,
+  registerUserController,
+);
 userRouter.post("/verifyEmail", authLimiter, verifyEmailController);
 userRouter.post("/login", authLimiter, loginUserController);
 userRouter.post("/refresh-token", authLimiter, refreshTokenController);
@@ -53,9 +74,14 @@ userRouter.post(
   changePasswordController,
 );
 userRouter.post("/resend-otp", authLimiter, resendOTPController);
-userRouter.post("/authWithGoogle", authLimiter, authWithGoogle);
-userRouter.post("/google-login", authLimiter, authWithGoogle); // Alias for compatibility
-userRouter.post("/google-register", authLimiter, authWithGoogle); // Alias for registration
+userRouter.post("/authWithGoogle", authLimiter, blockAdminEmailSignup, authWithGoogle);
+userRouter.post("/google-login", authLimiter, blockAdminEmailSignup, authWithGoogle); // Alias for compatibility
+userRouter.post(
+  "/google-register",
+  authLimiter,
+  blockAdminEmailSignup,
+  authWithGoogle,
+); // Alias for registration
 userRouter.post("/set-backup-password", auth, setBackupPassword); // Protected route for Google users
 
 // User settings routes

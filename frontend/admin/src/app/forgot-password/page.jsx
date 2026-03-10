@@ -64,11 +64,6 @@ const ForgotPassword = () => {
                 SIGN IN
               </Button>
             </Link>
-            <Link href={"/register"}>
-              <Button className="!px-5 !py-2 !rounded-full !border !text-gray-800">
-                SIGN UP
-              </Button>
-            </Link>
           </div>
         </div>
       </div>

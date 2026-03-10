@@ -142,9 +142,9 @@ export const AdminProvider = ({ children }) => {
       window.removeEventListener("adminTokenRefreshed", handleTokenRefreshed);
   }, []);
 
-  const login = async (email, password) => {
+    const login = async (email, password) => {
     try {
-      const response = await postData("/api/user/login", { email, password });
+      const response = await postData("/api/admin/login", { email, password });
 
       if (response.error === false) {
         const { data } = response;

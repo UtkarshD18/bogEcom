@@ -4887,8 +4887,22 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     logger.error("handlePaytmWebhook", "Webhook processing error", {
       error: error.message,
     });
-    if (isBrowserNavigationRequest(req)) {
-      return redirectPaytmWebhookToClient(res, { paymentState: "failed" });
+    if (isBrowserNavigationRequest(req) || isPaytmBrowserCallback(req)) {
+      const orderIdCandidate =
+        req?.body?.ORDERID ||
+        req?.body?.orderId ||
+        req?.body?.merchantTransactionId ||
+        req?.query?.ORDERID ||
+        req?.query?.orderId ||
+        req?.query?.merchantTransactionId ||
+        "";
+      const resolvedOrderId = extractOrderIdFromMerchantTransactionId(
+        String(orderIdCandidate || "").trim(),
+      );
+      return redirectPaytmWebhookToClient(res, {
+        orderId: resolvedOrderId || undefined,
+        paymentState: "failed",
+      });
     }
     return sendError(res, error);
   }
