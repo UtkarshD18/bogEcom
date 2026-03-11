@@ -122,7 +122,13 @@ const claimGuestOrdersForUser = async (user) => {
   const result = await OrderModel.updateMany(
     {
       $and: [
-        { $or: [{ user: null }, { user: { $exists: false } }, { user: "" }] },
+        {
+          $or: [
+            { user: null },
+            { user: { $exists: false } },
+            { $expr: { $eq: ["$user", ""] } },
+          ],
+        },
         {
           $or: [
             { "billingDetails.email": emailRegex },

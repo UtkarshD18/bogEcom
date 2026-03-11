@@ -3116,7 +3116,7 @@ export const getUserOrders = asyncHandler(async (req, res) => {
                   $or: [
                     { user: null },
                     { user: { $exists: false } },
-                    { user: "" },
+                    { $expr: { $eq: ["$user", ""] } },
                   ],
                 },
                 {
