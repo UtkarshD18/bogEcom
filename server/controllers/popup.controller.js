@@ -86,10 +86,7 @@ const normalizePopupPayload = (input = {}) => {
     startDate: normalizeDate(input.startDate, defaults.startDate),
     expiryDate: normalizeDate(input.expiryDate, defaults.expiryDate),
     isActive: normalizeBoolean(input.isActive, defaults.isActive),
-    showOncePerSession: normalizeBoolean(
-      input.showOncePerSession,
-      defaults.showOncePerSession,
-    ),
+    showOncePerSession: false,
     backgroundColor: normalizeColor(
       input.backgroundColor,
       defaults.backgroundColor,

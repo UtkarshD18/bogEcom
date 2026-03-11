@@ -150,6 +150,14 @@ jobs:
           XPRESSBEES_POLL_INTERVAL_MINUTES: ${{ secrets.XPRESSBEES_POLL_INTERVAL_MINUTES }}
           XPRESSBEES_POLL_BATCH_SIZE: ${{ secrets.XPRESSBEES_POLL_BATCH_SIZE }}
           XPRESSBEES_ORIGIN_PINCODE: ${{ secrets.XPRESSBEES_ORIGIN_PINCODE }}
+          XPRESSBEES_PICKUP_WAREHOUSE: ${{ secrets.XPRESSBEES_PICKUP_WAREHOUSE }}
+          XPRESSBEES_PICKUP_NAME: ${{ secrets.XPRESSBEES_PICKUP_NAME }}
+          XPRESSBEES_PICKUP_ADDRESS1: ${{ secrets.XPRESSBEES_PICKUP_ADDRESS1 }}
+          XPRESSBEES_PICKUP_ADDRESS2: ${{ secrets.XPRESSBEES_PICKUP_ADDRESS2 }}
+          XPRESSBEES_PICKUP_CITY: ${{ secrets.XPRESSBEES_PICKUP_CITY }}
+          XPRESSBEES_PICKUP_STATE: ${{ secrets.XPRESSBEES_PICKUP_STATE }}
+          XPRESSBEES_PICKUP_PINCODE: ${{ secrets.XPRESSBEES_PICKUP_PINCODE }}
+          XPRESSBEES_PICKUP_PHONE: ${{ secrets.XPRESSBEES_PICKUP_PHONE }}
         run: |
           python - <<'PY'
           import json
@@ -271,6 +279,14 @@ jobs:
               "XPRESSBEES_POLL_INTERVAL_MINUTES",
               "XPRESSBEES_POLL_BATCH_SIZE",
               "XPRESSBEES_ORIGIN_PINCODE",
+              "XPRESSBEES_PICKUP_WAREHOUSE",
+              "XPRESSBEES_PICKUP_NAME",
+              "XPRESSBEES_PICKUP_ADDRESS1",
+              "XPRESSBEES_PICKUP_ADDRESS2",
+              "XPRESSBEES_PICKUP_CITY",
+              "XPRESSBEES_PICKUP_STATE",
+              "XPRESSBEES_PICKUP_PINCODE",
+              "XPRESSBEES_PICKUP_PHONE",
           ]
           for key in optional:
               value = os.environ.get(key, "")

@@ -159,7 +159,6 @@ const ManagedPopup = () => {
         } catch {
           // Ignore storage failures and allow popup to render.
         }
-
         setPopup(nextPopup);
         showTimer = window.setTimeout(() => {
           if (!disposed) {
