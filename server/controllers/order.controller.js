@@ -683,12 +683,10 @@ const buildEmailMatchRegex = (email) => {
 
 const formatOrderDateForEmail = (value) => {
   const parsed = new Date(value || Date.now());
-  if (Number.isNaN(parsed.getTime())) {
-    return new Date().toLocaleString("en-IN");
-  }
-
-  return parsed
+  const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return base
     .toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
       year: "numeric",
       month: "short",
       day: "2-digit",
@@ -721,6 +719,7 @@ const sendOrderConfirmationEmail = async (order) => {
     const recipientEmail = String(
       order?.billingDetails?.email ||
         order?.guestDetails?.email ||
+        order?.user?.email ||
         "",
     )
       .trim()
@@ -1700,11 +1699,13 @@ const resolveCheckoutContact = async ({
 }) => {
   const normalizedGuest = normalizeGuestDetails(guestDetails);
   let userGstNumber = "";
-  if (userId && !normalizedGuest.gst) {
+  let userEmail = "";
+  if (userId) {
     const userRecord = await UserModel.findById(userId)
-      .select("gstNumber")
+      .select("gstNumber email")
       .lean();
     userGstNumber = userRecord?.gstNumber || "";
+    userEmail = normalizeEmail(userRecord?.email || "");
   }
 
   if (deliveryAddressId) {
@@ -1734,9 +1735,9 @@ const resolveCheckoutContact = async ({
       state: String(
         serializedAddress.state || normalizedGuest.state || "",
       ).trim(),
-      email: String(normalizedGuest.email || "")
-        .trim()
-        .toLowerCase(),
+      email: normalizeEmail(
+        normalizedGuest.email || userEmail || serializedAddress.email || "",
+      ),
       city: String(serializedAddress.city || normalizedGuest.city || "").trim(),
       gst: normalizedGuest.gst || userGstNumber,
     };
@@ -1784,10 +1785,11 @@ const resolveCheckoutContact = async ({
   });
 
   return {
-    contact: {
-      ...normalizedGuest,
-      gst: normalizedGuest.gst || userGstNumber,
-    },
+      contact: {
+        ...normalizedGuest,
+        email: normalizeEmail(normalizedGuest.email || userEmail || ""),
+        gst: normalizedGuest.gst || userGstNumber,
+      },
     addressId: null,
     state: normalizedGuest.state,
     pincode: normalizedGuest.pincode,

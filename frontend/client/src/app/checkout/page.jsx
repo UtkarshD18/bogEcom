@@ -210,6 +210,14 @@ const Checkout = () => {
   const [gstSavedValue, setGstSavedValue] = useState("");
   const checkoutStartTrackedRef = useRef(false);
 
+  useEffect(() => {
+    if (!isGuestCheckout) {
+      setGuestDetails(createEmptyAddressForm());
+      setGuestErrors({});
+      setGuestLocationPayload(null);
+    }
+  }, [isGuestCheckout]);
+
   const {
     lookup: addressPincodeLookup,
     lookupPincode: lookupAddressPincode,
@@ -1255,7 +1263,7 @@ const Checkout = () => {
           runtimeEnabledProviders.includes(selectedPaymentProvider)
             ? selectedPaymentProvider
             : runtimeDefaultProvider,
-        guestDetails: buildGuestDetailsPayload(),
+        guestDetails: isGuestCheckout ? buildGuestDetailsPayload() : {},
         shippingAddress: buildShippingAddressPayload(selectedAddrObj),
       };
 
@@ -1357,7 +1365,7 @@ const Checkout = () => {
         shippingAddress: selectedAddrObj
           ? buildShippingAddressPayload(selectedAddrObj)
           : buildShippingAddressPayload(null),
-        guestDetails: buildGuestDetailsPayload(),
+        guestDetails: isGuestCheckout ? buildGuestDetailsPayload() : {},
         // Coupon details
         couponCode: appliedCoupon?.code || null,
         discountAmount: couponDiscount,

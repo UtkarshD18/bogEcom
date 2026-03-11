@@ -344,7 +344,7 @@ const geocodeLatLng = ({ lat, lng }) =>
     }
 
     const geocoder = new window.google.maps.Geocoder();
-    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+    geocoder.geocode({ location: { lat, lng }, region: "IN" }, (results, status) => {
       if (status !== "OK" || !results || results.length === 0) {
         reject(
           new Error(
@@ -385,6 +385,28 @@ export default function UseCurrentLocationGoogleMaps({
 
       const results = await geocodeLatLng({ lat, lng });
       const parsed = parseGeocodeResult(results);
+      const countryValue = String(parsed.country || "").trim().toLowerCase();
+      const isIndia =
+        !countryValue ||
+        countryValue === "india" ||
+        countryValue === "bharat" ||
+        countryValue === "in";
+      if (!isIndia) {
+        throw new Error(
+          "Location appears outside India. Please enter your address manually.",
+        );
+      }
+      const pincodeValue = String(parsed.pincode || "").trim();
+      if (pincodeValue && pincodeValue.length !== 6) {
+        throw new Error(
+          "Could not detect a valid 6-digit pincode. Please enter manually.",
+        );
+      }
+      if (!pincodeValue) {
+        throw new Error(
+          "Could not detect a pincode for your location. Please enter manually.",
+        );
+      }
 
       onResolved?.({
         latitude: lat,
@@ -398,7 +420,7 @@ export default function UseCurrentLocationGoogleMaps({
         city: parsed.city,
         state: parsed.state,
         district: parsed.district,
-        pincode: parsed.pincode,
+        pincode: pincodeValue,
         country: parsed.country || "India",
         locationType: parsed.locationType,
         source: "google_maps",
