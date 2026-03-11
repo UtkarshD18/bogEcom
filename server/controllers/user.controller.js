@@ -109,17 +109,27 @@ function normalizeEmail(email) {
 const escapeRegex = (value) =>
   String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const buildEmailMatchRegex = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  return new RegExp(`^\\s*${escapeRegex(normalized)}\\s*$`, "i");
+};
+
 const claimGuestOrdersForUser = async (user) => {
   if (!user?._id) return 0;
-  const email = normalizeEmail(user?.email || "");
-  if (!email) return 0;
-  const emailRegex = new RegExp(`^${escapeRegex(email)}$`, "i");
+  const emailRegex = buildEmailMatchRegex(user?.email || "");
+  if (!emailRegex) return 0;
   const result = await OrderModel.updateMany(
     {
-      $or: [{ user: null }, { user: { $exists: false } }, { user: "" }],
-      $or: [
-        { "billingDetails.email": emailRegex },
-        { "guestDetails.email": emailRegex },
+      $and: [
+        { $or: [{ user: null }, { user: { $exists: false } }, { user: "" }] },
+        {
+          $or: [
+            { "billingDetails.email": emailRegex },
+            { "guestDetails.email": emailRegex },
+            { "deliveryAddressSnapshot.email": emailRegex },
+          ],
+        },
       ],
     },
     { $set: { user: user._id } },

@@ -678,7 +678,7 @@ const escapeRegex = (value) =>
 const buildEmailMatchRegex = (email) => {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
-  return new RegExp(`^${escapeRegex(normalized)}$`, "i");
+  return new RegExp(`^\\s*${escapeRegex(normalized)}\\s*$`, "i");
 };
 
 const formatOrderDateForEmail = (value) => {
@@ -3111,10 +3111,21 @@ export const getUserOrders = asyncHandler(async (req, res) => {
           $or: [
             { user: userId },
             {
-              user: null,
-              $or: [
-                { "billingDetails.email": emailMatch },
-                { "guestDetails.email": emailMatch },
+              $and: [
+                {
+                  $or: [
+                    { user: null },
+                    { user: { $exists: false } },
+                    { user: "" },
+                  ],
+                },
+                {
+                  $or: [
+                    { "billingDetails.email": emailMatch },
+                    { "guestDetails.email": emailMatch },
+                    { "deliveryAddressSnapshot.email": emailMatch },
+                  ],
+                },
               ],
             },
           ],
@@ -3196,7 +3207,10 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
       .lean();
     const requesterEmail = normalizeEmail(requester?.email || "");
     const orderEmail = normalizeEmail(
-      order?.billingDetails?.email || order?.guestDetails?.email || "",
+      order?.billingDetails?.email ||
+        order?.guestDetails?.email ||
+        order?.deliveryAddressSnapshot?.email ||
+        "",
     );
     const isEmailOwner =
       Boolean(requesterEmail) &&
@@ -3278,7 +3292,10 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
       order.user?._id?.toString?.() || order.user?.toString?.();
     const requesterEmail = normalizeEmail(requester?.email || "");
     const orderEmail = normalizeEmail(
-      order?.billingDetails?.email || order?.guestDetails?.email || "",
+      order?.billingDetails?.email ||
+        order?.guestDetails?.email ||
+        order?.deliveryAddressSnapshot?.email ||
+        "",
     );
     const isEmailOwner =
       Boolean(requesterEmail) &&
