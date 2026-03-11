@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import UserModel from "../models/user.model.js";
+import OrderModel from "../models/order.model.js";
 
 import sendEmailFun from "../config/sendEmail.js";
 import {
@@ -104,6 +105,27 @@ function isValidEmail(email) {
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
+
+const escapeRegex = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const claimGuestOrdersForUser = async (user) => {
+  if (!user?._id) return 0;
+  const email = normalizeEmail(user?.email || "");
+  if (!email) return 0;
+  const emailRegex = new RegExp(`^${escapeRegex(email)}$`, "i");
+  const result = await OrderModel.updateMany(
+    {
+      $or: [{ user: null }, { user: { $exists: false } }, { user: "" }],
+      $or: [
+        { "billingDetails.email": emailRegex },
+        { "guestDetails.email": emailRegex },
+      ],
+    },
+    { $set: { user: user._id } },
+  );
+  return result?.modifiedCount || result?.nModified || 0;
+};
 
 function resolveIsActiveMember(user) {
   if (!user) return false;
@@ -382,6 +404,18 @@ export async function loginUserController(req, res) {
     await UserModel.findByIdAndUpdate(user?._id, {
       last_login_date: new Date(),
     });
+
+    try {
+      const claimed = await claimGuestOrdersForUser(user);
+      if (claimed > 0) {
+        console.info(`Linked ${claimed} guest orders to user ${user._id}`);
+      }
+    } catch (claimError) {
+      console.warn("Failed to link guest orders on login:", {
+        userId: String(user?._id || ""),
+        error: claimError?.message || String(claimError),
+      });
+    }
 
     const accessCookieOptions = buildCookieOptions(ACCESS_TOKEN_MAX_AGE);
     const refreshCookieOptions = buildCookieOptions(REFRESH_TOKEN_MAX_AGE);
@@ -818,6 +852,18 @@ export async function authWithGoogle(req, res) {
         user.signUpWithGoogle = true;
       }
       await user.save();
+    }
+
+    try {
+      const claimed = await claimGuestOrdersForUser(user);
+      if (claimed > 0) {
+        console.info(`Linked ${claimed} guest orders to user ${user._id}`);
+      }
+    } catch (claimError) {
+      console.warn("Failed to link guest orders on Google login:", {
+        userId: String(user?._id || ""),
+        error: claimError?.message || String(claimError),
+      });
     }
 
     // Generate tokens for both new and existing users

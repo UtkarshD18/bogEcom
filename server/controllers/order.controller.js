@@ -1708,6 +1708,9 @@ const resolveCheckoutContact = async ({
     userEmail = normalizeEmail(userRecord?.email || "");
   }
 
+  const preferredEmail =
+    userId && userEmail ? userEmail : normalizeEmail(normalizedGuest.email || "");
+
   if (deliveryAddressId) {
     const address = await AddressModel.findById(deliveryAddressId).lean();
     if (!address) {
@@ -1736,7 +1739,7 @@ const resolveCheckoutContact = async ({
         serializedAddress.state || normalizedGuest.state || "",
       ).trim(),
       email: normalizeEmail(
-        normalizedGuest.email || userEmail || serializedAddress.email || "",
+        preferredEmail || serializedAddress.email || normalizedGuest.email || "",
       ),
       city: String(serializedAddress.city || normalizedGuest.city || "").trim(),
       gst: normalizedGuest.gst || userGstNumber,
@@ -1787,7 +1790,7 @@ const resolveCheckoutContact = async ({
   return {
       contact: {
         ...normalizedGuest,
-        email: normalizeEmail(normalizedGuest.email || userEmail || ""),
+        email: normalizeEmail(preferredEmail || normalizedGuest.email || ""),
         gst: normalizedGuest.gst || userGstNumber,
       },
     addressId: null,
