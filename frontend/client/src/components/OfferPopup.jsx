@@ -5,18 +5,41 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MdClose, MdLocalOffer, MdNotifications } from "react-icons/md";
 
-const POPUP_STORAGE_VERSION = "v3";
-const POPUP_COOLDOWN_HOURS = 24;
+const POPUP_STORAGE_VERSION = "v4";
 
 const normalizeCouponCode = (value) => {
   const normalized = String(value || "").trim().toUpperCase();
   return normalized || "GENERIC";
 };
 
-const getPopupShownKey = (couponCode) =>
-  `welcome_coupon_shown_${POPUP_STORAGE_VERSION}_${normalizeCouponCode(couponCode)}`;
-const getPopupDismissedKey = (couponCode) =>
-  `offer_popup_dismissed_${POPUP_STORAGE_VERSION}_${normalizeCouponCode(couponCode)}`;
+const hashSeed = (value) => {
+  let hash = 0;
+  const str = String(value || "");
+  for (let i = 0; i < str.length; i += 1) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+};
+
+const buildPopupSeed = ({
+  couponCode,
+  title,
+  description,
+  discountText,
+}) => {
+  return hashSeed(
+    [
+      normalizeCouponCode(couponCode),
+      String(title || "").trim(),
+      String(description || "").trim(),
+      String(discountText || "").trim(),
+    ].join("|"),
+  );
+};
+
+const getPopupShownKey = (seed) =>
+  `welcome_coupon_shown_${POPUP_STORAGE_VERSION}_${seed}`;
 
 /**
  * OfferPopup Component
@@ -47,7 +70,6 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
   const timeoutRef = useRef(null);
   const storageKeysRef = useRef({
     shownKey: getPopupShownKey(""),
-    dismissedKey: getPopupDismissedKey(""),
   });
 
   // Get settings from context
@@ -98,30 +120,19 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
       return;
     }
 
-    const shownKey = getPopupShownKey(offerCouponCode);
-    const dismissedKey = getPopupDismissedKey(offerCouponCode);
-    storageKeysRef.current = { shownKey, dismissedKey };
+    const popupSeed = buildPopupSeed({
+      couponCode: offerCouponCode,
+      title: offerTitle,
+      description: offerDescription,
+      discountText: offerDiscountText,
+    });
+    const shownKey = getPopupShownKey(popupSeed);
+    storageKeysRef.current = { shownKey };
 
     const alreadyShown = sessionStorage.getItem(shownKey);
     if (alreadyShown === "true") {
       console.log("[OfferPopup] Already shown in this session");
       return;
-    }
-
-    const dismissedRaw = localStorage.getItem(dismissedKey);
-    if (dismissedRaw) {
-      const dismissedTime = Number.parseInt(dismissedRaw, 10);
-      const hoursSinceDismissed = (Date.now() - dismissedTime) / (1000 * 60 * 60);
-      if (
-        Number.isFinite(hoursSinceDismissed) &&
-        hoursSinceDismissed < POPUP_COOLDOWN_HOURS
-      ) {
-        console.log(
-          "[OfferPopup] Dismissed recently, hours since:",
-          hoursSinceDismissed,
-        );
-        return;
-      }
     }
 
     console.log("[OfferPopup] Showing offer popup with code:", offerCouponCode);
@@ -164,8 +175,7 @@ const OfferPopup = ({ userId = null, isLoggedIn = false }) => {
   // Handle dismiss
   const handleDismiss = useCallback(() => {
     setIsVisible(false);
-    const { shownKey, dismissedKey } = storageKeysRef.current;
-    localStorage.setItem(dismissedKey, Date.now().toString());
+    const { shownKey } = storageKeysRef.current;
     sessionStorage.setItem(shownKey, "true");
   }, []);
 

@@ -425,6 +425,78 @@ app.use((req, res, next) => {
   });
 });
 
+const isPaytmCallbackRequest = (req) => {
+  const requestPath = String(req?.originalUrl || req?.url || "").toLowerCase();
+  if (
+    !requestPath.startsWith("/api/orders/webhook/paytm") &&
+    !requestPath.startsWith("/api/membership/webhook/paytm")
+  ) {
+    return false;
+  }
+  const origin = String(req?.headers?.origin || "").toLowerCase();
+  const referer = String(req?.headers?.referer || "").toLowerCase();
+  if (origin.includes("paytm") || referer.includes("paytm")) {
+    return true;
+  }
+  const contentType = String(req?.headers?.["content-type"] || "").toLowerCase();
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    return true;
+  }
+  const accept = String(req?.headers?.accept || "").toLowerCase();
+  return accept && !accept.includes("application/json");
+};
+
+const extractOrderIdFromPaytmPayload = (value) => {
+  const candidate = String(value || "").trim();
+  if (!candidate) return "";
+  const match = candidate.match(/BOG_[a-f0-9]{24}/i);
+  return match ? match[0].replace(/^BOG_/i, "") : "";
+};
+
+const redirectPaytmFailure = (req, res) => {
+  const orderIdCandidate =
+    req?.body?.ORDERID ||
+    req?.body?.orderId ||
+    req?.body?.merchantTransactionId ||
+    req?.query?.ORDERID ||
+    req?.query?.orderId ||
+    req?.query?.merchantTransactionId ||
+    (() => {
+      const raw = String(req?.rawBody || "");
+      if (!raw) return "";
+      try {
+        const params = new URLSearchParams(raw);
+        return params.get("ORDERID") || params.get("orderId") || "";
+      } catch {
+        return "";
+      }
+    })();
+
+  const resolvedOrderId = extractOrderIdFromPaytmPayload(orderIdCandidate);
+  const clientBase = String(process.env.CLIENT_URL || "")
+    .split(",")[0]
+    .trim()
+    .replace(/\/+$/, "");
+  const base = clientBase || "https://healthyonegram.com";
+  const target = new URL(
+    resolvedOrderId ? `/orders/${resolvedOrderId}` : "/my-orders",
+    base,
+  );
+  target.searchParams.set("paymentProvider", "PAYTM");
+  target.searchParams.set("paymentState", "failed");
+  return res.redirect(302, target.toString());
+};
+
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  if (isPaytmCallbackRequest(req)) {
+    return redirectPaytmFailure(req, res);
+  }
+  return next(err);
+});
+
 app.use((err, req, res, next) => {
   const isProduction = process.env.NODE_ENV === "production";
   console.error("Global error:", isProduction ? err.message : err);

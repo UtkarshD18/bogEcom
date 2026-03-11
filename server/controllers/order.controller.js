@@ -667,6 +667,20 @@ const resolveAnalyticsConsentFromRequest = (req) => {
   return "unknown";
 };
 
+const normalizeEmail = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const escapeRegex = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const buildEmailMatchRegex = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  return new RegExp(`^${escapeRegex(normalized)}$`, "i");
+};
+
 const formatOrderDateForEmail = (value) => {
   const parsed = new Date(value || Date.now());
   if (Number.isNaN(parsed.getTime())) {
@@ -713,6 +727,9 @@ const sendOrderConfirmationEmail = async (order) => {
       .toLowerCase();
 
     if (!recipientEmail) {
+      logger.warn("sendOrderConfirmationEmail", "Recipient email missing", {
+        orderId: order?._id,
+      });
       return false;
     }
 
@@ -818,6 +835,9 @@ const sendOrderPaymentSuccessEmail = async (
       .toLowerCase();
 
     if (!recipientEmail) {
+      logger.warn("sendOrderPaymentSuccessEmail", "Recipient email missing", {
+        orderId: order?._id,
+      });
       return false;
     }
 
@@ -912,6 +932,9 @@ const sendOrderCancelledEmail = async (order) => {
       .toLowerCase();
 
     if (!recipientEmail) {
+      logger.warn("sendOrderCancelledEmail", "Recipient email missing", {
+        orderId: order?._id,
+      });
       return false;
     }
 
@@ -1051,6 +1074,9 @@ const sendOrderPaymentReminderEmail = async (
       .toLowerCase();
 
     if (!recipientEmail) {
+      logger.warn("sendOrderPaymentReminderEmail", "Recipient email missing", {
+        orderId: order?._id,
+      });
       return false;
     }
 
@@ -1094,9 +1120,14 @@ const sendOrderPaymentReminderEmail = async (
       `Support: ${supportContact}`,
     ].join("\n");
 
+    const subject =
+      normalizedFailureKind === "cancelled"
+        ? `Payment Cancelled - ${displayOrderNumber}`
+        : `Payment Reminder - ${displayOrderNumber}`;
+
     const result = await sendTemplatedEmail({
       to: recipientEmail,
-      subject: `Payment Reminder - ${displayOrderNumber}`,
+      subject,
       templateFile: "orderPaymentReminder.html",
       templateData: {
         customer_name: customerName,
@@ -1441,28 +1472,86 @@ const isBrowserNavigationRequest = (req) => {
   );
 };
 
+const PAYTM_BROWSER_FIELD_KEYS = new Set([
+  "checksumhash",
+  "mid",
+  "orderid",
+  "order_id",
+  "merchanttransactionid",
+  "merchant_order_id",
+  "merchantorderid",
+  "txnid",
+  "txn_id",
+  "txnstatus",
+  "respcode",
+  "respmsg",
+  "status",
+  "resultstatus",
+  "resultcode",
+  "resultmsg",
+]);
+
+const hasPaytmFieldKeys = (payload) => {
+  if (!payload || typeof payload !== "object") return false;
+  return Object.keys(payload).some((key) =>
+    PAYTM_BROWSER_FIELD_KEYS.has(String(key || "").toLowerCase()),
+  );
+};
+
+const resolvePaytmCandidatePayload = (payload) => {
+  if (!payload || typeof payload !== "object") return payload;
+  if (payload.BODY || payload.body) {
+    return decodePaytmWebhookEnvelope(payload);
+  }
+  return payload;
+};
+
 const isPaytmBrowserCallback = (req) => {
   if (!req) return false;
   const body = req.body && typeof req.body === "object" ? req.body : {};
+  const resolvedBody = resolvePaytmCandidatePayload(body);
   const query = req.query && typeof req.query === "object" ? req.query : {};
-  const hasPaytmFields = Boolean(
-    body.CHECKSUMHASH ||
-      body.MID ||
-      body.ORDERID ||
-      body.TXNID ||
-      body.TXNSTATUS ||
-      body.RESPCODE ||
-      body.RESPMSG ||
-      query.CHECKSUMHASH ||
-      query.MID ||
-      query.ORDERID ||
-      query.TXNID ||
-      query.TXNSTATUS ||
-      query.RESPCODE ||
-      query.RESPMSG,
+  return (
+    hasPaytmFieldKeys(body) ||
+    hasPaytmFieldKeys(resolvedBody) ||
+    hasPaytmFieldKeys(query)
   );
-  if (!hasPaytmFields) return false;
-  return true;
+};
+
+const shouldRedirectPaytm = (req) => {
+  if (!req) return false;
+  if (isBrowserNavigationRequest(req) || isPaytmBrowserCallback(req)) {
+    return true;
+  }
+  const referer = String(req.headers?.referer || "").toLowerCase();
+  const origin = String(req.headers?.origin || "").toLowerCase();
+  if (
+    referer.includes("paytm") ||
+    referer.includes("paytmpayments") ||
+    origin.includes("paytm") ||
+    origin.includes("paytmpayments")
+  ) {
+    return true;
+  }
+  if (req.rawBody) {
+    const rawPayload = parsePaytmRawBody(req.rawBody);
+    const resolvedRawPayload = resolvePaytmCandidatePayload(rawPayload);
+    if (hasPaytmFieldKeys(rawPayload) || hasPaytmFieldKeys(resolvedRawPayload)) {
+      return true;
+    }
+  }
+  const method = String(req.method || "").toUpperCase();
+  if (method === "GET") return true;
+  const accept = String(req.headers?.accept || "").toLowerCase();
+  const userAgent = String(req.headers?.["user-agent"] || "").toLowerCase();
+  const isBrowser =
+    userAgent.includes("mozilla") ||
+    userAgent.includes("chrome") ||
+    userAgent.includes("safari") ||
+    userAgent.includes("firefox") ||
+    userAgent.includes("edg") ||
+    userAgent.includes("opera");
+  return isBrowser && !accept.includes("application/json");
 };
 
 const redirectPaytmWebhookToClient = (res, { orderId, paymentState }) => {
@@ -3007,9 +3096,32 @@ export const getUserOrders = asyncHandler(async (req, res) => {
       throw new AppError("UNAUTHORIZED");
     }
 
-    logger.debug("getUserOrders", "Fetching user orders", { userId });
+    const userRecord = await UserModel.findById(userId)
+      .select("email")
+      .lean();
+    const userEmail = normalizeEmail(userRecord?.email || "");
+    const emailMatch = buildEmailMatchRegex(userEmail);
+    const orderQuery = emailMatch
+      ? {
+          $or: [
+            { user: userId },
+            {
+              user: null,
+              $or: [
+                { "billingDetails.email": emailMatch },
+                { "guestDetails.email": emailMatch },
+              ],
+            },
+          ],
+        }
+      : { user: userId };
 
-    const orders = await OrderModel.find({ user: userId })
+    logger.debug("getUserOrders", "Fetching user orders", {
+      userId,
+      userEmail,
+    });
+
+    const orders = await OrderModel.find(orderQuery)
       .populate("user", "name email avatar")
       .populate("delivery_address")
       .populate("influencerId", "code name")
@@ -3074,7 +3186,19 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
 
     // Check ownership
     const orderUserId = order.user?._id?.toString() || order.user?.toString();
-    if (orderUserId !== userId?.toString()) {
+    const requester = await UserModel.findById(userId)
+      .select("email")
+      .lean();
+    const requesterEmail = normalizeEmail(requester?.email || "");
+    const orderEmail = normalizeEmail(
+      order?.billingDetails?.email || order?.guestDetails?.email || "",
+    );
+    const isEmailOwner =
+      Boolean(requesterEmail) &&
+      Boolean(orderEmail) &&
+      requesterEmail === orderEmail;
+
+    if (orderUserId !== userId?.toString() && !isEmailOwner) {
       logger.warn(
         "getUserOrderById",
         "User trying to access order they don't own",
@@ -3082,6 +3206,8 @@ export const getUserOrderById = asyncHandler(async (req, res) => {
           userId,
           orderId: id,
           orderUserId,
+          requesterEmail,
+          orderEmail,
         },
       );
       throw new AppError("FORBIDDEN");
@@ -3145,10 +3271,19 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
     const isAdmin = requester.role === "Admin";
     const orderUserId =
       order.user?._id?.toString?.() || order.user?.toString?.();
+    const requesterEmail = normalizeEmail(requester?.email || "");
+    const orderEmail = normalizeEmail(
+      order?.billingDetails?.email || order?.guestDetails?.email || "",
+    );
+    const isEmailOwner =
+      Boolean(requesterEmail) &&
+      Boolean(orderEmail) &&
+      requesterEmail === orderEmail;
 
     if (
       !isAdmin &&
-      (!orderUserId || orderUserId !== requester._id.toString())
+      (!orderUserId || orderUserId !== requester._id.toString()) &&
+      !isEmailOwner
     ) {
       throw new AppError("FORBIDDEN");
     }
@@ -4948,22 +5083,57 @@ const reconcileOrdersForListing = async ({
   successSource = "PAYMENT_STATUS_RECONCILE_LIST",
   shipmentSource = "PAYMENT_STATUS_RECONCILE_LIST_AUTO_SHIPMENT",
 }) => {
-  const candidates = (Array.isArray(orders) ? orders : [])
-    .filter((order) => shouldAttemptPaymentReconciliation(order, { force: false }))
-    .slice(0, Math.max(Number(limit || 0), 0));
+  const maxCandidates = Math.max(Number(limit || 0), 0);
+  if (!maxCandidates) return;
+
+  const list = Array.isArray(orders) ? orders : [];
+  const candidateQueue = [];
+  const seen = new Set();
+
+  const markCandidate = (order, type) => {
+    if (!order?._id) return;
+    const id = String(order._id);
+    if (seen.has(id)) return;
+    seen.add(id);
+    candidateQueue.push({ order, type });
+  };
+
+  const needsPaidRepair = (order) =>
+    String(order?.payment_status || "").trim().toLowerCase() === "paid" &&
+    (!hasInvoiceArtifacts(order) || !hasBookedShipment(order));
+
+  list.forEach((order) => {
+    if (shouldAttemptPaymentReconciliation(order, { force: false })) {
+      markCandidate(order, "reconcile");
+    }
+  });
+
+  list.forEach((order) => {
+    if (needsPaidRepair(order)) {
+      markCandidate(order, "repair");
+    }
+  });
+
+  const candidates = candidateQueue.slice(0, maxCandidates);
 
   if (candidates.length === 0) return;
 
   await Promise.allSettled(
-    candidates.map((order) =>
-      reconcileOrderPaymentStatus({
-        order,
-        req,
-        force: false,
-        logContext,
-        successSource,
-        shipmentSource,
-      }),
+    candidates.map(({ order, type }) =>
+      type === "repair"
+        ? repairPaidOrderArtifacts({
+            order,
+            syncContext: logContext,
+            shipmentSource,
+          })
+        : reconcileOrderPaymentStatus({
+            order,
+            req,
+            force: false,
+            logContext,
+            successSource,
+            shipmentSource,
+          }),
     ),
   );
 };
@@ -4978,8 +5148,7 @@ const reconcileOrdersForListing = async ({
 export const handlePaytmWebhook = asyncHandler(async (req, res) => {
   try {
     logger.debug("handlePaytmWebhook", "Webhook received");
-    const wantsBrowserRedirect =
-      isBrowserNavigationRequest(req) || isPaytmBrowserCallback(req);
+    const wantsBrowserRedirect = shouldRedirectPaytm(req);
     const bodyHasPayload =
       req.body && typeof req.body === "object" && Object.keys(req.body).length > 0;
     const rawBodyPayload =
@@ -5169,7 +5338,7 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
     logger.error("handlePaytmWebhook", "Webhook processing error", {
       error: error.message,
     });
-    if (isBrowserNavigationRequest(req) || isPaytmBrowserCallback(req)) {
+    if (shouldRedirectPaytm(req)) {
       const orderIdCandidate =
         req?.body?.ORDERID ||
         req?.body?.orderId ||
@@ -5187,6 +5356,83 @@ export const handlePaytmWebhook = asyncHandler(async (req, res) => {
       });
     }
     return sendError(res, error);
+  }
+});
+
+/**
+ * Repair paid orders missing shipment or invoice artifacts (Admin)
+ * @route POST /api/orders/admin/repair-paid
+ * @access Admin
+ */
+export const repairPaidOrders = asyncHandler(async (req, res) => {
+  try {
+    const limitRaw = req.body?.limit ?? req.query?.limit ?? 10;
+    const limit = Math.min(Math.max(Number(limitRaw) || 10, 1), 50);
+
+    const filter = {
+      payment_status: "paid",
+      purchaseOrder: null,
+      isDemoOrder: { $ne: true },
+      $or: [
+        { awbNumber: { $in: [null, ""] } },
+        { awb_number: { $in: [null, ""] } },
+        { shipmentId: { $in: [null, ""] } },
+        { invoicePath: { $in: [null, ""] } },
+        { invoiceNumber: { $in: [null, ""] } },
+        { isInvoiceGenerated: { $ne: true } },
+      ],
+    };
+
+    const orders = await OrderModel.find(filter)
+      .sort({ updatedAt: 1 })
+      .limit(limit)
+      .exec();
+
+    if (!orders.length) {
+      return sendSuccess(
+        res,
+        { total: 0, repaired: 0, skipped: 0 },
+        "No paid orders pending repair",
+      );
+    }
+
+    const results = await Promise.allSettled(
+      orders.map((order) =>
+        repairPaidOrderArtifacts({
+          order,
+          syncContext: "admin_repair_paid_orders",
+          shipmentSource: "ADMIN_REPAIR_AUTO_SHIPMENT",
+        }),
+      ),
+    );
+
+    let repaired = 0;
+    let skipped = 0;
+    results.forEach((result) => {
+      if (result.status !== "fulfilled") {
+        skipped += 1;
+        return;
+      }
+      const value = result.value;
+      if (value?.repaired) {
+        repaired += 1;
+      } else {
+        skipped += 1;
+      }
+    });
+
+    return sendSuccess(
+      res,
+      {
+        total: orders.length,
+        repaired,
+        skipped,
+      },
+      "Paid order repair completed",
+    );
+  } catch (error) {
+    const dbError = handleDatabaseError(error, "repairPaidOrders");
+    return sendError(res, dbError);
   }
 });
 

@@ -1,6 +1,6 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
-import { API_BASE_URL, deleteData, getData, putData } from "@/utils/api";
+import { API_BASE_URL, deleteData, getData, postData, putData } from "@/utils/api";
 import { Button } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Pagination from "@mui/material/Pagination";
@@ -593,6 +593,7 @@ const Orders = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [repairingPaidOrders, setRepairingPaidOrders] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
@@ -633,6 +634,38 @@ const Orders = () => {
     fetchOrders();
   };
 
+  const handleRepairPaidOrders = async () => {
+    if (!token) {
+      toast.error("Admin session missing");
+      return;
+    }
+    const confirmed =
+      typeof window === "undefined"
+        ? true
+        : window.confirm(
+            "Repair paid orders missing shipment/invoice? This may take a minute.",
+          );
+    if (!confirmed) return;
+
+    setRepairingPaidOrders(true);
+    try {
+      const response = await postData("/api/orders/admin/repair-paid?limit=50", {}, token);
+      if (response?.success) {
+        const stats = response?.data || {};
+        toast.success(
+          `Repair completed: ${stats.repaired || 0} repaired, ${stats.skipped || 0} skipped.`,
+        );
+        fetchOrders();
+      } else {
+        toast.error(response?.message || "Repair failed");
+      }
+    } catch (error) {
+      toast.error("Repair failed");
+    } finally {
+      setRepairingPaidOrders(false);
+    }
+  };
+
   if (loading || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -656,6 +689,20 @@ const Orders = () => {
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleRepairPaidOrders}
+              disabled={repairingPaidOrders}
+              sx={{
+                textTransform: "none",
+                borderRadius: "10px",
+                px: 2,
+                py: 0.8,
+              }}
+            >
+              {repairingPaidOrders ? "Repairing Paid Orders..." : "Repair Paid Orders"}
+            </Button>
             <Button
               variant="outlined"
               size="small"

@@ -16,6 +16,7 @@ import {
   handlePhonePeSubscriptionPreWebhook,
   handlePhonePeWebhook,
   previewOrderPricing,
+  repairPaidOrders,
   handlePaytmWebhook,
   retryOrderPayment,
   saveClientTestInvoiceToDisk,
@@ -138,6 +139,9 @@ router.get("/admin/stats", auth, admin, getOrderStats);
 
 // Get dashboard statistics
 router.get("/admin/dashboard-stats", auth, admin, getDashboardStats);
+
+// Repair paid orders missing shipment/invoice artifacts
+router.post("/admin/repair-paid", auth, admin, repairPaidOrders);
 
 // Get single order (admin or order owner)
 router.get(

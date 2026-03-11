@@ -18,7 +18,12 @@ import {
   ORDER_STATUS,
 } from "../utils/orderStatus.js";
 import { logger } from "../utils/errorHandler.js";
-import { snapshotToDisplayAddress } from "../utils/addressUtils.js";
+import {
+  buildOrderAddressSnapshot,
+  normalizeStructuredAddress,
+  serializeAddressDocument,
+  snapshotToDisplayAddress,
+} from "../utils/addressUtils.js";
 
 const DEFAULT_PRODUCT_WEIGHT_GRAMS = 500;
 const DEFAULT_PACKAGE_DIMENSION_CM = 10;
@@ -129,6 +134,73 @@ const normalizePincode = (value) => String(value || "").replace(/\D/g, "").slice
 const normalizeText = (value, fallback = "") => {
   const normalized = String(value || "").trim();
   return normalized || fallback;
+};
+
+const isSnapshotComplete = (snapshot = {}) => {
+  if (!snapshot || typeof snapshot !== "object") return false;
+  const display = snapshotToDisplayAddress(snapshot);
+  return Boolean(display.address_line1 && display.pincode && display.mobile);
+};
+
+const buildSnapshotFromOrder = (order = {}) => {
+  const addressDoc = order?.delivery_address;
+  if (addressDoc && typeof addressDoc === "object") {
+    const serialized = serializeAddressDocument(addressDoc);
+    const structured = normalizeStructuredAddress({
+      ...serialized,
+      email:
+        serialized.email ||
+        order?.billingDetails?.email ||
+        order?.guestDetails?.email ||
+        order?.user?.email ||
+        "",
+    });
+    return buildOrderAddressSnapshot(structured, {
+      email: structured.email,
+      source: "delivery_address",
+      addressId: addressDoc?._id || addressDoc?.id || null,
+    });
+  }
+
+  const contact = order?.guestDetails || order?.billingDetails || {};
+  const structured = normalizeStructuredAddress({
+    full_name: contact.fullName || contact.name || order?.user?.name || "",
+    mobile_number:
+      contact.phone || contact.mobile || contact.mobile_number || "",
+    pincode: contact.pincode || "",
+    flat_house: contact.flat_house || contact.address || "",
+    area_street_sector: contact.area_street_sector || contact.address || "",
+    landmark: contact.landmark || "",
+    city: contact.city || "",
+    state: contact.state || "",
+    district: contact.district || "",
+    email: contact.email || order?.user?.email || "",
+  });
+
+  const source =
+    order?.guestDetails && Object.keys(order.guestDetails || {}).length
+      ? "guest_repair"
+      : "billing_repair";
+
+  return buildOrderAddressSnapshot(structured, {
+    email: structured.email,
+    source,
+    addressId: order?.delivery_address?._id || null,
+  });
+};
+
+const ensureOrderSnapshotForShipping = (order) => {
+  if (!order) return null;
+  const current = order.deliveryAddressSnapshot || null;
+  if (current && isSnapshotComplete(current)) {
+    return current;
+  }
+  const rebuilt = buildSnapshotFromOrder(order);
+  if (rebuilt && Object.keys(rebuilt).length) {
+    order.deliveryAddressSnapshot = rebuilt;
+    return rebuilt;
+  }
+  return current;
 };
 
 const resolveAddress = (order) => {
@@ -412,9 +484,34 @@ const buildShipmentPayload = (order, prepared) => {
   );
   const packageWeight = resolvePackageWeightForCarrier(billedWeightGrams);
 
-  const consignee = buildXpressbeesShipmentPayload(
-    order?.deliveryAddressSnapshot || {},
-  );
+  const resolvedSnapshot =
+    order?.deliveryAddressSnapshot || ensureOrderSnapshotForShipping(order) || {};
+  const consignee = buildXpressbeesShipmentPayload(resolvedSnapshot);
+  const fallbackAddress = resolveAddress(order);
+  if (!consignee.name && fallbackAddress.name) {
+    consignee.name = fallbackAddress.name;
+  }
+  if (!consignee.mobile && fallbackAddress.phone) {
+    consignee.mobile = fallbackAddress.phone;
+  }
+  if (!consignee.address_line1 && fallbackAddress.addressLine1) {
+    consignee.address_line1 = fallbackAddress.addressLine1;
+  }
+  if (!consignee.address_line2 && fallbackAddress.addressLine2) {
+    consignee.address_line2 = fallbackAddress.addressLine2;
+  }
+  if (!consignee.landmark && fallbackAddress.landmark) {
+    consignee.landmark = fallbackAddress.landmark;
+  }
+  if (!consignee.city && fallbackAddress.city) {
+    consignee.city = fallbackAddress.city;
+  }
+  if (!consignee.state && fallbackAddress.state) {
+    consignee.state = fallbackAddress.state;
+  }
+  if (!consignee.pincode && fallbackAddress.pincode) {
+    consignee.pincode = fallbackAddress.pincode;
+  }
 
   const payload = {
     order_number: resolveOrderDisplayId(order),
@@ -732,6 +829,8 @@ export const autoCreateShipmentForPaidOrder = async ({
   if (!order) {
     return { ok: false, skipped: true, reason: "ORDER_NOT_FOUND" };
   }
+
+  ensureOrderSnapshotForShipping(order);
 
   const readiness = validateReadyForShipping(order);
   if (!readiness.ok) {
