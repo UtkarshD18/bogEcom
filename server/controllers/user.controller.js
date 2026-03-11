@@ -185,6 +185,32 @@ export async function registerUserController(req, res) {
 
     user = await UserModel.findOne({ email: normalizedEmail });
     if (user) {
+      if (user.verifyEmail !== true) {
+        const verifyCode = Math.floor(100000 + Math.random() * 900000).toString();
+        user.otp = verifyCode;
+        user.otpExpires = Date.now() + 600000;
+        await user.save();
+        const emailSent = await sendEmailFun({
+          sendTo: normalizedEmail,
+          subject: "Verify email from HealthyOneGram",
+          text: "",
+          html: VerificationEmail(user?.name || sanitizedName, verifyCode),
+        });
+        if (!emailSent) {
+          return res.status(500).json({
+            success: false,
+            error: true,
+            message: "Failed to resend verification email.",
+          });
+        }
+        return res.status(200).json({
+          success: true,
+          error: false,
+          code: "EMAIL_NOT_VERIFIED",
+          message: "Account exists. Verification email resent.",
+        });
+      }
+
       return res.status(400).json({
         message: "User already exists",
         error: true,
@@ -352,10 +378,33 @@ export async function loginUserController(req, res) {
     }
 
     if (user?.verifyEmail !== true) {
+      let otpResent = false;
+      try {
+        const verifyCode = Math.floor(100000 + Math.random() * 900000).toString();
+        user.otp = verifyCode;
+        user.otpExpires = Date.now() + 600000;
+        await user.save();
+        const emailSent = await sendEmailFun({
+          sendTo: normalizedEmail,
+          subject: "Verify email from HealthyOneGram",
+          text: "",
+          html: VerificationEmail(user?.name || "Customer", verifyCode),
+        });
+        otpResent = Boolean(emailSent);
+      } catch (resendError) {
+        console.warn("Failed to resend verification email on login:", {
+          email: normalizedEmail,
+          error: resendError?.message || String(resendError),
+        });
+      }
+
       return res.status(400).json({
         success: false,
         error: true,
-        message: "Please verify your email before logging in.",
+        code: "EMAIL_NOT_VERIFIED",
+        message: otpResent
+          ? "Please verify your email. We sent a new OTP."
+          : "Please verify your email before logging in.",
       });
     }
 

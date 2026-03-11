@@ -272,7 +272,21 @@ const Register = () => {
           });
           router.push("/verify");
         } else {
-          context?.alertBox("error", res?.message);
+          const message = res?.message || "Registration failed";
+          const requiresVerify =
+            res?.code === "EMAIL_NOT_VERIFIED" ||
+            /verify/i.test(message || "") ||
+            /already exists/i.test(message || "");
+          if (requiresVerify) {
+            cookies.set("userEmail", formFields.email);
+            cookies.set("actionType", "verifyEmail");
+            context?.alertBox("info", message);
+            setIsLoading(false);
+            router.push("/verify");
+            return;
+          }
+
+          context?.alertBox("error", message);
           setIsLoading(false);
         }
       })

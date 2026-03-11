@@ -286,7 +286,21 @@ const LoginForm = () => {
             router.push(redirectUrl);
           }, 100);
         } else {
-          context?.alertBox("error", res?.message);
+          const message = res?.message || "Login failed";
+          const requiresVerify =
+            res?.code === "EMAIL_NOT_VERIFIED" ||
+            /verify your email/i.test(message || "");
+
+          if (requiresVerify) {
+            cookies.set("userEmail", formFields.email);
+            cookies.set("actionType", "verifyEmail");
+            context?.alertBox("info", message);
+            setIsLoading(false);
+            router.push("/verify");
+            return;
+          }
+
+          context?.alertBox("error", message);
           setIsLoading(false);
         }
       })
