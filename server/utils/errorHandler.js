@@ -7,14 +7,46 @@
 
 export const ERROR_CODES = {
   // Validation Errors (400-409)
-  INVALID_INPUT: { code: "INVALID_INPUT", status: 400, message: "Invalid input provided" },
-  MISSING_FIELD: { code: "MISSING_FIELD", status: 400, message: "Missing required field" },
-  INVALID_FORMAT: { code: "INVALID_FORMAT", status: 400, message: "Invalid format" },
-  INVALID_OBJECT_ID: { code: "INVALID_OBJECT_ID", status: 400, message: "Invalid ID format" },
-  INVALID_AMOUNT: { code: "INVALID_AMOUNT", status: 400, message: "Invalid amount" },
-  EMPTY_PRODUCTS: { code: "EMPTY_PRODUCTS", status: 400, message: "Products array cannot be empty" },
-  INVALID_QUANTITY: { code: "INVALID_QUANTITY", status: 400, message: "Invalid product quantity" },
-  INVALID_STATUS: { code: "INVALID_STATUS", status: 400, message: "Invalid status value" },
+  INVALID_INPUT: {
+    code: "INVALID_INPUT",
+    status: 400,
+    message: "Invalid input provided",
+  },
+  MISSING_FIELD: {
+    code: "MISSING_FIELD",
+    status: 400,
+    message: "Missing required field",
+  },
+  INVALID_FORMAT: {
+    code: "INVALID_FORMAT",
+    status: 400,
+    message: "Invalid format",
+  },
+  INVALID_OBJECT_ID: {
+    code: "INVALID_OBJECT_ID",
+    status: 400,
+    message: "Invalid ID format",
+  },
+  INVALID_AMOUNT: {
+    code: "INVALID_AMOUNT",
+    status: 400,
+    message: "Invalid amount",
+  },
+  EMPTY_PRODUCTS: {
+    code: "EMPTY_PRODUCTS",
+    status: 400,
+    message: "Products array cannot be empty",
+  },
+  INVALID_QUANTITY: {
+    code: "INVALID_QUANTITY",
+    status: 400,
+    message: "Invalid product quantity",
+  },
+  INVALID_STATUS: {
+    code: "INVALID_STATUS",
+    status: 400,
+    message: "Invalid status value",
+  },
   CONFLICT: { code: "CONFLICT", status: 409, message: "Resource conflict" },
   INSUFFICIENT_STOCK: {
     code: "INSUFFICIENT_STOCK",
@@ -23,35 +55,111 @@ export const ERROR_CODES = {
   },
 
   // Authentication & Authorization (401-403)
-  UNAUTHORIZED: { code: "UNAUTHORIZED", status: 401, message: "Authentication required" },
-  INVALID_TOKEN: { code: "INVALID_TOKEN", status: 401, message: "Invalid or expired token" },
-  TOKEN_EXPIRED: { code: "TOKEN_EXPIRED", status: 401, message: "Token has expired" },
+  UNAUTHORIZED: {
+    code: "UNAUTHORIZED",
+    status: 401,
+    message: "Authentication required",
+  },
+  INVALID_TOKEN: {
+    code: "INVALID_TOKEN",
+    status: 401,
+    message: "Invalid or expired token",
+  },
+  TOKEN_EXPIRED: {
+    code: "TOKEN_EXPIRED",
+    status: 401,
+    message: "Token has expired",
+  },
   FORBIDDEN: { code: "FORBIDDEN", status: 403, message: "Access denied" },
-  INSUFFICIENT_PERMISSIONS: { code: "INSUFFICIENT_PERMISSIONS", status: 403, message: "Insufficient permissions" },
+  INSUFFICIENT_PERMISSIONS: {
+    code: "INSUFFICIENT_PERMISSIONS",
+    status: 403,
+    message: "Insufficient permissions",
+  },
 
   // Resource Not Found (404)
   NOT_FOUND: { code: "NOT_FOUND", status: 404, message: "Resource not found" },
-  ORDER_NOT_FOUND: { code: "ORDER_NOT_FOUND", status: 404, message: "Order not found" },
-  USER_NOT_FOUND: { code: "USER_NOT_FOUND", status: 404, message: "User not found" },
-  PRODUCT_NOT_FOUND: { code: "PRODUCT_NOT_FOUND", status: 404, message: "Product not found" },
-  ADDRESS_NOT_FOUND: { code: "ADDRESS_NOT_FOUND", status: 404, message: "Address not found" },
+  ORDER_NOT_FOUND: {
+    code: "ORDER_NOT_FOUND",
+    status: 404,
+    message: "Order not found",
+  },
+  USER_NOT_FOUND: {
+    code: "USER_NOT_FOUND",
+    status: 404,
+    message: "User not found",
+  },
+  PRODUCT_NOT_FOUND: {
+    code: "PRODUCT_NOT_FOUND",
+    status: 404,
+    message: "Product not found",
+  },
+  ADDRESS_NOT_FOUND: {
+    code: "ADDRESS_NOT_FOUND",
+    status: 404,
+    message: "Address not found",
+  },
 
   // Payment Errors (402, 422)
-  PAYMENT_REQUIRED: { code: "PAYMENT_REQUIRED", status: 402, message: "Payment required" },
-  PAYMENT_FAILED: { code: "PAYMENT_FAILED", status: 422, message: "Payment processing failed" },
-  PAYMENT_VERIFICATION_FAILED: { code: "PAYMENT_VERIFICATION_FAILED", status: 422, message: "Payment verification failed" },
-  SIGNATURE_MISMATCH: { code: "SIGNATURE_MISMATCH", status: 422, message: "Signature verification failed" },
-  INVALID_PAYMENT_METHOD: { code: "INVALID_PAYMENT_METHOD", status: 422, message: "Invalid payment method" },
-  PAYMENT_GATEWAY_ERROR: { code: "PAYMENT_GATEWAY_ERROR", status: 503, message: "Payment gateway error" },
+  PAYMENT_REQUIRED: {
+    code: "PAYMENT_REQUIRED",
+    status: 402,
+    message: "Payment required",
+  },
+  PAYMENT_FAILED: {
+    code: "PAYMENT_FAILED",
+    status: 422,
+    message: "Payment processing failed",
+  },
+  PAYMENT_VERIFICATION_FAILED: {
+    code: "PAYMENT_VERIFICATION_FAILED",
+    status: 422,
+    message: "Payment verification failed",
+  },
+  SIGNATURE_MISMATCH: {
+    code: "SIGNATURE_MISMATCH",
+    status: 422,
+    message: "Signature verification failed",
+  },
+  INVALID_PAYMENT_METHOD: {
+    code: "INVALID_PAYMENT_METHOD",
+    status: 422,
+    message: "Invalid payment method",
+  },
+  PAYMENT_GATEWAY_ERROR: {
+    code: "PAYMENT_GATEWAY_ERROR",
+    status: 503,
+    message: "Payment gateway error",
+  },
 
   // Service Unavailable (503)
-  SERVICE_UNAVAILABLE: { code: "SERVICE_UNAVAILABLE", status: 503, message: "Service temporarily unavailable" },
-  PAYMENT_DISABLED: { code: "PAYMENT_DISABLED", status: 503, message: "Payment service is currently unavailable" },
-  DATABASE_ERROR: { code: "DATABASE_ERROR", status: 503, message: "Database service error" },
+  SERVICE_UNAVAILABLE: {
+    code: "SERVICE_UNAVAILABLE",
+    status: 503,
+    message: "Service temporarily unavailable",
+  },
+  PAYMENT_DISABLED: {
+    code: "PAYMENT_DISABLED",
+    status: 503,
+    message: "Payment service is currently unavailable",
+  },
+  DATABASE_ERROR: {
+    code: "DATABASE_ERROR",
+    status: 503,
+    message: "Database service error",
+  },
 
   // Server Errors (500+)
-  INTERNAL_ERROR: { code: "INTERNAL_ERROR", status: 500, message: "Internal server error" },
-  UNHANDLED_ERROR: { code: "UNHANDLED_ERROR", status: 500, message: "An unexpected error occurred" },
+  INTERNAL_ERROR: {
+    code: "INTERNAL_ERROR",
+    status: 500,
+    message: "Internal server error",
+  },
+  UNHANDLED_ERROR: {
+    code: "UNHANDLED_ERROR",
+    status: 500,
+    message: "An unexpected error occurred",
+  },
 };
 
 // ==================== CUSTOM ERROR CLASS ====================
@@ -103,26 +211,38 @@ function formatLog(level, context, message, meta = {}) {
 export const logger = {
   error: (context, message, meta = {}) => {
     const log = formatLog(LOG_LEVELS.ERROR, context, message, meta);
-    console.error(`[${log.timestamp}] ${log.level} [${log.context}]: ${log.message}`, meta);
+    console.error(
+      `[${log.timestamp}] ${log.level} [${log.context}]: ${log.message}`,
+      meta,
+    );
     return log;
   },
 
   warn: (context, message, meta = {}) => {
     const log = formatLog(LOG_LEVELS.WARN, context, message, meta);
-    console.warn(`[${log.timestamp}] ${log.level} [${log.context}]: ${log.message}`, meta);
+    console.warn(
+      `[${log.timestamp}] ${log.level} [${log.context}]: ${log.message}`,
+      meta,
+    );
     return log;
   },
 
   info: (context, message, meta = {}) => {
     const log = formatLog(LOG_LEVELS.INFO, context, message, meta);
-    console.log(`[${log.timestamp}] ${log.level} [${log.context}]: ${log.message}`, meta);
+    console.log(
+      `[${log.timestamp}] ${log.level} [${log.context}]: ${log.message}`,
+      meta,
+    );
     return log;
   },
 
   debug: (context, message, meta = {}) => {
     if (process.env.NODE_ENV !== "production") {
       const log = formatLog(LOG_LEVELS.DEBUG, context, message, meta);
-      console.log(`[${log.timestamp}] ${log.level} [${log.context}]: ${log.message}`, meta);
+      console.log(
+        `[${log.timestamp}] ${log.level} [${log.context}]: ${log.message}`,
+        meta,
+      );
       return log;
     }
   },
@@ -146,7 +266,12 @@ export function sendSuccess(res, data, message = "Success", statusCode = 200) {
 /**
  * Send error response
  */
-export function sendError(res, error, statusCode = 500, includeDetails = false) {
+export function sendError(
+  res,
+  error,
+  statusCode = 500,
+  includeDetails = false,
+) {
   let errorCode = "INTERNAL_ERROR";
   let message = "Internal server error";
   let details = null;
@@ -320,15 +445,21 @@ export function handlePaymentError(error, context = "Payment Processing") {
 
   // Map specific payment errors
   if (error.statusCode === 400) {
-    throw new AppError("INVALID_PAYMENT_METHOD", { originalError: error.message });
+    throw new AppError("INVALID_PAYMENT_METHOD", {
+      originalError: error.message,
+    });
   }
 
   if (error.statusCode === 401 || error.statusCode === 403) {
-    throw new AppError("PAYMENT_GATEWAY_ERROR", { originalError: "Payment gateway authentication failed" });
+    throw new AppError("PAYMENT_GATEWAY_ERROR", {
+      originalError: "Payment gateway authentication failed",
+    });
   }
 
   if (error.statusCode >= 500) {
-    throw new AppError("PAYMENT_GATEWAY_ERROR", { originalError: "Payment gateway is temporarily unavailable" });
+    throw new AppError("PAYMENT_GATEWAY_ERROR", {
+      originalError: "Payment gateway is temporarily unavailable",
+    });
   }
 
   throw new AppError("PAYMENT_FAILED", { originalError: error.message });
@@ -351,17 +482,23 @@ export function handleDatabaseError(error, context = "Database Operation") {
       acc[field] = err.message;
       return acc;
     }, {});
-    throw new AppError("INVALID_INPUT", details);
+    return new AppError("INVALID_INPUT", details);
   }
 
   if (error.name === "CastError") {
-    throw new AppError("INVALID_OBJECT_ID", { field: error.path, value: error.value });
+    return new AppError("INVALID_OBJECT_ID", {
+      field: error.path,
+      value: error.value,
+    });
   }
 
   if (error.code === 11000) {
     const field = Object.keys(error.keyPattern)[0];
-    throw new AppError("CONFLICT", { field, message: `${field} already exists` });
+    return new AppError("CONFLICT", {
+      field,
+      message: `${field} already exists`,
+    });
   }
 
-  throw new AppError("DATABASE_ERROR", { originalError: error.message });
+  return new AppError("DATABASE_ERROR", { originalError: error.message });
 }

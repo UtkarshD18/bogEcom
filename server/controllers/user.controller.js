@@ -16,6 +16,7 @@ import {
 } from "../utils/tokenHash.js";
 import VerificationEmail from "../utils/verifyEmailTemplate.js";
 import { emitTrackingEvent } from "../services/analytics/trackingEmitter.service.js";
+import OrderModel from "../models/order.model.js";
 
 const AUTH_PERSIST_MAX_AGE = 365 * 24 * 60 * 60 * 1000; // 365 days
 const ACCESS_TOKEN_MAX_AGE = AUTH_PERSIST_MAX_AGE;
@@ -104,6 +105,41 @@ function isValidEmail(email) {
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
+
+const escapeRegex = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const buildEmailMatchRegex = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  return new RegExp(`^\\s*${escapeRegex(normalized)}\\s*$`, "i");
+};
+
+const claimGuestOrdersForUser = async (user) => {
+  if (!user?._id) return 0;
+  const emailRegex = buildEmailMatchRegex(user?.email || "");
+  if (!emailRegex) return 0;
+  const result = await OrderModel.updateMany(
+    {
+      $and: [
+        {
+          $or: [
+            { user: null },
+            { user: { $exists: false } },
+          ],
+        },
+        {
+          $or: [
+            { "billingDetails.email": emailRegex },
+            { "guestDetails.email": emailRegex },
+          ],
+        },
+      ],
+    },
+    { $set: { user: user._id } },
+  );
+  return result?.modifiedCount || result?.nModified || 0;
+};
 
 function resolveIsActiveMember(user) {
   if (!user) return false;
@@ -388,6 +424,18 @@ export async function loginUserController(req, res) {
 
     res.cookie("accessToken", accessToken, accessCookieOptions);
     res.cookie("refreshToken", refreshToken, refreshCookieOptions);
+
+    try {
+      const claimed = await claimGuestOrdersForUser(user);
+      if (claimed > 0) {
+        console.info(`Linked ${claimed} guest orders to user ${user._id}`);
+      }
+    } catch (claimError) {
+      console.warn("Failed to link guest orders on login:", {
+        userId: String(user?._id || ""),
+        error: claimError?.message || String(claimError),
+      });
+    }
 
     emitTrackingEvent({
       req,
@@ -818,6 +866,18 @@ export async function authWithGoogle(req, res) {
         user.signUpWithGoogle = true;
       }
       await user.save();
+    }
+
+    try {
+      const claimed = await claimGuestOrdersForUser(user);
+      if (claimed > 0) {
+        console.info(`Linked ${claimed} guest orders to user ${user._id}`);
+      }
+    } catch (claimError) {
+      console.warn("Failed to link guest orders on Google login:", {
+        userId: String(user?._id || ""),
+        error: claimError?.message || String(claimError),
+      });
     }
 
     // Generate tokens for both new and existing users
