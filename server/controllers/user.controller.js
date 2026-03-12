@@ -17,6 +17,7 @@ import {
 import VerificationEmail from "../utils/verifyEmailTemplate.js";
 import { emitTrackingEvent } from "../services/analytics/trackingEmitter.service.js";
 import OrderModel from "../models/order.model.js";
+import { getUserCoinSummary } from "../services/coin.service.js";
 
 const AUTH_PERSIST_MAX_AGE = 365 * 24 * 60 * 60 * 1000; // 365 days
 const ACCESS_TOKEN_MAX_AGE = AUTH_PERSIST_MAX_AGE;
@@ -998,7 +999,13 @@ export async function setBackupPassword(req, res) {
 // Get all users (Admin only)
 export async function getAllUsers(req, res) {
   try {
-    const { page = 1, limit = 10, search = "", role = "" } = req.query;
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      role = "",
+      includeCoinSummary = "false",
+    } = req.query;
 
     const query = {};
 
@@ -1019,13 +1026,32 @@ export async function getAllUsers(req, res) {
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
     const usersWithMembership = users.map((user) => withMembershipStatus(user));
+    const shouldIncludeCoinSummary = ["true", "1", "yes"].includes(
+      String(includeCoinSummary).toLowerCase(),
+    );
+    const usersWithCoins = shouldIncludeCoinSummary
+      ? await Promise.all(
+          usersWithMembership.map(async (user) => {
+            try {
+              const summary = await getUserCoinSummary({ userId: user._id });
+              return {
+                ...user,
+                coinBalance: Number(summary?.usable_coins || 0),
+                coinRupeeValue: Number(summary?.rupee_value || 0),
+              };
+            } catch (coinError) {
+              return user;
+            }
+          }),
+        )
+      : usersWithMembership;
 
     const total = await UserModel.countDocuments(query);
 
     return res.json({
       success: true,
       error: false,
-      data: usersWithMembership,
+      data: usersWithCoins,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),

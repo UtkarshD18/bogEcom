@@ -3,7 +3,7 @@ import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import { useAdmin } from "@/context/AdminContext";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const publicPages = [
   "/login",
@@ -17,6 +17,7 @@ export default function AdminLayout({ children }) {
   const pathname = usePathname();
   const { loading, isAuthenticated } = useAdmin();
   const isPublicPage = publicPages.some((p) => pathname.startsWith(p));
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") {
@@ -63,6 +64,10 @@ export default function AdminLayout({ children }) {
     };
   }, []);
 
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
   if (isPublicPage) {
     return <>{children}</>;
   }
@@ -83,9 +88,17 @@ export default function AdminLayout({ children }) {
 
   return (
     <div className="flex">
-      <Sidebar />
-      <div className="flex-1 min-h-screen ml-[250px] bg-gray-50">
-        <Header />
+      {sidebarOpen ? (
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 bg-black/30 z-30 lg:hidden"
+          aria-label="Close navigation overlay"
+        />
+      ) : null}
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="flex-1 min-h-screen bg-gray-50 lg:ml-[250px]">
+        <Header onMenuClick={() => setSidebarOpen(true)} />
         {children}
       </div>
     </div>

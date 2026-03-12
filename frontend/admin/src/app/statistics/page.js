@@ -1,8 +1,11 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
+import { useAdminRealtime } from "@/hooks/useAdminRealtime";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
+import { useLiveRefreshSetting } from "@/hooks/useLiveRefreshSetting";
 import { getData } from "@/utils/api";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -43,12 +46,25 @@ export default function StatisticsPage() {
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [period, setPeriod] = useState("month");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const { intervalMs } = useLiveRefreshSetting();
+  const refreshConfig = useMemo(
+    () => ({
+      minIntervalMs: intervalMs,
+      fallbackIntervalMs: Math.max(intervalMs * 30, 30000),
+    }),
+    [intervalMs],
+  );
 
-  const fetchAllStats = useCallback(async () => {
+  const fetchAllStats = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      } else {
+        setRefreshing(true);
+      }
 
       // Fetch all stats in parallel
       const [
@@ -110,6 +126,7 @@ export default function StatisticsPage() {
       setError(err?.message || "Failed to fetch statistics");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [period, token]);
 
@@ -124,6 +141,21 @@ export default function StatisticsPage() {
       fetchAllStats();
     }
   }, [period, fetchAllStats, isAuthenticated, token]);
+
+  const { trigger: triggerStatsRefresh } = useLiveRefresh(
+    () => fetchAllStats({ silent: true }),
+    refreshConfig,
+  );
+
+  const handleRealtimeUpdate = useCallback(() => {
+    triggerStatsRefresh();
+  }, [triggerStatsRefresh]);
+
+  useAdminRealtime({
+    token,
+    onOrderUpdate: handleRealtimeUpdate,
+    onAnalyticsBatch: handleRealtimeUpdate,
+  });
 
   if (authLoading || loading) {
     return <LoadingSpinner />;
@@ -155,6 +187,10 @@ export default function StatisticsPage() {
             ))}
           </div>
         </div>
+
+        {refreshing ? (
+          <div className="text-xs text-gray-500 mb-3">Refreshing live data...</div>
+        ) : null}
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-red-700">

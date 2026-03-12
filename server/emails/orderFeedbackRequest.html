@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Order Feedback</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background: #f6f1ea;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #1c1c1c;
+    "
+  >
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td align="center" style="padding: 32px 12px">
+          <table
+            role="presentation"
+            width="640"
+            cellspacing="0"
+            cellpadding="0"
+            style="
+              width: 100%;
+              max-width: 640px;
+              background: #ffffff;
+              border-radius: 18px;
+              overflow: hidden;
+              border: 1px solid #eadfd4;
+            "
+          >
+            <tr>
+              <td
+                style="
+                  padding: 24px 28px;
+                  background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%);
+                  color: #ffffff;
+                "
+              >
+                <div
+                  style="
+                    font-size: 12px;
+                    letter-spacing: 2px;
+                    text-transform: uppercase;
+                    opacity: 0.9;
+                  "
+                >
+                  HealthyOneGram
+                </div>
+                <h1 style="margin: 8px 0 0; font-size: 26px; line-height: 1.2">
+                  How did we do?
+                </h1>
+                <p style="margin: 8px 0 0; font-size: 14px; opacity: 0.95">
+                  We value your feedback after delivery.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 26px 28px">
+                <p style="margin: 0 0 6px">
+                  Hello <strong>{{customer_name}}</strong>,
+                </p>
+                <p style="margin: 0 0 12px">
+                  Your order <strong>{{order_number}}</strong> was delivered on
+                  <strong>{{order_date}}</strong>.
+                </p>
+                <p style="margin: 0 0 12px">
+                  We would love to hear about your experience. Your feedback helps
+                  us improve.
+                </p>
+
+                <div style="text-align: center; margin: 18px 0 6px">
+                  <a
+                    href="{{feedback_url}}"
+                    style="
+                      background: #2563eb;
+                      color: #ffffff;
+                      text-decoration: none;
+                      padding: 12px 22px;
+                      border-radius: 999px;
+                      font-weight: 700;
+                      font-size: 14px;
+                      display: inline-block;
+                    "
+                    >Share feedback</a
+                  >
+                </div>
+
+                <p style="margin: 12px 0 0; font-size: 12px; color: #6b7280">
+                  This message was sent {{delay_days}} days after delivery.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td
+                style="
+                  padding: 18px 28px;
+                  background: #f9f5f0;
+                  font-size: 12px;
+                  color: #6b5b4f;
+                "
+              >
+                <p style="margin: 0 0 6px">
+                  Need help? Contact us at
+                  <a href="{{support_url}}" style="color: #1f3d5b"
+                    >{{support_contact}}</a
+                  >
+                </p>
+                <p style="margin: 0">(c) {{year}} HealthyOneGram</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

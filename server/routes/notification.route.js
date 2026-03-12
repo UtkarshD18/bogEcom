@@ -3,6 +3,7 @@ import {
   getLiveOfferFeed,
   getNotificationStats,
   manualSendOffer,
+  manualSendPromotionalEmail,
   registerToken,
   unregisterToken,
 } from "../controllers/notification.controller.js";
@@ -42,5 +43,8 @@ router.get("/admin/stats", auth, admin, getNotificationStats);
 
 // Manual send offer notification
 router.post("/admin/send-offer", auth, admin, manualSendOffer);
+
+// Manual send promotional email
+router.post("/admin/send-promotional-email", auth, admin, manualSendPromotionalEmail);
 
 export default router;

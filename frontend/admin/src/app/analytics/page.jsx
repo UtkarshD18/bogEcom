@@ -1,6 +1,9 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
+import { useAdminRealtime } from "@/hooks/useAdminRealtime";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
+import { useLiveRefreshSetting } from "@/hooks/useLiveRefreshSetting";
 import { getData } from "@/utils/api";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -123,28 +126,41 @@ export default function AnalyticsDashboardPage() {
   const [overview, setOverview] = useState(null);
   const [charts, setCharts] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [showGuide, setShowGuide] = useState(true);
 
   const [userIdInput, setUserIdInput] = useState("");
   const [userActivity, setUserActivity] = useState(null);
   const [userActivityLoading, setUserActivityLoading] = useState(false);
+  const { intervalMs } = useLiveRefreshSetting();
+  const refreshConfig = useMemo(
+    () => ({
+      minIntervalMs: intervalMs,
+      fallbackIntervalMs: Math.max(intervalMs * 30, 30000),
+    }),
+    [intervalMs],
+  );
 
-  const rangeQuery = useMemo(() => buildRangeQuery(rangeDays), [rangeDays]);
   const activityInsights = useMemo(() => buildUserActivityInsights(userActivity), [userActivity]);
 
-  const fetchAnalytics = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const fetchAnalytics = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    } else {
+      setRefreshing(true);
+    }
 
     try {
+      const nextRange = buildRangeQuery(rangeDays);
       const overviewRes = await getData(
-        `/api/admin/analytics/overview?from=${encodeURIComponent(rangeQuery.from)}&to=${encodeURIComponent(rangeQuery.to)}`,
+        `/api/admin/analytics/overview?from=${encodeURIComponent(nextRange.from)}&to=${encodeURIComponent(nextRange.to)}`,
         token,
       );
 
       const chartsRes = await getData(
-        `/api/admin/analytics/charts?from=${encodeURIComponent(rangeQuery.from)}&to=${encodeURIComponent(rangeQuery.to)}&interval=day`,
+        `/api/admin/analytics/charts?from=${encodeURIComponent(nextRange.from)}&to=${encodeURIComponent(nextRange.to)}&interval=day`,
         token,
       );
 
@@ -163,8 +179,9 @@ export default function AnalyticsDashboardPage() {
       setError(requestError?.message || "Failed to fetch analytics data");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [rangeQuery.from, rangeQuery.to, token]);
+  }, [rangeDays, token]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -177,6 +194,17 @@ export default function AnalyticsDashboardPage() {
       fetchAnalytics();
     }
   }, [fetchAnalytics, isAuthenticated, token]);
+
+  const { trigger: triggerAnalyticsRefresh } = useLiveRefresh(
+    () => fetchAnalytics({ silent: true }),
+    refreshConfig,
+  );
+
+  const handleAnalyticsBatch = useCallback(() => {
+    triggerAnalyticsRefresh();
+  }, [triggerAnalyticsRefresh]);
+
+  useAdminRealtime({ token, onAnalyticsBatch: handleAnalyticsBatch });
 
   const fetchUserActivity = async () => {
     const normalizedUserId = String(userIdInput || "").trim();
@@ -249,6 +277,10 @@ export default function AnalyticsDashboardPage() {
             ))}
           </div>
         </div>
+
+        {refreshing ? (
+          <div className="text-xs text-gray-500">Refreshing live data...</div>
+        ) : null}
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">

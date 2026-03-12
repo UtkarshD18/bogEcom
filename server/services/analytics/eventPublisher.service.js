@@ -2,6 +2,7 @@ import { PubSub } from "@google-cloud/pubsub";
 import {
   DEFAULT_ANALYTICS_PUBSUB_TOPIC,
 } from "./constants.js";
+import { emitAnalyticsBatch } from "../../realtime/analyticsEvents.js";
 
 let pubSubClient = null;
 
@@ -126,7 +127,18 @@ export const publishTrackingBatch = async ({
   source = "tracking_api",
   consent = "unknown",
   requestId = "",
+  skipRealtime = false,
 }) => {
+  if (!skipRealtime) {
+    emitAnalyticsBatch({
+      sessionId,
+      events,
+      source,
+      consent,
+      requestId,
+    });
+  }
+
   if (!analyticsEnabled()) {
     return null;
   }
@@ -155,8 +167,9 @@ export const publishTrackingBatch = async ({
 };
 
 export const publishTrackingBatchAsync = (payload) => {
+  emitAnalyticsBatch(payload || {});
   setImmediate(() => {
-    publishTrackingBatch(payload).catch((error) => {
+    publishTrackingBatch({ ...(payload || {}), skipRealtime: true }).catch((error) => {
       console.error("[analytics] Failed to publish tracking batch:", error?.message || error);
     });
   });

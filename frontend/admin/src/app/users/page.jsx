@@ -62,6 +62,7 @@ export default function UserManagement() {
         limit: pagination.limit,
         search,
         role: roleFilter,
+        includeCoinSummary: "1",
       });
 
       const response = await getData(`/api/user/admin/users?${params}`, token);
@@ -326,6 +327,7 @@ export default function UserManagement() {
                 <TableCell>Email</TableCell>
                 <TableCell>Role</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Coins</TableCell>
                 <TableCell>Membership Status</TableCell>
                 <TableCell>Provider</TableCell>
                 <TableCell>Joined</TableCell>
@@ -335,14 +337,14 @@ export default function UserManagement() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" className="py-8">
+                  <TableCell colSpan={9} align="center" className="py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600 mx-auto"></div>
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     align="center"
                     className="py-8 text-gray-500"
                   >
@@ -363,6 +365,7 @@ export default function UserManagement() {
                     <TableCell>{user.email}</TableCell>
                     <TableCell>{getRoleChip(user.role)}</TableCell>
                     <TableCell>{getStatusChip(user.status)}</TableCell>
+                    <TableCell>{Number(user.coinBalance || 0)}</TableCell>
                     <TableCell>
                       {isActiveMember(user) ? (
                         <span className="inline-flex items-center gap-1 font-semibold text-amber-600">

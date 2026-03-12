@@ -3,6 +3,7 @@ import { getMessaging, isFirebaseReady } from "../config/firebaseAdmin.js";
 import LiveOfferEventModel from "../models/liveOfferEvent.model.js";
 import NotificationTokenModel from "../models/notificationToken.model.js";
 import UserModel from "../models/user.model.js";
+import { sendTemplatedEmail } from "../config/emailService.js";
 import { emitLiveOfferNotification } from "../realtime/offerEvents.js";
 import { getIO } from "../realtime/socket.js";
 
@@ -45,6 +46,17 @@ const getFrontendBaseUrl = () => {
 
   return candidate || "https://healthyonegram.com";
 };
+
+const getSupportContactEmail = () =>
+  String(
+    process.env.SUPPORT_ADMIN_EMAIL ||
+      process.env.SUPPORT_EMAIL ||
+      process.env.EMAIL_FROM_ADDRESS ||
+      process.env.SMTP_USER ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
 
 const normalizeNotificationTargetPath = (value, fallbackPath = "/products") => {
   const raw = String(value || "").trim();
@@ -932,6 +944,133 @@ export const manualSendOffer = async (req, res) => {
       error: true,
       success: false,
       message: "Failed to send offer notification",
+    });
+  }
+};
+
+/**
+ * Send promotional email to opted-in users (Admin)
+ * @route POST /api/notifications/admin/send-promotional-email
+ * @body { subject, headline, message, couponCode?, discountText?, ctaLabel?, ctaUrl?, validUntil? }
+ */
+export const manualSendPromotionalEmail = async (req, res) => {
+  try {
+    const rawSubject = String(req.body?.subject || "").trim();
+    const rawHeadline = String(req.body?.headline || "").trim();
+    const rawMessage = String(req.body?.message || "").trim();
+    const rawCoupon = String(req.body?.couponCode || "").trim().toUpperCase();
+    const rawDiscountText = String(req.body?.discountText || "").trim();
+    const rawCtaLabel = String(req.body?.ctaLabel || "").trim();
+    const rawCtaUrl = String(req.body?.ctaUrl || "").trim();
+    const rawValidUntil = String(req.body?.validUntil || "").trim();
+
+    if (!rawSubject || !rawMessage) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Subject and message are required",
+      });
+    }
+
+    const frontendBaseUrl = getFrontendBaseUrl();
+    const defaultCtaUrl = `${frontendBaseUrl}/products`;
+    const ctaUrl = rawCtaUrl
+      ? resolveAbsoluteTargetUrl(frontendBaseUrl, rawCtaUrl)
+      : defaultCtaUrl;
+    const ctaLabel = rawCtaLabel || "Shop now";
+    const headline = rawHeadline || rawSubject;
+    const supportContact = getSupportContactEmail();
+    const supportUrl = supportContact ? `mailto:${supportContact}` : frontendBaseUrl;
+    const offerDetails = [rawDiscountText, rawCoupon ? `Use code ${rawCoupon}` : ""]
+      .filter(Boolean)
+      .join(" • ");
+    const couponLine = rawCoupon ? `Coupon code: ${rawCoupon}` : "";
+    const discountLine = rawDiscountText ? `Discount: ${rawDiscountText}` : "";
+    const validUntilLine = rawValidUntil ? `Valid until: ${rawValidUntil}` : "";
+
+    const recipients = await UserModel.find({
+      email: { $exists: true, $ne: "" },
+      "notificationSettings.promotionalEmails": { $ne: false },
+    })
+      .select("email name")
+      .lean();
+
+    if (!recipients.length) {
+      return res.status(409).json({
+        error: true,
+        success: false,
+        message: "No opted-in users with email addresses found.",
+        data: { sent: 0, failed: 0, total: 0 },
+      });
+    }
+
+    const batchSize = 50;
+    let sent = 0;
+    let failed = 0;
+
+    for (let i = 0; i < recipients.length; i += batchSize) {
+      const batch = recipients.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map((user) =>
+          sendTemplatedEmail({
+            to: String(user?.email || "").trim().toLowerCase(),
+            subject: rawSubject,
+            templateFile: "promotionalOffer.html",
+            templateData: {
+              customer_name: String(user?.name || "Customer").trim(),
+              headline,
+              message: rawMessage,
+              offer_details: offerDetails,
+              coupon_code: couponLine,
+              discount_text: discountLine,
+              cta_label: ctaLabel,
+              cta_url: ctaUrl,
+              valid_until: validUntilLine,
+              site_url: frontendBaseUrl,
+              support_contact: supportContact || "support",
+              support_url: supportUrl,
+              year: String(new Date().getFullYear()),
+            },
+            text: [
+              headline,
+              rawMessage,
+              offerDetails ? `Offer: ${offerDetails}` : "",
+              validUntilLine || "",
+              `Shop: ${ctaUrl}`,
+              supportContact ? `Support: ${supportContact}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            context: "promotional.email",
+          }),
+        ),
+      );
+
+      results.forEach((result) => {
+        if (result.status === "fulfilled" && result.value?.success) {
+          sent += 1;
+        } else {
+          failed += 1;
+        }
+      });
+    }
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: `Promotional email sent to ${sent} users${failed ? ` (${failed} failed)` : ""}.`,
+      data: {
+        sent,
+        failed,
+        total: recipients.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error sending promotional email:", error);
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to send promotional email",
     });
   }
 };

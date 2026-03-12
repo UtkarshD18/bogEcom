@@ -662,6 +662,8 @@ export const validatePaginationQuery = (req, res, next) => {
       const validStatuses = [
         "all",
         "pending",
+        "successful",
+        "failed",
         "pending_payment",
         "accepted",
         "in_warehouse",
