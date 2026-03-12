@@ -67,6 +67,7 @@ next-env.d.ts
 *.md
 !README.md
 !PROJECT_DEEP_STUDY_GUIDE.md
+!EMAILS.md
 
 
 # =====================================
