@@ -4,6 +4,7 @@
  * with comprehensive error handling and logging
  */
 
+import crypto from "crypto";
 import fsPromises from "fs/promises";
 import path from "path";
 import mongoose from "mongoose";
@@ -18,6 +19,7 @@ import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
 import { sendTemplatedEmail } from "../config/emailService.js";
+import { getAccessTokenSecret } from "../config/authSecrets.js";
 import {
   ADDRESS_DEV_SAMPLE,
   INDIA_COUNTRY,
@@ -681,6 +683,36 @@ const buildEmailMatchRegex = (email) => {
   return new RegExp(`^${escapeRegex(normalized)}$`, "i");
 };
 
+const getPayOrderTokenSecret = () => {
+  const secret =
+    process.env.PAY_ORDER_TOKEN_SECRET ||
+    getAccessTokenSecret() ||
+    process.env.ACCESS_TOKEN_SECRET ||
+    process.env.SECRET_KEY_ACCESS_TOKEN ||
+    process.env.JSON_WEB_TOKEN_SECRET_KEY ||
+    "";
+  return String(secret || "").trim();
+};
+
+const getPayOrderTokenTtlMs = () => {
+  const raw = Number(process.env.PAY_ORDER_TOKEN_TTL_DAYS || 7);
+  const days = Number.isFinite(raw) ? Math.max(raw, 1) : 7;
+  return days * 24 * 60 * 60 * 1000;
+};
+
+const signPayOrderToken = ({ orderId, email, timestamp, secret }) =>
+  crypto
+    .createHmac("sha256", secret)
+    .update(`${orderId}.${email}.${timestamp}`)
+    .digest("hex");
+
+const safeEqual = (a, b) => {
+  const left = Buffer.from(String(a || ""));
+  const right = Buffer.from(String(b || ""));
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+};
+
 const formatOrderDateForEmail = (value) => {
   const parsed = new Date(value || Date.now());
   if (Number.isNaN(parsed.getTime())) {
@@ -716,15 +748,130 @@ const stringifyOrderItemsForEmail = (order) => {
     .join("\n");
 };
 
+const resolveOrderRecipient = async (order) => {
+  const fallbackName =
+    String(
+      order?.billingDetails?.fullName ||
+        order?.guestDetails?.fullName ||
+        order?.user?.name ||
+        "Customer",
+    ).trim() || "Customer";
+  const directEmail = String(
+    order?.billingDetails?.email ||
+      order?.guestDetails?.email ||
+      order?.user?.email ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (directEmail) {
+    return { email: directEmail, name: fallbackName };
+  }
+
+  const userId = order?.user?._id || order?.user || null;
+  if (!userId) {
+    return { email: "", name: fallbackName };
+  }
+
+  try {
+    const user = await UserModel.findById(userId).select("email name").lean();
+    const resolvedEmail = String(user?.email || "").trim().toLowerCase();
+    const resolvedName =
+      String(user?.name || fallbackName || "Customer").trim() || "Customer";
+    return { email: resolvedEmail, name: resolvedName };
+  } catch {
+    return { email: "", name: fallbackName };
+  }
+};
+
+const resolveOrderEmailForToken = async (order) => {
+  const { email } = await resolveOrderRecipient(order);
+  return normalizeEmail(email || "");
+};
+
+const generatePayOrderToken = async (order) => {
+  const secret = getPayOrderTokenSecret();
+  if (!secret) return "";
+  const email = await resolveOrderEmailForToken(order);
+  if (!email) return "";
+  const issuedAt = Date.now();
+  const signature = signPayOrderToken({
+    orderId: String(order?._id || "").trim(),
+    email,
+    timestamp: issuedAt,
+    secret,
+  });
+  return `${issuedAt.toString(36)}.${signature}`;
+};
+
+const verifyPayOrderToken = async (order, token) => {
+  const secret = getPayOrderTokenSecret();
+  if (!secret) {
+    return { ok: false, reason: "missing_secret" };
+  }
+
+  const rawToken = String(token || "").trim();
+  const [tsPart, signature] = rawToken.split(".");
+  if (!tsPart || !signature) {
+    return { ok: false, reason: "malformed_token" };
+  }
+
+  const issuedAt = Number.parseInt(tsPart, 36);
+  if (!Number.isFinite(issuedAt)) {
+    return { ok: false, reason: "invalid_timestamp" };
+  }
+
+  const ttlMs = getPayOrderTokenTtlMs();
+  if (Date.now() - issuedAt > ttlMs) {
+    return { ok: false, reason: "expired" };
+  }
+
+  const email = await resolveOrderEmailForToken(order);
+  if (!email) {
+    return { ok: false, reason: "missing_email" };
+  }
+
+  const expected = signPayOrderToken({
+    orderId: String(order?._id || "").trim(),
+    email,
+    timestamp: issuedAt,
+    secret,
+  });
+
+  if (!safeEqual(expected, signature)) {
+    return { ok: false, reason: "invalid_signature" };
+  }
+
+  return { ok: true };
+};
+
+const buildPayOrderUrl = async (order) => {
+  const token = await generatePayOrderToken(order);
+  if (!token) return "";
+  const siteUrl = getPrimaryStoreUrl();
+  return `${siteUrl}/pay-order/${encodeURIComponent(
+    String(order?._id || ""),
+  )}?key=${encodeURIComponent(token)}`;
+};
+
+const linkOrderToUserByEmail = async (order) => {
+  if (!order || order.user) return false;
+  const email = normalizeEmail(
+    order?.billingDetails?.email || order?.guestDetails?.email || "",
+  );
+  const emailMatch = buildEmailMatchRegex(email);
+  if (!emailMatch) return false;
+  const user = await UserModel.findOne({ email: emailMatch }).select("_id").lean();
+  if (!user?._id) return false;
+  order.user = user._id;
+  return true;
+};
+
 const sendOrderConfirmationEmail = async (order) => {
   try {
-    const recipientEmail = String(
-      order?.billingDetails?.email ||
-        order?.guestDetails?.email ||
-        "",
-    )
-      .trim()
-      .toLowerCase();
+    const { email: recipientEmail, name: customerName } =
+      await resolveOrderRecipient(order);
 
     if (!recipientEmail) {
       logger.warn("sendOrderConfirmationEmail", "Recipient email missing", {
@@ -733,12 +880,6 @@ const sendOrderConfirmationEmail = async (order) => {
       return false;
     }
 
-    const customerName =
-      String(
-        order?.billingDetails?.fullName ||
-          order?.guestDetails?.fullName ||
-          "Customer",
-      ).trim() || "Customer";
     const rawOrderId = String(order?._id || "").trim();
     const displayOrderNumber = resolveDisplayOrderNumber(order);
     const supportContact = "healthyonegram.com";
@@ -747,6 +888,22 @@ const sendOrderConfirmationEmail = async (order) => {
       : /^https?:\/\//i.test(supportContact)
         ? supportContact
         : `https://${supportContact.replace(/^\/+/, "")}`;
+    const siteUrl = getPrimaryStoreUrl();
+    const normalizedPaymentStatus = String(order?.payment_status || "")
+      .trim()
+      .toLowerCase();
+    const normalizedOrderStatus = normalizeOrderStatus(order?.order_status);
+    const pendingStatuses = new Set([
+      ORDER_STATUS.PENDING,
+      ORDER_STATUS.PAYMENT_PENDING,
+    ]);
+    const canPayNow =
+      normalizedPaymentStatus !== "paid" &&
+      pendingStatuses.has(normalizedOrderStatus);
+    const paymentUrl = canPayNow ? await buildPayOrderUrl(order) : "";
+    const hasPaymentLink = Boolean(paymentUrl);
+    const paymentCtaLabel = hasPaymentLink ? "Pay Now" : "View Store";
+    const safePaymentUrl = paymentUrl || siteUrl;
 
     const originalSubtotal = round2(
       Number(
@@ -771,6 +928,7 @@ const sendOrderConfirmationEmail = async (order) => {
       `Status: ${order?.order_status || "pending"}`,
       `Payment: ${order?.payment_status || "pending"}`,
       `Final Amount: ${formatInr(finalAmount)}`,
+      hasPaymentLink ? `Pay now: ${paymentUrl}` : "",
       `Support: ${supportContact}`,
     ].join("\n");
 
@@ -792,7 +950,9 @@ const sendOrderConfirmationEmail = async (order) => {
         tax_amount: formatInr(taxAmount),
         shipping_amount: formatInr(shippingAmount),
         final_amount: formatInr(finalAmount),
-        site_url: getPrimaryStoreUrl(),
+        site_url: siteUrl,
+        payment_url: safePaymentUrl,
+        payment_cta_label: paymentCtaLabel,
         support_contact: supportContact,
         support_url: supportUrl,
         year: String(new Date().getFullYear()),
@@ -810,6 +970,18 @@ const sendOrderConfirmationEmail = async (order) => {
       return false;
     }
 
+    if (order?.confirmationEmailSentAt == null && typeof order?.save === "function") {
+      try {
+        order.confirmationEmailSentAt = new Date();
+        await order.save();
+      } catch (persistError) {
+        logger.warn("sendOrderConfirmationEmail", "Failed to persist sent flag", {
+          orderId: order?._id,
+          error: persistError?.message || String(persistError),
+        });
+      }
+    }
+
     return true;
   } catch (error) {
     logger.error("sendOrderConfirmationEmail", "Unexpected email error", {
@@ -825,14 +997,8 @@ const sendOrderPaymentSuccessEmail = async (
   { paymentProvider = null } = {},
 ) => {
   try {
-    const recipientEmail = String(
-      order?.billingDetails?.email ||
-        order?.guestDetails?.email ||
-        order?.user?.email ||
-        "",
-    )
-      .trim()
-      .toLowerCase();
+    const { email: recipientEmail, name: customerName } =
+      await resolveOrderRecipient(order);
 
     if (!recipientEmail) {
       logger.warn("sendOrderPaymentSuccessEmail", "Recipient email missing", {
@@ -841,13 +1007,6 @@ const sendOrderPaymentSuccessEmail = async (
       return false;
     }
 
-    const customerName =
-      String(
-        order?.billingDetails?.fullName ||
-          order?.guestDetails?.fullName ||
-          order?.user?.name ||
-          "Customer",
-      ).trim() || "Customer";
     const rawOrderId = String(order?._id || "").trim();
     const displayOrderNumber = resolveDisplayOrderNumber(order);
     const supportContact = "healthyonegram.com";
@@ -922,14 +1081,8 @@ const sendOrderPaymentSuccessEmail = async (
 
 const sendOrderCancelledEmail = async (order) => {
   try {
-    const recipientEmail = String(
-      order?.billingDetails?.email ||
-        order?.guestDetails?.email ||
-        order?.user?.email ||
-        "",
-    )
-      .trim()
-      .toLowerCase();
+    const { email: recipientEmail, name: customerName } =
+      await resolveOrderRecipient(order);
 
     if (!recipientEmail) {
       logger.warn("sendOrderCancelledEmail", "Recipient email missing", {
@@ -938,13 +1091,6 @@ const sendOrderCancelledEmail = async (order) => {
       return false;
     }
 
-    const customerName =
-      String(
-        order?.billingDetails?.fullName ||
-          order?.guestDetails?.fullName ||
-          order?.user?.name ||
-          "Customer",
-      ).trim() || "Customer";
     const rawOrderId = String(order?._id || "").trim();
     const displayOrderNumber = resolveDisplayOrderNumber(order);
     const supportContact = "healthyonegram.com";
@@ -1067,11 +1213,8 @@ const sendOrderPaymentReminderEmail = async (
   { failureKind = "failed", paymentProvider = PAYMENT_PROVIDERS.PHONEPE } = {},
 ) => {
   try {
-    const recipientEmail = String(
-      order?.billingDetails?.email || order?.guestDetails?.email || "",
-    )
-      .trim()
-      .toLowerCase();
+    const { email: recipientEmail, name: customerName } =
+      await resolveOrderRecipient(order);
 
     if (!recipientEmail) {
       logger.warn("sendOrderPaymentReminderEmail", "Recipient email missing", {
@@ -1080,12 +1223,6 @@ const sendOrderPaymentReminderEmail = async (
       return false;
     }
 
-    const customerName =
-      String(
-        order?.billingDetails?.fullName ||
-          order?.guestDetails?.fullName ||
-          "Customer",
-      ).trim() || "Customer";
     const rawOrderId = String(order?._id || "").trim();
     const displayOrderNumber = resolveDisplayOrderNumber(order);
     const supportContact = "healthyonegram.com";
@@ -1095,11 +1232,13 @@ const sendOrderPaymentReminderEmail = async (
         ? supportContact
         : `https://${supportContact.replace(/^\/+/, "")}`;
     const siteUrl = getPrimaryStoreUrl();
+    const paymentUrl = await buildPayOrderUrl(order);
     const actionUrl =
-      order?.user && rawOrderId
+      paymentUrl ||
+      (order?.user && rawOrderId
         ? `${siteUrl}/orders/${encodeURIComponent(rawOrderId)}`
-        : siteUrl;
-    const actionLabel = order?.user ? "View your order" : "Visit the store";
+        : siteUrl);
+    const actionLabel = paymentUrl ? "Pay Now" : order?.user ? "View your order" : "Visit the store";
     const finalAmount = round2(Number(order?.finalAmount || order?.totalAmt || 0));
     const providerLabel = resolvePaymentProviderLabel(paymentProvider);
     const normalizedFailureKind =
@@ -2528,16 +2667,36 @@ export const getAllOrders = asyncHandler(async (req, res) => {
       // Keep purchase orders out of the regular orders listing.
       purchaseOrder: null,
     };
+    const andFilters = [];
+    const normalizedStatus = String(status || "all").trim().toLowerCase();
+    const shipmentTransferredFilter = {
+      shipping_provider: "XPRESSBEES",
+      $or: [
+        { awb_number: { $exists: true, $nin: [null, ""] } },
+        { awbNumber: { $exists: true, $nin: [null, ""] } },
+        { shipmentId: { $exists: true, $nin: [null, ""] } },
+      ],
+    };
 
     // Filter by status
-    if (status && status !== "all") {
-      const normalizedStatus = normalizeOrderStatus(status);
-      if (normalizedStatus === ORDER_STATUS.ACCEPTED) {
-        filter.order_status = { $in: [ORDER_STATUS.ACCEPTED, "confirmed"] };
-      } else if (normalizedStatus === "confirmed") {
-        filter.order_status = { $in: [ORDER_STATUS.ACCEPTED, "confirmed"] };
+    if (normalizedStatus && normalizedStatus !== "all") {
+      if (normalizedStatus === "successful") {
+        andFilters.push(shipmentTransferredFilter);
+      } else if (normalizedStatus === "failed") {
+        andFilters.push({ payment_status: "failed" });
+        andFilters.push({ $nor: [shipmentTransferredFilter] });
+      } else if (normalizedStatus === "pending") {
+        andFilters.push({ payment_status: { $ne: "failed" } });
+        andFilters.push({ $nor: [shipmentTransferredFilter] });
       } else {
-        filter.order_status = normalizedStatus;
+        const normalizedOrderStatus = normalizeOrderStatus(normalizedStatus);
+        if (normalizedOrderStatus === ORDER_STATUS.ACCEPTED) {
+          filter.order_status = { $in: [ORDER_STATUS.ACCEPTED, "confirmed"] };
+        } else if (normalizedOrderStatus === "confirmed") {
+          filter.order_status = { $in: [ORDER_STATUS.ACCEPTED, "confirmed"] };
+        } else {
+          filter.order_status = normalizedOrderStatus;
+        }
       }
     }
 
@@ -2559,7 +2718,11 @@ export const getAllOrders = asyncHandler(async (req, res) => {
         searchFilters.push({ _id: new mongoose.Types.ObjectId(normalizedSearch) });
       }
 
-      filter.$or = searchFilters;
+      andFilters.push({ $or: searchFilters });
+    }
+
+    if (andFilters.length > 0) {
+      filter.$and = andFilters;
     }
 
     logger.debug("getAllOrders", "Fetching orders", {
@@ -3685,6 +3848,8 @@ export const createOrder = asyncHandler(async (req, res) => {
       userId,
     });
 
+    emitOrderStatusUpdate(order, "ORDER_CREATE");
+
     await sendOrderConfirmationEmail(order);
 
     const primaryOrigin = String(process.env.CLIENT_URL || "")
@@ -4320,6 +4485,313 @@ export const getPaymentGatewayStatus = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Get pay-order details (Public with token)
+ * @route GET /api/orders/pay-order/:orderId?key=token
+ */
+export const getPayOrderDetails = asyncHandler(async (req, res) => {
+  try {
+    const orderId = req.params.orderId || req.params.id;
+    const token = String(req.query?.key || req.body?.key || "").trim();
+
+    validateMongoId(orderId, "orderId");
+
+    const order = await OrderModel.findById(orderId).lean();
+    if (!order) {
+      throw new AppError("ORDER_NOT_FOUND");
+    }
+
+    const tokenCheck = await verifyPayOrderToken(order, token);
+    if (!tokenCheck.ok) {
+      return res.status(401).json({
+        error: true,
+        success: false,
+        message: "Invalid or expired payment link",
+        reason: tokenCheck.reason || "invalid_token",
+      });
+    }
+
+    const normalizedPaymentStatus = String(order.payment_status || "")
+      .trim()
+      .toLowerCase();
+    const normalizedOrderStatus = normalizeOrderStatus(order.order_status);
+    const pendingStatuses = new Set([
+      ORDER_STATUS.PENDING,
+      ORDER_STATUS.PAYMENT_PENDING,
+    ]);
+    const isPayable =
+      normalizedPaymentStatus !== "paid" &&
+      pendingStatuses.has(normalizedOrderStatus);
+
+    const displayOrderId = resolveDisplayOrderNumber(order);
+    const items = Array.isArray(order.products)
+      ? order.products.map((item) => ({
+          name: String(item?.productTitle || item?.name || "Item").trim(),
+          quantity: Math.max(Number(item?.quantity || 0), 0),
+          price: round2(Number(item?.price || 0)),
+          total: round2(Number(item?.subTotal || 0)),
+          image: String(item?.image || ""),
+        }))
+      : [];
+
+    return sendSuccess(res, {
+      orderId: order._id,
+      displayOrderId,
+      paymentStatus: normalizedPaymentStatus || "pending",
+      orderStatus: normalizedOrderStatus || "pending",
+      payable: isPayable,
+      totals: {
+        subtotal: round2(Number(order.subtotal || 0)),
+        discount: round2(Number(order.discount || 0)),
+        tax: round2(Number(order.tax || 0)),
+        shipping: round2(Number(order.shipping || 0)),
+        finalAmount: round2(Number(order.finalAmount || order.totalAmt || 0)),
+      },
+      items,
+      createdAt: order.createdAt || null,
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      return sendError(res, error);
+    }
+    const dbError = handleDatabaseError(error, "getPayOrderDetails");
+    return sendError(res, dbError);
+  }
+});
+
+/**
+ * Initiate payment for a pending order (Public with token)
+ * @route POST /api/orders/pay-order/:orderId/initiate?key=token
+ */
+export const initiatePayOrderPayment = asyncHandler(async (req, res) => {
+  try {
+    const orderId = req.params.orderId || req.params.id;
+    const token = String(req.query?.key || req.body?.key || "").trim();
+
+    validateMongoId(orderId, "orderId");
+
+    const maintenanceMode = await isMaintenanceMode();
+    if (maintenanceMode) {
+      return res.status(503).json({
+        error: true,
+        success: false,
+        message:
+          "Checkout is temporarily unavailable due to maintenance. Please try again later.",
+      });
+    }
+
+    if (!(await isPaymentEnabled())) {
+      throw new AppError("PAYMENT_DISABLED");
+    }
+
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      throw new AppError("ORDER_NOT_FOUND");
+    }
+
+    const tokenCheck = await verifyPayOrderToken(order, token);
+    if (!tokenCheck.ok) {
+      return res.status(401).json({
+        error: true,
+        success: false,
+        message: "Invalid or expired payment link",
+        reason: tokenCheck.reason || "invalid_token",
+      });
+    }
+
+    const normalizedPaymentStatus = String(order.payment_status || "")
+      .trim()
+      .toLowerCase();
+    if (normalizedPaymentStatus === "paid") {
+      throw new AppError("CONFLICT", {
+        field: "payment_status",
+        message: "Order is already paid",
+      });
+    }
+
+    const normalizedOrderStatus = normalizeOrderStatus(order.order_status);
+    const pendingStatuses = new Set([
+      ORDER_STATUS.PENDING,
+      ORDER_STATUS.PAYMENT_PENDING,
+    ]);
+    if (!pendingStatuses.has(normalizedOrderStatus)) {
+      throw new AppError("INVALID_STATUS", {
+        field: "order_status",
+        status: normalizedOrderStatus,
+        message: "Order is not eligible for payment",
+      });
+    }
+
+    const requestedPaymentProvider = String(
+      req.body?.paymentProvider || order.paymentMethod || "",
+    )
+      .trim()
+      .toUpperCase();
+    const selectedPaymentProvider = await resolvePaymentProviderForRequest(
+      requestedPaymentProvider,
+    );
+
+    const payableAmount = Math.max(
+      Number(order.finalAmount || order.totalAmt || 0),
+      1,
+    );
+
+    const primaryOrigin = String(process.env.CLIENT_URL || "")
+      .split(",")[0]
+      .trim()
+      .replace(/\/+$/, "");
+    const backendUrl = getBackendBaseUrl(req);
+    const returnPath = `/pay-order/${encodeURIComponent(String(order._id))}?key=${encodeURIComponent(
+      token,
+    )}`;
+
+    const contact = order.billingDetails || order.guestDetails || {};
+
+    let mutated = false;
+    if (await linkOrderToUserByEmail(order)) {
+      mutated = true;
+    }
+
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PAYTM) {
+      const merchantTransactionId =
+        String(order.paytmOrderId || order.paymentId || `BOG_${order._id}`).trim() ||
+        `BOG_${order._id}`;
+      const callbackBase = backendUrl || getClientBaseUrl();
+      const callbackUrl =
+        process.env.PAYTM_ORDER_CALLBACK_URL ||
+        process.env.PAYTM_CALLBACK_URL ||
+        `${callbackBase}/api/orders/webhook/paytm`;
+
+      const paytmResponse = await createPaytmPayment({
+        amount: payableAmount,
+        orderId: merchantTransactionId,
+        callbackUrl,
+        customerId: order.user ? String(order.user) : "guest",
+        mobileNumber: contact.phone || null,
+        email: contact.email || null,
+      });
+
+      const gatewayBase = (() => {
+        try {
+          return new URL(String(paytmResponse.gatewayUrl || "")).origin;
+        } catch {
+          return "";
+        }
+      })();
+
+      const paymentUrl = `${primaryOrigin}/payment/paytm?mid=${encodeURIComponent(
+        paytmResponse.mid,
+      )}&orderId=${encodeURIComponent(
+        paytmResponse.orderId,
+      )}&txnToken=${encodeURIComponent(
+        paytmResponse.txnToken,
+      )}&amount=${encodeURIComponent(
+        Number(payableAmount).toFixed(2),
+      )}&returnPath=${encodeURIComponent(returnPath)}`;
+      const paymentUrlWithGateway = gatewayBase
+        ? `${paymentUrl}&gatewayBase=${encodeURIComponent(gatewayBase)}`
+        : paymentUrl;
+
+      order.paymentMethod = PAYMENT_PROVIDERS.PAYTM;
+      order.payment_status = "pending";
+      order.paymentId = merchantTransactionId;
+      order.paytmOrderId = merchantTransactionId;
+      order.failureReason = "";
+      clearOrderPaymentReminderState(order);
+      order.updatedAt = new Date();
+      await order.save();
+      mutated = true;
+
+      syncOrderToFirestore(order, "update").catch((err) =>
+        logger.error("initiatePayOrderPayment", "Failed to sync order", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+
+      return sendSuccess(res, {
+        orderId: order._id,
+        paymentProvider: PAYMENT_PROVIDERS.PAYTM,
+        paymentUrl: paymentUrlWithGateway,
+        merchantTransactionId,
+        txnToken: paytmResponse.txnToken,
+        paytmGatewayUrl: paytmResponse.gatewayUrl,
+      });
+    }
+
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.PHONEPE) {
+      const merchantTransactionId = `BOG_${order._id}_${Date.now()
+        .toString(36)
+        .toUpperCase()}`;
+      const defaultPhonePeCallback = `${backendUrl}/api/orders/webhook/phonepe`;
+      const callbackUrl =
+        process.env.PHONEPE_ORDER_CALLBACK_URL ||
+        `${defaultPhonePeCallback}?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}`;
+      const defaultPhonePeRedirect =
+        `${primaryOrigin}/payment/phonepe?merchantOrderId=${encodeURIComponent(
+          merchantTransactionId,
+        )}&orderId=${encodeURIComponent(String(order._id))}&paymentProvider=${encodeURIComponent(
+          PAYMENT_PROVIDERS.PHONEPE,
+        )}&flow=order&returnPath=${encodeURIComponent(returnPath)}`;
+      const redirectUrl =
+        process.env.PHONEPE_REDIRECT_URL || defaultPhonePeRedirect;
+
+      const phonepeResponse = await createPhonePePayment({
+        amount: payableAmount,
+        merchantOrderId: merchantTransactionId,
+        redirectUrl,
+        callbackUrl,
+        customerId: order.user ? String(order.user) : "guest",
+      });
+
+      order.paymentMethod = PAYMENT_PROVIDERS.PHONEPE;
+      order.payment_status = "pending";
+      order.paymentId = merchantTransactionId;
+      order.phonepeMerchantOrderId = merchantTransactionId;
+      order.phonepeOrderId = phonepeResponse.phonepeOrderId || null;
+      order.failureReason = "";
+      clearOrderPaymentReminderState(order);
+      order.updatedAt = new Date();
+      await order.save();
+      mutated = true;
+
+      syncOrderToFirestore(order, "update").catch((err) =>
+        logger.error("initiatePayOrderPayment", "Failed to sync order", {
+          orderId: order._id,
+          error: err.message,
+        }),
+      );
+
+      return sendSuccess(res, {
+        orderId: order._id,
+        paymentProvider: PAYMENT_PROVIDERS.PHONEPE,
+        paymentUrl: phonepeResponse.redirectUrl,
+        merchantTransactionId,
+        phonepeOrderId: phonepeResponse.phonepeOrderId,
+        state: phonepeResponse.state,
+        expiresAt: phonepeResponse.expireAt,
+      });
+    }
+
+    if (mutated) {
+      await order.save();
+    }
+
+    throw new AppError("INVALID_PAYMENT_METHOD", {
+      provider: selectedPaymentProvider,
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      return sendError(res, error);
+    }
+
+    const dbError = handleDatabaseError(error, "initiatePayOrderPayment");
+    return sendError(res, dbError);
+  }
+});
+
+/**
  * Retry payment for an existing unpaid order
  * @route POST /api/orders/:orderId/retry-payment
  * @access User (authenticated + owner)
@@ -4871,6 +5343,10 @@ const applyResolvedPaymentStatus = async ({
   if (normalizedState === "success") {
     if (!wasPaid) {
       order.payment_status = "paid";
+      order.paymentCompletedAt = new Date();
+      if (paymentProvider) {
+        order.paymentMethod = paymentProvider;
+      }
       order.failureReason = "";
       applyOrderStatusTransition(order, ORDER_STATUS.ACCEPTED, {
         source: successSource,
@@ -4920,6 +5396,18 @@ const applyResolvedPaymentStatus = async ({
   }
 
   if (!wasPaid && String(order.payment_status || "").trim().toLowerCase() === "paid") {
+    try {
+      if (await linkOrderToUserByEmail(order)) {
+        orderMutated = true;
+        await order.save();
+      }
+    } catch (linkError) {
+      logger.warn(logContext, "Failed to link order to user by email", {
+        orderId: order?._id,
+        error: linkError?.message || String(linkError),
+      });
+    }
+
     if (req) {
       emitPurchaseCompletedTrackingEvent({
         req,
@@ -4942,6 +5430,15 @@ const applyResolvedPaymentStatus = async ({
         error: err?.message || String(err),
       }),
     );
+
+    if (!order.confirmationEmailSentAt) {
+      sendOrderConfirmationEmail(order).catch((err) =>
+        logger.error(logContext, "Failed to send order confirmation email", {
+          orderId: order?._id,
+          error: err?.message || String(err),
+        }),
+      );
+    }
   }
 
   if (orderMutated || invoiceResult?.ok) {

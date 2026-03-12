@@ -93,6 +93,18 @@ const orderSchema = new mongoose.Schema(
       // Note: index is defined in compound indexes below
     },
 
+    paymentCompletedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    confirmationEmailSentAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
     // Legacy gateway references retained under provider-neutral keys.
     legacyGatewayOrderId: {
       type: String,
@@ -646,6 +658,21 @@ shipment_status: {
       type: Date,
       default: null,
       index: true,
+    },
+
+    feedbackEmailSentAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    feedbackEmailLastAttemptAt: {
+      type: Date,
+      default: null,
+    },
+    feedbackEmailFailureCount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     // ==================== END NEW FIELDS ====================

@@ -1,6 +1,9 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
+import { useAdminRealtime } from "@/hooks/useAdminRealtime";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
+import { useLiveRefreshSetting } from "@/hooks/useLiveRefreshSetting";
 import { getData } from "@/utils/api";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -270,8 +273,24 @@ export default function BehaviorAnalyticsPage() {
   const [engagement, setEngagement] = useState(null);
   const [performance, setPerformance] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [showGuide, setShowGuide] = useState(true);
+  const { intervalMs } = useLiveRefreshSetting();
+  const analyticsRefreshConfig = useMemo(
+    () => ({
+      minIntervalMs: intervalMs,
+      fallbackIntervalMs: Math.max(intervalMs * 30, 30000),
+    }),
+    [intervalMs],
+  );
+  const sessionsRefreshConfig = useMemo(
+    () => ({
+      minIntervalMs: Math.max(intervalMs * 5, 5000),
+      fallbackIntervalMs: Math.max(intervalMs * 60, 60000),
+    }),
+    [intervalMs],
+  );
 
   const [lookupMode, setLookupMode] = useState("user");
   const [lookupValue, setLookupValue] = useState("");
@@ -292,7 +311,6 @@ export default function BehaviorAnalyticsPage() {
   const [funnelMinSessionsInput, setFunnelMinSessionsInput] = useState("1");
   const [funnelSearchInput, setFunnelSearchInput] = useState("");
 
-  const rangeQuery = useMemo(() => buildRangeQuery(rangeDays), [rangeDays]);
   const workerState = useMemo(() => getWorkerState(performance), [performance]);
   const timelineInsights = useMemo(
     () => buildTimelineInsights(userView.timeline || [], userView.productInteractions || []),
@@ -343,12 +361,17 @@ export default function BehaviorAnalyticsPage() {
     funnelSearchInput,
   ]);
 
-  const fetchAnalytics = useCallback(async () => {
+  const fetchAnalytics = useCallback(async ({ silent = false } = {}) => {
     if (!token) return;
-    setLoading(true);
-    setError("");
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    } else {
+      setRefreshing(true);
+    }
 
-    const params = `from=${encodeURIComponent(rangeQuery.from)}&to=${encodeURIComponent(rangeQuery.to)}`;
+    const nextRange = buildRangeQuery(rangeDays);
+    const params = `from=${encodeURIComponent(nextRange.from)}&to=${encodeURIComponent(nextRange.to)}`;
 
     try {
       const [overviewRes, engagementRes, performanceRes] = await Promise.all([
@@ -374,17 +397,21 @@ export default function BehaviorAnalyticsPage() {
       setError(requestError?.message || "Failed to load behavior analytics");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [rangeQuery.from, rangeQuery.to, token]);
+  }, [rangeDays, token]);
 
-  const fetchSessionExplorer = useCallback(async () => {
+  const fetchSessionExplorer = useCallback(async ({ silent = false } = {}) => {
     if (!token) return;
-    setSessionExplorerLoading(true);
-    setError("");
+    if (!silent) {
+      setSessionExplorerLoading(true);
+      setError("");
+    }
 
+    const nextRange = buildRangeQuery(rangeDays);
     const params = new URLSearchParams({
-      from: rangeQuery.from,
-      to: rangeQuery.to,
+      from: nextRange.from,
+      to: nextRange.to,
       type: sessionExplorerType,
       page: String(sessionExplorerPage),
       limit: "25",
@@ -402,9 +429,11 @@ export default function BehaviorAnalyticsPage() {
       setError(requestError?.message || "Failed to load sessions");
       setSessionExplorer(defaultSessionsExplorerState);
     } finally {
-      setSessionExplorerLoading(false);
+      if (!silent) {
+        setSessionExplorerLoading(false);
+      }
     }
-  }, [rangeQuery.from, rangeQuery.to, sessionExplorerType, sessionExplorerPage, sessionExplorerSearch, token]);
+  }, [rangeDays, sessionExplorerType, sessionExplorerPage, sessionExplorerSearch, token]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.push("/login");
@@ -417,6 +446,23 @@ export default function BehaviorAnalyticsPage() {
   useEffect(() => {
     if (isAuthenticated && token) fetchSessionExplorer();
   }, [fetchSessionExplorer, isAuthenticated, token]);
+
+  const { trigger: triggerAnalyticsRefresh } = useLiveRefresh(
+    () => fetchAnalytics({ silent: true }),
+    analyticsRefreshConfig,
+  );
+
+  const { trigger: triggerSessionsRefresh } = useLiveRefresh(
+    () => fetchSessionExplorer({ silent: true }),
+    sessionsRefreshConfig,
+  );
+
+  const handleAnalyticsBatch = useCallback(() => {
+    triggerAnalyticsRefresh();
+    triggerSessionsRefresh();
+  }, [triggerAnalyticsRefresh, triggerSessionsRefresh]);
+
+  useAdminRealtime({ token, onAnalyticsBatch: handleAnalyticsBatch });
 
   const fetchUserViewByLookup = async (mode, rawLookupValue) => {
     const normalizedMode = mode === "session" ? "session" : "user";
@@ -500,7 +546,8 @@ export default function BehaviorAnalyticsPage() {
         ? `userId=${encodeURIComponent(normalizedLookup)}`
         : `sessionId=${encodeURIComponent(normalizedLookup)}`;
 
-    const rangeParams = `from=${encodeURIComponent(rangeQuery.from)}&to=${encodeURIComponent(rangeQuery.to)}`;
+    const nextRange = buildRangeQuery(rangeDays);
+    const rangeParams = `from=${encodeURIComponent(nextRange.from)}&to=${encodeURIComponent(nextRange.to)}`;
 
     try {
       const response = await getData(
@@ -552,6 +599,10 @@ export default function BehaviorAnalyticsPage() {
             ))}
           </div>
         </div>
+
+        {refreshing ? (
+          <div className="text-xs text-gray-500">Refreshing live data...</div>
+        ) : null}
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center justify-between gap-3">

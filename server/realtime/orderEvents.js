@@ -6,10 +6,34 @@ export const emitOrderStatusUpdate = (order, source = "SYSTEM") => {
 
   const orderId = order._id?.toString() || order.id;
   const userId = order.user?._id?.toString() || order.user?.toString();
-  if (!orderId || !userId) return;
+  if (!orderId) return;
+
+  const displayOrderId =
+    order.displayOrderId ||
+    order.orderNumber ||
+    order.order_id ||
+    `BOG-${orderId.slice(-8).toUpperCase()}`;
+
+  const total = Number(
+    order.finalAmount ??
+      order.totalAmt ??
+      order.displayTotal ??
+      order.total ??
+      0,
+  );
+
+  const customerName =
+    order.user?.name ||
+    order.userName ||
+    order.guestDetails?.fullName ||
+    order.billingDetails?.fullName ||
+    "Guest";
 
   const payload = {
     orderId,
+    displayOrderId,
+    total,
+    customerName,
     status: order.order_status,
     paymentStatus: order.payment_status,
     statusTimeline: order.statusTimeline || [],
@@ -22,10 +46,13 @@ export const emitOrderStatusUpdate = (order, source = "SYSTEM") => {
     },
     source,
     updatedAt: order.updatedAt || new Date(),
+    createdAt: order.createdAt || order.updatedAt || new Date(),
   };
 
-  io.to(`user:${userId}`).emit("order:update", payload);
-  io.to(`user:${userId}`).emit("order.updated", payload);
+  if (userId) {
+    io.to(`user:${userId}`).emit("order:update", payload);
+    io.to(`user:${userId}`).emit("order.updated", payload);
+  }
   io.to("admin:orders").emit("order:update", payload);
   io.to("admin:orders").emit("order.updated", payload);
 };

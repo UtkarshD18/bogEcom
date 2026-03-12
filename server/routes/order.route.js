@@ -7,6 +7,7 @@ import {
   getDashboardStats,
   getOrderById,
   getOrderStats,
+  getPayOrderDetails,
   getPaymentGatewayStatus,
   getUserOrderById,
   getUserOrders,
@@ -15,6 +16,7 @@ import {
   handlePhonePeRefundSuccessWebhook,
   handlePhonePeSubscriptionPreWebhook,
   handlePhonePeWebhook,
+  initiatePayOrderPayment,
   previewOrderPricing,
   repairPaidOrders,
   handlePaytmWebhook,
@@ -66,6 +68,19 @@ router.post("/webhook/phonepe/subscription", handlePhonePeSubscriptionPreWebhook
 
 // Check payment gateway status
 router.get("/payment-status", getPaymentGatewayStatus);
+
+// Secure guest pay-now flow
+router.get(
+  "/pay-order/:orderId",
+  validateGetOrderRequest,
+  getPayOrderDetails,
+);
+router.post(
+  "/pay-order/:orderId/initiate",
+  paymentLimiter,
+  validateGetOrderRequest,
+  initiatePayOrderPayment,
+);
 
 // ==================== USER ROUTES ====================
 

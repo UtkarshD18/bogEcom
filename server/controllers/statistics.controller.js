@@ -1,11 +1,20 @@
 import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
 import UserModel from "../models/user.model.js";
+import CategoryModel from "../models/category.model.js";
 
 const getEffectiveAmountExpression = {
   $cond: [{ $gt: ["$finalAmount", 0] }, "$finalAmount", "$totalAmt"],
 };
 const DELIVERED_ORDER_FILTER = { order_status: "delivered" };
+const SHIPMENT_TRANSFERRED_FILTER = {
+  shipping_provider: "XPRESSBEES",
+  $or: [
+    { awb_number: { $exists: true, $nin: [null, ""] } },
+    { awbNumber: { $exists: true, $nin: [null, ""] } },
+    { shipmentId: { $exists: true, $nin: [null, ""] } },
+  ],
+};
 
 /**
  * Statistics Controller
@@ -21,7 +30,22 @@ const DELIVERED_ORDER_FILTER = { order_status: "delivered" };
 export const getDashboardStats = async (req, res) => {
   try {
     const { period = "month" } = req.query; // month, quarter, year, allTime
-    const countableOrderFilter = DELIVERED_ORDER_FILTER;
+    const orderBaseFilter = { order_status: { $ne: "cancelled" } };
+    const successfulOrdersFilter = {
+      ...orderBaseFilter,
+      ...SHIPMENT_TRANSFERRED_FILTER,
+    };
+    const revenueFilter = successfulOrdersFilter;
+    const pendingOrdersFilter = {
+      ...orderBaseFilter,
+      payment_status: { $ne: "failed" },
+      $nor: [SHIPMENT_TRANSFERRED_FILTER],
+    };
+    const failedOrdersFilter = {
+      ...orderBaseFilter,
+      payment_status: "failed",
+      $nor: [SHIPMENT_TRANSFERRED_FILTER],
+    };
 
     // Calculate date range based on period
     let startDate = new Date();
@@ -48,16 +72,24 @@ export const getDashboardStats = async (req, res) => {
     // Fetch all stats in parallel
     const [
       totalOrders,
+      pendingOrders,
+      successfulOrders,
+      failedOrders,
       totalRevenue,
       totalUsers,
       totalProducts,
+      totalCategories,
       averageOrderValue,
       ordersInPeriod,
+      recentOrders,
       lowStockAggregation,
     ] = await Promise.all([
-      OrderModel.countDocuments(countableOrderFilter),
+      OrderModel.countDocuments(orderBaseFilter),
+      OrderModel.countDocuments(pendingOrdersFilter),
+      OrderModel.countDocuments(successfulOrdersFilter),
+      OrderModel.countDocuments(failedOrdersFilter),
       OrderModel.aggregate([
-        { $match: countableOrderFilter },
+        { $match: revenueFilter },
         { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
           $group: {
@@ -68,8 +100,9 @@ export const getDashboardStats = async (req, res) => {
       ]),
       UserModel.countDocuments(),
       ProductModel.countDocuments(),
+      CategoryModel.countDocuments(),
       OrderModel.aggregate([
-        { $match: countableOrderFilter },
+        { $match: revenueFilter },
         { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
           $group: {
@@ -79,9 +112,14 @@ export const getDashboardStats = async (req, res) => {
         },
       ]),
       OrderModel.countDocuments({
-        ...countableOrderFilter,
+        ...orderBaseFilter,
         createdAt: { $gte: startDate },
       }),
+      OrderModel.find(orderBaseFilter)
+        .populate("user", "name email")
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
       ProductModel.aggregate([
         {
           $addFields: {
@@ -160,7 +198,7 @@ export const getDashboardStats = async (req, res) => {
 
     // Monthly sales aggregation for dashboard graph
     const monthlySales = await OrderModel.aggregate([
-      { $match: countableOrderFilter },
+      { $match: revenueFilter },
       { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
       {
         $group: {
@@ -180,15 +218,20 @@ export const getDashboardStats = async (req, res) => {
       success: true,
       data: {
         totalOrders,
+        pendingOrders,
+        successfulOrders,
+        failedOrders,
         totalRevenue: totalRevenue[0]?.total || 0,
         totalUsers,
         totalProducts,
+        totalCategories,
         averageOrderValue: parseFloat(
           (averageOrderValue[0]?.average || 0).toFixed(2),
         ),
         ordersInPeriod,
         period,
         lowStockCount,
+        recentOrders,
         monthlySales, // <-- Add this line
       },
     });

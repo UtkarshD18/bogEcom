@@ -57,6 +57,7 @@ export const initSocket = (httpServer, { origins = [], jwtSecret } = {}) => {
         const user = await UserModel.findById(socket.userId).select("role status");
         if (user?.role === "Admin" && user?.status === "active") {
           socket.join("admin:orders");
+          socket.join("admin:analytics");
         }
       } catch {
         // Ignore role lookup failures for socket connections.

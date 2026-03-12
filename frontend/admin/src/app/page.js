@@ -1,13 +1,38 @@
 "use client";
 import AdminDashboardComponent from "@/app/components/DashboardBoxes/AdminDashboard";
 import { useAdmin } from "@/context/AdminContext";
+import { useAdminRealtime } from "@/hooks/useAdminRealtime";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
+import { useLiveRefreshSetting } from "@/hooks/useLiveRefreshSetting";
 import { getData } from "@/utils/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { FiGrid, FiImage, FiPackage, FiShoppingCart, FiUsers } from "react-icons/fi";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FiCheckCircle,
+  FiClock,
+  FiGrid,
+  FiImage,
+  FiPackage,
+  FiShoppingCart,
+  FiUsers,
+  FiXCircle,
+} from "react-icons/fi";
 import { MdOutlineSlideshow } from "react-icons/md";
 import { RiVipCrownLine } from "react-icons/ri";
+
+const MAX_FEED_ITEMS = 30;
+
+const normalizePagePath = (pageUrl) => {
+  const value = String(pageUrl || "").trim();
+  if (!value) return "-";
+  try {
+    const parsed = new URL(value);
+    return `${parsed.pathname || "/"}${parsed.search || ""}`;
+  } catch {
+    return value;
+  }
+};
 
 export default function AdminDashboard() {
   const { admin, loading, isAuthenticated, token } = useAdmin();
@@ -16,6 +41,9 @@ export default function AdminDashboard() {
     totalProducts: 0,
     totalCategories: 0,
     totalOrders: 0,
+    pendingOrders: 0,
+    successfulOrders: 0,
+    failedOrders: 0,
     totalUsers: 0,
     totalRevenue: 0,
   });
@@ -23,6 +51,30 @@ export default function AdminDashboard() {
     activeMembers: 0,
   });
   const [loadingStats, setLoadingStats] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [liveFeed, setLiveFeed] = useState([]);
+  const [livePulse, setLivePulse] = useState({
+    lastEventAt: null,
+    eventsPerMinute: 0,
+    sessionsPerMinute: 0,
+    lastUserType: "Guest",
+  });
+  const pulseBucketsRef = useRef([]);
+  const { intervalMs, setIntervalMs, options: refreshOptions } =
+    useLiveRefreshSetting();
+
+  const refreshConfig = useMemo(
+    () => ({
+      minIntervalMs: intervalMs,
+      fallbackIntervalMs: Math.max(intervalMs * 30, 30000),
+    }),
+    [intervalMs],
+  );
+
+  const lastEventLabel = useMemo(() => {
+    if (!livePulse.lastEventAt) return "Waiting for activity...";
+    return new Date(livePulse.lastEventAt).toLocaleTimeString();
+  }, [livePulse.lastEventAt]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -48,6 +100,14 @@ export default function AdminDashboard() {
     setLoadingStats(false);
   }, [token]);
 
+  const { trigger: triggerRefresh } = useLiveRefresh(
+    () => {
+      fetchStats();
+      setRefreshKey((prev) => prev + 1);
+    },
+    refreshConfig,
+  );
+
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.replace("/login");
@@ -59,6 +119,75 @@ export default function AdminDashboard() {
       fetchStats();
     }
   }, [isAuthenticated, token, fetchStats]);
+
+  const handleOrderUpdate = useCallback(() => {
+    triggerRefresh();
+  }, [triggerRefresh]);
+
+  const handleAnalyticsBatch = useCallback(
+    (payload) => {
+      const now = Date.now();
+      const eventCount = Number(payload?.eventCount || 0);
+      const sessionStarts = Number(payload?.eventTypes?.session_start || 0);
+      const userType = payload?.userId ? "Logged In" : "Guest";
+      const previews = Array.isArray(payload?.eventsPreview)
+        ? payload.eventsPreview
+        : [];
+
+      if (previews.length > 0) {
+        const mapped = previews
+          .slice()
+          .reverse()
+          .map((event, index) => ({
+            id: `${event.sessionId || "session"}-${event.timestamp || now}-${index}`,
+            eventType: String(event.eventType || "unknown").replace(/_/g, " "),
+            page: normalizePagePath(event.pageUrl),
+            timestamp: event.timestamp || new Date(now).toISOString(),
+            sessionId: event.sessionId || "-",
+            userType: event.userId ? "Logged In" : "Guest",
+          }));
+
+        setLiveFeed((prev) => {
+          const next = [...mapped, ...prev];
+          return next.slice(0, MAX_FEED_ITEMS);
+        });
+      }
+
+      pulseBucketsRef.current = [
+        ...pulseBucketsRef.current,
+        {
+          ts: now,
+          events: Number.isFinite(eventCount) ? eventCount : 0,
+          sessions: Number.isFinite(sessionStarts) ? sessionStarts : 0,
+        },
+      ].filter((bucket) => now - bucket.ts <= 60000);
+
+      const aggregate = pulseBucketsRef.current.reduce(
+        (acc, bucket) => {
+          acc.events += bucket.events;
+          acc.sessions += bucket.sessions;
+          return acc;
+        },
+        { events: 0, sessions: 0 },
+      );
+
+      setLivePulse({
+        lastEventAt: now,
+        eventsPerMinute: aggregate.events,
+        sessionsPerMinute: aggregate.sessions,
+        lastUserType: userType,
+      });
+
+      triggerRefresh();
+    },
+    [triggerRefresh],
+  );
+
+  useAdminRealtime({
+    token,
+    onOrderUpdate: handleOrderUpdate,
+    onAnalyticsBatch: handleAnalyticsBatch,
+  });
 
   if (loading) {
     return (
@@ -134,7 +263,7 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="w-full max-w-none px-4 sm:px-6 lg:px-8 pt-4 pb-8">
         {/* Welcome Card */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white mb-8">
           <h1 className="text-3xl font-bold mb-2">
@@ -145,8 +274,104 @@ export default function AdminDashboard() {
           </p>
         </div>
 
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800">
+                Live Activity
+              </h2>
+              <p className="text-xs text-gray-500">
+                Real-time updates from guest and logged-in visitors.
+              </p>
+            </div>
+            <div className="text-xs text-gray-500">
+              Last event: {lastEventLabel}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Events/min</div>
+              <div className="text-xl font-bold text-gray-900">
+                {livePulse.eventsPerMinute}
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Sessions/min</div>
+              <div className="text-xl font-bold text-gray-900">
+                {livePulse.sessionsPerMinute}
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Latest visitor</div>
+              <div className="text-xl font-bold text-gray-900">
+                {livePulse.lastUserType}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500">Live refresh</span>
+            {refreshOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setIntervalMs(option.value)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                  intervalMs === option.value
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-600 border-gray-300"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800">
+                Live Activity Feed
+              </h2>
+              <p className="text-xs text-gray-500">
+                Latest {MAX_FEED_ITEMS} events from guests and logged-in users.
+              </p>
+            </div>
+            <div className="text-xs text-gray-500">
+              Refresh: {Math.round(intervalMs / 1000)}s
+            </div>
+          </div>
+          <div className="mt-4 max-h-80 overflow-auto divide-y divide-gray-100">
+            {liveFeed.length === 0 ? (
+              <div className="text-sm text-gray-500 py-6 text-center">
+                Waiting for live events...
+              </div>
+            ) : (
+              liveFeed.map((event) => (
+                <div
+                  key={event.id}
+                  className="py-3 flex flex-wrap items-center gap-3 text-sm text-gray-700"
+                >
+                  <span className="text-xs text-gray-400 min-w-[90px]">
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                    {event.eventType}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {event.userType}
+                  </span>
+                  <span className="text-xs text-gray-500 truncate max-w-[340px]">
+                    {event.page}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
           <div className="bg-white rounded-xl p-6 shadow-sm">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -170,19 +395,6 @@ export default function AdminDashboard() {
                   {loadingStats ? "..." : stats.totalCategories}
                 </p>
                 <p className="text-sm text-gray-500">Categories</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center">
-                <FiShoppingCart className="text-pink-600 text-xl" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-800">
-                  {loadingStats ? "..." : stats.totalOrders}
-                </p>
-                <p className="text-sm text-gray-500">Orders</p>
               </div>
             </div>
           </div>
@@ -214,12 +426,76 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* Order Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+          <Link href="/orders" className="block">
+            <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center">
+                  <FiShoppingCart className="text-pink-600 text-xl" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {loadingStats ? "..." : stats.totalOrders}
+                  </p>
+                  <p className="text-sm text-gray-500">Total Orders</p>
+                </div>
+              </div>
+            </div>
+          </Link>
+          <Link href="/orders?status=pending" className="block">
+            <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <FiClock className="text-amber-600 text-xl" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {loadingStats ? "..." : stats.pendingOrders}
+                  </p>
+                  <p className="text-sm text-gray-500">Pending Orders</p>
+                </div>
+              </div>
+            </div>
+          </Link>
+          <Link href="/orders?status=successful" className="block">
+            <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
+                  <FiCheckCircle className="text-emerald-600 text-xl" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {loadingStats ? "..." : stats.successfulOrders}
+                  </p>
+                  <p className="text-sm text-gray-500">Successful Orders</p>
+                </div>
+              </div>
+            </div>
+          </Link>
+          <Link href="/orders?status=failed" className="block">
+            <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-rose-100 rounded-lg flex items-center justify-center">
+                  <FiXCircle className="text-rose-600 text-xl" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {loadingStats ? "..." : stats.failedOrders}
+                  </p>
+                  <p className="text-sm text-gray-500">Failed Orders</p>
+                </div>
+              </div>
+            </div>
+          </Link>
+        </div>
+
         {/* Production Dashboard with Charts & Real Data */}
         <div className="mb-8">
           <h2 className="text-xl font-bold text-gray-800 mb-4">
             Analytics & Reports
           </h2>
-          <AdminDashboardComponent />
+          <AdminDashboardComponent refreshKey={refreshKey} />
         </div>
 
         {/* Menu Grid */}

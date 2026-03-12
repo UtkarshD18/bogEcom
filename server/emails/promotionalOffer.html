@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Special Offer</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background: #f6f1ea;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #1c1c1c;
+    "
+  >
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td align="center" style="padding: 32px 12px">
+          <table
+            role="presentation"
+            width="640"
+            cellspacing="0"
+            cellpadding="0"
+            style="
+              width: 100%;
+              max-width: 640px;
+              background: #ffffff;
+              border-radius: 18px;
+              overflow: hidden;
+              border: 1px solid #eadfd4;
+            "
+          >
+            <tr>
+              <td
+                style="
+                  padding: 24px 28px;
+                  background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+                  color: #ffffff;
+                "
+              >
+                <div
+                  style="
+                    font-size: 12px;
+                    letter-spacing: 2px;
+                    text-transform: uppercase;
+                    opacity: 0.9;
+                  "
+                >
+                  HealthyOneGram
+                </div>
+                <h1 style="margin: 8px 0 0; font-size: 26px; line-height: 1.2">
+                  {{headline}}
+                </h1>
+                <p style="margin: 8px 0 0; font-size: 14px; opacity: 0.95">
+                  Exclusive offer just for you.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 26px 28px">
+                <p style="margin: 0 0 6px">
+                  Hello <strong>{{customer_name}}</strong>,
+                </p>
+                <p style="margin: 0 0 14px">{{message}}</p>
+
+                <div
+                  style="
+                    background: #fff7ed;
+                    border-left: 4px solid #f59e0b;
+                    padding: 12px 14px;
+                    border-radius: 12px;
+                    margin: 12px 0 16px;
+                  "
+                >
+                  <p style="margin: 0 0 6px; font-weight: 700">Offer details</p>
+                  <p style="margin: 0; font-size: 13px; color: #7c2d12">
+                    {{offer_details}}
+                  </p>
+                  <p style="margin: 8px 0 0; font-size: 13px; color: #7c2d12">
+                    {{coupon_code}}
+                  </p>
+                  <p style="margin: 6px 0 0; font-size: 12px; color: #9a3412">
+                    {{discount_text}}
+                  </p>
+                  <p style="margin: 6px 0 0; font-size: 12px; color: #9a3412">
+                    {{valid_until}}
+                  </p>
+                </div>
+
+                <div style="text-align: center; margin: 18px 0 6px">
+                  <a
+                    href="{{cta_url}}"
+                    style="
+                      background: #ef4444;
+                      color: #ffffff;
+                      text-decoration: none;
+                      padding: 12px 22px;
+                      border-radius: 999px;
+                      font-weight: 700;
+                      font-size: 14px;
+                      display: inline-block;
+                    "
+                    >{{cta_label}}</a
+                  >
+                </div>
+                <p style="margin: 12px 0 0; font-size: 12px; color: #6b7280">
+                  You are receiving this email because you opted in to promotional
+                  updates.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td
+                style="
+                  padding: 18px 28px;
+                  background: #f9f5f0;
+                  font-size: 12px;
+                  color: #6b5b4f;
+                "
+              >
+                <p style="margin: 0 0 6px">
+                  Need help? Contact us at
+                  <a href="{{support_url}}" style="color: #1f3d5b"
+                    >{{support_contact}}</a
+                  >
+                </p>
+                <p style="margin: 0">(c) {{year}} HealthyOneGram</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

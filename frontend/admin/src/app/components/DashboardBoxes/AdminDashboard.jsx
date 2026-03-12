@@ -12,35 +12,56 @@ import {
   YAxis,
 } from "recharts";
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ refreshKey = 0 }) {
   const { token } = useAdmin();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const fetchStats = async ({ silent = false } = {}) => {
     if (!token) {
       setLoading(false);
       return;
     }
 
-    getDashboardStats(token)
-      .then((res) => {
-        if (res.success) {
-          setStats(res.data);
-          setError(null);
-        } else {
-          setError(res.message || "Failed to load stats");
-          setStats(null);
-        }
-      })
-      .catch((err) => {
-        console.error("Dashboard stats error:", err);
-        setError(err.message || "Error loading dashboard");
-        setStats(null);
-      })
-      .finally(() => setLoading(false));
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      const res = await getDashboardStats(token);
+      if (res.success) {
+        setStats(res.data);
+        setError(null);
+      } else {
+        setError(res.message || "Failed to load stats");
+        if (!silent) setStats(null);
+      }
+    } catch (err) {
+      console.error("Dashboard stats error:", err);
+      setError(err.message || "Error loading dashboard");
+      if (!silent) setStats(null);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (refreshKey > 0) {
+      fetchStats({ silent: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   if (loading) return <CircularProgress />;
   if (error) return <div className="text-red-500 p-4">{error}</div>;
@@ -55,6 +76,9 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-4">
+      {refreshing ? (
+        <div className="text-xs text-gray-400 mb-2">Updating live data...</div>
+      ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-6">
         <div className="bg-white p-4 rounded shadow">
           <div className="text-gray-500 text-sm">Total Revenue</div>

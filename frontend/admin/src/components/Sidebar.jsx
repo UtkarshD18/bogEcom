@@ -24,8 +24,9 @@ import { PiImageSquare } from "react-icons/pi";
 import { RiCoupon2Line, RiVipCrownLine } from "react-icons/ri";
 import { RxDashboard } from "react-icons/rx";
 import { TbBrandProducthunt, TbShare, TbUsers } from "react-icons/tb";
+import { FiX } from "react-icons/fi";
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen = false, onClose }) => {
   const { logout, admin, token } = useAdmin();
   const pathname = usePathname();
   const router = useRouter();
@@ -198,10 +199,20 @@ const Sidebar = () => {
     router.refresh();
   };
 
+  const handleNavClick = () => {
+    if (onClose) {
+      onClose();
+    }
+  };
+
   return (
-    <aside className="w-[250px] bg-white shadow-md h-screen fixed top-0 left-0 z-40 flex flex-col">
+    <aside
+      className={`w-[250px] bg-white shadow-md h-screen fixed top-0 left-0 z-40 flex flex-col transform transition-transform duration-200 ${
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      } lg:translate-x-0`}
+    >
       {/* Logo */}
-      <div className="p-4 border-b border-gray-100">
+      <div className="p-4 border-b border-gray-100 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <img
             src="/logo.png"
@@ -212,6 +223,14 @@ const Sidebar = () => {
             loading="eager"
           />
         </Link>
+        <button
+          type="button"
+          onClick={onClose}
+          className="lg:hidden text-gray-500 hover:text-gray-900"
+          aria-label="Close navigation"
+        >
+          <FiX size={22} />
+        </button>
       </div>
 
       {/* Admin Info */}
@@ -244,6 +263,7 @@ const Sidebar = () => {
             <div key={tab.name}>
               <Link
                 href={tab.href}
+                onClick={handleNavClick}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                   tabActive
                     ? "bg-blue-50 text-blue-600 font-semibold"
@@ -269,6 +289,7 @@ const Sidebar = () => {
                       <Link
                         key={child.href}
                         href={child.href}
+                        onClick={handleNavClick}
                         className={`px-3 py-1.5 rounded-md text-sm transition-all ${
                           childIsActive
                             ? "text-blue-700 bg-blue-100 font-semibold"

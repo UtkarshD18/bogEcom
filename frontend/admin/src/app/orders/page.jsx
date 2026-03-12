@@ -1,12 +1,15 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
+import { useAdminRealtime } from "@/hooks/useAdminRealtime";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
+import { useLiveRefreshSetting } from "@/hooks/useLiveRefreshSetting";
 import { API_BASE_URL, deleteData, getData, postData, putData } from "@/utils/api";
 import { Button } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
 import Pagination from "@mui/material/Pagination";
 import Select from "@mui/material/Select";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FaAngleDown } from "react-icons/fa6";
 import { FiSearch } from "react-icons/fi";
@@ -587,19 +590,37 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
 const Orders = () => {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [orders, setOrders] = useState([]);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [repairingPaidOrders, setRepairingPaidOrders] = useState(false);
+  const { intervalMs } = useLiveRefreshSetting();
+  const refreshConfig = useMemo(
+    () => ({
+      minIntervalMs: intervalMs,
+      fallbackIntervalMs: Math.max(intervalMs * 30, 30000),
+    }),
+    [intervalMs],
+  );
 
-  const fetchOrders = useCallback(async () => {
-    setIsLoading(true);
+  const fetchOrders = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setIsLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     try {
       let url = `/api/orders/admin/all?page=${page}&limit=20`;
       if (search) url += `&search=${search}`;
+      if (statusFilter && statusFilter !== "all") {
+        url += `&status=${statusFilter}`;
+      }
 
       const response = await getData(url, token);
       if (response.success) {
@@ -615,7 +636,8 @@ const Orders = () => {
       setTotalPages(1);
     }
     setIsLoading(false);
-  }, [page, search, token]);
+    setRefreshing(false);
+  }, [page, search, statusFilter, token]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -627,11 +649,44 @@ const Orders = () => {
     if (isAuthenticated) {
       fetchOrders();
     }
-  }, [isAuthenticated, page, fetchOrders]);
+  }, [isAuthenticated, page, statusFilter, fetchOrders]);
+
+  useEffect(() => {
+    const rawStatus = String(searchParams?.get("status") || "all").toLowerCase();
+    const allowed = new Set(["all", "pending", "successful", "failed"]);
+    const nextStatus = allowed.has(rawStatus) ? rawStatus : "all";
+    setStatusFilter(nextStatus);
+    setPage(1);
+  }, [searchParams]);
+
+  const { trigger: triggerOrdersRefresh } = useLiveRefresh(
+    () => fetchOrders({ silent: true }),
+    refreshConfig,
+  );
+
+  const handleOrderUpdate = useCallback(() => {
+    triggerOrdersRefresh();
+  }, [triggerOrdersRefresh]);
+
+  useAdminRealtime({ token, onOrderUpdate: handleOrderUpdate });
 
   const handleSearch = (e) => {
     e.preventDefault();
     fetchOrders();
+  };
+
+  const handleStatusChange = (event) => {
+    const next = event.target.value;
+    setStatusFilter(next);
+    setPage(1);
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    if (next === "all") {
+      params.delete("status");
+    } else {
+      params.set("status", next);
+    }
+    const query = params.toString();
+    router.replace(query ? `/orders?${query}` : "/orders");
   };
 
   const handleRepairPaidOrders = async () => {
@@ -716,6 +771,22 @@ const Orders = () => {
             >
               Purchase Orders
             </Button>
+            <Select
+              size="small"
+              value={statusFilter}
+              onChange={handleStatusChange}
+              displayEmpty
+              sx={{
+                minWidth: 180,
+                borderRadius: "10px",
+                backgroundColor: "#f9fafb",
+              }}
+            >
+              <MenuItem value="all">All Orders</MenuItem>
+              <MenuItem value="pending">Pending Orders</MenuItem>
+              <MenuItem value="successful">Successful Orders</MenuItem>
+              <MenuItem value="failed">Failed Orders</MenuItem>
+            </Select>
             <form onSubmit={handleSearch} className="flex items-center gap-2">
               <div className="relative">
                 <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -724,7 +795,7 @@ const Orders = () => {
                   placeholder="Search Order..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 bg-gray-50 rounded-lg w-[300px] outline-none focus:border-blue-500"
+                  className="pl-10 pr-4 py-2 border border-gray-300 bg-gray-50 rounded-lg w-full sm:w-[300px] outline-none focus:border-blue-500"
                 />
               </div>
               <Button
@@ -743,6 +814,10 @@ const Orders = () => {
           </div>
         </div>
 
+        {refreshing ? (
+          <div className="text-xs text-gray-500 mt-2">Refreshing live data...</div>
+        ) : null}
+
         {isLoading ? (
           <div className="flex justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600"></div>
@@ -753,8 +828,8 @@ const Orders = () => {
           </div>
         ) : (
           <>
-            <div className="w-full mt-5 border border-gray-200 rounded-xl overflow-hidden">
-              <table className="w-full table-fixed">
+            <div className="w-full mt-5 border border-gray-200 rounded-xl overflow-x-auto">
+              <table className="min-w-[980px] w-full table-fixed">
                 <colgroup>
                   {ORDER_TABLE_COLUMNS.map((width, idx) => (
                     <col key={idx} style={{ width }} />

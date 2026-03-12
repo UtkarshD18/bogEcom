@@ -17,6 +17,12 @@ const RAGE_CLICK_THRESHOLD = 3;
 const MAX_EVENTS_PER_BATCH = 200;
 const COMPRESS_THRESHOLD_BYTES = 48 * 1024;
 const EVENT_TYPE_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
+const CRITICAL_EVENT_TYPES = new Set([
+  "session_start",
+  "page_view_started",
+  "purchase_completed",
+  "checkout_started",
+]);
 
 const trackerState = {
   initialized: false,
@@ -403,6 +409,11 @@ const enqueue = (eventType, metadata = {}, overrides = {}) => {
   if (!event) return;
 
   trackerState.queue.push(event);
+
+  if (CRITICAL_EVENT_TYPES.has(event.eventType)) {
+    flushQueue({ immediate: true }).catch(() => {});
+    return;
+  }
 
   if (trackerState.queue.length >= MAX_EVENTS_PER_BATCH) {
     flushQueue().catch(() => {});

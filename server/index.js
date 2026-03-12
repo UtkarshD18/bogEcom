@@ -197,6 +197,7 @@ import vendorRouter from "./routes/vendor.routes.js";
 import webhookRouter from "./routes/webhook.route.js";
 import wishlistRouter from "./routes/wishlist.route.js";
 import { startExpressbeesPolling } from "./services/expressbeesPolling.service.js";
+import { startOrderFeedbackJob } from "./services/orderFeedback.service.js";
 import { startInventoryReservationExpiryJob } from "./services/inventoryReservationExpiry.service.js";
 import { startMembershipExpiryJob } from "./services/membershipExpiry.service.js";
 import { startLocationLogRetentionJob } from "./services/userLocationLog.service.js";
@@ -554,6 +555,7 @@ connectDb().then(async () => {
   }
   startInventoryReservationExpiryJob();
   startMembershipExpiryJob();
+  startOrderFeedbackJob();
 }).catch((error) => {
   console.error(
     "Server startup failed:",

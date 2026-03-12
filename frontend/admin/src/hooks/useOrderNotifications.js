@@ -1,77 +1,171 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAdmin } from "@/context/AdminContext";
+import { getData } from "@/utils/api";
+import { useAdminRealtime } from "@/hooks/useAdminRealtime";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
+
+const SEEN_STORAGE_KEY = "hog_admin_seen_order_ids";
+
+const safeParse = (value, fallback = []) => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const getSeenIds = () => {
+  if (typeof window === "undefined") return [];
+  return safeParse(sessionStorage.getItem(SEEN_STORAGE_KEY) || "[]", []);
+};
+
+const setSeenIds = (ids) => {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(ids));
+};
+
+const toOrderId = (value) => String(value || "").trim();
+
+const normalizeOrder = (order = {}) => {
+  const id = toOrderId(order?._id || order?.orderId || order?.id);
+  if (!id) return null;
+
+  const displayId = String(
+    order?.displayOrderId ||
+      order?.orderNumber ||
+      (id ? `BOG-${id.slice(-8).toUpperCase()}` : "N/A"),
+  ).trim();
+
+  const total = Number(
+    order?.displayTotal ??
+      order?.finalAmount ??
+      order?.totalAmt ??
+      order?.total ??
+      0,
+  );
+
+  return {
+    id,
+    displayId,
+    total,
+    status: String(order?.order_status || order?.status || "").trim(),
+    createdAt: order?.createdAt || order?.updatedAt || new Date().toISOString(),
+    customerName:
+      order?.customerName ||
+      order?.user?.name ||
+      order?.guestDetails?.fullName ||
+      order?.billingDetails?.fullName ||
+      "Guest",
+  };
+};
 
 /**
  * Custom hook to fetch order notifications for admin
- * Checks localStorage for pending/new orders
+ * Uses real-time socket events + API refresh for accuracy
  */
 export const useOrderNotifications = () => {
-  const [notificationCount, setNotificationCount] = useState(0);
+  const { token } = useAdmin();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchOrderNotifications = async () => {
+  const notificationCount = useMemo(() => orders.length, [orders.length]);
+
+  const applyOrders = useCallback((incoming = []) => {
+    const seenSet = new Set(getSeenIds());
+    const merged = new Map();
+
+    incoming.forEach((order) => {
+      const normalized = normalizeOrder(order);
+      if (!normalized || seenSet.has(normalized.id)) return;
+      merged.set(normalized.id, normalized);
+    });
+
+    setOrders((prev) => {
+      prev.forEach((order) => {
+        if (!order?.id || seenSet.has(order.id)) return;
+        if (!merged.has(order.id)) {
+          merged.set(order.id, order);
+        }
+      });
+
+      const next = Array.from(merged.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      return next;
+    });
+  }, []);
+
+  const fetchOrderNotifications = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
     try {
-      setLoading(true);
-      // Fetch orders from localStorage (saved from client checkout)
-      const savedOrders = JSON.parse(localStorage.getItem("orders") || "[]");
-
-      // Get admin-seen orders from sessionStorage
-      const seenOrderIds = JSON.parse(
-        sessionStorage.getItem("seenOrderIds") || "[]",
-      );
-
-      // Filter out seen orders
-      const newOrders = savedOrders.filter(
-        (order) => !seenOrderIds.includes(order.id),
-      );
-
-      setOrders(newOrders);
-      setNotificationCount(newOrders.length);
+      const response = await getData("/api/orders/admin/dashboard-stats", token);
+      if (response?.success) {
+        const recentOrders = Array.isArray(response?.data?.recentOrders)
+          ? response.data.recentOrders
+          : [];
+        applyOrders(recentOrders);
+      }
     } catch (error) {
       console.error("Error fetching order notifications:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [applyOrders, token]);
+
+  const { trigger: triggerRefresh } = useLiveRefresh(fetchOrderNotifications, {
+    minIntervalMs: 1500,
+    fallbackIntervalMs: 60000,
+  });
 
   useEffect(() => {
-    // Fetch on mount
-    fetchOrderNotifications();
+    if (token) {
+      fetchOrderNotifications();
+    }
+  }, [fetchOrderNotifications, token]);
 
-    // Poll every 3 seconds
-    const interval = setInterval(fetchOrderNotifications, 3000);
+  const handleOrderUpdate = useCallback(
+    (payload) => {
+      const normalized = normalizeOrder(payload);
+      if (!normalized) return;
+      const seenSet = new Set(getSeenIds());
+      if (seenSet.has(normalized.id)) return;
 
-    return () => clearInterval(interval);
-  }, []);
+      setOrders((prev) => {
+        const exists = prev.some((order) => order.id === normalized.id);
+        if (exists) return prev;
+        return [normalized, ...prev].slice(0, 20);
+      });
+
+      triggerRefresh();
+    },
+    [triggerRefresh],
+  );
+
+  useAdminRealtime({ token, onOrderUpdate: handleOrderUpdate });
 
   const markOrderAsSeen = (orderId) => {
-    try {
-      const seenOrderIds = JSON.parse(
-        sessionStorage.getItem("seenOrderIds") || "[]",
-      );
-      if (!seenOrderIds.includes(orderId)) {
-        seenOrderIds.push(orderId);
-        sessionStorage.setItem("seenOrderIds", JSON.stringify(seenOrderIds));
-      }
-      // Refetch to update count
-      fetchOrderNotifications();
-    } catch (error) {
-      console.error("Error marking order as seen:", error);
+    const id = toOrderId(orderId);
+    if (!id) return;
+
+    const seen = new Set(getSeenIds());
+    if (!seen.has(id)) {
+      seen.add(id);
+      setSeenIds(Array.from(seen));
     }
+
+    setOrders((prev) => prev.filter((order) => order.id !== id));
   };
 
   const clearAllNotifications = () => {
-    try {
-      const savedOrders = JSON.parse(localStorage.getItem("orders") || "[]");
-      sessionStorage.setItem(
-        "seenOrderIds",
-        JSON.stringify(savedOrders.map((order) => order.id)),
-      );
-      setNotificationCount(0);
-      setOrders([]);
-    } catch (error) {
-      console.error("Error clearing notifications:", error);
-    }
+    const seen = new Set(getSeenIds());
+    orders.forEach((order) => {
+      if (order?.id) {
+        seen.add(order.id);
+      }
+    });
+    setSeenIds(Array.from(seen));
+    setOrders([]);
   };
 
   return {
