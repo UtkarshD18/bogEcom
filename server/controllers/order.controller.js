@@ -3105,13 +3105,8 @@ export const getUserOrders = asyncHandler(async (req, res) => {
       ? {
           $or: [
             { user: userId },
-            {
-              user: null,
-              $or: [
-                { "billingDetails.email": emailMatch },
-                { "guestDetails.email": emailMatch },
-              ],
-            },
+            { "billingDetails.email": emailMatch },
+            { "guestDetails.email": emailMatch },
           ],
         }
       : { user: userId };

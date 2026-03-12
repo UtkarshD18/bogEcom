@@ -126,6 +126,7 @@ const claimGuestOrdersForUser = async (user) => {
           $or: [
             { user: null },
             { user: { $exists: false } },
+            { user: { $ne: user._id } },
           ],
         },
         {
