@@ -14,7 +14,8 @@ const optionalAuth = async (req, res, next) => {
     let token = null;
 
     // Try Authorization header first (Bearer token)
-    if (req.headers?.authorization) {
+    const hasExplicitAuth = Boolean(req.headers?.authorization);
+    if (hasExplicitAuth) {
       const authHeader = req.headers.authorization;
       if (
         typeof authHeader === "string" &&
@@ -24,8 +25,14 @@ const optionalAuth = async (req, res, next) => {
       }
     }
 
-    // If no Bearer token, try cookies
-    if (!token && req.cookies?.accessToken) {
+    // Only fall back to cookies for GET/HEAD requests.
+    // For POST/PUT/PATCH (e.g. checkout), the client must explicitly send an
+    // Authorization header; otherwise stale cookies from a previous login can
+    // silently attribute a guest order to the wrong user.
+    const safeForCookieFallback =
+      !hasExplicitAuth &&
+      ["GET", "HEAD"].includes(String(req.method).toUpperCase());
+    if (!token && safeForCookieFallback && req.cookies?.accessToken) {
       token = req.cookies.accessToken;
     }
 
