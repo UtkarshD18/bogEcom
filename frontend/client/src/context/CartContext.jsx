@@ -41,6 +41,67 @@ const buildApiUrl = (path) => {
   return `${API_URL}${apiPath}`;
 };
 
+const isComboPayload = (value) =>
+  Boolean(
+    value?.itemType === "combo" ||
+      value?.comboId ||
+      value?.combo?._id ||
+      value?.combo?.id ||
+      value?.comboSnapshot?.comboId,
+  );
+
+const resolveComboId = (value) => {
+  if (!value) return "";
+  return (
+    value.comboId ||
+    value.combo?._id ||
+    value.combo?.id ||
+    value.comboSnapshot?.comboId ||
+    value._id ||
+    value.id ||
+    ""
+  ).toString();
+};
+
+const resolveComboLabel = (value) =>
+  String(
+    value?.comboName ||
+      value?.name ||
+      value?.combo?.name ||
+      value?.comboSnapshot?.comboName ||
+      "",
+  ).trim();
+
+const resolveComboSlug = (value) =>
+  String(
+    value?.comboSlug ||
+      value?.slug ||
+      value?.combo?.slug ||
+      value?.comboSnapshot?.comboSlug ||
+      "",
+  ).trim();
+
+const resolveComboType = (value) =>
+  String(
+    value?.comboType ||
+      value?.combo?.comboType ||
+      value?.comboSnapshot?.comboType ||
+      value?.combo?.type ||
+      "",
+  ).trim();
+
+const resolveComboPrice = (value) =>
+  Number(
+    value?.comboPrice ??
+      value?.combo?.comboPrice ??
+      value?.comboSnapshot?.comboPrice ??
+      value?.price ??
+      0,
+  );
+
+const isComboCartItem = (item) =>
+  item?.itemType === "combo" || Boolean(item?.combo || item?.comboSnapshot?.comboId);
+
 const normalizeCartItems = (rawItems) => {
   if (!Array.isArray(rawItems)) return [];
 
@@ -117,6 +178,7 @@ export const CartProvider = ({ children }) => {
   };
 
   const resolveVariantId = (item) => {
+    if (isComboCartItem(item)) return null;
     const rawVariant = item?.variant?._id || item?.variant || item?.variantId;
     if (rawVariant === undefined || rawVariant === null || rawVariant === "") {
       return null;
@@ -210,6 +272,13 @@ export const CartProvider = ({ children }) => {
       setLoading(true);
       const token = getToken();
       const sessionId = getSessionId();
+      const isComboRequest = isComboPayload(product);
+      const comboId = isComboRequest ? resolveComboId(product) : "";
+
+      if (isComboRequest && !comboId) {
+        toast.error("Combo is unavailable right now.");
+        return { success: false, message: "Combo unavailable" };
+      }
 
       const headers = {
         "Content-Type": "application/json",
@@ -226,30 +295,52 @@ export const CartProvider = ({ children }) => {
         method: "POST",
         headers,
         credentials: "include",
-        body: JSON.stringify({
-          productId: product._id || product.id,
-          quantity,
-          price: product.price,
-          originalPrice: product.originalPrice || product.oldPrice,
-          variantId: product.variantId || product.selectedVariant?._id || undefined,
-          variantName: product.selectedVariant?.name || undefined,
-        }),
+        body: JSON.stringify(
+          isComboRequest
+            ? {
+                itemType: "combo",
+                comboId: comboId || undefined,
+                quantity,
+              }
+            : {
+                productId: product._id || product.id,
+                quantity,
+                price: product.price,
+                originalPrice: product.originalPrice || product.oldPrice,
+                variantId: product.variantId || product.selectedVariant?._id || undefined,
+                variantName: product.selectedVariant?.name || undefined,
+              },
+        ),
       });
 
       const data = await parseJsonSafely(response);
-      const errorMessage = getResponseErrorMessage(data, "Cannot add item");
+      const errorMessage = getResponseErrorMessage(
+        data,
+        isComboRequest ? "Cannot add combo" : "Cannot add item",
+      );
 
       if (data?.success) {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
 
-        trackEvent("add_to_cart", {
-          productId: String(product._id || product.id || ""),
-          quantity: Number(quantity || 1),
-          price: Number(product.price || 0),
-          variantId: String(product.variantId || product.selectedVariant?._id || ""),
-        });
+        if (isComboRequest) {
+          trackEvent("combo_add_to_cart", {
+            comboId: String(comboId || ""),
+            comboName: resolveComboLabel(product),
+            comboSlug: resolveComboSlug(product),
+            comboType: resolveComboType(product),
+            comboPrice: resolveComboPrice(product),
+            quantity: Number(quantity || 1),
+          });
+        } else {
+          trackEvent("add_to_cart", {
+            productId: String(product._id || product.id || ""),
+            quantity: Number(quantity || 1),
+            price: Number(product.price || 0),
+            variantId: String(product.variantId || product.selectedVariant?._id || ""),
+          });
+        }
 
         // Auto-open drawer only if it was the first item added
         if (cartItems.length === 0) {
@@ -257,6 +348,15 @@ export const CartProvider = ({ children }) => {
         }
         return { success: true };
       } else {
+        if (isComboRequest) {
+          if (response.status >= 400 && response.status < 500) {
+            toast.error(errorMessage);
+            return { success: false, message: errorMessage };
+          }
+          toast.error(errorMessage);
+          return { success: false, message: errorMessage };
+        }
+
         // If server says "Only X items available", SHOW ERROR and DO NOT FALLBACK
         if (
           response.status === 400 &&
@@ -289,6 +389,10 @@ export const CartProvider = ({ children }) => {
       }
     } catch (error) {
       console.error("Error adding to cart:", error);
+      if (isComboPayload(product)) {
+        toast.error("Unable to add combo right now.");
+        return { success: false, message: "Combo add failed" };
+      }
       addToCartLocal(product, quantity);
       trackEvent("add_to_cart", {
         productId: String(product._id || product.id || ""),
@@ -378,15 +482,23 @@ export const CartProvider = ({ children }) => {
   };
 
   // Update quantity
-  const updateQuantity = async (productId, quantity, variantId = null) => {
+  const updateQuantity = async (
+    productId,
+    quantity,
+    variantId = null,
+    options = {},
+  ) => {
     if (quantity < 1) {
-      return removeFromCart(productId, variantId);
+      return removeFromCart(productId, variantId, options);
     }
 
     try {
       setLoading(true);
       const token = getToken();
       const sessionId = getSessionId();
+      const isComboRequest =
+        options?.itemType === "combo" || options?.comboId || isComboPayload(options);
+      const comboId = isComboRequest ? resolveComboId(options) || productId : "";
 
       const headers = {
         "Content-Type": "application/json",
@@ -404,16 +516,24 @@ export const CartProvider = ({ children }) => {
         headers,
         credentials: "include",
         body: JSON.stringify({
-          productId,
-          quantity,
-          variantId: variantId || undefined,
+          ...(isComboRequest
+            ? {
+                itemType: "combo",
+                comboId: comboId || productId,
+                quantity,
+              }
+            : {
+                productId,
+                quantity,
+                variantId: variantId || undefined,
+              }),
         }),
       });
 
       const data = await parseJsonSafely(response);
       const errorMessage = getResponseErrorMessage(
         data,
-        "Cannot update quantity",
+        isComboRequest ? "Cannot update combo" : "Cannot update quantity",
       );
 
       if (data?.success) {
@@ -426,11 +546,19 @@ export const CartProvider = ({ children }) => {
           toast.error(errorMessage);
           return { success: false, message: errorMessage };
         }
-        updateQuantityLocal(productId, quantity, variantId);
+        if (!isComboRequest) {
+          updateQuantityLocal(productId, quantity, variantId);
+        } else {
+          toast.error(errorMessage);
+        }
       }
     } catch (error) {
       console.error("Error updating cart:", error);
-      updateQuantityLocal(productId, quantity, variantId);
+      if (!options?.itemType && !options?.comboId) {
+        updateQuantityLocal(productId, quantity, variantId);
+      } else {
+        toast.error("Unable to update combo right now.");
+      }
     } finally {
       setLoading(false);
     }
@@ -453,16 +581,22 @@ export const CartProvider = ({ children }) => {
   };
 
   // Remove from cart
-  const removeFromCart = async (productId, variantId = null) => {
+  const removeFromCart = async (productId, variantId = null, options = {}) => {
+    const isComboRequest =
+      options?.itemType === "combo" || options?.comboId || isComboPayload(options);
     const resolvedVariantId =
-      variantId ??
-      resolveVariantId(
-        cartItems.find(
-          (item) =>
-            String(item.product?._id || item.product?.id || item.product || item.id) ===
-            String(productId),
-        ),
-      );
+      !isComboRequest
+        ? variantId ??
+          resolveVariantId(
+            cartItems.find(
+              (item) =>
+                String(
+                  item.product?._id || item.product?.id || item.product || item.id,
+                ) === String(productId),
+            ),
+          )
+        : null;
+    const comboId = isComboRequest ? resolveComboId(options) || productId : "";
 
     try {
       setLoading(true);
@@ -480,9 +614,16 @@ export const CartProvider = ({ children }) => {
         headers["X-Session-Id"] = sessionId;
       }
 
-      const query = resolvedVariantId
-        ? `?variantId=${encodeURIComponent(String(resolvedVariantId))}`
-        : "";
+      const queryParts = [];
+      if (isComboRequest) {
+        queryParts.push("itemType=combo");
+        if (comboId) {
+          queryParts.push(`comboId=${encodeURIComponent(String(comboId))}`);
+        }
+      } else if (resolvedVariantId) {
+        queryParts.push(`variantId=${encodeURIComponent(String(resolvedVariantId))}`);
+      }
+      const query = queryParts.length ? `?${queryParts.join("&")}` : "";
       const response = await fetch(buildApiUrl(`/cart/remove/${productId}${query}`), {
         method: "DELETE",
         headers,
@@ -495,47 +636,66 @@ export const CartProvider = ({ children }) => {
         setCartItems(data.data.items || []);
         setCartCount(data.data.itemCount || 0);
         setCartTotal(round2(data.data.subtotal || 0));
-        trackEvent("remove_from_cart", {
-          productId: String(productId || ""),
-          variantId: String(resolvedVariantId || ""),
-        });
+        if (!isComboRequest) {
+          trackEvent("remove_from_cart", {
+            productId: String(productId || ""),
+            variantId: String(resolvedVariantId || ""),
+          });
+        }
         // toast.success("Item removed from cart");
       } else {
-        removeFromCartLocal(productId, resolvedVariantId);
+        removeFromCartLocal(productId, resolvedVariantId, {
+          itemType: isComboRequest ? "combo" : "product",
+          comboId,
+        });
+        if (!isComboRequest) {
+          trackEvent("remove_from_cart", {
+            productId: String(productId || ""),
+            variantId: String(resolvedVariantId || ""),
+            source: "local_fallback",
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error removing from cart:", error);
+      removeFromCartLocal(productId, resolvedVariantId, {
+        itemType: isComboRequest ? "combo" : "product",
+        comboId,
+      });
+      if (!isComboRequest) {
         trackEvent("remove_from_cart", {
           productId: String(productId || ""),
           variantId: String(resolvedVariantId || ""),
           source: "local_fallback",
         });
       }
-    } catch (error) {
-      console.error("Error removing from cart:", error);
-      removeFromCartLocal(productId, resolvedVariantId);
-      trackEvent("remove_from_cart", {
-        productId: String(productId || ""),
-        variantId: String(resolvedVariantId || ""),
-        source: "local_fallback",
-      });
     } finally {
       setLoading(false);
     }
   };
 
   // Remove locally
-  const removeFromCartLocal = (productId, variantId = null) => {
+  const removeFromCartLocal = (productId, variantId = null, options = {}) => {
+    const isComboRequest =
+      options?.itemType === "combo" || options?.comboId || isComboPayload(options);
+    const comboId = isComboRequest ? resolveComboId(options) || productId : "";
     setCartItems((prev) => {
-      const newItems = prev.filter(
-        (item) => {
-          const itemProductId = String(
-            item.product?._id || item.product?.id || item.product || item.id,
-          );
-          const itemVariantId = resolveVariantId(item);
-          const isSameProduct = itemProductId === String(productId);
-          const isSameVariant =
-            String(itemVariantId || "") === String(variantId || "");
-          return !(isSameProduct && isSameVariant);
-        },
-      );
+      const newItems = prev.filter((item) => {
+        if (isComboRequest) {
+          if (!isComboCartItem(item)) return true;
+          const itemComboId = resolveComboId(item);
+          return String(itemComboId || "") !== String(comboId || "");
+        }
+
+        const itemProductId = String(
+          item.product?._id || item.product?.id || item.product || item.id,
+        );
+        const itemVariantId = resolveVariantId(item);
+        const isSameProduct = itemProductId === String(productId);
+        const isSameVariant =
+          String(itemVariantId || "") === String(variantId || "");
+        return !(isSameProduct && isSameVariant);
+      });
       calculateTotals(newItems);
       saveToLocalStorage(newItems);
       // toast.success("Item removed from cart");
@@ -582,6 +742,7 @@ export const CartProvider = ({ children }) => {
   const isInCart = (productId) => {
     return cartItems.some(
       (item) =>
+        !isComboCartItem(item) &&
         String(
           item.product?._id || item.product?.id || item.product || item.id,
         ) === String(productId),
@@ -592,12 +753,38 @@ export const CartProvider = ({ children }) => {
   const getItemQuantity = (productId) => {
     const item = cartItems.find(
       (item) =>
+        !isComboCartItem(item) &&
         String(
           item.product?._id || item.product?.id || item.product || item.id,
         ) === String(productId),
     );
     return item?.quantity || 0;
   };
+
+  const isComboInCart = (comboId) =>
+    cartItems.some(
+      (item) =>
+        isComboCartItem(item) &&
+        String(resolveComboId(item) || "") === String(comboId || ""),
+    );
+
+  const getComboQuantity = (comboId) => {
+    const item = cartItems.find(
+      (entry) =>
+        isComboCartItem(entry) &&
+        String(resolveComboId(entry) || "") === String(comboId || ""),
+    );
+    return item?.quantity || 0;
+  };
+
+  const addComboToCart = (combo, quantity = 1) =>
+    addToCart({ ...combo, itemType: "combo" }, quantity);
+
+  const updateComboQuantity = (comboId, quantity) =>
+    updateQuantity(comboId, quantity, null, { itemType: "combo", comboId });
+
+  const removeComboFromCart = (comboId) =>
+    removeFromCart(comboId, null, { itemType: "combo", comboId });
 
   // Initialize cart on mount
   useEffect(() => {
@@ -638,11 +825,17 @@ export const CartProvider = ({ children }) => {
         loading,
         isInitialized,
         addToCart,
+        addComboToCart,
         updateQuantity,
+        updateComboQuantity,
         removeFromCart,
+        removeComboFromCart,
         clearCart,
         isInCart,
         getItemQuantity,
+        isComboInCart,
+        getComboQuantity,
+        isComboCartItem,
         fetchCart,
         isDrawerOpen,
         setIsDrawerOpen,

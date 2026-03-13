@@ -3,11 +3,13 @@
 import { useCart } from "@/context/CartContext";
 import { useProducts } from "@/context/ProductContext";
 import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
+import { postData } from "@/utils/api";
+import { trackEvent } from "@/utils/analyticsTracker";
 import { round2 } from "@/utils/gst";
 import { getImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IoBagCheckOutline, IoCartOutline, IoClose, IoFlashOutline } from "react-icons/io5";
 import { MdAdd, MdRemove, MdDeleteOutline } from "react-icons/md";
 
@@ -20,8 +22,12 @@ const CartDrawer = () => {
         setIsDrawerOpen,
         cartItems,
         addToCart,
+        addComboToCart,
         removeFromCart,
+        removeComboFromCart,
         updateQuantity,
+        updateComboQuantity,
+        isComboCartItem,
         cartSubTotalAmount,
         orderNote,
         setOrderNote,
@@ -30,6 +36,9 @@ const CartDrawer = () => {
     const { displayShippingCharge } = useShippingDisplayCharge();
     const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
     const [activeOfferId, setActiveOfferId] = useState(null);
+    const [comboUpsells, setComboUpsells] = useState([]);
+    const [comboUpsellLoading, setComboUpsellLoading] = useState(false);
+    const trackedComboViewsRef = useRef(new Set());
     const router = useRouter();
     const subtotal = round2(cartSubTotalAmount || 0);
     const shippingCost = 0; // DISPLAY-ONLY shipping is shown struck-through below.
@@ -75,6 +84,11 @@ const CartDrawer = () => {
         return fallback || item;
     };
 
+    const isComboItem = (item) =>
+        typeof isComboCartItem === "function"
+            ? isComboCartItem(item)
+            : item?.itemType === "combo" || Boolean(item?.combo || item?.comboSnapshot?.comboId);
+
     const toNumber = (value, fallback = 0) => {
         const numeric = Number(value);
         return Number.isFinite(numeric) ? numeric : fallback;
@@ -99,6 +113,49 @@ const CartDrawer = () => {
 
     // Helper to normalize cart item data
     const getItemData = (item) => {
+        if (isComboItem(item)) {
+            const combo = item?.comboSnapshot || item?.combo || {};
+            const comboItems = Array.isArray(combo?.items) ? combo.items : [];
+            const comboId =
+                combo?.comboId ||
+                combo?._id ||
+                item?.combo ||
+                item?.comboSnapshot?.comboId ||
+                item?._id ||
+                item?.id ||
+                null;
+            const price = toNumber(item?.price ?? combo?.comboPrice, 0);
+            const originalPrice = toNumber(
+                item?.originalPrice ?? combo?.originalPrice ?? combo?.originalTotal,
+                0,
+            );
+            const itemsPreview = comboItems
+                .map((entry) => entry?.productTitle || entry?.name)
+                .filter(Boolean);
+            const previewText = itemsPreview.slice(0, 3).join(", ");
+            const extraCount = itemsPreview.length > 3 ? itemsPreview.length - 3 : 0;
+
+            return {
+                id: comboId,
+                name: combo?.comboName || combo?.name || "Combo Bundle",
+                image:
+                    combo?.thumbnail ||
+                    combo?.image ||
+                    item?.image ||
+                    "/combo_placeholder.png",
+                price,
+                originalPrice,
+                brand: "Combo Deal",
+                quantity: Number(item?.quantity || 1),
+                quantityUnit:
+                    previewText && extraCount > 0
+                        ? `${previewText} + ${extraCount} more`
+                        : previewText || "Bundle",
+                itemType: "combo",
+                items: comboItems,
+            };
+        }
+
         const product = resolveProductData(item);
         const productId = resolveProductId(item);
         const variant = resolveVariantData(item, product);
@@ -134,6 +191,7 @@ const CartDrawer = () => {
                 item?.quantityUnit ||
                 product?.quantityUnit ||
                 "Per Unit",
+            itemType: "product",
         };
     };
 
@@ -181,11 +239,25 @@ const CartDrawer = () => {
     const cartProductIds = useMemo(() => {
         const ids = new Set();
         cartItems.forEach((item) => {
+            if (isComboItem(item)) {
+                const comboItems = item?.comboSnapshot?.items || item?.combo?.items || [];
+                comboItems.forEach((entry) => {
+                    const productId = entry?.productId || entry?.product?._id || entry?.product?.id;
+                    if (productId) ids.add(String(productId));
+                });
+                return;
+            }
+
             const id = resolveProductId(item);
             if (id) ids.add(String(id));
         });
         return ids;
-    }, [cartItems]);
+    }, [cartItems, isComboItem]);
+
+    const cartProductIdList = useMemo(
+        () => Array.from(cartProductIds.values()),
+        [cartProductIds],
+    );
 
     const relatedProducts = useMemo(() => {
         if (!Array.isArray(products)) return [];
@@ -197,6 +269,65 @@ const CartDrawer = () => {
             })
             .slice(0, 4);
     }, [products, cartProductIds]);
+
+    useEffect(() => {
+        let active = true;
+
+        const loadComboUpsells = async () => {
+            if (!isDrawerOpen) return;
+            if (!cartProductIdList.length) {
+                if (active) setComboUpsells([]);
+                return;
+            }
+            try {
+                setComboUpsellLoading(true);
+                const response = await postData("/api/combos/cart-upsell", {
+                    items: cartProductIdList.map((id) => ({ productId: id })),
+                });
+                if (!active) return;
+                if (response?.success) {
+                    const suggestions = Array.isArray(response.data?.suggestions)
+                        ? response.data.suggestions
+                        : [];
+                    setComboUpsells(suggestions);
+                } else {
+                    setComboUpsells([]);
+                }
+            } catch (error) {
+                if (active) {
+                    setComboUpsells([]);
+                }
+            } finally {
+                if (active) {
+                    setComboUpsellLoading(false);
+                }
+            }
+        };
+
+        loadComboUpsells();
+
+        return () => {
+            active = false;
+        };
+    }, [cartProductIdList, isDrawerOpen]);
+
+    useEffect(() => {
+        if (!comboUpsells.length) return;
+        comboUpsells.forEach((entry) => {
+            const combo = entry?.combo || entry;
+            const comboId = String(combo?._id || combo?.id || "");
+            if (!comboId) return;
+            if (trackedComboViewsRef.current.has(comboId)) return;
+            trackedComboViewsRef.current.add(comboId);
+            trackEvent("combo_view", {
+                comboId,
+                comboName: combo?.name || "",
+                comboSlug: combo?.slug || "",
+                comboType: combo?.comboType || "",
+                sectionName: "cart_upsell",
+            });
+        });
+    }, [comboUpsells]);
 
     const cartSavings = round2(
         cartItems.reduce((sum, item) => {
@@ -218,6 +349,13 @@ const CartDrawer = () => {
         }, 0),
     );
 
+    const comboSavingsPreview = round2(
+        comboUpsells.reduce((sum, entry) => {
+            const combo = entry?.combo || entry;
+            return sum + Number(combo?.totalSavings || 0);
+        }, 0),
+    );
+
     const handleAddOfferProduct = async (product) => {
         if (!product) return;
         const id = product?._id || product?.id;
@@ -225,6 +363,27 @@ const CartDrawer = () => {
         setActiveOfferId(String(id));
         try {
             await addToCart(product, 1);
+        } finally {
+            setActiveOfferId(null);
+        }
+    };
+
+    const handleAddComboUpsell = async (entry) => {
+        const combo = entry?.combo || entry;
+        const comboId = combo?._id || combo?.id;
+        if (!comboId || activeOfferId) return;
+        const activeKey = `combo-${comboId}`;
+        setActiveOfferId(activeKey);
+        try {
+            trackEvent("combo_click", {
+                comboId: String(comboId),
+                comboName: combo?.name || "",
+                comboSlug: combo?.slug || "",
+                comboType: combo?.comboType || "",
+                sectionName: "cart_upsell",
+                action: "add",
+            });
+            await addComboToCart(combo, 1);
         } finally {
             setActiveOfferId(null);
         }
@@ -290,6 +449,7 @@ const CartDrawer = () => {
                                 {cartItems.map((item) => {
                                     const data = getItemData(item);
                                     const productId = resolveProductId(item);
+                                    const isComboLine = data.itemType === "combo";
                                     return (
                                         <div key={`${data.id}-${item?.variant || item?.variantId || "base"}`} className="flex gap-4 p-3 rounded-2xl bg-white border border-gray-100 shadow-sm">
                                             <div className="w-20 h-20 shrink-0 bg-white rounded-xl flex items-center justify-center p-2 border border-gray-100">
@@ -311,10 +471,12 @@ const CartDrawer = () => {
                                                     </div>
                                                     <button
                                                         onClick={() =>
-                                                            removeFromCart(
-                                                                productId || data.id,
-                                                                item?.variant || null,
-                                                            )
+                                                            isComboLine
+                                                                ? removeComboFromCart(data.id)
+                                                                : removeFromCart(
+                                                                    productId || data.id,
+                                                                    item?.variant || null,
+                                                                )
                                                         }
                                                         className="p-1.5 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90"
                                                         aria-label="Remove item"
@@ -327,11 +489,16 @@ const CartDrawer = () => {
                                                     <div className="flex items-center gap-3 bg-gray-50 rounded-full px-2 py-1">
                                                         <button
                                                             onClick={() =>
-                                                                updateQuantity(
-                                                                    productId || data.id,
-                                                                    Number(data.quantity) - 1,
-                                                                    item?.variant || null,
-                                                                )
+                                                                isComboLine
+                                                                    ? updateComboQuantity(
+                                                                        data.id,
+                                                                        Number(data.quantity) - 1,
+                                                                    )
+                                                                    : updateQuantity(
+                                                                        productId || data.id,
+                                                                        Number(data.quantity) - 1,
+                                                                        item?.variant || null,
+                                                                    )
                                                             }
                                                             className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-red-500 active:scale-90 transition-all"
                                                         >
@@ -340,13 +507,26 @@ const CartDrawer = () => {
                                                         <span className="text-sm font-bold w-4 text-center">{data.quantity}</span>
                                                         <button
                                                             onClick={() =>
-                                                                updateQuantity(
-                                                                    productId || data.id,
-                                                                    Number(data.quantity) + 1,
-                                                                    item?.variant || null,
-                                                                )
+                                                                isComboLine
+                                                                    ? updateComboQuantity(
+                                                                        data.id,
+                                                                        Number(data.quantity) + 1,
+                                                                    )
+                                                                    : updateQuantity(
+                                                                        productId || data.id,
+                                                                        Number(data.quantity) + 1,
+                                                                        item?.variant || null,
+                                                                    )
                                                             }
-                                                            disabled={Number(data.quantity) >= (item.product?.stock || item.productData?.stock || item.stock || Infinity)}
+                                                            disabled={
+                                                                isComboLine
+                                                                    ? false
+                                                                    : Number(data.quantity) >=
+                                                                    (item.product?.stock ||
+                                                                        item.productData?.stock ||
+                                                                        item.stock ||
+                                                                        Infinity)
+                                                            }
                                                             className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                                                         >
                                                             <MdAdd size={14} />
@@ -381,11 +561,84 @@ const CartDrawer = () => {
                                 <p className="text-xs text-emerald-700 font-semibold">
                                     {cartSavings > 0
                                         ? `You're saving ₹${cartSavings} on this order.`
-                                        : `You can save up to ₹${offerSavingsPreview} more with these add-ons.`}
+                                        : comboUpsells.length > 0
+                                            ? `Unlock up to ₹${comboSavingsPreview} more with bundle deals.`
+                                            : `You can save up to ₹${offerSavingsPreview} more with these add-ons.`}
                                 </p>
 
                                 <div className="space-y-3 pt-1">
-                                    {relatedProducts.length > 0 ? (
+                                    {comboUpsellLoading ? (
+                                        <p className="text-xs text-gray-500">Loading bundle suggestions...</p>
+                                    ) : comboUpsells.length > 0 ? (
+                                        comboUpsells.map((entry) => {
+                                            const combo = entry?.combo || entry;
+                                            const comboId = combo?._id || combo?.id;
+                                            const isAdding = activeOfferId === `combo-${comboId}`;
+                                            const productsPreview = Array.isArray(combo?.items)
+                                                ? combo.items
+                                                    .map((item) => item?.productTitle || item?.name)
+                                                    .filter(Boolean)
+                                                    .slice(0, 3)
+                                                    .join(", ")
+                                                : "";
+                                            const missingCount = Number(entry?.missingCount || 0);
+                                            return (
+                                                <div
+                                                    key={comboId}
+                                                    className="rounded-xl border border-amber-100 bg-white p-3 shadow-sm"
+                                                >
+                                                    <div className="flex gap-3">
+                                                        <div className="w-16 h-16 rounded-lg border border-gray-100 bg-gray-50 flex items-center justify-center p-2 shrink-0">
+                                                            <img
+                                                                src={getImageUrl(combo?.thumbnail || combo?.image || "/combo_placeholder.png")}
+                                                                alt={combo?.name || "Combo deal"}
+                                                                className="w-full h-full object-contain"
+                                                            />
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">
+                                                                    Bundle upgrade
+                                                                </p>
+                                                                <span className="rounded-full bg-emerald-50 text-emerald-600 px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap">
+                                                                    Save ₹{round2(combo?.totalSavings || 0)}
+                                                                </span>
+                                                            </div>
+                                                            <p className="line-clamp-1 text-sm font-semibold text-gray-900">
+                                                                {combo?.name || "Combo Deal"}
+                                                            </p>
+                                                            <p className="mt-0.5 text-xs text-gray-500">
+                                                                {missingCount > 0
+                                                                    ? `Complete ${missingCount} more item${missingCount > 1 ? "s" : ""} to unlock this bundle.`
+                                                                    : productsPreview || "Bundle curated for your cart."}
+                                                            </p>
+
+                                                            <div className="mt-2 flex items-center justify-between gap-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    {combo?.originalTotal > combo?.comboPrice && (
+                                                                        <span className="text-xs text-gray-400 line-through">
+                                                                            ₹{round2(combo?.originalTotal || 0)}
+                                                                        </span>
+                                                                    )}
+                                                                    <span className="text-sm font-extrabold text-primary">
+                                                                        ₹{round2(combo?.comboPrice || 0)}
+                                                                    </span>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => handleAddComboUpsell(entry)}
+                                                                    disabled={isAdding}
+                                                                    className="rounded-full bg-primary text-white text-xs font-semibold px-3 py-1.5 hover:brightness-110 transition disabled:opacity-60"
+                                                                >
+                                                                    {isAdding ? "Adding..." : "Add Combo"}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    ) : relatedProducts.length > 0 ? (
                                         relatedProducts.map((product) => {
                                             const productId = product?._id || product?.id;
                                             const image = product?.thumbnail || product?.images?.[0] || "/product_1.png";

@@ -1,7 +1,13 @@
 import CartModel from "../models/cart.model.js";
 import mongoose from "mongoose";
 import ProductModel from "../models/product.model.js";
+import ComboModel from "../models/combo.model.js";
 import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
+import {
+  buildComboOrderSnapshot,
+  computeComboAvailability,
+  evaluateComboEligibility,
+} from "../services/combos/combo.service.js";
 
 const getAvailableQuantity = (product, variantId = null) => {
   if (!product) return 0;
@@ -57,6 +63,25 @@ const canUserAccessExclusiveProducts = async (userId) => {
   return checkExclusiveAccess(userId);
 };
 
+const normalizeItemType = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "combo" ? "combo" : "product";
+};
+
+const resolveItemTypeFromRequest = (req) =>
+  normalizeItemType(req.body?.itemType || req.query?.itemType || "");
+
+const isComboCartItem = (item) =>
+  item?.itemType === "combo" || Boolean(item?.combo || item?.comboSnapshot?.comboId);
+
+const normalizeComboId = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw;
+};
+
 /**
  * Cart Controller
  *
@@ -78,12 +103,20 @@ export const getCart = async (req, res) => {
         path: "items.product",
         select:
           "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus hasVariants variants isExclusive",
+      }).populate({
+        path: "items.combo",
+        select:
+          "name slug comboPrice originalTotal totalSavings comboType isActive isVisible startDate endDate stockMode stockQuantity reservedQuantity items",
       });
     } else if (sessionId) {
       cart = await CartModel.findOne({ sessionId }).populate({
         path: "items.product",
         select:
           "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory isActive demandStatus hasVariants variants isExclusive",
+      }).populate({
+        path: "items.combo",
+        select:
+          "name slug comboPrice originalTotal totalSavings comboType isActive isVisible startDate endDate stockMode stockQuantity reservedQuantity items",
       });
     }
 
@@ -99,6 +132,35 @@ export const getCart = async (req, res) => {
     // Important: keep variant cart lines on the selected variant price, not base product price.
     const validItems = [];
     for (const item of cart.items) {
+      if (isComboCartItem(item)) {
+        const combo = item.combo;
+        if (!combo) {
+          continue;
+        }
+
+        const eligibility = evaluateComboEligibility(combo);
+        if (!eligibility.eligible) {
+          continue;
+        }
+
+        const comboPrice = Number(combo.comboPrice || 0);
+        const comboOriginal = Number(combo.originalTotal || 0);
+        if (Number(item.price ?? 0) !== comboPrice) {
+          item.price = comboPrice;
+        }
+        if (Number(item.originalPrice ?? 0) !== comboOriginal) {
+          item.originalPrice = comboOriginal;
+        }
+
+        const snapshot = buildComboOrderSnapshot(combo, item.quantity || 1);
+        if (snapshot) {
+          item.comboSnapshot = snapshot;
+        }
+
+        validItems.push(item);
+        continue;
+      }
+
       if (
         item.product &&
         item.product.isActive &&
@@ -182,10 +244,137 @@ export const getCart = async (req, res) => {
 export const addToCart = async (req, res) => {
   try {
     const { userId, sessionId } = getActorIdentifiers(req);
+    const itemType = resolveItemTypeFromRequest(req);
     const productId = String(req.body?.productId || "").trim();
     const variantId = normalizeVariantId(req.body?.variantId);
     const variantName = String(req.body?.variantName || "").trim().slice(0, 120);
     const quantity = normalizeQuantity(req.body?.quantity ?? 1);
+
+    if (itemType === "combo" || req.body?.comboId) {
+      const comboId = normalizeComboId(req.body?.comboId || req.body?.id || productId);
+      if (!comboId || !isValidObjectId(comboId)) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Valid combo ID is required",
+        });
+      }
+
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_CART_ITEM_QTY) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: `Quantity must be an integer between 1 and ${MAX_CART_ITEM_QTY}`,
+        });
+      }
+
+      const combo = await ComboModel.findById(comboId).lean();
+      if (!combo) {
+        return res.status(404).json({
+          error: true,
+          success: false,
+          message: "Combo not found or unavailable",
+        });
+      }
+
+      const eligibility = evaluateComboEligibility(combo);
+      if (!eligibility.eligible) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Combo is not available",
+        });
+      }
+
+      if (combo.maxPerOrder && quantity > combo.maxPerOrder) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: `Combo quantity cannot exceed ${combo.maxPerOrder}`,
+        });
+      }
+
+      const availability = await computeComboAvailability(combo);
+      if (availability.available < quantity) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: `Only ${availability.available} combos available`,
+        });
+      }
+
+      let cart;
+      if (userId) {
+        cart = await CartModel.findOne({ user: userId });
+        if (!cart) {
+          cart = new CartModel({ user: userId, items: [] });
+        }
+      } else if (sessionId) {
+        cart = await CartModel.findOne({ sessionId });
+        if (!cart) {
+          cart = new CartModel({ sessionId, items: [] });
+        }
+      } else {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "User or session ID required",
+        });
+      }
+
+      const existingIndex = cart.items.findIndex(
+        (item) =>
+          isComboCartItem(item) && String(item.combo || "") === String(comboId),
+      );
+
+      if (existingIndex >= 0) {
+        const newQuantity = cart.items[existingIndex].quantity + quantity;
+        if (newQuantity > availability.available) {
+          return res.status(400).json({
+            error: true,
+            success: false,
+            message: `Cannot add more. Only ${availability.available} combos available`,
+          });
+        }
+        cart.items[existingIndex].quantity = newQuantity;
+        cart.items[existingIndex].price = Number(combo.comboPrice || 0);
+        cart.items[existingIndex].originalPrice = Number(combo.originalTotal || 0);
+        cart.items[existingIndex].comboSnapshot = buildComboOrderSnapshot(combo, newQuantity);
+      } else {
+        cart.items.push({
+          itemType: "combo",
+          combo: comboId,
+          quantity,
+          price: Number(combo.comboPrice || 0),
+          originalPrice: Number(combo.originalTotal || 0),
+          comboSnapshot: buildComboOrderSnapshot(combo, quantity),
+        });
+      }
+
+      await cart.save();
+
+      await cart.populate({
+        path: "items.product",
+        select:
+          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus hasVariants variants isExclusive",
+      });
+      await cart.populate({
+        path: "items.combo",
+        select:
+          "name slug comboPrice originalTotal totalSavings comboType isActive isVisible startDate endDate stockMode stockQuantity reservedQuantity items",
+      });
+
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Added combo to cart",
+        data: {
+          items: cart.items,
+          subtotal: cart.subtotal,
+          itemCount: cart.itemCount,
+        },
+      });
+    }
 
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({
@@ -357,9 +546,117 @@ export const addToCart = async (req, res) => {
 export const updateCartItem = async (req, res) => {
   try {
     const { userId, sessionId } = getActorIdentifiers(req);
+    const itemType = resolveItemTypeFromRequest(req);
     const productId = String(req.body?.productId || "").trim();
     const quantity = normalizeQuantity(req.body?.quantity);
     const variantId = normalizeVariantId(req.body?.variantId);
+
+    if (itemType === "combo" || req.body?.comboId) {
+      const comboId = normalizeComboId(req.body?.comboId || req.body?.id || productId);
+      if (!comboId || !isValidObjectId(comboId)) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Invalid combo ID",
+        });
+      }
+
+      if (quantity === null || quantity > MAX_CART_ITEM_QTY) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: `Quantity must be between 0 and ${MAX_CART_ITEM_QTY}`,
+        });
+      }
+
+      let cart;
+      if (userId) {
+        cart = await CartModel.findOne({ user: userId });
+      } else if (sessionId) {
+        cart = await CartModel.findOne({ sessionId });
+      }
+
+      if (!cart) {
+        return res.status(404).json({
+          error: true,
+          success: false,
+          message: "Cart not found",
+        });
+      }
+
+      const itemIndex = cart.items.findIndex(
+        (item) =>
+          isComboCartItem(item) && String(item.combo || "") === String(comboId),
+      );
+
+      if (itemIndex === -1) {
+        return res.status(404).json({
+          error: true,
+          success: false,
+          message: "Combo not in cart",
+        });
+      }
+
+      if (quantity <= 0) {
+        cart.items.splice(itemIndex, 1);
+      } else {
+        const combo = await ComboModel.findById(comboId).lean();
+        if (!combo) {
+          return res.status(404).json({
+            error: true,
+            success: false,
+            message: "Combo not found or unavailable",
+          });
+        }
+
+        const eligibility = evaluateComboEligibility(combo);
+        if (!eligibility.eligible) {
+          return res.status(400).json({
+            error: true,
+            success: false,
+            message: "Combo is not available",
+          });
+        }
+
+        const availability = await computeComboAvailability(combo);
+        if (availability.available < quantity) {
+          return res.status(400).json({
+            error: true,
+            success: false,
+            message: `Only ${availability.available} combos available`,
+          });
+        }
+
+        cart.items[itemIndex].quantity = quantity;
+        cart.items[itemIndex].price = Number(combo.comboPrice || 0);
+        cart.items[itemIndex].originalPrice = Number(combo.originalTotal || 0);
+        cart.items[itemIndex].comboSnapshot = buildComboOrderSnapshot(combo, quantity);
+      }
+
+      await cart.save();
+
+      await cart.populate({
+        path: "items.product",
+        select:
+          "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus hasVariants variants isExclusive",
+      });
+      await cart.populate({
+        path: "items.combo",
+        select:
+          "name slug comboPrice originalTotal totalSavings comboType isActive isVisible startDate endDate stockMode stockQuantity reservedQuantity items",
+      });
+
+      return res.status(200).json({
+        error: false,
+        success: true,
+        message: "Cart updated",
+        data: {
+          items: cart.items,
+          subtotal: cart.subtotal,
+          itemCount: cart.itemCount,
+        },
+      });
+    }
 
     if (!productId || quantity === null) {
       return res.status(400).json({
@@ -518,15 +815,27 @@ export const updateCartItem = async (req, res) => {
 export const removeFromCart = async (req, res) => {
   try {
     const { userId, sessionId } = getActorIdentifiers(req);
+    const itemType = normalizeItemType(req.query?.itemType || req.body?.itemType || "");
     const productId = String(req.params?.productId || "").trim();
     const variantId = normalizeVariantId(req.query?.variantId);
+    const comboId = normalizeComboId(req.query?.comboId || productId);
 
-    if (!productId || !isValidObjectId(productId)) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Invalid product ID",
-      });
+    if (itemType === "combo" || req.query?.comboId) {
+      if (!comboId || !isValidObjectId(comboId)) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Invalid combo ID",
+        });
+      }
+    } else {
+      if (!productId || !isValidObjectId(productId)) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Invalid product ID",
+        });
+      }
     }
 
     let cart;
@@ -544,13 +853,19 @@ export const removeFromCart = async (req, res) => {
       });
     }
 
-    cart.items = cart.items.filter(
-      (item) =>
-        !(
-          (item.product._id || item.product).toString() === productId &&
-          isSameVariant(item.variant, variantId)
-        ),
-    );
+    if (itemType === "combo" || req.query?.comboId) {
+      cart.items = cart.items.filter((item) => {
+        if (!isComboCartItem(item)) return true;
+        const itemComboId = String(item.combo || item.comboSnapshot?.comboId || "");
+        return itemComboId !== comboId;
+      });
+    } else {
+      cart.items = cart.items.filter((item) => {
+        if (isComboCartItem(item)) return true;
+        const itemProductId = String(item.product?._id || item.product || "");
+        return !(itemProductId === productId && isSameVariant(item.variant, variantId));
+      });
+    }
 
     await cart.save();
 
@@ -560,15 +875,24 @@ export const removeFromCart = async (req, res) => {
       select:
         "name brand price originalPrice images thumbnail stock stock_quantity reserved_quantity track_inventory trackInventory demandStatus hasVariants variants isExclusive",
     });
+    await cart.populate({
+      path: "items.combo",
+      select:
+        "name slug comboPrice originalTotal totalSavings comboType isActive isVisible startDate endDate stockMode stockQuantity reservedQuantity items",
+    });
 
     res.status(200).json({
       error: false,
       success: true,
-      message: "Item removed from cart",
+      message:
+        itemType === "combo" || req.query?.comboId
+          ? "Combo removed from cart"
+          : "Item removed from cart",
       data: {
         items: cart.items,
         subtotal: cart.subtotal,
         itemCount: cart.itemCount,
+        totalSavings: cart.totalSavings,
       },
     });
   } catch (error) {
@@ -655,14 +979,36 @@ export const mergeCart = async (req, res) => {
       guestCart.expiresAt = null;
       await guestCart.save();
     } else {
+      const guestProductItems = guestCart.items.filter((item) => !isComboCartItem(item));
+      const guestComboItems = guestCart.items.filter((item) => isComboCartItem(item));
+
       const productIds = [
-        ...new Set(guestCart.items.map((item) => String(item.product || "")).filter(Boolean)),
+        ...new Set(
+          guestProductItems
+            .map((item) => String(item.product || ""))
+            .filter(Boolean),
+        ),
       ];
-      const products = await ProductModel.find({ _id: { $in: productIds } }).lean();
+      const comboIds = [
+        ...new Set(
+          guestComboItems
+            .map((item) => String(item.combo || item.comboSnapshot?.comboId || ""))
+            .filter(Boolean),
+        ),
+      ];
+
+      const [products, combos] = await Promise.all([
+        productIds.length
+          ? ProductModel.find({ _id: { $in: productIds } }).lean()
+          : [],
+        comboIds.length ? ComboModel.find({ _id: { $in: comboIds } }).lean() : [],
+      ]);
+
       const productMap = new Map(products.map((product) => [String(product._id), product]));
+      const comboMap = new Map(combos.map((combo) => [String(combo._id), combo]));
 
       // Merge items
-      for (const guestItem of guestCart.items) {
+      for (const guestItem of guestProductItems) {
         const productId = String(guestItem.product || "");
         const product = productMap.get(productId);
         if (!product || !product.isActive) {
@@ -712,6 +1058,59 @@ export const mergeCart = async (req, res) => {
             originalPrice: Number(
               guestItem.originalPrice || product.originalPrice || product.price || 0,
             ),
+          });
+        }
+      }
+
+      for (const guestItem of guestComboItems) {
+        const comboId = String(guestItem.combo || guestItem.comboSnapshot?.comboId || "");
+        const combo = comboMap.get(comboId);
+        if (!combo) continue;
+
+        const eligibility = evaluateComboEligibility(combo);
+        if (!eligibility.eligible) continue;
+
+        const requestedQty = Math.max(normalizeQuantity(guestItem.quantity) || 0, 0);
+        if (requestedQty <= 0) continue;
+
+        const availability = await computeComboAvailability(combo);
+        const maxPerOrder = combo.maxPerOrder ? Math.max(Number(combo.maxPerOrder), 1) : MAX_CART_ITEM_QTY;
+        const maxAllowed = Math.min(
+          Number.isFinite(availability.available) ? availability.available : MAX_CART_ITEM_QTY,
+          maxPerOrder,
+          MAX_CART_ITEM_QTY,
+        );
+
+        if (maxAllowed <= 0) continue;
+
+        const existingIndex = userCart.items.findIndex(
+          (item) =>
+            isComboCartItem(item) &&
+            String(item.combo || item.comboSnapshot?.comboId || "") === comboId,
+        );
+
+        if (existingIndex >= 0) {
+          const currentQty = Number(userCart.items[existingIndex].quantity || 0);
+          const mergedQuantity = Math.min(currentQty + requestedQty, maxAllowed);
+          if (mergedQuantity <= 0) continue;
+          userCart.items[existingIndex].quantity = mergedQuantity;
+          userCart.items[existingIndex].price = Number(combo.comboPrice || 0);
+          userCart.items[existingIndex].originalPrice = Number(combo.originalTotal || 0);
+          userCart.items[existingIndex].comboSnapshot = buildComboOrderSnapshot(
+            combo,
+            mergedQuantity,
+          );
+        } else {
+          const safeQuantity = Math.min(requestedQty, maxAllowed);
+          if (safeQuantity <= 0) continue;
+
+          userCart.items.push({
+            itemType: "combo",
+            combo: comboId,
+            quantity: safeQuantity,
+            price: Number(combo.comboPrice || 0),
+            originalPrice: Number(combo.originalTotal || 0),
+            comboSnapshot: buildComboOrderSnapshot(combo, safeQuantity),
           });
         }
       }

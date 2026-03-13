@@ -15,6 +15,8 @@ import CouponModel from "../models/coupon.model.js";
 import InvoiceModel from "../models/invoice.model.js";
 import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
+import ComboModel from "../models/combo.model.js";
+import ComboOrderModel from "../models/comboOrder.model.js";
 import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
@@ -53,6 +55,18 @@ import {
   splitGstInclusiveAmount,
 } from "../services/tax.service.js";
 import { createUserLocationLog } from "../services/userLocationLog.service.js";
+import {
+  buildComboOrderSnapshot,
+  computeComboAvailability,
+  evaluateComboEligibility,
+  expandComboToOrderProducts,
+  reserveComboStock,
+  releaseComboStock,
+  confirmComboStock,
+  restoreComboStock,
+  resolveUserSegment,
+  isComboEligibleForSegment,
+} from "../services/combos/combo.service.js";
 import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 import {
   AppError,
@@ -647,6 +661,32 @@ const emitPurchaseCompletedTrackingEvent = ({
     pageUrl: "/checkout",
     referrer: "",
     async: true,
+  });
+
+  const combos = Array.isArray(order?.combos) ? order.combos : [];
+  combos.forEach((combo) => {
+    if (!combo?.comboId) return;
+    const quantity = Number(combo?.quantity || 1);
+    const comboRevenue = Number(combo?.comboPrice || 0) * quantity;
+    emitTrackingEvent({
+      req,
+      eventType: "combo_purchase",
+      userId: order?.user ? String(order.user) : null,
+      sessionId: String(order?.trackingSessionId || req.analyticsSessionId || ""),
+      metadata: {
+        source,
+        comboId: String(combo.comboId || ""),
+        comboName: String(combo.comboName || ""),
+        comboSlug: String(combo.comboSlug || ""),
+        comboType: String(combo.comboType || ""),
+        quantity,
+        revenue: round2(comboRevenue),
+        orderId,
+      },
+      pageUrl: "/checkout",
+      referrer: "",
+      async: true,
+    });
   });
 };
 
@@ -2200,8 +2240,128 @@ const fetchAndNormalizeOrderProducts = async (products = [], logContext = "order
   return { normalizedProducts, dbProducts };
 };
 
+const aggregateComboQuantities = (combos = []) => {
+  const map = new Map();
+  combos.forEach((combo) => {
+    const comboId = String(combo?.comboId || combo?.id || "").trim();
+    if (!comboId) return;
+    const quantity = Math.max(Number(combo?.quantity || 1), 1);
+    const existing = map.get(comboId) || { comboId, quantity: 0 };
+    existing.quantity += quantity;
+    map.set(comboId, existing);
+  });
+  return Array.from(map.values());
+};
+
+const fetchAndNormalizeOrderCombos = async ({
+  combos = [],
+  userId = null,
+  logContext = "order",
+}) => {
+  const aggregated = aggregateComboQuantities(combos);
+  if (aggregated.length === 0) {
+    return {
+      normalizedCombos: [],
+      expandedProducts: [],
+      comboDiscount: 0,
+      comboOriginalAmount: 0,
+      comboPriceAmount: 0,
+    };
+  }
+
+  const comboIds = aggregated.map((combo) => combo.comboId);
+  const dbCombos = await ComboModel.find({ _id: { $in: comboIds } }).lean();
+  const comboMap = new Map(dbCombos.map((combo) => [String(combo._id), combo]));
+
+  const missing = comboIds.filter((id) => !comboMap.has(String(id)));
+  if (missing.length > 0) {
+    logger.warn(logContext, "Some combos not found", { missing });
+    throw new AppError("NOT_FOUND", { field: "comboId", missing });
+  }
+
+  const segmentInfo = await resolveUserSegment({ userId });
+  const allItems = dbCombos.flatMap((combo) => combo.items || []);
+  const productIds = allItems.map((item) => String(item.productId || "")).filter(Boolean);
+  const products = productIds.length
+    ? await ProductModel.find({ _id: { $in: productIds } })
+        .select("_id stock stock_quantity reserved_quantity track_inventory trackInventory hasVariants variants")
+        .lean()
+    : [];
+  const productMap = new Map(products.map((product) => [String(product._id), product]));
+
+  const normalizedCombos = [];
+  const expandedProducts = [];
+  let comboOriginalAmount = 0;
+  let comboPriceAmount = 0;
+
+  for (const comboInput of aggregated) {
+    const combo = comboMap.get(String(comboInput.comboId));
+    if (!combo) continue;
+
+    const eligibility = evaluateComboEligibility(combo);
+    if (!eligibility.eligible) {
+      throw new AppError("FORBIDDEN", {
+        field: "combo",
+        reason: eligibility.reason,
+      });
+    }
+
+    const categoryIds = (combo.items || [])
+      .map((item) => item.categoryId)
+      .filter(Boolean);
+    if (!isComboEligibleForSegment(combo, segmentInfo, categoryIds)) {
+      throw new AppError("FORBIDDEN", {
+        field: "combo",
+        reason: "segment_not_allowed",
+      });
+    }
+
+    const comboQuantity = Math.max(Number(comboInput.quantity || 1), 1);
+    if (combo.maxPerOrder && comboQuantity > combo.maxPerOrder) {
+      throw new AppError("INVALID_QUANTITY", {
+        field: "combo.quantity",
+        comboId: combo._id,
+        maxPerOrder: combo.maxPerOrder,
+      });
+    }
+
+    const availability = await computeComboAvailability(combo, productMap);
+    if (availability.available < comboQuantity) {
+      throw new AppError("INSUFFICIENT_STOCK", {
+        comboId: combo._id,
+        requested: comboQuantity,
+        available: availability.available,
+      });
+    }
+
+    const snapshot = buildComboOrderSnapshot(combo, comboQuantity);
+    if (snapshot) {
+      normalizedCombos.push(snapshot);
+    }
+
+    comboOriginalAmount += Number(combo.originalTotal || 0) * comboQuantity;
+    comboPriceAmount += Number(combo.comboPrice || 0) * comboQuantity;
+
+    const expanded = expandComboToOrderProducts(combo, comboQuantity);
+    expandedProducts.push(...expanded);
+  }
+
+  comboOriginalAmount = round2(comboOriginalAmount);
+  comboPriceAmount = round2(comboPriceAmount);
+  const comboDiscount = round2(Math.max(comboOriginalAmount - comboPriceAmount, 0));
+
+  return {
+    normalizedCombos,
+    expandedProducts,
+    comboDiscount,
+    comboOriginalAmount,
+    comboPriceAmount,
+  };
+};
+
 const calculateCheckoutPricing = async ({
   normalizedProducts,
+  comboDiscount = 0,
   userId,
   couponCode,
   influencerCode,
@@ -2216,10 +2376,17 @@ const calculateCheckoutPricing = async ({
       0,
     ),
   );
+  const normalizedComboDiscount = Math.min(
+    Math.max(round2(Number(comboDiscount || 0)), 0),
+    originalAmount,
+  );
+  const discountedOriginalAmount = round2(
+    Math.max(originalAmount - normalizedComboDiscount, 0),
+  );
 
   // Product catalog prices are GST-inclusive; derive a GST-exclusive base first.
   const baseSplit = splitGstInclusiveAmount(
-    originalAmount,
+    discountedOriginalAmount,
     CHECKOUT_GST_RATE,
     checkoutContact?.state,
   );
@@ -2313,7 +2480,7 @@ const calculateCheckoutPricing = async ({
 
   const finalAmount = round2(postDiscountInclusive + shippingCharge);
   const totalDiscount = round2(
-    membershipDiscount + influencerDiscount + couponDiscount,
+    membershipDiscount + influencerDiscount + couponDiscount + normalizedComboDiscount,
   );
 
   let influencerCommission = 0;
@@ -2347,6 +2514,7 @@ const calculateCheckoutPricing = async ({
       tax: gstAmount,
     },
     redemption,
+    comboDiscount: normalizedComboDiscount,
   };
 };
 
@@ -3089,8 +3257,10 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
 
     if (transition.updated && normalizedNewStatus === ORDER_STATUS.CANCELLED) {
       if (wasPaid) {
+        await restoreComboStock(order, "ADMIN_CANCELLED");
         await restoreInventory(order, "ADMIN_CANCELLED");
       } else {
+        await releaseComboStock(order, "ADMIN_CANCELLED");
         await releaseInventory(order, "ADMIN_CANCELLED");
       }
     }
@@ -3584,6 +3754,7 @@ export const createOrder = asyncHandler(async (req, res) => {
 
     const {
       products,
+      combos,
       delivery_address,
       couponCode,
       influencerCode,
@@ -3603,17 +3774,42 @@ export const createOrder = asyncHandler(async (req, res) => {
 
     logger.debug("createOrder", "Creating order", {
       userId,
-      productCount: products.length,
+      productCount: Array.isArray(products) ? products.length : 0,
+      comboCount: Array.isArray(combos) ? combos.length : 0,
     });
 
     const { normalizedProducts, dbProducts } = await fetchAndNormalizeOrderProducts(
-      products,
+      products || [],
       "createOrder",
     );
+    const comboPayload = await fetchAndNormalizeOrderCombos({
+      combos: combos || [],
+      userId,
+      logContext: "createOrder",
+    });
+    const mergedProducts = [
+      ...normalizedProducts,
+      ...comboPayload.expandedProducts,
+    ];
 
     const exclusiveProductIds = dbProducts
       .filter((product) => product.isExclusive === true)
       .map((product) => String(product._id));
+
+    if (comboPayload.expandedProducts.length > 0) {
+      const comboProductIds = comboPayload.expandedProducts.map((item) =>
+        String(item.productId || ""),
+      );
+      const comboExclusive = await ProductModel.find({
+        _id: { $in: comboProductIds },
+        isExclusive: true,
+      })
+        .select("_id")
+        .lean();
+      comboExclusive.forEach((product) => {
+        exclusiveProductIds.push(String(product._id));
+      });
+    }
 
     if (exclusiveProductIds.length > 0) {
       if (!userId) {
@@ -3642,7 +3838,8 @@ export const createOrder = asyncHandler(async (req, res) => {
         guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
     });
     const pricing = await calculateCheckoutPricing({
-      normalizedProducts,
+      normalizedProducts: mergedProducts,
+      comboDiscount: comboPayload.comboDiscount,
       userId,
       couponCode,
       influencerCode,
@@ -3671,6 +3868,7 @@ export const createOrder = asyncHandler(async (req, res) => {
     const shippingCharge = pricing.shippingCharge;
     const computedFinalAmount = pricing.finalAmount;
     const totalDiscount = pricing.totalDiscount;
+    const comboDiscount = pricing.comboDiscount || comboPayload.comboDiscount || 0;
     const payableAmount = Math.max(computedFinalAmount, 1);
 
     const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
@@ -3686,7 +3884,8 @@ export const createOrder = asyncHandler(async (req, res) => {
     // Create order in database
     const order = new OrderModel({
       user: userId,
-      products: normalizedProducts,
+      products: mergedProducts,
+      combos: comboPayload.normalizedCombos,
       subtotal: taxData.taxableAmount,
       totalAmt: computedFinalAmount,
       delivery_address: checkoutContact.addressId || null,
@@ -3697,6 +3896,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       ],
       paymentMethod: selectedPaymentProvider,
       originalPrice: pricing.originalAmount,
+      comboDiscount,
       finalAmount: computedFinalAmount,
       couponCode: normalizedCouponCode,
       discountAmount: couponDiscount,
@@ -3736,9 +3936,18 @@ export const createOrder = asyncHandler(async (req, res) => {
     });
 
     try {
+      await reserveComboStock(order, "ORDER_CREATE");
       await reserveInventory(order, "ORDER_CREATE");
       await order.save();
     } catch (inventoryError) {
+      try {
+        await releaseComboStock(order, "ORDER_CREATE_FAIL");
+      } catch (releaseError) {
+        logger.error("createOrder", "Failed to rollback combo reservation", {
+          orderId: order._id,
+          error: releaseError.message,
+        });
+      }
       if (order.inventoryStatus === "reserved") {
         try {
           await releaseInventory(order, "ORDER_CREATE_FAIL");
@@ -3841,6 +4050,21 @@ export const createOrder = asyncHandler(async (req, res) => {
       await PurchaseOrderModel.findByIdAndUpdate(checkoutPurchaseOrder._id, {
         $set: { status: "approved" },
       });
+    }
+
+    if (comboPayload.normalizedCombos.length > 0) {
+      const comboOrders = comboPayload.normalizedCombos.map((comboSnapshot) => ({
+        comboId: comboSnapshot.comboId,
+        orderId: order._id,
+        userId,
+        quantity: comboSnapshot.quantity,
+        comboPrice: round2(comboSnapshot.comboPrice * comboSnapshot.quantity),
+        originalPrice: round2(comboSnapshot.originalPrice * comboSnapshot.quantity),
+        savings: round2(comboSnapshot.savings * comboSnapshot.quantity),
+        orderTotal: round2(Number(order.finalAmount || order.totalAmt || 0)),
+        items: comboSnapshot.items,
+      }));
+      await ComboOrderModel.insertMany(comboOrders);
     }
 
     logger.info("createOrder", "Order created in database", {
@@ -3986,6 +4210,7 @@ export const previewOrderPricing = asyncHandler(async (req, res) => {
   try {
     const {
       products,
+      combos,
       delivery_address,
       couponCode,
       influencerCode,
@@ -3994,7 +4219,18 @@ export const previewOrderPricing = asyncHandler(async (req, res) => {
       paymentType,
     } = req.body || {};
 
-    validateProductsArray(products, "products");
+    const hasProducts = Array.isArray(products) && products.length > 0;
+    const hasCombos = Array.isArray(combos) && combos.length > 0;
+    if (!hasProducts && !hasCombos) {
+      throw new AppError("EMPTY_PRODUCTS", {
+        fieldName: "products",
+        value: products,
+      });
+    }
+
+    if (hasProducts) {
+      validateProductsArray(products, "products");
+    }
 
     if (delivery_address) {
       validateMongoId(delivery_address, "delivery_address");
@@ -4015,13 +4251,36 @@ export const previewOrderPricing = asyncHandler(async (req, res) => {
     const userId = req.user?._id || req.user?.id || req.user || null;
 
     const { normalizedProducts, dbProducts } = await fetchAndNormalizeOrderProducts(
-      products,
+      products || [],
       "previewOrderPricing",
     );
+    const comboPayload = await fetchAndNormalizeOrderCombos({
+      combos: combos || [],
+      userId,
+      logContext: "previewOrderPricing",
+    });
+    const mergedProducts = [
+      ...normalizedProducts,
+      ...comboPayload.expandedProducts,
+    ];
 
     const exclusiveProductIds = dbProducts
       .filter((product) => product.isExclusive === true)
       .map((product) => String(product._id));
+    if (comboPayload.expandedProducts.length > 0) {
+      const comboProductIds = comboPayload.expandedProducts.map((item) =>
+        String(item.productId || ""),
+      );
+      const comboExclusive = await ProductModel.find({
+        _id: { $in: comboProductIds },
+        isExclusive: true,
+      })
+        .select("_id")
+        .lean();
+      comboExclusive.forEach((product) => {
+        exclusiveProductIds.push(String(product._id));
+      });
+    }
     if (exclusiveProductIds.length > 0) {
       if (!userId) {
         return res.status(403).json({
@@ -4049,7 +4308,8 @@ export const previewOrderPricing = asyncHandler(async (req, res) => {
     });
 
     const pricing = await calculateCheckoutPricing({
-      normalizedProducts,
+      normalizedProducts: mergedProducts,
+      comboDiscount: comboPayload.comboDiscount,
       userId,
       couponCode,
       influencerCode,
@@ -4078,6 +4338,7 @@ export const previewOrderPricing = asyncHandler(async (req, res) => {
         finalAmount: pricing.finalAmount,
         originalAmount: pricing.originalAmount,
         discountBreakdown: {
+          combo: pricing.comboDiscount || comboPayload.comboDiscount || 0,
           membership: pricing.membershipDiscount,
           influencer: pricing.influencerDiscount,
           coupon: pricing.couponDiscount,
@@ -4119,6 +4380,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
   try {
     const {
       products,
+      combos,
       delivery_address,
       couponCode,
       influencerCode,
@@ -4135,17 +4397,41 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
 
     logger.debug("saveOrderForLater", "Saving order for later", {
       userId,
-      productCount: products.length,
+      productCount: Array.isArray(products) ? products.length : 0,
+      comboCount: Array.isArray(combos) ? combos.length : 0,
     });
 
     const { normalizedProducts, dbProducts } = await fetchAndNormalizeOrderProducts(
-      products,
+      products || [],
       "saveOrderForLater",
     );
+    const comboPayload = await fetchAndNormalizeOrderCombos({
+      combos: combos || [],
+      userId,
+      logContext: "saveOrderForLater",
+    });
+    const mergedProducts = [
+      ...normalizedProducts,
+      ...comboPayload.expandedProducts,
+    ];
 
     const exclusiveProductIds = dbProducts
       .filter((product) => product.isExclusive === true)
       .map((product) => String(product._id));
+    if (comboPayload.expandedProducts.length > 0) {
+      const comboProductIds = comboPayload.expandedProducts.map((item) =>
+        String(item.productId || ""),
+      );
+      const comboExclusive = await ProductModel.find({
+        _id: { $in: comboProductIds },
+        isExclusive: true,
+      })
+        .select("_id")
+        .lean();
+      comboExclusive.forEach((product) => {
+        exclusiveProductIds.push(String(product._id));
+      });
+    }
 
     if (exclusiveProductIds.length > 0) {
       if (!userId) {
@@ -4174,7 +4460,8 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
         guestDetails || req.body?.guestDetails || req.body?.shippingAddress,
     });
     const pricing = await calculateCheckoutPricing({
-      normalizedProducts,
+      normalizedProducts: mergedProducts,
+      comboDiscount: comboPayload.comboDiscount,
       userId,
       couponCode,
       influencerCode,
@@ -4204,6 +4491,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     const shippingCharge = pricing.shippingCharge;
     const finalOrderAmount = pricing.finalAmount;
     const totalDiscount = pricing.totalDiscount;
+    const comboDiscount = pricing.comboDiscount || comboPayload.comboDiscount || 0;
 
     const checkoutPurchaseOrder = await authorizePurchaseOrderForCheckout({
       purchaseOrderId,
@@ -4218,7 +4506,8 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     // Create saved order
     const savedOrder = new OrderModel({
       user: userId,
-      products: normalizedProducts,
+      products: mergedProducts,
+      combos: comboPayload.normalizedCombos,
       subtotal: taxData.taxableAmount,
       totalAmt: finalOrderAmount,
       delivery_address: checkoutContact.addressId || null,
@@ -4233,6 +4522,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       discount: totalDiscount,
       membershipDiscount,
       membershipPlan: pricing.membershipPlan?.planId || null,
+      comboDiscount,
       finalAmount: finalOrderAmount,
       influencerId: influencerData?._id || null,
       influencerCode: pricing.influencerCode || null,
@@ -4271,9 +4561,18 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
     });
 
     try {
+      await reserveComboStock(savedOrder, "ORDER_SAVE");
       await reserveInventory(savedOrder, "ORDER_SAVE");
       await savedOrder.save();
     } catch (inventoryError) {
+      try {
+        await releaseComboStock(savedOrder, "ORDER_SAVE_FAIL");
+      } catch (releaseError) {
+        logger.error("saveOrderForLater", "Failed to rollback combo reservation", {
+          orderId: savedOrder._id,
+          error: releaseError.message,
+        });
+      }
       if (savedOrder.inventoryStatus === "reserved") {
         try {
           await releaseInventory(savedOrder, "ORDER_SAVE_FAIL");
@@ -4376,6 +4675,21 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       await PurchaseOrderModel.findByIdAndUpdate(checkoutPurchaseOrder._id, {
         $set: { status: "approved" },
       });
+    }
+
+    if (comboPayload.normalizedCombos.length > 0) {
+      const comboOrders = comboPayload.normalizedCombos.map((comboSnapshot) => ({
+        comboId: comboSnapshot.comboId,
+        orderId: savedOrder._id,
+        userId,
+        quantity: comboSnapshot.quantity,
+        comboPrice: round2(comboSnapshot.comboPrice * comboSnapshot.quantity),
+        originalPrice: round2(comboSnapshot.originalPrice * comboSnapshot.quantity),
+        savings: round2(comboSnapshot.savings * comboSnapshot.quantity),
+        orderTotal: round2(Number(savedOrder.finalAmount || savedOrder.totalAmt || 0)),
+        items: comboSnapshot.items,
+      }));
+      await ComboOrderModel.insertMany(comboOrders);
     }
 
     logger.info("saveOrderForLater", "Order saved for later", {
@@ -5351,6 +5665,7 @@ const applyResolvedPaymentStatus = async ({
       applyOrderStatusTransition(order, ORDER_STATUS.ACCEPTED, {
         source: successSource,
       });
+      await confirmComboStock(order, successSource);
       await confirmInventory(order, successSource);
       orderMutated = true;
     }
@@ -5362,6 +5677,7 @@ const applyResolvedPaymentStatus = async ({
     if (!wasPaid) {
       order.payment_status = "failed";
       order.failureReason = failureReason;
+      await releaseComboStock(order, successSource);
       await releaseInventory(order, successSource);
       orderMutated = true;
     }

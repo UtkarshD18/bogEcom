@@ -5,7 +5,7 @@ import { Button } from "@mui/material";
 import Checkbox from "@mui/material/Checkbox";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import FormGroup from "@mui/material/FormGroup";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Collapse } from "react-collapse";
 import { LiaAngleDownSolid, LiaAngleUpSolid } from "react-icons/lia";
@@ -23,12 +23,32 @@ const label = { inputProps: { "aria-label": "Checkbox demo" } };
 const Sidebar = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
 
   const [isOpenCatFilter, setIsOpenCatFilter] = useState(true);
   const [price, setPrice] = useState([0, 3000]);
   const [categories, setCategories] = useState([]);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const isComboDealsActive = pathname?.startsWith("/combo-deals");
+  const isComboCategory = (category) => {
+    const name = String(category?.name || "").toLowerCase();
+    const slug = String(category?.slug || "").toLowerCase();
+    const comboKeys = [
+      "combo-packs",
+      "combo-pack",
+      "combo-deals",
+      "combo-deal",
+      "combos",
+    ];
+    return (
+      comboKeys.includes(slug) ||
+      name.includes("combo pack") ||
+      name.includes("combo packs") ||
+      name.includes("combo deal") ||
+      name.includes("combo deals")
+    );
+  };
 
   // Fetch categories from API (admin manages these in admin panel)
   const fetchCategories = async () => {
@@ -139,65 +159,86 @@ const Sidebar = () => {
               <p className="text-sm text-gray-500">Loading categories...</p>
             ) : categories.length > 0 ? (
               <FormGroup>
-                {categories.map((category) => (
-                  <FormControlLabel
-                    key={category._id || category.id}
-                    control={
-                      <Checkbox
-                        checked={selectedCategories.includes(
-                          category._id || category.id,
-                        )}
-                        onChange={() =>
-                          handleCategoryChange(category._id || category.id)
-                        }
-                        sx={{
-                          color: "#9ca3af",
-                          padding: "8px",
-                          "& .MuiSvgIcon-root": {
-                            fontSize: "22px",
-                            border: "2px solid #d1d5db",
-                            borderRadius: "4px",
-                            backgroundColor: "#fff",
-                          },
-                          "&:hover": {
-                            backgroundColor: "rgba(193, 89, 28, 0.04)",
-                          },
-                          "&.Mui-checked": {
-                            color: "var(--primary)",
+                {categories.map((category) => {
+                  const categoryId = category._id || category.id;
+                  if (isComboCategory(category)) {
+                    return (
+                      <button
+                        key={categoryId}
+                        type="button"
+                        onClick={() => router.push("/combo-deals")}
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition ${isComboDealsActive
+                          ? "bg-amber-50 text-[var(--primary)]"
+                          : "text-gray-700 hover:bg-[rgba(193,89,28,0.06)]"
+                          }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="text-base">🎁</span>
+                          <span>{category.name || "Combo Packs"}</span>
+                        </span>
+                        <span className="text-[10px] uppercase tracking-wider text-amber-600">
+                          Bundles
+                        </span>
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <FormControlLabel
+                      key={categoryId}
+                      control={
+                        <Checkbox
+                          checked={selectedCategories.includes(categoryId)}
+                          onChange={() => handleCategoryChange(categoryId)}
+                          sx={{
+                            color: "#9ca3af",
+                            padding: "8px",
                             "& .MuiSvgIcon-root": {
-                              border: "2px solid var(--primary)",
+                              fontSize: "22px",
+                              border: "2px solid #d1d5db",
+                              borderRadius: "4px",
                               backgroundColor: "#fff",
                             },
-                          },
-                          "&.Mui-focusVisible": {
-                            outline: "2px solid var(--primary)",
-                            outlineOffset: "2px",
-                          },
-                        }}
-                      />
-                    }
-                    label={
-                      <span
-                        style={{
-                          color: "#374151",
-                          fontSize: "14px",
-                          fontWeight: 500,
-                        }}
-                      >
-                        {category.name}
-                      </span>
-                    }
-                    sx={{
-                      marginLeft: 0,
-                      marginRight: 0,
-                      padding: "4px 0",
-                      borderRadius: "6px",
-                      "&:hover": {
-                        backgroundColor: "rgba(193, 89, 28, 0.04)",
-                      },
-                    }}
-                  />
-                ))}
+                            "&:hover": {
+                              backgroundColor: "rgba(193, 89, 28, 0.04)",
+                            },
+                            "&.Mui-checked": {
+                              color: "var(--primary)",
+                              "& .MuiSvgIcon-root": {
+                                border: "2px solid var(--primary)",
+                                backgroundColor: "#fff",
+                              },
+                            },
+                            "&.Mui-focusVisible": {
+                              outline: "2px solid var(--primary)",
+                              outlineOffset: "2px",
+                            },
+                          }}
+                        />
+                      }
+                      label={
+                        <span
+                          style={{
+                            color: "#374151",
+                            fontSize: "14px",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {category.name}
+                        </span>
+                      }
+                      sx={{
+                        marginLeft: 0,
+                        marginRight: 0,
+                        padding: "4px 0",
+                        borderRadius: "6px",
+                        "&:hover": {
+                          backgroundColor: "rgba(193, 89, 28, 0.04)",
+                        },
+                      }}
+                    />
+                  );
+                })}
               </FormGroup>
             ) : (
               <p className="text-sm text-gray-500">No categories available</p>
