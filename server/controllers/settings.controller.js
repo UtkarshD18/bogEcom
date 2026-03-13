@@ -20,6 +20,26 @@ const FIXED_TAX_SETTINGS = Object.freeze({
 const HEADER_SETTINGS_KEY = "headerSettings";
 const DEFAULT_HEADER_BACKGROUND_COLOR = "#fffbf5";
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const FLAVOUR_BUTTON_SETTING_KEYS = [
+  "flavour_button_1_text",
+  "flavour_button_1_bg_color",
+  "flavour_button_1_text_color",
+  "flavour_button_2_text",
+  "flavour_button_2_bg_color",
+  "flavour_button_2_text_color",
+  "flavour_button_3_text",
+  "flavour_button_3_bg_color",
+  "flavour_button_3_text_color",
+  "flavour_button_4_text",
+  "flavour_button_4_bg_color",
+  "flavour_button_4_text_color",
+];
+const FLAVOUR_BUTTON_COLOR_KEYS = new Set(
+  FLAVOUR_BUTTON_SETTING_KEYS.filter((key) => key.endsWith("_color")),
+);
+const FLAVOUR_BUTTON_TEXT_KEYS = new Set(
+  FLAVOUR_BUTTON_SETTING_KEYS.filter((key) => key.endsWith("_text")),
+);
 
 const normalizeHexColor = (value) => {
   const raw = String(value || "").trim();
@@ -70,6 +90,7 @@ export const getPublicSettings = async (req, res) => {
       "discountSettings",
       "storeInfo",
       "headerSettings",
+      ...FLAVOUR_BUTTON_SETTING_KEYS,
     ];
 
     const settings = await SettingsModel.find({
@@ -278,6 +299,27 @@ export const updateSetting = async (req, res) => {
       req.body.value = normalizedProvider;
     }
 
+    if (FLAVOUR_BUTTON_TEXT_KEYS.has(key)) {
+      req.body.value = String(req.body.value ?? "").trim();
+    }
+
+    if (FLAVOUR_BUTTON_COLOR_KEYS.has(key)) {
+      const rawColor = String(req.body.value ?? "").trim();
+      if (!rawColor) {
+        req.body.value = "";
+      } else {
+        const normalizedColor = normalizeHexColor(rawColor);
+        if (!normalizedColor) {
+          return res.status(400).json({
+            error: true,
+            success: false,
+            message: `${key} must be a valid hex color`,
+          });
+        }
+        req.body.value = normalizedColor;
+      }
+    }
+
     const updateData = {
       value: req.body.value,
       updatedBy: adminId,
@@ -395,6 +437,7 @@ export const deleteSetting = async (req, res) => {
       "discountSettings",
       "popupSettings",
       "headerSettings",
+      ...FLAVOUR_BUTTON_SETTING_KEYS,
     ];
     if (protectedKeys.includes(key)) {
       return res.status(400).json({

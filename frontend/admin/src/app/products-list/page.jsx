@@ -3,7 +3,6 @@ import { useAdmin } from "@/context/AdminContext";
 import { deleteData, getData, patchData } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
 import { Button, Chip } from "@mui/material";
-import Checkbox from "@mui/material/Checkbox";
 import MenuItem from "@mui/material/MenuItem";
 import Rating from "@mui/material/Rating";
 import Select from "@mui/material/Select";
@@ -24,21 +23,52 @@ import { HiOutlineFire } from "react-icons/hi";
 import { IoEyeOutline } from "react-icons/io5";
 import { RiEdit2Line } from "react-icons/ri";
 
-const label = { slotProps: { input: { "aria-label": "Checkbox demo" } } };
-
 const columns = [
-  { id: "ID", label: "ID", minWidth: 40 },
+  { id: "ID", label: "ID", minWidth: 110 },
   { id: "PRODUCT", label: "PRODUCT", minWidth: 300 },
   { id: "CATEGORY", label: "CATEGORY", minWidth: 100 },
   { id: "PRICE", label: "PRICE", minWidth: 100 },
-  { id: "AVAILABLE", label: "AVAILABLE", minWidth: 90 },
-  { id: "RESERVED", label: "RESERVED", minWidth: 90 },
+  { id: "AVAILABLE", label: "AVAILABLE", minWidth: 180 },
   { id: "LOWSTOCK", label: "LOW STOCK", minWidth: 120 },
   { id: "DEMAND", label: "DEMAND STATUS", minWidth: 120 },
   { id: "ACCESS", label: "ACCESS", minWidth: 120 },
   { id: "RATING", label: "RATING", minWidth: 100 },
   { id: "ACTIONS", label: "ACTIONS", minWidth: 200 },
 ];
+
+const normalizeVariantLabel = (variant) => {
+  const weight = Number(variant?.weight || 0);
+  const rawUnit = String(variant?.unit || "")
+    .trim()
+    .toLowerCase();
+
+  if (Number.isFinite(weight) && weight > 0) {
+    if (rawUnit === "g") {
+      return weight >= 1000 ? `${weight / 1000}kg` : `${weight}g`;
+    }
+    if (rawUnit === "kg" || rawUnit === "ml" || rawUnit === "l" || rawUnit === "pcs") {
+      return `${weight}${rawUnit}`;
+    }
+    if (rawUnit) {
+      return `${weight}${rawUnit}`;
+    }
+  }
+
+  return String(variant?.name || "Variant")
+    .trim()
+    .replace(/\s+/g, "");
+};
+
+const getVariantInventoryLines = (product) => {
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  if (variants.length === 0) return [];
+
+  return variants.map((variant) => ({
+    id: String(variant?._id || normalizeVariantLabel(variant)),
+    label: normalizeVariantLabel(variant),
+    stock: Math.max(Number(variant?.stock_quantity ?? variant?.stock ?? 0), 0),
+  }));
+};
 
 const ProductsListContent = () => {
   const { token, isAuthenticated, loading } = useAdmin();
@@ -285,26 +315,33 @@ const ProductsListContent = () => {
                       product.images?.[0] ||
                       product.image ||
                       "";
-                    const available =
-                      typeof product.available_quantity === "number"
-                        ? product.available_quantity
-                        : Math.max(
-                            Number(product.stock_quantity ?? product.stock ?? 0) -
-                              Number(product.reserved_quantity ?? 0),
-                            0,
-                          );
-                    const reserved = Number(product.reserved_quantity ?? 0);
+                    const variantInventoryLines = getVariantInventoryLines(product);
+                    const fallbackStock = Math.max(
+                      Number(product.stock_quantity ?? product.stock ?? 0),
+                      0,
+                    );
                     const lowThreshold = Number(
                       product.low_stock_threshold ??
                         product.lowStockThreshold ??
                         5,
                     );
-                    const isLowStock = available <= lowThreshold;
+                    const lowStockVariants = variantInventoryLines.filter(
+                      (entry) => entry.stock <= lowThreshold,
+                    );
+                    const isLowStock =
+                      variantInventoryLines.length > 0
+                        ? lowStockVariants.length > 0
+                        : fallbackStock <= lowThreshold;
+                    const shortId = String(product._id || "")
+                      .slice(-8)
+                      .toUpperCase();
 
                     return (
                       <TableRow key={product._id || index}>
                       <TableCell>
-                        <Checkbox {...label} size="small" />
+                        <span className="font-mono text-xs text-gray-500">
+                          {shortId || "N/A"}
+                        </span>
                       </TableCell>
 
                       <TableCell>
@@ -357,24 +394,44 @@ const ProductsListContent = () => {
                       </TableCell>
 
                       <TableCell>
-                        <span className="text-sm font-semibold text-gray-700">
-                          {available}
-                        </span>
-                      </TableCell>
-
-                      <TableCell>
-                        <span className="text-sm text-gray-600">
-                          {reserved}
-                        </span>
+                        {variantInventoryLines.length > 0 ? (
+                          <div className="flex flex-col gap-1 py-1">
+                            {variantInventoryLines.map((entry) => (
+                              <span
+                                key={entry.id}
+                                className="text-xs font-medium text-gray-700"
+                              >
+                                {entry.label}: {entry.stock}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm font-semibold text-gray-700">
+                            {fallbackStock}
+                          </span>
+                        )}
                       </TableCell>
 
                       <TableCell>
                         {isLowStock ? (
-                          <Chip
-                            label={`Low (${available})`}
-                            color="warning"
-                            size="small"
-                          />
+                          variantInventoryLines.length > 0 ? (
+                            <div className="flex flex-col gap-1 py-1">
+                              {lowStockVariants.map((entry) => (
+                                <Chip
+                                  key={`low-${entry.id}`}
+                                  label={`${entry.label} (${entry.stock})`}
+                                  color="warning"
+                                  size="small"
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <Chip
+                              label={`Low (${fallbackStock})`}
+                              color="warning"
+                              size="small"
+                            />
+                          )
                         ) : (
                           <Chip label="OK" color="success" size="small" />
                         )}

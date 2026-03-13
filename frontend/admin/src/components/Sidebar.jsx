@@ -161,6 +161,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
         { name: "Settings", href: "/membership" },
         { name: "Members", href: "/membership/members" },
         { name: "Analytics", href: "/membership/analytics" },
+        { name: "Coins", href: "/coins" },
       ],
     },
     {
@@ -171,11 +172,6 @@ const Sidebar = ({ isOpen = false, onClose }) => {
         { name: "Management", href: "/combos" },
         { name: "Analytics", href: "/combos/analytics" },
       ],
-    },
-    {
-      name: "Coins",
-      icon: <RiCoupon2Line size={22} />,
-      href: "/coins",
     },
     {
       name: "Cancellation & Return",

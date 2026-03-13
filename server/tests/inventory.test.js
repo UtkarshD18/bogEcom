@@ -6,6 +6,7 @@ import ProductModel from "../models/product.model.js";
 import OrderModel from "../models/order.model.js";
 import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import InventoryAuditModel from "../models/inventoryAudit.model.js";
+import { updatePurchaseOrderReceipt } from "../controllers/purchaseOrder.controller.js";
 import {
   applyPurchaseOrderInventory,
   confirmInventory,
@@ -15,6 +16,25 @@ import {
 } from "../services/inventory.service.js";
 
 let mongoServer;
+
+const createMockRes = () => {
+  const res = {
+    statusCode: 200,
+    body: null,
+  };
+
+  res.status = (code) => {
+    res.statusCode = code;
+    return res;
+  };
+
+  res.json = (payload) => {
+    res.body = payload;
+    return res;
+  };
+
+  return res;
+};
 
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -437,4 +457,185 @@ test("applyPurchaseOrderInventory resolves variant from packing and syncs parent
   assert.equal(variant1kg.stock_quantity, 5);
   assert.equal(updatedProduct.stock_quantity, 8);
   assert.equal(updatedProduct.stock, 8);
+});
+
+test("updatePurchaseOrderReceipt increments received variant stock from 15 to 65", async () => {
+  const product = await ProductModel.create({
+    name: "Creamy Peanut Butter",
+    slug: "po-receive-variant-1",
+    price: 449,
+    category: new mongoose.Types.ObjectId(),
+    hasVariants: true,
+    variants: [
+      {
+        name: "500g",
+        sku: "SKU-CPB-500",
+        price: 449,
+        weight: 500,
+        unit: "g",
+        stock: 15,
+        stock_quantity: 15,
+      },
+      {
+        name: "1kg",
+        sku: "SKU-CPB-1KG",
+        price: 799,
+        weight: 1,
+        unit: "kg",
+        stock: 20,
+        stock_quantity: 20,
+      },
+    ],
+  });
+
+  const targetVariantId = String(product.variants[0]._id);
+  const po = await PurchaseOrderModel.create({
+    items: [
+      {
+        productId: product._id,
+        productTitle: "Creamy Peanut Butter",
+        variantId: targetVariantId,
+        variantName: "500g",
+        packing: "500g",
+        quantity: 50,
+        price: 91,
+        subTotal: 4550,
+      },
+    ],
+    subtotal: 4550,
+    tax: 0,
+    shipping: 0,
+    total: 4550,
+    status: "approved",
+  });
+
+  const req = {
+    params: { id: String(po._id) },
+    body: {
+      items: [
+        {
+          lineIndex: 0,
+          productId: String(product._id),
+          variantId: targetVariantId,
+          packing: "500g",
+          receivedQuantity: 50,
+        },
+      ],
+    },
+    user: new mongoose.Types.ObjectId().toString(),
+  };
+  const res = createMockRes();
+
+  await updatePurchaseOrderReceipt(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.success, true);
+
+  const updatedProduct = await ProductModel.findById(product._id).lean();
+  const updatedVariant = updatedProduct.variants.find(
+    (variant) => String(variant._id) === targetVariantId,
+  );
+  assert.equal(updatedVariant.stock_quantity, 65);
+  assert.equal(updatedVariant.stock, 65);
+
+  const updatedPo = await PurchaseOrderModel.findById(po._id).lean();
+  assert.equal(updatedPo.status, "received");
+  assert.equal(updatedPo.inventory_applied, true);
+  assert.equal(updatedPo.items[0].receivedQuantity, 50);
+  assert.equal(String(updatedPo.items[0].variantId), targetVariantId);
+});
+
+test("concurrent PO receipts atomically accumulate variant stock", async () => {
+  const product = await ProductModel.create({
+    name: "Creamy Peanut Butter Concurrent",
+    slug: "po-receive-variant-concurrent",
+    price: 449,
+    category: new mongoose.Types.ObjectId(),
+    hasVariants: true,
+    variants: [
+      {
+        name: "500g",
+        sku: "SKU-CPB-CON-500",
+        price: 449,
+        weight: 500,
+        unit: "g",
+        stock: 15,
+        stock_quantity: 15,
+      },
+    ],
+  });
+
+  const targetVariantId = String(product.variants[0]._id);
+  const po1 = await PurchaseOrderModel.create({
+    items: [
+      {
+        productId: product._id,
+        productTitle: "Creamy Peanut Butter Concurrent",
+        variantId: targetVariantId,
+        variantName: "500g",
+        packing: "500g",
+        quantity: 50,
+        price: 91,
+        subTotal: 4550,
+      },
+    ],
+    subtotal: 4550,
+    tax: 0,
+    shipping: 0,
+    total: 4550,
+    status: "approved",
+  });
+  const po2 = await PurchaseOrderModel.create({
+    items: [
+      {
+        productId: product._id,
+        productTitle: "Creamy Peanut Butter Concurrent",
+        variantId: targetVariantId,
+        variantName: "500g",
+        packing: "500g",
+        quantity: 20,
+        price: 91,
+        subTotal: 1820,
+      },
+    ],
+    subtotal: 1820,
+    tax: 0,
+    shipping: 0,
+    total: 1820,
+    status: "approved",
+  });
+
+  const makeReq = (poId, quantity) => ({
+    params: { id: String(poId) },
+    body: {
+      items: [
+        {
+          lineIndex: 0,
+          productId: String(product._id),
+          variantId: targetVariantId,
+          packing: "500g",
+          receivedQuantity: quantity,
+        },
+      ],
+    },
+    user: new mongoose.Types.ObjectId().toString(),
+  });
+
+  const res1 = createMockRes();
+  const res2 = createMockRes();
+
+  await Promise.all([
+    updatePurchaseOrderReceipt(makeReq(po1._id, 50), res1),
+    updatePurchaseOrderReceipt(makeReq(po2._id, 20), res2),
+  ]);
+
+  assert.equal(res1.statusCode, 200);
+  assert.equal(res2.statusCode, 200);
+
+  const updatedProduct = await ProductModel.findById(product._id).lean();
+  const updatedVariant = updatedProduct.variants.find(
+    (variant) => String(variant._id) === targetVariantId,
+  );
+  assert.equal(updatedVariant.stock_quantity, 85);
+  assert.equal(updatedVariant.stock, 85);
 });

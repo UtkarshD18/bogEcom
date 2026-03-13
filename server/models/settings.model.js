@@ -1,5 +1,80 @@
 import mongoose from "mongoose";
 
+const DEFAULT_FLAVOUR_BUTTON_SETTINGS = [
+  {
+    key: "flavour_button_1_text",
+    value: "Creamy",
+    description: "Homepage flavour button 1 text",
+    category: "display",
+  },
+  {
+    key: "flavour_button_1_bg_color",
+    value: "#F6E6C9",
+    description: "Homepage flavour button 1 background color",
+    category: "display",
+  },
+  {
+    key: "flavour_button_1_text_color",
+    value: "#6B4F2A",
+    description: "Homepage flavour button 1 text color",
+    category: "display",
+  },
+  {
+    key: "flavour_button_2_text",
+    value: "Chocolate",
+    description: "Homepage flavour button 2 text",
+    category: "display",
+  },
+  {
+    key: "flavour_button_2_bg_color",
+    value: "#5A3A2E",
+    description: "Homepage flavour button 2 background color",
+    category: "display",
+  },
+  {
+    key: "flavour_button_2_text_color",
+    value: "#FFFFFF",
+    description: "Homepage flavour button 2 text color",
+    category: "display",
+  },
+  {
+    key: "flavour_button_3_text",
+    value: "Daizu",
+    description: "Homepage flavour button 3 text",
+    category: "display",
+  },
+  {
+    key: "flavour_button_3_bg_color",
+    value: "#8FAE5D",
+    description: "Homepage flavour button 3 background color",
+    category: "display",
+  },
+  {
+    key: "flavour_button_3_text_color",
+    value: "#2F3E1F",
+    description: "Homepage flavour button 3 text color",
+    category: "display",
+  },
+  {
+    key: "flavour_button_4_text",
+    value: "Low-calorie",
+    description: "Homepage flavour button 4 text",
+    category: "display",
+  },
+  {
+    key: "flavour_button_4_bg_color",
+    value: "#CFEFE8",
+    description: "Homepage flavour button 4 background color",
+    category: "display",
+  },
+  {
+    key: "flavour_button_4_text_color",
+    value: "#1F4D46",
+    description: "Homepage flavour button 4 text color",
+    category: "display",
+  },
+];
+
 /**
  * Settings Schema
  * Stores site-wide configuration settings manageable by admin
@@ -80,6 +155,7 @@ settingsSchema.statics.defaultSettings = [
     description: "Header appearance settings",
     category: "display",
   },
+  ...DEFAULT_FLAVOUR_BUTTON_SETTINGS,
   {
     key: "showOfferPopup",
     value: true,

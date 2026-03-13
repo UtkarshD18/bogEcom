@@ -52,6 +52,49 @@ const defaultPopupSettings = {
   buttonText: "Shop Now",
   couponCode: "",
 };
+const DEFAULT_FLAVOUR_BUTTON_SETTINGS = {
+  flavour_button_1_text: "Creamy",
+  flavour_button_1_bg_color: "#F6E6C9",
+  flavour_button_1_text_color: "#6B4F2A",
+  flavour_button_2_text: "Chocolate",
+  flavour_button_2_bg_color: "#5A3A2E",
+  flavour_button_2_text_color: "#FFFFFF",
+  flavour_button_3_text: "Daizu",
+  flavour_button_3_bg_color: "#8FAE5D",
+  flavour_button_3_text_color: "#2F3E1F",
+  flavour_button_4_text: "Low-calorie",
+  flavour_button_4_bg_color: "#CFEFE8",
+  flavour_button_4_text_color: "#1F4D46",
+};
+const FLAVOUR_BUTTON_FIELDS = [
+  {
+    label: "Creamy",
+    textKey: "flavour_button_1_text",
+    bgKey: "flavour_button_1_bg_color",
+    textColorKey: "flavour_button_1_text_color",
+  },
+  {
+    label: "Chocolate",
+    textKey: "flavour_button_2_text",
+    bgKey: "flavour_button_2_bg_color",
+    textColorKey: "flavour_button_2_text_color",
+  },
+  {
+    label: "Daizu",
+    textKey: "flavour_button_3_text",
+    bgKey: "flavour_button_3_bg_color",
+    textColorKey: "flavour_button_3_text_color",
+  },
+  {
+    label: "Low-calorie",
+    textKey: "flavour_button_4_text",
+    bgKey: "flavour_button_4_bg_color",
+    textColorKey: "flavour_button_4_text_color",
+  },
+];
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+const isHexColor = (value) => HEX_COLOR_PATTERN.test(String(value || "").trim());
 
 const toDateTimeLocal = (value) => {
   if (!value) return "";
@@ -145,6 +188,9 @@ const SettingsPage = () => {
   const [popupProducts, setPopupProducts] = useState([]);
   const [popupCategories, setPopupCategories] = useState([]);
   const [popupImageUploading, setPopupImageUploading] = useState(false);
+  const [flavourButtonSettings, setFlavourButtonSettings] = useState(
+    DEFAULT_FLAVOUR_BUTTON_SETTINGS,
+  );
 
   // High Traffic Notice
   const [highTrafficNotice, setHighTrafficNotice] = useState({
@@ -420,6 +466,19 @@ const SettingsPage = () => {
       if (data.success && data.data) {
         // Map settings by key
         data.data.forEach((setting) => {
+          if (
+            Object.prototype.hasOwnProperty.call(
+              DEFAULT_FLAVOUR_BUTTON_SETTINGS,
+              setting.key,
+            )
+          ) {
+            setFlavourButtonSettings((prev) => ({
+              ...prev,
+              [setting.key]: String(setting.value ?? ""),
+            }));
+            return;
+          }
+
           switch (setting.key) {
             case "shippingSettings":
               setShippingSettings(setting.value);
@@ -549,8 +608,33 @@ const SettingsPage = () => {
       return;
     }
 
+    const invalidFlavourColorField = FLAVOUR_BUTTON_FIELDS.flatMap((field) => [
+      {
+        key: field.bgKey,
+        label: `${field.label} background color`,
+      },
+      {
+        key: field.textColorKey,
+        label: `${field.label} text color`,
+      },
+    ]).find((field) => {
+      const value = String(flavourButtonSettings[field.key] || "").trim();
+      return value && !isHexColor(value);
+    });
+
+    if (invalidFlavourColorField) {
+      setToast(
+        `${invalidFlavourColorField.label} must be a valid hex color.`,
+        "error",
+      );
+      return;
+    }
+
     setSaving(true);
     try {
+      const flavourButtonSaveCalls = Object.entries(flavourButtonSettings).map(
+        ([key, value]) => saveSetting(key, String(value || "").trim()),
+      );
       const [
         popupSaveResult,
         shippingSaved,
@@ -566,6 +650,7 @@ const SettingsPage = () => {
         offerTitleSaved,
         offerDescriptionSaved,
         offerDiscountTextSaved,
+        ...flavourButtonSavedResults
       ] = await Promise.all([
         savePopupConfig(popupSettings),
         saveSetting("shippingSettings", shippingSettings),
@@ -600,22 +685,25 @@ const SettingsPage = () => {
           "offerDiscountText",
           String(offerPopupSettings.offerDiscountText || "").trim(),
         ),
+        ...flavourButtonSaveCalls,
       ]);
 
-      const coreSettingsSaved =
-        shippingSaved &&
-        orderSaved &&
-        discountSaved &&
-        storeSaved &&
-        trafficSaved &&
-        paymentSaved &&
-        defaultPaymentProviderSaved &&
-        maintenanceSaved &&
-        showOfferPopupSaved &&
-        offerCouponCodeSaved &&
-        offerTitleSaved &&
-        offerDescriptionSaved &&
-        offerDiscountTextSaved;
+      const coreSettingsSaved = [
+        shippingSaved,
+        orderSaved,
+        discountSaved,
+        storeSaved,
+        trafficSaved,
+        paymentSaved,
+        defaultPaymentProviderSaved,
+        maintenanceSaved,
+        showOfferPopupSaved,
+        offerCouponCodeSaved,
+        offerTitleSaved,
+        offerDescriptionSaved,
+        offerDiscountTextSaved,
+        ...flavourButtonSavedResults,
+      ].every(Boolean);
 
       if (popupSaveResult.success && coreSettingsSaved) {
         setToast("All settings saved successfully!", "success");
@@ -1639,6 +1727,74 @@ const SettingsPage = () => {
             className="md:col-span-2"
           />
         </div>
+      </div>
+
+      {/* Homepage Flavour Buttons */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <MdStore className="text-2xl text-amber-600" />
+          <h2 className="text-lg font-semibold text-gray-800">
+            Homepage Flavour Buttons
+          </h2>
+        </div>
+        <Divider className="mb-4" />
+
+        <div className="space-y-4">
+          {FLAVOUR_BUTTON_FIELDS.map((field) => (
+            <div
+              key={field.textKey}
+              className="rounded-lg border border-gray-100 p-4"
+            >
+              <div className="text-sm font-semibold text-gray-800 mb-3">
+                {field.label}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <TextField
+                  label="Button Text"
+                  value={flavourButtonSettings[field.textKey]}
+                  onChange={(e) =>
+                    setFlavourButtonSettings((prev) => ({
+                      ...prev,
+                      [field.textKey]: e.target.value,
+                    }))
+                  }
+                  size="small"
+                  fullWidth
+                />
+                <TextField
+                  label="Background Color"
+                  value={flavourButtonSettings[field.bgKey]}
+                  onChange={(e) =>
+                    setFlavourButtonSettings((prev) => ({
+                      ...prev,
+                      [field.bgKey]: e.target.value,
+                    }))
+                  }
+                  size="small"
+                  fullWidth
+                  placeholder="#F6E6C9"
+                />
+                <TextField
+                  label="Text Color"
+                  value={flavourButtonSettings[field.textColorKey]}
+                  onChange={(e) =>
+                    setFlavourButtonSettings((prev) => ({
+                      ...prev,
+                      [field.textColorKey]: e.target.value,
+                    }))
+                  }
+                  size="small"
+                  fullWidth
+                  placeholder="#6B4F2A"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-sm text-gray-500 mt-3">
+          Clear any field to fall back to the current storefront default.
+        </p>
       </div>
 
       {/* Snackbar */}

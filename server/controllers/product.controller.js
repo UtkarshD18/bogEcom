@@ -34,6 +34,27 @@ const roundWholeNumber = (value) => {
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
 };
 
+const normalizeStockValue = (value, fallback = 0) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return Math.max(Number(fallback || 0), 0);
+  }
+  return parsed;
+};
+
+const buildVariantInventoryTotals = (variants = []) => ({
+  stock: variants.reduce(
+    (sum, variant) =>
+      sum + normalizeStockValue(variant?.stock_quantity ?? variant?.stock, 0),
+    0,
+  ),
+  reserved: variants.reduce(
+    (sum, variant) =>
+      sum + normalizeStockValue(variant?.reserved_quantity, 0),
+    0,
+  ),
+});
+
 /**
  * Product Controller
  *
@@ -286,35 +307,30 @@ export const getProducts = async (req, res) => {
         ],
       };
       const productAvailableExpr = {
-        $subtract: [
-          { $ifNull: ["$stock_quantity", "$stock"] },
-          { $ifNull: ["$reserved_quantity", 0] },
-        ],
+        $ifNull: ["$stock_quantity", "$stock"],
       };
-      const variantAvailableExpr = {
+      const variantStockExpr = {
         $map: {
           input: { $ifNull: ["$variants", []] },
           as: "v",
-          in: {
-            $subtract: [
-              { $ifNull: ["$$v.stock_quantity", "$$v.stock"] },
-              { $ifNull: ["$$v.reserved_quantity", 0] },
-            ],
-          },
+          in: { $ifNull: ["$$v.stock_quantity", "$$v.stock"] },
         },
+      };
+      const hasVariantEntriesExpr = {
+        $gt: [{ $size: { $ifNull: ["$variants", []] } }, 0],
       };
       exprFilters.push({
         $and: [
           trackExpr,
           {
             $cond: [
-              { $eq: ["$hasVariants", true] },
+              hasVariantEntriesExpr,
               {
                 $anyElementTrue: {
                   $map: {
-                    input: variantAvailableExpr,
-                    as: "available",
-                    in: { $lte: ["$$available", thresholdExpr] },
+                    input: variantStockExpr,
+                    as: "variantStock",
+                    in: { $lte: ["$$variantStock", thresholdExpr] },
                   },
                 },
               },
@@ -679,8 +695,14 @@ export const createProduct = async (req, res) => {
     }
 
     // Create product
-    const normalizedStock = Number(stock ?? req.body?.stock_quantity ?? 0);
-    const normalizedReserved = Number(req.body?.reserved_quantity ?? 0);
+    const normalizedStock = normalizeStockValue(
+      stock ?? req.body?.stock_quantity,
+      0,
+    );
+    const normalizedReserved = normalizeStockValue(
+      req.body?.reserved_quantity,
+      0,
+    );
     const normalizedLowStock = Number(
       req.body?.low_stock_threshold ?? req.body?.lowStockThreshold ?? 5,
     );
@@ -710,6 +732,10 @@ export const createProduct = async (req, res) => {
           variant.originalPrice === undefined || variant.originalPrice === null
             ? undefined
             : roundWholeNumber(variant.originalPrice);
+        const variantStock = normalizeStockValue(
+          variant.stock ?? variant.stock_quantity,
+          0,
+        );
         const discountPercent =
           variantOriginalPrice && variantPrice !== null && variantOriginalPrice > variantPrice
             ? Math.round(((variantOriginalPrice - variantPrice) / variantOriginalPrice) * 100)
@@ -719,6 +745,9 @@ export const createProduct = async (req, res) => {
           price: variantPrice ?? 0,
           originalPrice: variantOriginalPrice,
           discountPercent,
+          stock: variantStock,
+          stock_quantity: variantStock,
+          reserved_quantity: normalizeStockValue(variant.reserved_quantity, 0),
         };
       });
       // Ensure exactly one default
@@ -729,6 +758,11 @@ export const createProduct = async (req, res) => {
         processedVariants.forEach((v, i) => { v.isDefault = i === processedVariants.indexOf(defaults[0]); });
       }
     }
+
+    const variantInventoryTotals =
+      hasVariants && processedVariants.length > 0
+        ? buildVariantInventoryTotals(processedVariants)
+        : null;
 
     const product = new ProductModel({
       name: String(name || "").trim(),
@@ -743,9 +777,10 @@ export const createProduct = async (req, res) => {
       category,
       subCategory,
       sku,
-      stock: normalizedStock,
-      stock_quantity: normalizedStock,
-      reserved_quantity: Math.max(normalizedReserved, 0),
+      stock: variantInventoryTotals?.stock ?? normalizedStock,
+      stock_quantity: variantInventoryTotals?.stock ?? normalizedStock,
+      reserved_quantity:
+        variantInventoryTotals?.reserved ?? Math.max(normalizedReserved, 0),
       low_stock_threshold: normalizedLowStock,
       track_inventory: normalizedTrackInventory,
       hasVariants: hasVariants || false,
@@ -894,12 +929,20 @@ export const updateProduct = async (req, res) => {
           message: "Duplicate variant weights are not allowed",
         });
       }
+      const existingVariantMap = new Map(
+        (product.variants || []).map((variant) => [String(variant?._id || ""), variant]),
+      );
       updateData.variants = updateData.variants.map((variant) => {
         const variantPrice = roundWholeNumber(variant.price);
         const variantOriginalPrice =
           variant.originalPrice === undefined || variant.originalPrice === null
             ? undefined
             : roundWholeNumber(variant.originalPrice);
+        const existingVariant = existingVariantMap.get(String(variant?._id || ""));
+        const variantStock = normalizeStockValue(
+          variant.stock ?? variant.stock_quantity,
+          existingVariant?.stock_quantity ?? existingVariant?.stock ?? 0,
+        );
         const discountPercent =
           variantOriginalPrice && variantPrice !== null && variantOriginalPrice > variantPrice
             ? Math.round(((variantOriginalPrice - variantPrice) / variantOriginalPrice) * 100)
@@ -909,6 +952,12 @@ export const updateProduct = async (req, res) => {
           price: variantPrice ?? variant.price,
           originalPrice: variantOriginalPrice,
           discountPercent,
+          stock: variantStock,
+          stock_quantity: variantStock,
+          reserved_quantity: normalizeStockValue(
+            variant.reserved_quantity,
+            existingVariant?.reserved_quantity ?? 0,
+          ),
         };
       });
       // Ensure exactly one default
@@ -920,6 +969,17 @@ export const updateProduct = async (req, res) => {
           v.isDefault = i === updateData.variants.indexOf(defaults[0]);
         });
       }
+    }
+
+    if (
+      updateData.hasVariants &&
+      Array.isArray(updateData.variants) &&
+      updateData.variants.length > 0
+    ) {
+      const variantInventoryTotals = buildVariantInventoryTotals(updateData.variants);
+      updateData.stock = variantInventoryTotals.stock;
+      updateData.stock_quantity = variantInventoryTotals.stock;
+      updateData.reserved_quantity = variantInventoryTotals.reserved;
     }
 
     // If category is being changed, update product counts

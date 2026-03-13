@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "build": "node -e \"console.log('Server build: no transpilation required')\"",
-    "dev": "nodemon index.js",
+    "dev": "node scripts/devServer.mjs",
+    "dev:direct": "nodemon index.js",
+    "dev:memory": "node scripts/devServer.mjs --memory",
     "test": "node --test",
     "test:analytics-smoke": "node scripts/analyticsSmokeTest.mjs",
     "setup:pubsub": "node scripts/setupPubSubInfra.mjs",
