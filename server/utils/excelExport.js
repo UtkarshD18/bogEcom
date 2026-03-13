@@ -1,22 +1,133 @@
 import ExcelJS from "exceljs";
 import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const DEFAULT_TEMPLATE_PATH =
-  "d:\\buyonegram\\pro_pricing_engine_1000_products.xlsx";
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_PRICING_ENGINE_TEMPLATE_PATH = path.resolve(
+  MODULE_DIR,
+  "../assets/templates/pro_pricing_engine_1000_products.xlsx",
+);
+
+const resolveNumberEnv = (key, fallback) => {
+  const raw = Number(process.env[key]);
+  return Number.isFinite(raw) ? raw : fallback;
+};
+
+export const PRICING_ENGINE_DEFAULTS = {
+  deliveryCost: resolveNumberEnv("PRICING_ENGINE_DEFAULT_DELIVERY_COST", 80),
+  cgstPercent: resolveNumberEnv("PRICING_ENGINE_DEFAULT_CGST_PERCENT", 2.5),
+  sgstPercent: resolveNumberEnv("PRICING_ENGINE_DEFAULT_SGST_PERCENT", 2.5),
+  targetProfitMarginPercent: resolveNumberEnv(
+    "PRICING_ENGINE_DEFAULT_TARGET_MARGIN_PERCENT",
+    0,
+  ),
+  influencerCommissionPercent: resolveNumberEnv(
+    "PRICING_ENGINE_DEFAULT_INFLUENCER_COMMISSION_PERCENT",
+    0,
+  ),
+  influencerCustomerDiscountPercent: resolveNumberEnv(
+    "PRICING_ENGINE_DEFAULT_INFLUENCER_CUSTOMER_DISCOUNT_PERCENT",
+    0,
+  ),
+  couponDiscountPercent: resolveNumberEnv(
+    "PRICING_ENGINE_DEFAULT_COUPON_DISCOUNT_PERCENT",
+    0,
+  ),
+};
 
 export const ORDER_REPORT_COLUMNS = [
   { header: "Order ID", key: "orderId", width: 22 },
   { header: "Product ID", key: "productId", width: 22 },
+  { header: "SKU", key: "sku", width: 18 },
+  { header: "HSN Code", key: "hsnCode", width: 12 },
   { header: "Product Name", key: "productName", width: 32 },
+  { header: "Variant Name", key: "variantName", width: 18 },
   { header: "Quantity", key: "quantity", width: 12 },
   { header: "Price", key: "price", width: 14 },
   { header: "Order Status", key: "orderStatus", width: 16 },
   { header: "Customer", key: "customer", width: 24 },
   { header: "Order Date", key: "orderDate", width: 18 },
+  { header: "Delivery Status", key: "deliveryStatus", width: 18 },
+];
+
+export const PRICING_ENGINE_COLUMNS = [
+  { header: "Product", key: "product", width: 30 },
+  { header: "Cost of Making", key: "costOfMaking", width: 16 },
+  { header: "Delivery Cost", key: "deliveryCost", width: 14 },
+  {
+    header: "Target Profit Margin %",
+    key: "targetProfitMarginPercent",
+    width: 20,
+  },
+  {
+    header: "Influencer Commission %",
+    key: "influencerCommissionPercent",
+    width: 22,
+  },
+  {
+    header: "Influencer Customer Discount %",
+    key: "influencerCustomerDiscountPercent",
+    width: 26,
+  },
+  { header: "Coupon Discount %", key: "couponDiscountPercent", width: 18 },
+  { header: "CGST %", key: "cgstPercent", width: 10 },
+  { header: "SGST %", key: "sgstPercent", width: 10 },
+  { header: "Subtotal (Product)", key: "subtotalProduct", width: 18 },
+  {
+    header: "Influencer Discount ₹",
+    key: "influencerDiscountRs",
+    width: 20,
+  },
+  { header: "Coupon Discount ₹", key: "couponDiscountRs", width: 18 },
+  {
+    header: "Discounted Product Price",
+    key: "discountedProductPrice",
+    width: 22,
+  },
+  { header: "CGST ₹", key: "cgstRs", width: 12 },
+  { header: "SGST ₹", key: "sgstRs", width: 12 },
+  {
+    header: "Product Price After GST",
+    key: "productPriceAfterGst",
+    width: 22,
+  },
+  {
+    header: "Customer Price (Product + Delivery)",
+    key: "customerPrice",
+    width: 28,
+  },
+  {
+    header: "Influencer Commission ₹",
+    key: "influencerCommissionRs",
+    width: 22,
+  },
+  { header: "Total Cost", key: "totalCost", width: 14 },
+  { header: "Actual Profit", key: "actualProfit", width: 14 },
+  { header: "Actual Margin %", key: "actualMarginPercent", width: 16 },
+  {
+    header: "Minimum Customer Price for Target Margin",
+    key: "minCustomerPriceForTargetMargin",
+    width: 34,
+  },
+  { header: "Product ID", key: "productId", width: 22 },
+  { header: "Variant ID", key: "variantId", width: 22 },
+  { header: "SKU", key: "sku", width: 18 },
+  { header: "HSN Code", key: "hsnCode", width: 12 },
+  { header: "Unit", key: "unit", width: 10 },
+  { header: "Weight", key: "weight", width: 10 },
+  { header: "MRP", key: "mrp", width: 12 },
+  { header: "Selling Price", key: "sellingPrice", width: 14 },
 ];
 
 export const resolveOrderReportTemplatePath = () =>
-  String(process.env.ORDER_REPORT_TEMPLATE_PATH || DEFAULT_TEMPLATE_PATH).trim();
+  String(process.env.ORDER_REPORT_TEMPLATE_PATH || "").trim();
+
+export const resolvePricingEngineTemplatePath = () =>
+  String(
+    process.env.PRICING_ENGINE_TEMPLATE_PATH ||
+      DEFAULT_PRICING_ENGINE_TEMPLATE_PATH,
+  ).trim();
 
 const safeAccess = async (filePath) => {
   if (!filePath) return false;
@@ -58,6 +169,8 @@ const loadTemplateMeta = async (templatePath, columnCount) => {
 
 export const createOrderReportWriter = async ({
   stream,
+  workbook: existingWorkbook,
+  sheetName = "Order Report",
   templatePath = resolveOrderReportTemplatePath(),
   columns = ORDER_REPORT_COLUMNS,
 } = {}) => {
@@ -67,12 +180,14 @@ export const createOrderReportWriter = async ({
     width: templateMeta?.columnWidths?.[index + 1] || column.width || 18,
   }));
 
-  const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
-    stream,
-    useStyles: true,
-    useSharedStrings: false,
-  });
-  const worksheet = workbook.addWorksheet("Order Report", {
+  const workbook =
+    existingWorkbook ||
+    new ExcelJS.stream.xlsx.WorkbookWriter({
+      stream,
+      useStyles: true,
+      useSharedStrings: false,
+    });
+  const worksheet = workbook.addWorksheet(sheetName, {
     views: [{ state: "frozen", ySplit: 1 }],
   });
   worksheet.columns = normalizedColumns;
