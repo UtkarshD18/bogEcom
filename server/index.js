@@ -157,7 +157,7 @@ import { initSocket } from "./realtime/socket.js";
 import aboutPageRouter from "./routes/aboutPage.route.js";
 import addressRouter from "./routes/address.route.js";
 import adminMembershipRouter from "./routes/adminMembership.route.js";
-import adminOrdersRouter from "./routes/adminOrders.route.js";
+import adminOrdersRouter from "./routes/adminOrders.js";
 import adminAnalyticsRouter from "./routes/adminAnalytics.route.js";
 import adminReviewRouter from "./routes/adminReview.route.js";
 import adminAuthRouter from "./routes/adminAuth.route.js";

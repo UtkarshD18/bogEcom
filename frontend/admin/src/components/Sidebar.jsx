@@ -78,6 +78,11 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       href: "/analytics",
     },
     {
+      name: "Sales Analytics",
+      icon: <MdInsights size={22} />,
+      href: "/sales-analytics",
+    },
+    {
       name: "Behavior",
       icon: <MdInsights size={22} />,
       href: "/behavior-analytics",
