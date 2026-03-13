@@ -178,6 +178,13 @@ const collectionIndexes = {
     [{ sessionId: 1, timestamp: -1 }],
     [{ userId: 1, timestamp: -1 }],
   ],
+  combo_events: [
+    [{ eventId: 1 }, { unique: true }],
+    [{ comboId: 1, timestamp: -1 }],
+    [{ eventType: 1, timestamp: -1 }],
+    [{ sessionId: 1, timestamp: -1 }],
+    [{ userId: 1, timestamp: -1 }],
+  ],
   purchases: [
     [{ eventId: 1 }, { unique: true }],
     [{ orderId: 1 }, { sparse: true }],

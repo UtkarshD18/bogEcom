@@ -52,6 +52,22 @@ const orderSchema = new mongoose.Schema(
           type: String,
           required: true,
         },
+        comboId: {
+          type: String,
+          default: null,
+        },
+        comboName: {
+          type: String,
+          default: "",
+        },
+        comboSlug: {
+          type: String,
+          default: "",
+        },
+        comboType: {
+          type: String,
+          default: "",
+        },
         productTitle: {
           type: String,
           required: true,
@@ -83,6 +99,32 @@ const orderSchema = new mongoose.Schema(
           required: true,
           min: 0,
         },
+      },
+    ],
+
+    // Combo/Bundles attached to order (snapshot)
+    combos: [
+      {
+        comboId: { type: String, required: true },
+        comboName: { type: String, required: true },
+        comboSlug: { type: String, default: "" },
+        comboType: { type: String, default: "" },
+        quantity: { type: Number, default: 1, min: 1 },
+        comboPrice: { type: Number, default: 0, min: 0 },
+        originalPrice: { type: Number, default: 0, min: 0 },
+        savings: { type: Number, default: 0, min: 0 },
+        items: [
+          {
+            productId: { type: String, required: true },
+            productTitle: { type: String, required: true },
+            variantId: { type: String, default: null },
+            variantName: { type: String, default: "" },
+            quantity: { type: Number, default: 1, min: 1 },
+            price: { type: Number, default: 0, min: 0 },
+            originalPrice: { type: Number, default: 0, min: 0 },
+            image: { type: String, default: "" },
+          },
+        ],
       },
     ],
 
@@ -363,6 +405,12 @@ const orderSchema = new mongoose.Schema(
     },
 
     discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    comboDiscount: {
       type: Number,
       default: 0,
       min: 0,

@@ -13,6 +13,9 @@ export default function CartPage() {
         cartItems,
         removeFromCart,
         updateQuantity,
+        removeComboFromCart,
+        updateComboQuantity,
+        isComboCartItem,
         cartSubTotalAmount,
     } = useCart();
     const { products } = useProducts();
@@ -41,6 +44,11 @@ export default function CartPage() {
         return fallback || item;
     };
 
+    const isComboItem = (item) =>
+        typeof isComboCartItem === "function"
+            ? isComboCartItem(item)
+            : item?.itemType === "combo" || Boolean(item?.combo || item?.comboSnapshot?.comboId);
+
     const toNumber = (value, fallback = 0) => {
         const numeric = Number(value);
         return Number.isFinite(numeric) ? numeric : fallback;
@@ -65,6 +73,50 @@ export default function CartPage() {
 
     // Helper to normalize cart item data
     const getItemData = (item) => {
+        if (isComboItem(item)) {
+            const combo = item?.comboSnapshot || item?.combo || {};
+            const comboItems = Array.isArray(combo?.items) ? combo.items : [];
+            const comboId =
+                combo?.comboId ||
+                combo?._id ||
+                item?.combo ||
+                item?.comboSnapshot?.comboId ||
+                item?._id ||
+                item?.id ||
+                null;
+            const price = toNumber(item?.price ?? combo?.comboPrice, 0);
+            const originalPrice = toNumber(
+                item?.originalPrice ?? combo?.originalPrice ?? combo?.originalTotal,
+                0,
+            );
+            const itemsPreview = comboItems
+                .map((entry) => entry?.productTitle || entry?.name)
+                .filter(Boolean);
+            const previewText = itemsPreview.slice(0, 3).join(", ");
+            const extraCount =
+                itemsPreview.length > 3 ? itemsPreview.length - 3 : 0;
+
+            return {
+                id: comboId,
+                name: combo?.comboName || combo?.name || "Combo Bundle",
+                image:
+                    combo?.thumbnail ||
+                    combo?.image ||
+                    item?.image ||
+                    "/combo_placeholder.png",
+                price,
+                originalPrice,
+                brand: "Combo Deal",
+                quantity: Number(item?.quantity || 1),
+                quantityUnit:
+                    previewText && extraCount > 0
+                        ? `${previewText} + ${extraCount} more`
+                        : previewText || "Bundle",
+                itemType: "combo",
+                items: comboItems,
+            };
+        }
+
         const product = resolveProductData(item);
         const productId = resolveProductId(item);
         const variant = resolveVariantData(item, product);
@@ -100,6 +152,7 @@ export default function CartPage() {
                 item?.quantityUnit ||
                 product?.quantityUnit ||
                 "Per Unit",
+            itemType: "product",
         };
     };
 
@@ -141,13 +194,11 @@ export default function CartPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                     {/* Cart Items List */}
                     <div className="lg:col-span-2 space-y-6">
-                        {cartItems.filter(item => {
-                            const pid = resolveProductId(item);
-                            const pd = resolveProductData(item);
-                            return pid && pd?.name;
-                        }).map((item, index) => {
+                        {cartItems.map((item, index) => {
                             const data = getItemData(item);
                             const productId = resolveProductId(item);
+                            const isComboLine = data.itemType === "combo";
+                            if (!data.id) return null;
                             return (
                                 <div
                                     key={`${data.id || index}-${item?.variant || item?.variantId || "base"}`}
@@ -174,28 +225,39 @@ export default function CartPage() {
                                                 </div>
                                                 <button
                                                     onClick={() =>
-                                                      removeFromCart(
-                                                        productId || data.id,
-                                                        item?.variant || null,
-                                                      )
+                                                      isComboLine
+                                                        ? removeComboFromCart(data.id)
+                                                        : removeFromCart(
+                                                            productId || data.id,
+                                                            item?.variant || null,
+                                                          )
                                                     }
                                                     className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all active:scale-90"
                                                 >
                                                     <MdDeleteOutline size={24} />
                                                 </button>
                                             </div>
-                                            <p className="text-sm text-gray-400 font-medium">Quantity Basis: {data.quantityUnit}</p>
+                                            <p className="text-sm text-gray-400 font-medium">
+                                                {isComboLine
+                                                    ? `Includes: ${data.quantityUnit}`
+                                                    : `Quantity Basis: ${data.quantityUnit}`}
+                                            </p>
                                         </div>
 
                                         <div className="flex items-center justify-between mt-auto">
                                             <div className="flex items-center gap-4 bg-gray-50 p-1 rounded-2xl border border-gray-100">
                                                 <button
                                                     onClick={() =>
-                                                      updateQuantity(
-                                                        productId || data.id,
-                                                        Number(data.quantity) - 1,
-                                                        item?.variant || null,
-                                                      )
+                                                      isComboLine
+                                                        ? updateComboQuantity(
+                                                            data.id,
+                                                            Number(data.quantity) - 1,
+                                                          )
+                                                        : updateQuantity(
+                                                            productId || data.id,
+                                                            Number(data.quantity) - 1,
+                                                            item?.variant || null,
+                                                          )
                                                     }
                                                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
                                                 >
@@ -204,11 +266,16 @@ export default function CartPage() {
                                                 <span className="text-lg font-black w-6 text-center text-gray-900">{data.quantity}</span>
                                                 <button
                                                     onClick={() =>
-                                                      updateQuantity(
-                                                        productId || data.id,
-                                                        Number(data.quantity) + 1,
-                                                        item?.variant || null,
-                                                      )
+                                                      isComboLine
+                                                        ? updateComboQuantity(
+                                                            data.id,
+                                                            Number(data.quantity) + 1,
+                                                          )
+                                                        : updateQuantity(
+                                                            productId || data.id,
+                                                            Number(data.quantity) + 1,
+                                                            item?.variant || null,
+                                                          )
                                                     }
                                                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
                                                 >

@@ -168,6 +168,7 @@ import cancellationPolicyRouter from "./routes/cancellationPolicy.routes.js";
 import cartRouter from "./routes/cart.route.js";
 import categoryRouter from "./routes/category.route.js";
 import coinRouter from "./routes/coin.route.js";
+import comboRouter from "./routes/combo.route.js";
 import couponRouter from "./routes/coupon.route.js";
 import homeMembershipContentRouter from "./routes/homeMembershipContent.route.js";
 import homeSlideRouter from "./routes/homeSlide.route.js";
@@ -201,6 +202,7 @@ import { startOrderFeedbackJob } from "./services/orderFeedback.service.js";
 import { startInventoryReservationExpiryJob } from "./services/inventoryReservationExpiry.service.js";
 import { startMembershipExpiryJob } from "./services/membershipExpiry.service.js";
 import { startLocationLogRetentionJob } from "./services/userLocationLog.service.js";
+import { startFrequentlyBoughtTogetherJob } from "./services/combos/frequentlyBoughtTogether.service.js";
 
 // Get __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -387,6 +389,7 @@ app.use("/api/admin/orders", adminLimiter, adminOrdersRouter);
 app.use("/api/admin/analytics", adminLimiter, adminAnalyticsRouter);
 app.use("/api/admin", adminLimiter, adminMembershipRouter);
 app.use("/api/cart", generalLimiter, cartRouter);
+app.use("/api/combos", generalLimiter, comboRouter);
 app.use("/api/wishlist", generalLimiter, wishlistRouter);
 app.use("/api/upload", uploadLimiter, uploadRouter);
 app.use("/api/membership/page", generalLimiter, membershipPageRouter);
@@ -556,6 +559,7 @@ connectDb().then(async () => {
   startInventoryReservationExpiryJob();
   startMembershipExpiryJob();
   startOrderFeedbackJob();
+  startFrequentlyBoughtTogetherJob();
 }).catch((error) => {
   console.error(
     "Server startup failed:",

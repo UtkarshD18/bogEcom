@@ -11,17 +11,26 @@ import {
   validateStructuredAddress,
 } from "../utils/addressUtils.js";
 
-const calculateProductsSubtotal = (products = []) =>
-  Number(
-    products.reduce(
-      (sum, item) =>
-        sum +
-        Number(
-          item.subTotal || Number(item.price || 0) * Number(item.quantity || 0),
-        ),
-      0,
-    ) || 0,
+const calculateProductsSubtotal = (products = [], combos = []) => {
+  const productTotal = products.reduce(
+    (sum, item) =>
+      sum +
+      Number(
+        item.subTotal || Number(item.price || 0) * Number(item.quantity || 0),
+      ),
+    0,
   );
+
+  const comboTotal = combos.reduce((sum, combo) => {
+    const quantity = Number(combo.quantity || 1);
+    const price = Number(
+      combo.comboPrice || combo.price || combo.total || 0,
+    );
+    return sum + price * quantity;
+  }, 0);
+
+  return Number(productTotal + comboTotal || 0);
+};
 
 const normalizeGuestDetails = (guestDetails = {}) => {
   const legacy = buildLegacyGuestDetails(guestDetails, {
@@ -123,6 +132,7 @@ export const validateCreateOrderRequest = (req, res, next) => {
   try {
     const {
       products,
+      combos,
       totalAmt,
       delivery_address,
       couponCode,
@@ -143,11 +153,39 @@ export const validateCreateOrderRequest = (req, res, next) => {
       location,
     } = req.body;
 
-    // Validate products array
-    validateProductsArray(products, "products");
+    const hasProducts = Array.isArray(products) && products.length > 0;
+    const hasCombos = Array.isArray(combos) && combos.length > 0;
+
+    if (!hasProducts && !hasCombos) {
+      throw new AppError("EMPTY_PRODUCTS", {
+        fieldName: "products",
+        value: products,
+      });
+    }
+
+    if (hasProducts) {
+      validateProductsArray(products, "products");
+    }
+
+    if (hasCombos) {
+      combos.forEach((combo, index) => {
+        if (!combo.comboId && !combo.id) {
+          throw new AppError("MISSING_FIELD", {
+            fieldName: `combos[${index}].comboId`,
+          });
+        }
+        const quantity = Number(combo.quantity || 1);
+        if (!Number.isFinite(quantity) || quantity < 1) {
+          throw new AppError("INVALID_QUANTITY", {
+            fieldName: `combos[${index}].quantity`,
+            value: combo.quantity,
+          });
+        }
+      });
+    }
 
     // Validate total amount (fallback to subtotal if omitted by client)
-    const subtotalFromProducts = calculateProductsSubtotal(products);
+    const subtotalFromProducts = calculateProductsSubtotal(products || [], combos || []);
     const validatedTotal =
       totalAmt !== undefined
         ? validateAmount(totalAmt, "totalAmt", 0)
@@ -290,6 +328,7 @@ export const validateCreateOrderRequest = (req, res, next) => {
     // Store validated data back to req.body
     req.validatedData = {
       products,
+      combos: Array.isArray(combos) ? combos : [],
       totalAmt: Number(validatedTotal),
       delivery_address: delivery_address || null,
       couponCode: couponCode ? String(couponCode).trim() : null,
@@ -339,6 +378,7 @@ export const validateSaveOrderRequest = (req, res, next) => {
   try {
     const {
       products,
+      combos,
       totalAmt,
       delivery_address,
       couponCode,
@@ -356,11 +396,39 @@ export const validateSaveOrderRequest = (req, res, next) => {
       location,
     } = req.body;
 
-    // Validate products array
-    validateProductsArray(products, "products");
+    const hasProducts = Array.isArray(products) && products.length > 0;
+    const hasCombos = Array.isArray(combos) && combos.length > 0;
+
+    if (!hasProducts && !hasCombos) {
+      throw new AppError("EMPTY_PRODUCTS", {
+        fieldName: "products",
+        value: products,
+      });
+    }
+
+    if (hasProducts) {
+      validateProductsArray(products, "products");
+    }
+
+    if (hasCombos) {
+      combos.forEach((combo, index) => {
+        if (!combo.comboId && !combo.id) {
+          throw new AppError("MISSING_FIELD", {
+            fieldName: `combos[${index}].comboId`,
+          });
+        }
+        const quantity = Number(combo.quantity || 1);
+        if (!Number.isFinite(quantity) || quantity < 1) {
+          throw new AppError("INVALID_QUANTITY", {
+            fieldName: `combos[${index}].quantity`,
+            value: combo.quantity,
+          });
+        }
+      });
+    }
 
     // Validate total amount
-    const subtotalFromProducts = calculateProductsSubtotal(products);
+    const subtotalFromProducts = calculateProductsSubtotal(products || [], combos || []);
     const totalAmount =
       totalAmt !== undefined
         ? validateAmount(totalAmt, "totalAmt", 0)
@@ -496,6 +564,7 @@ export const validateSaveOrderRequest = (req, res, next) => {
     // Store validated data
     req.validatedData = {
       products,
+      combos: Array.isArray(combos) ? combos : [],
       totalAmt: totalAmount,
       delivery_address: delivery_address || null,
       couponCode: couponCode || null,

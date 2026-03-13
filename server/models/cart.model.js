@@ -7,10 +7,46 @@ import mongoose from "mongoose";
  * Supports guest carts with session ID.
  */
 const cartItemSchema = new mongoose.Schema({
+  itemType: {
+    type: String,
+    enum: ["product", "combo"],
+    default: "product",
+  },
   product: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Product",
-    required: true,
+    required: function () {
+      return this.itemType !== "combo";
+    },
+  },
+  combo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Combo",
+    default: null,
+  },
+  comboSnapshot: {
+    comboId: { type: String, default: "" },
+    comboName: { type: String, default: "" },
+    comboSlug: { type: String, default: "" },
+    comboType: { type: String, default: "" },
+    comboPrice: { type: Number, default: 0 },
+    originalPrice: { type: Number, default: 0 },
+    savings: { type: Number, default: 0 },
+    items: {
+      type: [
+        {
+          productId: { type: String, default: "" },
+          productTitle: { type: String, default: "" },
+          variantId: { type: String, default: "" },
+          variantName: { type: String, default: "" },
+          quantity: { type: Number, default: 1 },
+          price: { type: Number, default: 0 },
+          originalPrice: { type: Number, default: 0 },
+          image: { type: String, default: "" },
+        },
+      ],
+      default: [],
+    },
   },
   quantity: {
     type: Number,
