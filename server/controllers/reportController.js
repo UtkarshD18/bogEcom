@@ -9,7 +9,13 @@ import {
   sendSuccess,
 } from "../utils/errorHandler.js";
 import { normalizeOrderStatus, ORDER_STATUS } from "../utils/orderStatus.js";
-import { createOrderReportWriter } from "../utils/excelExport.js";
+import {
+  createOrderReportWriter,
+  ORDER_REPORT_COLUMNS,
+  PRICING_ENGINE_COLUMNS,
+  PRICING_ENGINE_DEFAULTS,
+  resolvePricingEngineTemplatePath,
+} from "../utils/excelExport.js";
 
 const REPORT_DEFAULT_LIMIT = 20;
 const REPORT_MAX_LIMIT = 100;
@@ -107,6 +113,100 @@ const resolveOrderStatusLabel = (status) => {
     return "Pending";
   }
   return "Confirmed";
+};
+
+const extractHsnFromSpecifications = (specifications) => {
+  if (!specifications) return null;
+
+  if (specifications instanceof Map) {
+    return (
+      specifications.get("HSN") ||
+      specifications.get("hsn") ||
+      specifications.get("Hsn") ||
+      specifications.get("HSN Code") ||
+      specifications.get("hsnCode") ||
+      null
+    );
+  }
+
+  if (typeof specifications === "object") {
+    return (
+      specifications.HSN ||
+      specifications.hsn ||
+      specifications.Hsn ||
+      specifications["HSN Code"] ||
+      specifications.hsnCode ||
+      null
+    );
+  }
+
+  return null;
+};
+
+const parseNumberLike = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const match = String(value).match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const extractCostOfMaking = (productDoc) => {
+  if (!productDoc) return null;
+
+  const specs = productDoc?.specifications;
+  const candidates = [
+    specs?.["Cost of Making"],
+    specs?.["cost of making"],
+    specs?.["Costing"],
+    specs?.["costing"],
+    specs?.["COGS"],
+    specs?.["cogs"],
+    specs?.costOfMaking,
+    specs?.cost,
+  ];
+
+  if (specs instanceof Map) {
+    candidates.push(
+      specs.get("Cost of Making"),
+      specs.get("cost of making"),
+      specs.get("Costing"),
+      specs.get("costing"),
+      specs.get("COGS"),
+      specs.get("cogs"),
+      specs.get("costOfMaking"),
+      specs.get("cost"),
+    );
+  }
+
+  for (const candidate of candidates) {
+    const parsed = parseNumberLike(candidate);
+    if (parsed !== null) return parsed;
+  }
+
+  const variantAttributes = productDoc?.variant?.attributes;
+  if (variantAttributes instanceof Map) {
+    const variantCost = parseNumberLike(
+      variantAttributes.get("cost") ||
+        variantAttributes.get("Cost") ||
+        variantAttributes.get("Cost of Making") ||
+        variantAttributes.get("cost of making") ||
+        variantAttributes.get("costOfMaking"),
+    );
+    if (variantCost !== null) return variantCost;
+  } else if (variantAttributes && typeof variantAttributes === "object") {
+    const variantCost = parseNumberLike(
+      variantAttributes.cost ||
+        variantAttributes.Cost ||
+        variantAttributes["Cost of Making"] ||
+        variantAttributes["cost of making"] ||
+        variantAttributes.costOfMaking,
+    );
+    if (variantCost !== null) return variantCost;
+  }
+
+  return null;
 };
 
 const buildSearchMatch = (searchTerm) => {
@@ -320,16 +420,93 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       ...(searchMatch ? [{ $match: searchMatch }] : []),
       { $sort: { createdAt: -1 } },
       {
+        $addFields: {
+          productObjectId: {
+            $convert: {
+              input: "$products.productId",
+              to: "objectId",
+              onError: null,
+              onNull: null,
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "products",
+          let: { pid: "$productObjectId", vid: "$products.variantId" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$pid"] } } },
+            {
+              $project: {
+                name: 1,
+                sku: 1,
+                specifications: 1,
+                shippingCost: 1,
+                freeShipping: 1,
+                unit: 1,
+                weight: 1,
+                price: 1,
+                originalPrice: 1,
+                variants: 1,
+              },
+            },
+            {
+              $addFields: {
+                variant: {
+                  $first: {
+                    $filter: {
+                      input: "$variants",
+                      as: "v",
+                      cond: { $eq: [{ $toString: "$$v._id" }, "$$vid"] },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                sku: 1,
+                specifications: 1,
+                shippingCost: 1,
+                freeShipping: 1,
+                unit: 1,
+                weight: 1,
+                price: 1,
+                originalPrice: 1,
+                variant: {
+                  _id: 1,
+                  name: 1,
+                  sku: 1,
+                  price: 1,
+                  originalPrice: 1,
+                  weight: 1,
+                  unit: 1,
+                  attributes: 1,
+                },
+              },
+            },
+          ],
+          as: "productDoc",
+        },
+      },
+      { $unwind: { path: "$productDoc", preserveNullAndEmptyArrays: true } },
+      {
         $project: {
           orderId: "$_id",
           orderNumber: 1,
           displayOrderId: 1,
           order_status: 1,
           createdAt: 1,
+          shipmentStatus: { $ifNull: ["$shipmentStatus", "$shipment_status"] },
           productId: "$products.productId",
           productName: "$products.productTitle",
+          variantId: "$products.variantId",
+          variantName: "$products.variantName",
           quantity: "$products.quantity",
           price: "$products.price",
+          subTotal: "$products.subTotal",
           customerName: {
             $ifNull: [
               "$billingDetails.fullName",
@@ -341,6 +518,14 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
               },
             ],
           },
+          couponCode: 1,
+          discountAmount: { $ifNull: ["$discountAmount", "$discount"] },
+          influencerDiscount: 1,
+          influencerCommission: 1,
+          shipping: 1,
+          subtotal: 1,
+          gst: 1,
+          productDoc: 1,
         },
       },
     ];
@@ -358,18 +543,44 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
     );
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
-    const { workbook, worksheet } = await createOrderReportWriter({ stream: res });
+    const { workbook, worksheet: orderWorksheet } = await createOrderReportWriter({
+      stream: res,
+      sheetName: "Order Report",
+      columns: ORDER_REPORT_COLUMNS,
+    });
+
+    const { worksheet: pricingWorksheet } = await createOrderReportWriter({
+      workbook,
+      sheetName: "Pricing Engine",
+      templatePath: resolvePricingEngineTemplatePath(),
+      columns: PRICING_ENGINE_COLUMNS,
+    });
+
+    const pricingRows = new Map();
+    let pricingRowNumber = 2;
 
     for await (const row of cursor) {
       const orderId = String(row?.orderId || row?._id || "").trim();
       const orderDisplayId = String(
         row?.orderNumber || row?.displayOrderId || orderId || "",
       ).trim();
-      worksheet
+
+      const productDoc = row?.productDoc || null;
+      const variantDoc = productDoc?.variant || null;
+      const sku = String(variantDoc?.sku || productDoc?.sku || "").trim();
+      const hsn = extractHsnFromSpecifications(productDoc?.specifications);
+      const deliveryStatus = String(
+        row?.deliveryStatus || row?.shipmentStatus || row?.shipment_status || "pending",
+      ).trim();
+
+      orderWorksheet
         .addRow({
           orderId: orderDisplayId || orderId,
           productId: String(row?.productId || "").trim(),
+          sku,
+          hsnCode: hsn ? String(hsn).trim() : "",
           productName: String(row?.productName || "").trim(),
+          variantName: String(row?.variantName || "").trim(),
           quantity: Number(row?.quantity || 0),
           price: Number(row?.price || 0),
           orderStatus: resolveOrderStatusLabel(row?.order_status),
@@ -377,6 +588,89 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           orderDate: row?.createdAt
             ? new Date(row.createdAt).toISOString().slice(0, 10)
             : "",
+          deliveryStatus,
+        })
+        .commit();
+
+      const productId = String(row?.productId || "").trim();
+      if (productId) {
+        const variantId = String(row?.variantId || "").trim();
+        const pricingKey = `${productId}:${variantId || "default"}`;
+        if (!pricingRows.has(pricingKey)) {
+          pricingRows.set(pricingKey, {
+            productId,
+            variantId,
+            productName: String(productDoc?.name || row?.productName || "").trim(),
+            variantName: String(
+              variantDoc?.name || row?.variantName || "",
+            ).trim(),
+            sku,
+            hsnCode: hsn ? String(hsn).trim() : "",
+            unit: String(variantDoc?.unit || productDoc?.unit || "").trim(),
+            weight: Number(variantDoc?.weight || productDoc?.weight || 0),
+            mrp: Number(
+              variantDoc?.originalPrice || productDoc?.originalPrice || 0,
+            ),
+            sellingPrice: Number(variantDoc?.price || productDoc?.price || 0),
+            costOfMaking: extractCostOfMaking(productDoc),
+            deliveryCost:
+              productDoc?.freeShipping === true
+                ? 0
+                : Number(productDoc?.shippingCost || 0) > 0
+                  ? Number(productDoc.shippingCost)
+                  : PRICING_ENGINE_DEFAULTS.deliveryCost,
+          });
+        }
+      }
+    }
+
+    for (const item of pricingRows.values()) {
+      const rowNumber = pricingRowNumber;
+      pricingRowNumber += 1;
+      pricingWorksheet
+        .addRow({
+          product: item.variantName
+            ? `${item.productName} - ${item.variantName}`
+            : item.productName,
+          costOfMaking:
+            item.costOfMaking === null || item.costOfMaking === undefined
+              ? ""
+              : Number(item.costOfMaking),
+          deliveryCost: Number(item.deliveryCost || 0),
+          targetProfitMarginPercent:
+            PRICING_ENGINE_DEFAULTS.targetProfitMarginPercent || 0,
+          influencerCommissionPercent:
+            PRICING_ENGINE_DEFAULTS.influencerCommissionPercent || 0,
+          influencerCustomerDiscountPercent:
+            PRICING_ENGINE_DEFAULTS.influencerCustomerDiscountPercent || 0,
+          couponDiscountPercent: PRICING_ENGINE_DEFAULTS.couponDiscountPercent || 0,
+          cgstPercent: PRICING_ENGINE_DEFAULTS.cgstPercent || 0,
+          sgstPercent: PRICING_ENGINE_DEFAULTS.sgstPercent || 0,
+          subtotalProduct: { formula: `B${rowNumber}` },
+          influencerDiscountRs: { formula: `J${rowNumber}*(F${rowNumber}/100)` },
+          couponDiscountRs: { formula: `J${rowNumber}*(G${rowNumber}/100)` },
+          discountedProductPrice: { formula: `J${rowNumber}-K${rowNumber}-L${rowNumber}` },
+          cgstRs: { formula: `M${rowNumber}*(H${rowNumber}/100)` },
+          sgstRs: { formula: `M${rowNumber}*(I${rowNumber}/100)` },
+          productPriceAfterGst: { formula: `M${rowNumber}+N${rowNumber}+O${rowNumber}` },
+          customerPrice: { formula: `P${rowNumber}+C${rowNumber}` },
+          influencerCommissionRs: { formula: `Q${rowNumber}*(E${rowNumber}/100)` },
+          totalCost: { formula: `B${rowNumber}+C${rowNumber}+R${rowNumber}` },
+          actualProfit: { formula: `Q${rowNumber}-S${rowNumber}` },
+          actualMarginPercent: {
+            formula: `IF(Q${rowNumber}=0,0,T${rowNumber}/Q${rowNumber}*100)`,
+          },
+          minCustomerPriceForTargetMargin: {
+            formula: `IF(D${rowNumber}=0,0,S${rowNumber}/(1-D${rowNumber}/100))`,
+          },
+          productId: item.productId,
+          variantId: item.variantId || "",
+          sku: item.sku,
+          hsnCode: item.hsnCode,
+          unit: item.unit,
+          weight: item.weight || 0,
+          mrp: item.mrp || 0,
+          sellingPrice: item.sellingPrice || 0,
         })
         .commit();
     }
