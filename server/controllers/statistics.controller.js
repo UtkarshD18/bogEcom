@@ -135,36 +135,23 @@ export const getDashboardStats = async (req, res) => {
         {
           $addFields: {
             productAvailable: {
-              $subtract: [
-                { $ifNull: ["$stock_quantity", "$stock"] },
-                { $ifNull: ["$reserved_quantity", 0] },
-              ],
+              $ifNull: ["$stock_quantity", "$stock"],
             },
             variantAvailables: {
               $map: {
                 input: { $ifNull: ["$variants", []] },
                 as: "v",
-                in: {
-                  $subtract: [
-                    { $ifNull: ["$$v.stock_quantity", "$$v.stock"] },
-                    { $ifNull: ["$$v.reserved_quantity", 0] },
-                  ],
-                },
+                in: { $ifNull: ["$$v.stock_quantity", "$$v.stock"] },
               },
             },
           },
         },
         {
           $addFields: {
-            hasVariants: { $eq: ["$hasVariants", true] },
+            hasVariants: { $gt: [{ $size: "$variantAvailables" }, 0] },
             variantLowStock: {
               $cond: [
-                {
-                  $and: [
-                    { $eq: ["$hasVariants", true] },
-                    { $gt: [{ $size: "$variantAvailables" }, 0] },
-                  ],
-                },
+                { $gt: [{ $size: "$variantAvailables" }, 0] },
                 {
                   $anyElementTrue: {
                     $map: {

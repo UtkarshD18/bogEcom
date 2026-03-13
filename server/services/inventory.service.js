@@ -45,31 +45,57 @@ const resolveVariantObjectId = (value) => {
  * Recalculate parent stock/reserved from variant totals.
  * Call after any atomic $inc on variant fields so the parent stays in sync.
  */
-const syncParentStockFromVariants = async (productId) => {
-  const product = await ProductModel.findById(productId)
-    .select("hasVariants variants stock stock_quantity reserved_quantity")
-    .lean();
-  if (!Array.isArray(product?.variants) || product.variants.length === 0) return;
+export const syncParentStockFromVariants = async (productId, session = null) => {
+  const updateOptions = session ? { session } : {};
+  const normalizedProductId = toObjectId(productId) || productId;
 
-  const totalStock = product.variants.reduce(
-    (s, v) => s + Number(v.stock_quantity ?? v.stock ?? 0),
-    0,
+  await ProductModel.collection.updateOne(
+    { _id: normalizedProductId, "variants.0": { $exists: true } },
+    [
+      {
+        $set: {
+          stock_quantity: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$variants", []] },
+                as: "variant",
+                in: {
+                  $ifNull: [
+                    "$$variant.stock_quantity",
+                    { $ifNull: ["$$variant.stock", 0] },
+                  ],
+                },
+              },
+            },
+          },
+          stock: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$variants", []] },
+                as: "variant",
+                in: {
+                  $ifNull: [
+                    "$$variant.stock_quantity",
+                    { $ifNull: ["$$variant.stock", 0] },
+                  ],
+                },
+              },
+            },
+          },
+          reserved_quantity: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$variants", []] },
+                as: "variant",
+                in: { $ifNull: ["$$variant.reserved_quantity", 0] },
+              },
+            },
+          },
+        },
+      },
+    ],
+    updateOptions,
   );
-  const totalReserved = product.variants.reduce(
-    (s, v) => s + Number(v.reserved_quantity ?? 0),
-    0,
-  );
-
-  if (
-    product.stock !== totalStock ||
-    product.stock_quantity !== totalStock ||
-    product.reserved_quantity !== totalReserved
-  ) {
-    await ProductModel.updateOne(
-      { _id: productId },
-      { $set: { stock: totalStock, stock_quantity: totalStock, reserved_quantity: totalReserved } },
-    );
-  }
 };
 
 const buildAvailableExpr = () => ({
@@ -330,7 +356,7 @@ const mapAuditSource = (source = "") => {
   return "ORDER";
 };
 
-const logInventoryAudit = async ({
+export const logInventoryAudit = async ({
   productId,
   variantId = null,
   action,
@@ -339,18 +365,24 @@ const logInventoryAudit = async ({
   after,
   source,
   referenceId,
+  session = null,
 }) => {
   try {
-    await InventoryAuditModel.create({
-      productId,
-      variantId,
-      action,
-      quantity,
-      before,
-      after,
-      source,
-      referenceId,
-    });
+    await InventoryAuditModel.create(
+      [
+        {
+          productId,
+          variantId,
+          action,
+          quantity,
+          before,
+          after,
+          source,
+          referenceId,
+        },
+      ],
+      session ? { session } : undefined,
+    );
   } catch (error) {
     logger.warn("inventoryAudit", "Failed to log inventory audit", {
       productId,

@@ -127,6 +127,19 @@ const defaultSettings = {
   // Payment
   paymentGatewayEnabled: true,
   defaultPaymentProvider: "PHONEPE",
+  // Homepage flavour buttons
+  flavour_button_1_text: "Creamy",
+  flavour_button_1_bg_color: "#F6E6C9",
+  flavour_button_1_text_color: "#6B4F2A",
+  flavour_button_2_text: "Chocolate",
+  flavour_button_2_bg_color: "#5A3A2E",
+  flavour_button_2_text_color: "#FFFFFF",
+  flavour_button_3_text: "Daizu",
+  flavour_button_3_bg_color: "#8FAE5D",
+  flavour_button_3_text_color: "#2F3E1F",
+  flavour_button_4_text: "Low-calorie",
+  flavour_button_4_bg_color: "#CFEFE8",
+  flavour_button_4_text_color: "#1F4D46",
 };
 
 /**

@@ -30,12 +30,9 @@ const EditProduct = () => {
   const [isBestSeller, setIsBestSeller] = useState(false);
   const [isExclusive, setIsExclusive] = useState(false);
   const [demandStatus, setDemandStatus] = useState("NORMAL");
-  const [stock, setStock] = useState("");
   const [brand, setBrand] = useState("");
   const [discount, setDiscount] = useState("");
   const [rating, setRating] = useState(4);
-  const [weight, setWeight] = useState("");
-  const [unit, setUnit] = useState("g");
   const [tags, setTags] = useState("");
   const [newImages, setNewImages] = useState([]); // { file, preview }
   const [existingImages, setExistingImages] = useState([]); // URLs
@@ -148,12 +145,9 @@ const EditProduct = () => {
         setIsBestSeller(product.isBestSeller || false);
         setIsExclusive(Boolean(product.isExclusive));
         setDemandStatus(product.demandStatus || "NORMAL");
-        setStock(product.stock || "");
         setBrand(product.brand || "");
         setDiscount(product.discount || "");
         setRating(product.rating || 4);
-        setWeight(product.weight || "");
-        setUnit(product.unit || "g");
         setTags(product.tags ? product.tags.join(", ") : "");
         setExistingImages(product.images || []);
 
@@ -330,12 +324,9 @@ const EditProduct = () => {
         isBestSeller,
         isExclusive,
         demandStatus,
-        stock: stock ? Number(stock) : 0,
         brand,
         discount: discount ? Number(discount) : 0,
         rating,
-        weight: weight ? Number(weight) : undefined,
-        unit,
         tags: tags ? tags.split(",").map((t) => t.trim()) : [],
         images: allImages,
         thumbnail: allImages[0] || "",
@@ -510,22 +501,8 @@ const EditProduct = () => {
             </div>
           </div>
 
-          {/* Stock & Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-            <div className="col flex flex-col gap-1">
-              <span className="text-[15px] text-gray-800 font-medium">
-                Stock Quantity
-              </span>
-              <input
-                type="number"
-                value={stock}
-                onChange={(e) => setStock(e.target.value)}
-                placeholder="0"
-                min="0"
-                className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
-              />
-            </div>
-
+          {/* Product Details */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5">
             <div className="col flex flex-col gap-1">
               <span className="text-[15px] text-gray-800 font-medium">
                 Brand
@@ -567,36 +544,8 @@ const EditProduct = () => {
             </div>
           </div>
 
-          {/* Weight & Tags */}
+          {/* Tags & Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-            <div className="col flex flex-col gap-1">
-              <span className="text-[15px] text-gray-800 font-medium">
-                Weight
-              </span>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={weight}
-                  onChange={(e) => setWeight(e.target.value)}
-                  placeholder="0"
-                  min="0"
-                  className="flex-1 h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
-                />
-                <Select
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  size="small"
-                  className="w-20"
-                >
-                  <MenuItem value="g">g</MenuItem>
-                  <MenuItem value="kg">kg</MenuItem>
-                  <MenuItem value="ml">ml</MenuItem>
-                  <MenuItem value="L">L</MenuItem>
-                  <MenuItem value="pcs">pcs</MenuItem>
-                </Select>
-              </div>
-            </div>
-
             <div className="col flex flex-col gap-1">
               <span className="text-[15px] text-gray-800 font-medium">
                 Tags

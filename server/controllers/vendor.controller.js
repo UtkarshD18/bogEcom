@@ -1,4 +1,26 @@
+import mongoose from "mongoose";
 import VendorModel from "../models/vendor.model.js";
+
+const normalizeVendorProductRates = (value) => {
+  if (!Array.isArray(value)) return [];
+
+  const dedupedRates = new Map();
+
+  value.forEach((entry) => {
+    const productId = String(entry?.productId || "").trim();
+    const rate = Number(entry?.rate);
+
+    if (!productId || !mongoose.Types.ObjectId.isValid(productId)) return;
+    if (!Number.isFinite(rate) || rate < 0) return;
+
+    dedupedRates.set(productId, {
+      productId,
+      rate,
+    });
+  });
+
+  return Array.from(dedupedRates.values());
+};
 
 /**
  * Get all vendors (Admin)
@@ -31,7 +53,8 @@ export const getVendors = async (req, res) => {
  */
 export const createVendor = async (req, res) => {
   try {
-    const { fullName, phone, email, address, pincode, state, gst } = req.body;
+    const { fullName, phone, email, address, pincode, state, gst, productRates } =
+      req.body;
 
     if (!fullName || !fullName.trim()) {
       return res.status(400).json({
@@ -49,6 +72,7 @@ export const createVendor = async (req, res) => {
       pincode: pincode?.trim() || "",
       state: state?.trim() || "",
       gst: gst?.trim() || "",
+      productRates: normalizeVendorProductRates(productRates),
       createdBy: req.userId,
     });
 
@@ -75,7 +99,8 @@ export const createVendor = async (req, res) => {
 export const updateVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fullName, phone, email, address, pincode, state, gst } = req.body;
+    const { fullName, phone, email, address, pincode, state, gst, productRates } =
+      req.body;
 
     if (!fullName || !fullName.trim()) {
       return res.status(400).json({
@@ -85,17 +110,23 @@ export const updateVendor = async (req, res) => {
       });
     }
 
+    const updatePayload = {
+      fullName: fullName.trim(),
+      phone: phone?.trim() || "",
+      email: email?.trim() || "",
+      address: address?.trim() || "",
+      pincode: pincode?.trim() || "",
+      state: state?.trim() || "",
+      gst: gst?.trim() || "",
+    };
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "productRates")) {
+      updatePayload.productRates = normalizeVendorProductRates(productRates);
+    }
+
     const vendor = await VendorModel.findByIdAndUpdate(
       id,
-      {
-        fullName: fullName.trim(),
-        phone: phone?.trim() || "",
-        email: email?.trim() || "",
-        address: address?.trim() || "",
-        pincode: pincode?.trim() || "",
-        state: state?.trim() || "",
-        gst: gst?.trim() || "",
-      },
+      updatePayload,
       { new: true },
     );
 

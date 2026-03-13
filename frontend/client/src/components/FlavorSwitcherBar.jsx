@@ -1,5 +1,6 @@
 "use client";
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
+import { useSettings } from "@/context/SettingsContext";
 import { useContext, useEffect, useState } from "react";
 
 // Convert FLAVORS object to array for mapping
@@ -9,11 +10,59 @@ const FLAVORS_ARRAY = [
   FLAVORS.millets,
   FLAVORS.nutty,
 ];
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+const normalizeHexColor = (value) => {
+  const raw = String(value || "").trim();
+  if (!HEX_COLOR_PATTERN.test(raw)) return "";
+  const normalized = raw.toLowerCase();
+  if (normalized.length === 4) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
+  }
+  return normalized;
+};
+
+const hexToRgba = (value, alpha) => {
+  const normalized = normalizeHexColor(value);
+  if (!normalized) return "";
+  const red = Number.parseInt(normalized.slice(1, 3), 16);
+  const green = Number.parseInt(normalized.slice(3, 5), 16);
+  const blue = Number.parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+};
 
 export default function FlavorSwitcherBar() {
   const context = useContext(MyContext);
+  const { settings } = useSettings();
   const [selected, setSelected] = useState(FLAVORS.creamy.name);
   const [mounted, setMounted] = useState(false);
+
+  const configuredFlavors = FLAVORS_ARRAY.map((flavor, index) => {
+    const buttonNumber = index + 1;
+    const configuredLabel = String(
+      settings?.[`flavour_button_${buttonNumber}_text`] || "",
+    ).trim();
+    const configuredBackground =
+      normalizeHexColor(
+        settings?.[`flavour_button_${buttonNumber}_bg_color`],
+      ) || flavor.color;
+    const configuredTextColor =
+      normalizeHexColor(
+        settings?.[`flavour_button_${buttonNumber}_text_color`],
+      ) ||
+      flavor.text ||
+      "#111111";
+
+    return {
+      ...flavor,
+      buttonLabel: configuredLabel || flavor.name,
+      buttonBg: configuredBackground,
+      buttonTextColor: configuredTextColor,
+      buttonGlass: hexToRgba(configuredBackground, 0.18) || flavor.glass,
+      buttonBorder: hexToRgba(configuredBackground, 0.24) || flavor.glass,
+      buttonShadow: hexToRgba(configuredBackground, 0.32) || flavor.glass,
+    };
+  });
 
   useEffect(() => {
     const saved = localStorage.getItem("selectedFlavor");
@@ -43,7 +92,7 @@ export default function FlavorSwitcherBar() {
   };
 
   const currentFlavor =
-    FLAVORS_ARRAY.find((f) => f.name === selected) || FLAVORS.creamy;
+    configuredFlavors.find((f) => f.name === selected) || configuredFlavors[0];
 
   if (!mounted) return null;
 
@@ -116,34 +165,32 @@ export default function FlavorSwitcherBar() {
         }
       `}</style>
       <div className="flavor-bar">
-        {FLAVORS_ARRAY.map((flavor) => (
+        {configuredFlavors.map((flavor) => (
           <button
             key={flavor.name}
             className="flavor-btn"
             onClick={() => handleClick(flavor)}
             style={{
               background:
-                selected === flavor.name ? flavor.color : flavor.glass,
-              color: selected === flavor.name
-                ? (flavor.text || "#111111")
-                : (flavor.text || flavor.color),
+                selected === flavor.name ? flavor.buttonBg : flavor.buttonGlass,
+              color: flavor.buttonTextColor,
               fontWeight: "600",
               fontSize: "0.95rem",
               border:
                 selected === flavor.name
                   ? "2px solid rgba(255,255,255,0.65)"
-                  : `2px solid ${flavor.color}20`,
+                  : `2px solid ${flavor.buttonBorder}`,
               borderRadius: "12px",
               padding: "10px 24px",
               boxShadow:
                 selected === flavor.name
-                  ? `0 4px 16px ${flavor.color}40`
+                  ? `0 4px 16px ${flavor.buttonShadow}`
                   : "none",
               outline: "none",
               cursor: "pointer",
             }}
           >
-            {flavor.name}
+            {flavor.buttonLabel}
           </button>
         ))}
       </div>

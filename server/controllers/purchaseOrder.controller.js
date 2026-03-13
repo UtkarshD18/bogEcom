@@ -1,4 +1,4 @@
-
+import mongoose from "mongoose";
 import PDFDocument from "pdfkit";
 import AddressModel from "../models/address.model.js";
 import OrderModel from "../models/order.model.js";
@@ -6,8 +6,10 @@ import ProductModel from "../models/product.model.js";
 import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import {
   applyPurchaseOrderInventory,
+  logInventoryAudit,
   releaseInventory,
   reserveInventory,
+  syncParentStockFromVariants,
 } from "../services/inventory.service.js";
 import UserModel from "../models/user.model.js";
 import { validateIndianPincode } from "../services/shippingRate.service.js";
@@ -16,6 +18,38 @@ import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const round3 = (value) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 1000) / 1000;
+const PO_COMPANY_NAME = "Buy One Gram Private Limited";
+const PO_COMPANY_ADDRESS =
+  "G-225, Sitapura Industrial Area, Tonk Road, Jaipur 302022";
+const PO_COMPANY_GST = "GST No: 08AAJCB3889Q1ZO";
+
+const isTransactionUnsupportedError = (error) => {
+  const message = String(error?.message || "");
+  return (
+    message.includes("Transaction numbers are only allowed") ||
+    message.includes("Transaction support is not available")
+  );
+};
+
+const runWithMongoTransaction = async (work) => {
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      result = await work(session);
+    });
+    return result;
+  } catch (error) {
+    if (isTransactionUnsupportedError(error)) {
+      return work(null);
+    }
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
 
 const canUserAccessExclusiveProducts = async (userId) => {
   if (!userId) return false;
@@ -385,8 +419,8 @@ const sumGrossInclusiveItems = (items = []) =>
   );
 
 /**
- * PO totals should be based on line-item invoice amount.
- * Keep shipping as 0 to prevent mismatch between line item amount and PO total.
+ * Keep stored PO totals intact for backend compatibility.
+ * Shipping remains 0 to avoid mismatches with the entered line-item data.
  */
 const computePurchaseOrderTotals = ({
   items = [],
@@ -439,34 +473,62 @@ const formatPdfDate = (value) => {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const datePart = date.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-  const timePart = date
-    .toLocaleTimeString("en-IN", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    })
-    .toLowerCase();
-  return `${datePart} at ${timePart}`;
+  const getOrdinalSuffix = (day) => {
+    const mod100 = day % 100;
+    if (mod100 >= 11 && mod100 <= 13) return "th";
+    const mod10 = day % 10;
+    if (mod10 === 1) return "st";
+    if (mod10 === 2) return "nd";
+    if (mod10 === 3) return "rd";
+    return "th";
+  };
+  const month = date.toLocaleDateString("en-US", { month: "long" });
+  const day = date.getDate();
+  const year = date.getFullYear();
+  return `${month} ${day}${getOrdinalSuffix(day)}, ${year}`;
 };
 
-const formatPdfStatus = (status) => {
-  const raw = String(status || "").toLowerCase();
-  if (raw === "converted") return "PLACED";
-  if (raw === "received") return "RECEIVED";
-  if (raw === "approved") return "APPROVED";
-  if (raw === "draft") return "DRAFT";
-  if (raw) return raw.toUpperCase();
-  return "N/A";
+const parsePackingToKg = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*(kg|g)\b/i);
+  if (!match) return 0;
+
+  const quantity = Number(match[1] || 0);
+  if (!Number.isFinite(quantity) || quantity <= 0) return 0;
+
+  return String(match[2] || "").toLowerCase() === "g"
+    ? quantity / 1000
+    : quantity;
 };
+
+const calculateTotalQuantityKg = (items = []) =>
+  round3(
+    (Array.isArray(items) ? items : []).reduce((sum, item) => {
+      const quantity = Math.max(Number(item?.quantity || 0), 0);
+      const packingSizeKg = parsePackingToKg(
+        item?.packing || item?.packSize || item?.variantName,
+      );
+      return sum + quantity * packingSizeKg;
+    }, 0),
+  );
+
+const calculateLineTotalQuantityKg = (item) =>
+  round3(
+    Math.max(Number(item?.quantity || 0), 0) *
+      parsePackingToKg(item?.packing || item?.packSize || item?.variantName),
+  );
+
+const formatPdfKg = (value) =>
+  Number(value || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  });
 
 const buildPdfBuffer = (purchaseOrder) =>
   new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    const doc = new PDFDocument({ size: "A4", margin: 46 });
     const chunks = [];
 
     doc.on("data", (chunk) => chunks.push(chunk));
@@ -476,144 +538,153 @@ const buildPdfBuffer = (purchaseOrder) =>
     const pageWidth = doc.page.width;
     const margin = doc.page.margins.left;
     const contentWidth = pageWidth - margin * 2;
+    const halfWidth = contentWidth / 2;
 
     const formatMoney = (value) =>
       `Rs. ${Number(value || 0).toLocaleString("en-IN", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })}`;
+    const totalQuantityKg = calculateTotalQuantityKg(purchaseOrder.items);
+    const poNumber = String(purchaseOrder.poNumber || purchaseOrder._id || "").trim();
+    const vendorName = String(
+      purchaseOrder.guestDetails?.fullName || "N/A",
+    ).trim();
 
-    doc.fontSize(18).font("Helvetica-Bold").fillColor("#111");
-    doc.text("Purchase Order", { align: "center" });
-    doc.moveDown(0.4);
+    doc.fillColor("#111111");
+    doc.font("Helvetica-Bold").fontSize(16).text(PO_COMPANY_NAME, margin, doc.y, {
+      width: contentWidth,
+      align: "center",
+    });
+    doc.moveDown(0.2);
+    doc.font("Helvetica").fontSize(9.5).text(PO_COMPANY_ADDRESS, margin, doc.y, {
+      width: contentWidth,
+      align: "center",
+    });
+    doc.moveDown(0.15);
+    doc.font("Helvetica").fontSize(9.5).text(PO_COMPANY_GST, margin, doc.y, {
+      width: contentWidth,
+      align: "center",
+    });
+    doc.moveDown(0.65);
+    doc.font("Helvetica-Bold").fontSize(15).text("Purchase Order", margin, doc.y, {
+      width: contentWidth,
+      align: "center",
+    });
+    doc.moveDown(0.9);
 
-    doc
-      .strokeColor("#1e88e5")
-      .lineWidth(1)
-      .moveTo(margin, doc.y)
-      .lineTo(margin + contentWidth, doc.y)
-      .stroke();
+    const metaRowY = doc.y;
+    doc.font("Helvetica").fontSize(10).fillColor("#111111");
+    doc.text(`PO Number: ${poNumber}`, margin, metaRowY, {
+      width: halfWidth,
+      align: "left",
+    });
+    doc.text(`Date: ${formatPdfDate(purchaseOrder.createdAt)}`, margin + halfWidth, metaRowY, {
+      width: halfWidth,
+      align: "right",
+    });
 
-    doc.moveDown(0.8);
-    doc.fontSize(10).font("Helvetica").fillColor("#111");
-    doc.text(`PO Number: ${purchaseOrder.poNumber || purchaseOrder._id}`);
-    doc.text(`Date: ${formatPdfDate(purchaseOrder.createdAt)}`);
-    doc.text(`Status: ${formatPdfStatus(purchaseOrder.status)}`);
-    doc.moveDown(0.6);
-
-    doc.font("Helvetica-Bold").fillColor("#1e88e5").text("Vendor Details");
-    doc.moveDown(0.3);
-    doc.font("Helvetica").fillColor("#111");
-    doc.text(`Name: ${purchaseOrder.guestDetails?.fullName || "N/A"}`);
-    doc.text(`Phone: ${purchaseOrder.guestDetails?.phone || "N/A"}`);
-    doc.text(`Address: ${purchaseOrder.guestDetails?.address || "N/A"}`);
-    doc.text(`State: ${purchaseOrder.guestDetails?.state || "N/A"}`);
-    doc.moveDown(0.8);
+    doc.y = metaRowY + 24;
+    doc.font("Helvetica-Bold").fontSize(10.5).text(`Vendor: ${vendorName}`, margin, doc.y, {
+      width: contentWidth,
+      align: "left",
+    });
+    doc.moveDown(0.9);
 
     const tableStartX = margin;
     let tableY = doc.y;
     const colWidths = {
-      sn: 30,
-      product: 220,
-      packing: 70,
-      qty: 50,
-      rate: 70,
-      amount: 75,
+      product: 150,
+      qty: 65,
+      packing: 75,
+      rate: 90,
+      totalQty: 123,
     };
+    const tableHeaderHeight = 24;
+    const rowHeight = 24;
 
-    // Header background
     doc
-      .fillColor("#EAF4FF")
-      .rect(tableStartX, tableY, contentWidth, 22)
+      .fillColor("#2f81bd")
+      .rect(tableStartX, tableY, contentWidth, tableHeaderHeight)
       .fill();
-    doc.fillColor("#1e88e5").font("Helvetica-Bold").fontSize(9);
-    doc.text("S.N", tableStartX + 6, tableY + 6);
-    doc.text("Product", tableStartX + colWidths.sn + 6, tableY + 6);
+    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(9.2);
+    doc.text("Product", tableStartX + 6, tableY + 6);
+    doc.text(
+      "Quantity",
+      tableStartX + colWidths.product + 6,
+      tableY + 6,
+    );
     doc.text(
       "Packing",
-      tableStartX + colWidths.sn + colWidths.product + 6,
+      tableStartX + colWidths.product + colWidths.qty + 6,
       tableY + 6,
     );
     doc.text(
-      "Qty",
+      "Rate (per kg)",
       tableStartX +
-        colWidths.sn +
         colWidths.product +
+        colWidths.qty +
         colWidths.packing +
         6,
       tableY + 6,
     );
     doc.text(
-      "Rate/kg",
+      "Total Quantity (kg)",
       tableStartX +
-        colWidths.sn +
         colWidths.product +
-        colWidths.packing +
         colWidths.qty +
-        6,
-      tableY + 6,
-    );
-    doc.text(
-      "Amount",
-      tableStartX +
-        colWidths.sn +
-        colWidths.product +
         colWidths.packing +
-        colWidths.qty +
         colWidths.rate +
         6,
       tableY + 6,
     );
 
-    tableY += 22;
+    tableY += tableHeaderHeight;
     doc.fillColor("#111").font("Helvetica").fontSize(9);
 
-    purchaseOrder.items.forEach((item, index) => {
-      const rowHeight = 20;
+    purchaseOrder.items.forEach((item) => {
       const productText = item.productTitle || "Product";
       const packing = item.packing || "-";
+      const lineTotalQuantityKg = calculateLineTotalQuantityKg(item);
 
-      doc.text(String(index + 1), tableStartX + 6, tableY + 6);
       doc.text(
         productText,
-        tableStartX + colWidths.sn + 6,
+        tableStartX + 6,
         tableY + 6,
-        { width: colWidths.product - 10 },
-      );
-      doc.text(
-        packing,
-        tableStartX + colWidths.sn + colWidths.product + 6,
-        tableY + 6,
+        { width: colWidths.product - 12, align: "left" },
       );
       doc.text(
         String(item.quantity || 0),
-        tableStartX +
-          colWidths.sn +
-          colWidths.product +
-          colWidths.packing +
-          6,
+        tableStartX + colWidths.product + 6,
         tableY + 6,
+        { width: colWidths.qty - 12, align: "right" },
+      );
+      doc.text(
+        packing,
+        tableStartX + colWidths.product + colWidths.qty + 6,
+        tableY + 6,
+        { width: colWidths.packing - 12 },
       );
       doc.text(
         formatMoney(item.price),
         tableStartX +
-          colWidths.sn +
           colWidths.product +
-          colWidths.packing +
           colWidths.qty +
+          colWidths.packing +
           6,
         tableY + 6,
+        { width: colWidths.rate - 12, align: "right" },
       );
       doc.text(
-        formatMoney(item.subTotal),
+        `${formatPdfKg(lineTotalQuantityKg)} kg`,
         tableStartX +
-          colWidths.sn +
           colWidths.product +
-          colWidths.packing +
           colWidths.qty +
+          colWidths.packing +
           colWidths.rate +
           6,
         tableY + 6,
+        { width: colWidths.totalQty - 12, align: "right" },
       );
 
       doc
@@ -626,66 +697,23 @@ const buildPdfBuffer = (purchaseOrder) =>
       tableY += rowHeight;
     });
 
-    // Total row
-    doc
-      .fillColor("#E8F5E9")
-      .rect(tableStartX, tableY + 6, contentWidth, 24)
-      .fill();
-    doc.fillColor("#2E7D32").font("Helvetica-Bold").fontSize(10);
-    doc.text("Total", tableStartX + contentWidth - 140, tableY + 12);
-    doc.text(
-      formatMoney(purchaseOrder.total),
-      tableStartX + contentWidth - 70,
-      tableY + 12,
-    );
-
-    doc.moveDown(4.2);
-
-    const receipt = purchaseOrder.receipt || {};
-    const hasReceipt =
-      receipt.invoiceNumber ||
-      receipt.vehicleNumber ||
-      receipt.notes ||
-      receipt.receivedAt ||
-      (purchaseOrder.items || []).some(
-        (item) => Number(item.receivedQuantity || 0) > 0,
-      );
-
-    if (hasReceipt) {
-      doc.font("Helvetica-Bold").fillColor("#1e88e5").text("Receipt History");
-      doc.moveDown(0.4);
-
-      const boxY = doc.y;
-      const boxHeight = 48;
-      doc
-        .fillColor("#FFF7DF")
-        .rect(margin, boxY, contentWidth, boxHeight)
-        .fill();
-
-      doc.fillColor("#111").font("Helvetica-Bold").fontSize(9);
-      const firstItem =
-        purchaseOrder.items?.find(
-          (item) => Number(item.receivedQuantity || 0) > 0,
-        ) || purchaseOrder.items?.[0];
-      const productName = firstItem?.productTitle || "Product";
-      const receivedQty = Number(firstItem?.receivedQuantity || 0);
-      const receivedLine = receipt.receivedAt
-        ? `Received ${receivedQty || 0} on ${formatPdfDate(receipt.receivedAt)}`
-        : "";
-
-      doc.text(productName, margin + 12, boxY + 10);
-      doc
-        .font("Helvetica")
-        .fillColor("#333")
-        .text(receivedLine, margin + 12, boxY + 24);
-      const metaParts = [];
-      if (receipt.vehicleNumber) metaParts.push(`Vehicle: ${receipt.vehicleNumber}`);
-      if (receipt.invoiceNumber) metaParts.push(`Invoice: ${receipt.invoiceNumber}`);
-      if (receipt.notes) metaParts.push(`Notes: ${receipt.notes}`);
-      if (metaParts.length > 0) {
-        doc.text(metaParts.join(" | "), margin + 12, boxY + 36);
-      }
+    const summaryY = Math.max(tableY + 72, doc.page.height - 180);
+    if (summaryY > doc.page.height - doc.page.margins.bottom - 40) {
+      doc.addPage();
+      doc.y = 120;
+    } else {
+      doc.y = summaryY;
     }
+    doc.font("Helvetica-Bold").fontSize(14).fillColor("#111");
+    doc.text(
+      `Total Quantity: ${formatPdfKg(totalQuantityKg)} kg`,
+      margin,
+      doc.y,
+      {
+        width: contentWidth,
+        align: "right",
+      },
+    );
 
     doc.end();
   });
@@ -924,9 +952,12 @@ export const downloadPurchaseOrderPdf = async (req, res) => {
 
     const normalizedPo = normalizePurchaseOrderTotals(po);
     const buffer = await buildPdfBuffer(normalizedPo);
-    const filename = `PO-${String(po._id).slice(-8).toUpperCase()}.pdf`;
+    const filename = `${po.poNumber || po._id}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
     return res.send(buffer);
   } catch (error) {
     const statusCode = Number(error?.statusCode) || 500;
@@ -981,219 +1012,335 @@ export const getAllPurchaseOrdersAdmin = async (req, res) => {
 };
 
 export const updatePurchaseOrderReceipt = async (req, res) => {
-  const appliedAdjustments = [];
   try {
     const { id } = req.params;
     const { items = [], invoiceNumber, vehicleNumber, notes } = req.body || {};
-
-    const po = await PurchaseOrderModel.findById(id);
-    if (!po) {
-      return res.status(404).json({
-        error: true,
-        success: false,
-        message: "Purchase order not found",
-      });
-    }
-
-    const normalizedItems = Array.isArray(items) ? items : [];
-    const inventoryAdjustments = [];
-    const consumedLineIndexes = new Set();
-
-    normalizedItems.forEach((item, payloadIndex) => {
-      const productId = String(item.productId || item._id || item.id || "").trim();
-      if (!productId) return;
-      const receivedNow = Math.max(Number(item.receivedQuantity || 0), 0);
-      if (!receivedNow) return;
-
-      const requestedLineIndex = Number(item.lineIndex);
-      const payloadPacking = normalizePackingKey(item.packing || item.packSize || "");
-      const payloadVariantId = String(item.variantId || "").trim();
-      let matchedIndex = -1;
-      let line = null;
-
-      if (
-        Number.isInteger(requestedLineIndex) &&
-        requestedLineIndex >= 0 &&
-        requestedLineIndex < po.items.length
-      ) {
-        const requestedLine = po.items[requestedLineIndex];
-        if (requestedLine && String(requestedLine.productId || "") === productId) {
-          matchedIndex = requestedLineIndex;
-          line = requestedLine;
+    const normalizedPo = await runWithMongoTransaction(async (session) => {
+      const appliedAdjustments = [];
+      try {
+        const poQuery = PurchaseOrderModel.findById(id);
+        if (session) {
+          poQuery.session(session);
         }
-      }
+        const po = await poQuery;
 
-      if (!line) {
-        matchedIndex = po.items.findIndex((poItem, idx) => {
-          if (consumedLineIndexes.has(idx)) return false;
-          if (String(poItem.productId || "") !== productId) return false;
+        if (!po) {
+          const notFoundError = new Error("Purchase order not found");
+          notFoundError.statusCode = 404;
+          throw notFoundError;
+        }
 
-          const poVariantId = String(poItem.variantId || "").trim();
-          if (payloadVariantId && poVariantId) {
-            return payloadVariantId === poVariantId;
+        const normalizedItems = Array.isArray(items) ? items : [];
+        const inventoryAdjustments = [];
+        const consumedLineIndexes = new Set();
+
+        normalizedItems.forEach((item, payloadIndex) => {
+          const productId = String(item.productId || item._id || item.id || "").trim();
+          if (!productId) return;
+          const receivedNow = Math.max(Number(item.receivedQuantity || 0), 0);
+          if (!receivedNow) return;
+
+          const requestedLineIndex = Number(item.lineIndex);
+          const payloadPacking = normalizePackingKey(item.packing || item.packSize || "");
+          const payloadVariantId = String(item.variantId || "").trim();
+          let matchedIndex = -1;
+          let line = null;
+
+          if (
+            Number.isInteger(requestedLineIndex) &&
+            requestedLineIndex >= 0 &&
+            requestedLineIndex < po.items.length
+          ) {
+            const requestedLine = po.items[requestedLineIndex];
+            if (requestedLine && String(requestedLine.productId || "") === productId) {
+              matchedIndex = requestedLineIndex;
+              line = requestedLine;
+            }
           }
 
-          const poPacking = normalizePackingKey(poItem.packing || "");
-          if (payloadPacking && poPacking) {
-            return payloadPacking === poPacking;
+          if (!line) {
+            matchedIndex = po.items.findIndex((poItem, idx) => {
+              if (consumedLineIndexes.has(idx)) return false;
+              if (String(poItem.productId || "") !== productId) return false;
+
+              const poVariantId = String(poItem.variantId || "").trim();
+              if (payloadVariantId && poVariantId) {
+                return payloadVariantId === poVariantId;
+              }
+
+              const poPacking = normalizePackingKey(poItem.packing || "");
+              if (payloadPacking && poPacking) {
+                return payloadPacking === poPacking;
+              }
+
+              return true;
+            });
+
+            if (matchedIndex >= 0) {
+              line = po.items[matchedIndex];
+            }
           }
 
-          return true;
+          if (!line || matchedIndex < 0) return;
+          consumedLineIndexes.add(matchedIndex);
+
+          const orderedQty = Math.max(Number(line.quantity || 0), 0);
+          const currentReceived = Math.max(Number(line.receivedQuantity || 0), 0);
+          const nextReceived = Math.min(orderedQty, currentReceived + receivedNow);
+          const incrementBy = Math.max(nextReceived - currentReceived, 0);
+          line.receivedQuantity = nextReceived;
+          line.qty_received = nextReceived;
+          if (incrementBy > 0) {
+            inventoryAdjustments.push({
+              productId,
+              quantity: incrementBy,
+              lineIndex: matchedIndex,
+              payloadIndex,
+              packing: String(line.packing || item.packing || "").trim(),
+              variantId: String(line.variantId || item.variantId || "").trim() || null,
+              variantName: String(line.variantName || item.variantName || "").trim(),
+            });
+          }
         });
 
-        if (matchedIndex >= 0) {
-          line = po.items[matchedIndex];
+        if (!po.receipt) po.receipt = {};
+        if (invoiceNumber !== undefined) {
+          po.receipt.invoiceNumber = String(invoiceNumber || "").trim();
         }
-      }
+        if (vehicleNumber !== undefined) {
+          po.receipt.vehicleNumber = String(vehicleNumber || "").trim();
+        }
+        if (notes !== undefined) {
+          po.receipt.notes = String(notes || "").trim();
+        }
 
-      if (!line || matchedIndex < 0) return;
-      consumedLineIndexes.add(matchedIndex);
+        const hasReceiptUpdate =
+          normalizedItems.some((item) => Number(item.receivedQuantity || 0) > 0) ||
+          invoiceNumber ||
+          vehicleNumber ||
+          notes;
 
-      const orderedQty = Math.max(Number(line.quantity || 0), 0);
-      const currentReceived = Math.max(Number(line.receivedQuantity || 0), 0);
-      const nextReceived = Math.min(orderedQty, currentReceived + receivedNow);
-      const incrementBy = Math.max(nextReceived - currentReceived, 0);
-      line.receivedQuantity = nextReceived;
-      line.qty_received = nextReceived;
-      if (incrementBy > 0) {
-        inventoryAdjustments.push({
-          productId,
-          quantity: incrementBy,
-          lineIndex: matchedIndex,
-          payloadIndex,
-          packing: String(line.packing || item.packing || "").trim(),
-          variantId: String(line.variantId || item.variantId || "").trim() || null,
-          variantName: String(line.variantName || item.variantName || "").trim(),
-        });
+        if (hasReceiptUpdate) {
+          po.receipt.receivedAt = new Date();
+          po.status = "received";
+        }
+
+        for (const adjustment of inventoryAdjustments) {
+          const productQuery = ProductModel.findById(adjustment.productId)
+            .select(
+              [
+                "track_inventory",
+                "trackInventory",
+                "hasVariants",
+                "stock",
+                "stock_quantity",
+                "reserved_quantity",
+                "low_stock_threshold",
+                "variants._id",
+                "variants.name",
+                "variants.weight",
+                "variants.unit",
+                "variants.stock",
+                "variants.stock_quantity",
+                "variants.reserved_quantity",
+              ].join(" "),
+            )
+            .lean();
+          if (session) {
+            productQuery.session(session);
+          }
+          const product = await productQuery;
+          if (!product) continue;
+
+          const trackInventory =
+            typeof product.track_inventory === "boolean"
+              ? product.track_inventory
+              : typeof product.trackInventory === "boolean"
+                ? product.trackInventory
+                : true;
+
+          if (!trackInventory) continue;
+
+          const resolvedVariantId = resolvePreferredVariantIdForProduct({
+            product,
+            variantId: adjustment.variantId,
+            variantName: adjustment.variantName,
+            packing: adjustment.packing,
+          });
+          const hasVariantOptions =
+            Array.isArray(product?.variants) && product.variants.length > 0;
+          if (hasVariantOptions && !resolvedVariantId) {
+            throw new Error(
+              `Unable to resolve variant for received item (${adjustment.productId})`,
+            );
+          }
+
+          const resolvedVariant = resolvedVariantId
+            ? (product.variants || []).find(
+                (variant) =>
+                  String(variant?._id || "") === String(resolvedVariantId),
+              )
+            : null;
+          const resolvedPacking = String(
+            adjustment.packing ||
+              buildPackingFromWeightAndUnit(
+                resolvedVariant?.weight,
+                resolvedVariant?.unit,
+              ) ||
+              adjustment.variantName ||
+              resolvedVariant?.name ||
+              "",
+          ).trim();
+          const resolvedVariantName = String(
+            adjustment.variantName ||
+              resolvedVariant?.name ||
+              resolvedPacking ||
+              "",
+          ).trim();
+
+          if (
+            resolvedVariantId &&
+            Number.isInteger(Number(adjustment.lineIndex)) &&
+            po.items?.[Number(adjustment.lineIndex)]
+          ) {
+            const line = po.items[Number(adjustment.lineIndex)];
+            line.variantId = resolvedVariantId;
+            line.variantName = resolvedVariantName;
+            line.packing = resolvedPacking;
+          }
+
+          if (resolvedVariantId) {
+            const updateResult = await ProductModel.updateOne(
+              { _id: adjustment.productId, "variants._id": resolvedVariantId },
+              {
+                $inc: {
+                  "variants.$.stock_quantity": Number(adjustment.quantity || 0),
+                  "variants.$.stock": Number(adjustment.quantity || 0),
+                },
+              },
+              session ? { session } : undefined,
+            );
+            if (updateResult.modifiedCount !== 1) {
+              throw new Error(
+                `Failed to update variant stock for received item (${adjustment.productId})`,
+              );
+            }
+            await syncParentStockFromVariants(adjustment.productId, session);
+            appliedAdjustments.push({
+              ...adjustment,
+              variantId: resolvedVariantId,
+            });
+          } else {
+            const updateResult = await ProductModel.updateOne(
+              { _id: adjustment.productId },
+              {
+                $inc: {
+                  stock_quantity: Number(adjustment.quantity || 0),
+                  stock: Number(adjustment.quantity || 0),
+                },
+              },
+              session ? { session } : undefined,
+            );
+            if (updateResult.modifiedCount !== 1) {
+              throw new Error(
+                `Failed to update stock for received item (${adjustment.productId})`,
+              );
+            }
+            appliedAdjustments.push(adjustment);
+          }
+
+          const productAfterQuery = ProductModel.findById(adjustment.productId)
+            .select(
+              "stock stock_quantity reserved_quantity low_stock_threshold variants",
+            )
+            .lean();
+          if (session) {
+            productAfterQuery.session(session);
+          }
+          const productAfter = await productAfterQuery;
+
+          const auditBefore = resolvedVariantId
+            ? (product.variants || []).find(
+                (variant) =>
+                  String(variant?._id || "") === String(resolvedVariantId),
+              ) || {}
+            : product;
+          const auditAfter = resolvedVariantId
+            ? (productAfter?.variants || []).find(
+                (variant) =>
+                  String(variant?._id || "") === String(resolvedVariantId),
+              ) || {}
+            : productAfter;
+
+          await logInventoryAudit({
+            productId: adjustment.productId,
+            variantId: resolvedVariantId || null,
+            action: "PO_RECEIVE",
+            quantity: Number(adjustment.quantity || 0),
+            before: {
+              stock_quantity: Number(
+                auditBefore?.stock_quantity ?? auditBefore?.stock ?? 0,
+              ),
+              reserved_quantity: Number(auditBefore?.reserved_quantity ?? 0),
+            },
+            after: {
+              stock_quantity: Number(
+                auditAfter?.stock_quantity ?? auditAfter?.stock ?? 0,
+              ),
+              reserved_quantity: Number(auditAfter?.reserved_quantity ?? 0),
+            },
+            source: "PO",
+            referenceId: String(po._id || ""),
+            session,
+          });
+        }
+
+        if (appliedAdjustments.length > 0) {
+          po.inventory_applied = true;
+          po.receivedAt = new Date();
+          if (req.user) {
+            po.receivedBy = req.user?._id || req.user?.id || req.user;
+          }
+        }
+
+        await po.save(session ? { session } : undefined);
+
+        return normalizePurchaseOrderTotals(po.toObject ? po.toObject() : po);
+      } catch (error) {
+        if (!session && appliedAdjustments.length) {
+          for (const adjustment of appliedAdjustments) {
+            if (adjustment.variantId) {
+              await ProductModel.updateOne(
+                {
+                  _id: adjustment.productId,
+                  "variants._id": adjustment.variantId,
+                },
+                {
+                  $inc: {
+                    "variants.$.stock_quantity": -Number(adjustment.quantity || 0),
+                    "variants.$.stock": -Number(adjustment.quantity || 0),
+                  },
+                },
+              ).catch(() => {});
+              await syncParentStockFromVariants(adjustment.productId).catch(
+                () => {},
+              );
+              continue;
+            }
+            await ProductModel.updateOne(
+              { _id: adjustment.productId },
+              {
+                $inc: {
+                  stock_quantity: -Number(adjustment.quantity || 0),
+                  stock: -Number(adjustment.quantity || 0),
+                },
+              },
+            ).catch(() => {});
+          }
+        }
+        throw error;
       }
     });
-
-    if (!po.receipt) po.receipt = {};
-    if (invoiceNumber !== undefined) {
-      po.receipt.invoiceNumber = String(invoiceNumber || "").trim();
-    }
-    if (vehicleNumber !== undefined) {
-      po.receipt.vehicleNumber = String(vehicleNumber || "").trim();
-    }
-    if (notes !== undefined) {
-      po.receipt.notes = String(notes || "").trim();
-    }
-
-    const hasReceiptUpdate =
-      normalizedItems.some((item) => Number(item.receivedQuantity || 0) > 0) ||
-      invoiceNumber ||
-      vehicleNumber ||
-      notes;
-
-    if (hasReceiptUpdate) {
-      po.receipt.receivedAt = new Date();
-      po.status = "received";
-    }
-
-    for (const adjustment of inventoryAdjustments) {
-      const product = await ProductModel.findById(adjustment.productId)
-        .select(
-          "track_inventory trackInventory hasVariants variants._id variants.name variants.weight variants.unit",
-        )
-        .lean();
-      if (!product) continue;
-
-      const trackInventory =
-        typeof product.track_inventory === "boolean"
-          ? product.track_inventory
-          : typeof product.trackInventory === "boolean"
-            ? product.trackInventory
-            : true;
-
-      if (!trackInventory) continue;
-
-      const resolvedVariantId = resolvePreferredVariantIdForProduct({
-        product,
-        variantId: adjustment.variantId,
-        variantName: adjustment.variantName,
-        packing: adjustment.packing,
-      });
-      const hasVariantOptions =
-        Array.isArray(product?.variants) && product.variants.length > 0;
-      if (hasVariantOptions && !resolvedVariantId) {
-        throw new Error(
-          `Unable to resolve variant for received item (${adjustment.productId})`,
-        );
-      }
-
-      const resolvedVariant = resolvedVariantId
-        ? (product.variants || []).find(
-            (variant) => String(variant?._id || "") === String(resolvedVariantId),
-          )
-        : null;
-      const resolvedPacking = String(
-        adjustment.packing ||
-          buildPackingFromWeightAndUnit(
-            resolvedVariant?.weight,
-            resolvedVariant?.unit,
-          ) ||
-          adjustment.variantName ||
-          resolvedVariant?.name ||
-          "",
-      ).trim();
-      const resolvedVariantName = String(
-        adjustment.variantName || resolvedVariant?.name || resolvedPacking || "",
-      ).trim();
-
-      if (
-        resolvedVariantId &&
-        Number.isInteger(Number(adjustment.lineIndex)) &&
-        po.items?.[Number(adjustment.lineIndex)]
-      ) {
-        const line = po.items[Number(adjustment.lineIndex)];
-        line.variantId = resolvedVariantId;
-        line.variantName = resolvedVariantName;
-        line.packing = resolvedPacking;
-      }
-
-      if (resolvedVariantId) {
-        await ProductModel.updateOne(
-          { _id: adjustment.productId, "variants._id": resolvedVariantId },
-          {
-            $inc: {
-              "variants.$.stock_quantity": Number(adjustment.quantity || 0),
-              "variants.$.stock": Number(adjustment.quantity || 0),
-              stock_quantity: Number(adjustment.quantity || 0),
-              stock: Number(adjustment.quantity || 0),
-            },
-          },
-        );
-        appliedAdjustments.push({
-          ...adjustment,
-          variantId: resolvedVariantId,
-        });
-      } else {
-        await ProductModel.updateOne(
-          { _id: adjustment.productId },
-          {
-            $inc: {
-              stock_quantity: Number(adjustment.quantity || 0),
-              stock: Number(adjustment.quantity || 0),
-            },
-          },
-        );
-        appliedAdjustments.push(adjustment);
-      }
-    }
-
-    if (appliedAdjustments.length > 0) {
-      po.inventory_applied = true;
-      po.receivedAt = new Date();
-      if (req.user) {
-        po.receivedBy = req.user?._id || req.user?.id || req.user;
-      }
-    }
-
-    await po.save();
-
-    const normalizedPo = normalizePurchaseOrderTotals(
-      po.toObject ? po.toObject() : po,
-    );
 
     return res.status(200).json({
       error: false,
@@ -1202,34 +1349,8 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
       data: normalizedPo,
     });
   } catch (error) {
-    if (appliedAdjustments.length) {
-      for (const adjustment of appliedAdjustments) {
-        if (adjustment.variantId) {
-          await ProductModel.updateOne(
-            { _id: adjustment.productId, "variants._id": adjustment.variantId },
-            {
-              $inc: {
-                "variants.$.stock_quantity": -Number(adjustment.quantity || 0),
-                "variants.$.stock": -Number(adjustment.quantity || 0),
-                stock_quantity: -Number(adjustment.quantity || 0),
-                stock: -Number(adjustment.quantity || 0),
-              },
-            },
-          ).catch(() => {});
-          continue;
-        }
-        await ProductModel.updateOne(
-          { _id: adjustment.productId },
-          {
-            $inc: {
-              stock_quantity: -Number(adjustment.quantity || 0),
-              stock: -Number(adjustment.quantity || 0),
-            },
-          },
-        ).catch(() => {});
-      }
-    }
-    return res.status(500).json({
+    const statusCode = Number(error?.statusCode) === 404 ? 404 : 500;
+    return res.status(statusCode).json({
       error: true,
       success: false,
       message: error.message || "Failed to update receipt",

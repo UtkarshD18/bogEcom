@@ -1,5 +1,21 @@
 import mongoose from "mongoose";
 
+const vendorProductRateSchema = new mongoose.Schema(
+  {
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
+    },
+    rate: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false },
+);
+
 const vendorSchema = new mongoose.Schema(
   {
     fullName: {
@@ -37,6 +53,10 @@ const vendorSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "",
+    },
+    productRates: {
+      type: [vendorProductRateSchema],
+      default: [],
     },
     isActive: {
       type: Boolean,

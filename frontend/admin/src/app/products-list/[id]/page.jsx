@@ -10,6 +10,40 @@ import { useCallback, useEffect, useState } from "react";
 import { IoArrowBack } from "react-icons/io5";
 import { RiEdit2Line } from "react-icons/ri";
 
+const normalizeVariantLabel = (variant) => {
+  const weight = Number(variant?.weight || 0);
+  const rawUnit = String(variant?.unit || "")
+    .trim()
+    .toLowerCase();
+
+  if (Number.isFinite(weight) && weight > 0) {
+    if (rawUnit === "g") {
+      return weight >= 1000 ? `${weight / 1000}kg` : `${weight}g`;
+    }
+    if (rawUnit === "kg" || rawUnit === "ml" || rawUnit === "l" || rawUnit === "pcs") {
+      return `${weight}${rawUnit}`;
+    }
+    if (rawUnit) {
+      return `${weight}${rawUnit}`;
+    }
+  }
+
+  return String(variant?.name || "Variant")
+    .trim()
+    .replace(/\s+/g, "");
+};
+
+const getVariantInventoryLines = (product) => {
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  if (variants.length === 0) return [];
+
+  return variants.map((variant) => ({
+    id: String(variant?._id || normalizeVariantLabel(variant)),
+    label: normalizeVariantLabel(variant),
+    stock: Math.max(Number(variant?.stock_quantity ?? variant?.stock ?? 0), 0),
+  }));
+};
+
 const ViewProduct = () => {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
@@ -60,19 +94,22 @@ const ViewProduct = () => {
     return null;
   }
 
-  const available =
-    typeof product.available_quantity === "number"
-      ? product.available_quantity
-      : Math.max(
-          Number(product.stock_quantity ?? product.stock ?? 0) -
-            Number(product.reserved_quantity ?? 0),
-          0,
-        );
-  const reserved = Number(product.reserved_quantity ?? 0);
+  const variantInventoryLines = getVariantInventoryLines(product);
+  const totalStock =
+    variantInventoryLines.length > 0
+      ? variantInventoryLines.reduce((sum, entry) => sum + entry.stock, 0)
+      : Math.max(Number(product.stock_quantity ?? product.stock ?? 0), 0);
+  const available = totalStock;
   const lowThreshold = Number(
     product.low_stock_threshold ?? product.lowStockThreshold ?? 5,
   );
-  const isLowStock = available <= lowThreshold;
+  const lowStockVariants = variantInventoryLines.filter(
+    (entry) => entry.stock <= lowThreshold,
+  );
+  const isLowStock =
+    variantInventoryLines.length > 0
+      ? lowStockVariants.length > 0
+      : available <= lowThreshold;
   const galleryImages = [
     ...(Array.isArray(product.images) ? product.images : []),
   ];
@@ -211,10 +248,10 @@ const ViewProduct = () => {
               <div className="bg-gray-50 p-3 rounded-lg">
                 <p className="text-sm text-gray-500">Total Stock</p>
                 <p
-                  className={`font-bold ${Number(product.stock_quantity ?? product.stock ?? 0) > 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`font-bold ${totalStock > 0 ? "text-green-600" : "text-red-600"}`}
                 >
-                  {Number(product.stock_quantity ?? product.stock ?? 0) > 0
-                    ? `${Number(product.stock_quantity ?? product.stock ?? 0)} units`
+                  {totalStock > 0
+                    ? `${totalStock} units`
                     : "Out of Stock"}
                 </p>
               </div>
@@ -227,16 +264,14 @@ const ViewProduct = () => {
                 </p>
               </div>
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-sm text-gray-500">Reserved Stock</p>
-                <p className="font-bold text-gray-700">{reserved} units</p>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg">
                 <p className="text-sm text-gray-500">Low Stock</p>
                 <p
                   className={`font-bold ${isLowStock ? "text-amber-600" : "text-green-600"}`}
                 >
                   {isLowStock
-                    ? `Low (≤ ${lowThreshold})`
+                    ? variantInventoryLines.length > 0
+                      ? lowStockVariants.map((entry) => entry.label).join(", ")
+                      : `Low (≤ ${lowThreshold})`
                     : "Healthy"}
                 </p>
               </div>
@@ -247,9 +282,11 @@ const ViewProduct = () => {
                 </p>
               </div>
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-sm text-gray-500">Weight</p>
+                <p className="text-sm text-gray-500">Variants</p>
                 <p className="font-medium text-gray-800">
-                  {product.weight || "N/A"} {product.unit || ""}
+                  {variantInventoryLines.length > 0
+                    ? variantInventoryLines.map((entry) => entry.label).join(", ")
+                    : "No variants"}
                 </p>
               </div>
               <div className="bg-gray-50 p-3 rounded-lg">

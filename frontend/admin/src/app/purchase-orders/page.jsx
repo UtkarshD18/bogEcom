@@ -44,6 +44,22 @@ const EMPTY_ITEM = {
   packUnit: "g",
 };
 
+const createEmptyVendorRate = () => ({
+  productId: "",
+  rate: "",
+});
+
+const createEmptyVendorForm = () => ({
+  fullName: "",
+  phone: "",
+  email: "",
+  address: "",
+  pincode: "",
+  state: "",
+  gst: "",
+  productRates: [],
+});
+
 const PACK_UNIT_OPTIONS = [
   { value: "g", label: "Gram" },
   { value: "kg", label: "Kg" },
@@ -94,6 +110,18 @@ const buildVariantPackingMeta = (variant) => {
   };
 };
 
+const getVendorProductRate = (vendor, productId) => {
+  const normalizedProductId = String(productId || "").trim();
+  if (!vendor || !normalizedProductId) return "";
+
+  const matchedRate = (vendor.productRates || []).find(
+    (entry) => String(entry?.productId || "").trim() === normalizedProductId,
+  );
+  const numericRate = Number(matchedRate?.rate);
+
+  return Number.isFinite(numericRate) ? String(numericRate) : "";
+};
+
 export default function PurchaseOrdersPage() {
   const { token } = useAdmin();
   const [activeTab, setActiveTab] = useState("create");
@@ -128,17 +156,10 @@ export default function PurchaseOrdersPage() {
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
   const [vendors, setVendors] = useState([]);
   const [vendorsLoading, setVendorsLoading] = useState(false);
-  const [vendorForm, setVendorForm] = useState({
-    fullName: "",
-    phone: "",
-    email: "",
-    address: "",
-    pincode: "",
-    state: "",
-    gst: "",
-  });
+  const [vendorForm, setVendorForm] = useState(createEmptyVendorForm);
   const [editingVendorId, setEditingVendorId] = useState(null);
   const [vendorSaving, setVendorSaving] = useState(false);
+  const [selectedVendorId, setSelectedVendorId] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -179,17 +200,16 @@ export default function PurchaseOrdersPage() {
     setVendorsLoading(false);
   }, [token]);
 
+  const selectedVendor = useMemo(
+    () =>
+      vendors.find((vendor) => String(vendor._id) === String(selectedVendorId)) ||
+      null,
+    [vendors, selectedVendorId],
+  );
+
   const handleOpenVendorDialog = () => {
     setEditingVendorId(null);
-    setVendorForm({
-      fullName: "",
-      phone: "",
-      email: "",
-      address: "",
-      pincode: "",
-      state: "",
-      gst: "",
-    });
+    setVendorForm(createEmptyVendorForm());
     setVendorDialogOpen(true);
   };
 
@@ -203,6 +223,15 @@ export default function PurchaseOrdersPage() {
       pincode: vendor.pincode || "",
       state: vendor.state || "",
       gst: vendor.gst || "",
+      productRates: Array.isArray(vendor.productRates)
+        ? vendor.productRates.map((entry) => ({
+            productId: String(entry?.productId || ""),
+            rate:
+              entry?.rate === 0 || entry?.rate
+                ? String(entry.rate)
+                : "",
+          }))
+        : [],
     });
     setVendorDialogOpen(true);
   };
@@ -225,6 +254,32 @@ export default function PurchaseOrdersPage() {
         res = await postData("/api/vendors", vendorForm, token);
       }
       if (res.success) {
+        const savedVendor = res.data || null;
+        if (
+          savedVendor?._id &&
+          String(selectedVendorId || "") === String(savedVendor._id)
+        ) {
+          setGuestDetails({
+            fullName: savedVendor.fullName || "",
+            phone: savedVendor.phone || "",
+            address: savedVendor.address || "",
+            pincode: savedVendor.pincode || "",
+            state: savedVendor.state || "",
+            email: savedVendor.email || "",
+            gst: savedVendor.gst || "",
+          });
+          setItems((prev) =>
+            prev.map((item) => {
+              if (!item?.productId) return item;
+              return {
+                ...item,
+                price: getVendorProductRate(savedVendor, item.productId),
+              };
+            }),
+          );
+        }
+        setEditingVendorId(null);
+        setVendorForm(createEmptyVendorForm());
         toast.success(editingVendorId ? "Vendor updated" : "Vendor added");
         setVendorDialogOpen(false);
         fetchVendors();
@@ -241,6 +296,9 @@ export default function PurchaseOrdersPage() {
     if (!confirm("Delete this vendor?")) return;
     const res = await deleteData(`/api/vendors/${id}`, token);
     if (res.success) {
+      if (String(selectedVendorId) === String(id)) {
+        setSelectedVendorId("");
+      }
       toast.success("Vendor deleted");
       fetchVendors();
     } else {
@@ -248,7 +306,36 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  const handleAddVendorRate = () => {
+    setVendorForm((prev) => ({
+      ...prev,
+      productRates: [...(prev.productRates || []), createEmptyVendorRate()],
+    }));
+  };
+
+  const handleVendorRateChange = (index, field, value) => {
+    setVendorForm((prev) => {
+      const nextRates = [...(prev.productRates || [])];
+      nextRates[index] = {
+        ...(nextRates[index] || createEmptyVendorRate()),
+        [field]: value,
+      };
+      return {
+        ...prev,
+        productRates: nextRates,
+      };
+    });
+  };
+
+  const handleRemoveVendorRate = (index) => {
+    setVendorForm((prev) => ({
+      ...prev,
+      productRates: (prev.productRates || []).filter((_, i) => i !== index),
+    }));
+  };
+
   const handleSelectVendor = (vendor) => {
+    setSelectedVendorId(String(vendor?._id || ""));
     setGuestDetails({
       fullName: vendor.fullName || "",
       phone: vendor.phone || "",
@@ -258,6 +345,15 @@ export default function PurchaseOrdersPage() {
       email: vendor.email || "",
       gst: vendor.gst || "",
     });
+    setItems((prev) =>
+      prev.map((item) => {
+        if (!item?.productId) return item;
+        return {
+          ...item,
+          price: getVendorProductRate(vendor, item.productId),
+        };
+      }),
+    );
     toast.success(`Vendor "${vendor.fullName}" selected`);
   };
 
@@ -284,6 +380,8 @@ export default function PurchaseOrdersPage() {
         const product = products.find(
           (candidate) => String(candidate._id) === String(value || ""),
         );
+        const nextProductId = String(value || "");
+        const matchedVendorRate = getVendorProductRate(selectedVendor, nextProductId);
         const updated = {
           ...current,
           productId: value,
@@ -292,6 +390,10 @@ export default function PurchaseOrdersPage() {
           packing: "",
           packWeight: "",
           packUnit: "g",
+          price:
+            String(current.productId || "") !== nextProductId
+              ? matchedVendorRate
+              : current.price,
         };
 
         const variantList = Array.isArray(product?.variants)
@@ -530,6 +632,7 @@ export default function PurchaseOrdersPage() {
     if (res.success) {
       toast.success("Purchase order created");
       setItems([{ ...EMPTY_ITEM }]);
+      setSelectedVendorId("");
       setGuestDetails({
         fullName: "",
         phone: "",
@@ -547,7 +650,7 @@ export default function PurchaseOrdersPage() {
     setCreating(false);
   };
 
-  const handleDownload = async (orderId) => {
+  const handleDownload = async (orderId, poNumber = "") => {
     try {
       const downloadRequest = async (authToken) =>
         fetch(`${API_URL}/api/purchase-orders/${orderId}/pdf`, {
@@ -603,8 +706,11 @@ export default function PurchaseOrdersPage() {
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
+      const resolvedPoNumber = String(poNumber || "").trim();
       a.href = url;
-      a.download = `PO-${String(orderId).slice(-8).toUpperCase()}.pdf`;
+      a.download = resolvedPoNumber
+        ? `${resolvedPoNumber}.pdf`
+        : `PO-${String(orderId).slice(-8).toUpperCase()}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -755,8 +861,8 @@ export default function PurchaseOrdersPage() {
             New Purchase Order
           </h2>
           <p className="text-sm text-gray-500 mb-6">
-            Add items to your purchase order. Select a product and enter rate
-            manually.
+            Add items to your purchase order. Select a vendor and product to
+            auto-fill saved rates when available.
           </p>
 
           {/* Vendor Selector */}
@@ -767,9 +873,14 @@ export default function PurchaseOrdersPage() {
                 label="Select Saved Vendor"
                 size="small"
                 fullWidth
-                value=""
+                value={selectedVendorId}
                 onChange={(e) => {
-                  const vendor = vendors.find((v) => v._id === e.target.value);
+                  const nextVendorId = e.target.value;
+                  if (!nextVendorId) {
+                    setSelectedVendorId("");
+                    return;
+                  }
+                  const vendor = vendors.find((v) => v._id === nextVendorId);
                   if (vendor) handleSelectVendor(vendor);
                 }}
               >
@@ -888,7 +999,15 @@ export default function PurchaseOrdersPage() {
                   }
                 />
                 <div>
-                  {row.hasVariantOptions ? (
+                  {!row.productId ? (
+                    <TextField
+                      size="small"
+                      fullWidth
+                      value=""
+                      placeholder="Select product first"
+                      disabled
+                    />
+                  ) : row.hasVariantOptions ? (
                     <select
                       className="w-full px-3 py-2 rounded-lg border border-sky-100 bg-white"
                       value={row.variantId}
@@ -1214,7 +1333,13 @@ export default function PurchaseOrdersPage() {
               <Button
                 variant="contained"
                 startIcon={<FaDownload />}
-                onClick={() => handleDownload(selectedOrderData._id)}
+                onClick={() =>
+                  handleDownload(
+                    selectedOrderData._id,
+                    selectedOrderData.poNumber ||
+                      formatPoNumber(selectedOrderData, selectedOrderIndex),
+                  )
+                }
               >
                 Download PDF
               </Button>
@@ -1416,21 +1541,95 @@ export default function PurchaseOrdersPage() {
                 }
               />
             </div>
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-700">
+                    Product Rate List
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    These rates auto-fill in PO after selecting this vendor.
+                  </div>
+                </div>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<FaPlus />}
+                  onClick={handleAddVendorRate}
+                >
+                  Add Rate
+                </Button>
+              </div>
+
+              {(vendorForm.productRates || []).length === 0 ? (
+                <div className="text-xs text-gray-500 border border-dashed rounded-lg px-3 py-4 bg-white">
+                  No product rates added yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {(vendorForm.productRates || []).map((entry, index) => (
+                    <div
+                      key={`${editingVendorId || "new"}-rate-${index}`}
+                      className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center"
+                    >
+                      <div className="md:col-span-7">
+                        <TextField
+                          select
+                          label="Product"
+                          size="small"
+                          fullWidth
+                          value={entry.productId || ""}
+                          onChange={(e) =>
+                            handleVendorRateChange(
+                              index,
+                              "productId",
+                              e.target.value,
+                            )
+                          }
+                        >
+                          <MenuItem value="">Select product</MenuItem>
+                          {products.map((product) => (
+                            <MenuItem key={product._id} value={product._id}>
+                              {product.name}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </div>
+                      <div className="md:col-span-4">
+                        <TextField
+                          label="Rate"
+                          size="small"
+                          fullWidth
+                          type="number"
+                          value={entry.rate || ""}
+                          onChange={(e) =>
+                            handleVendorRateChange(index, "rate", e.target.value)
+                          }
+                          inputProps={{ min: 0, step: "any" }}
+                        />
+                      </div>
+                      <div className="md:col-span-1 flex justify-end">
+                        <button
+                          type="button"
+                          className="text-red-500 hover:text-red-700 p-2"
+                          onClick={() => handleRemoveVendorRate(index)}
+                          title="Remove rate"
+                        >
+                          <FaTrash size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="flex justify-end gap-2 mt-3">
               {editingVendorId && (
                 <Button
                   size="small"
                   onClick={() => {
                     setEditingVendorId(null);
-                    setVendorForm({
-                      fullName: "",
-                      phone: "",
-                      email: "",
-                      address: "",
-                      pincode: "",
-                      state: "",
-                      gst: "",
-                    });
+                    setVendorForm(createEmptyVendorForm());
                   }}
                 >
                   Cancel Edit
