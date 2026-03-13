@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import OrderModel from "../models/order.model.js";
 import InfluencerModel from "../models/influencer.model.js";
+import SettingsModel from "../models/settings.model.js";
 import {
   AppError,
   asyncHandler,
@@ -120,25 +121,38 @@ const extractHsnFromSpecifications = (specifications) => {
   if (!specifications) return null;
 
   if (specifications instanceof Map) {
-    return (
+    const direct =
       specifications.get("HSN") ||
       specifications.get("hsn") ||
       specifications.get("Hsn") ||
       specifications.get("HSN Code") ||
       specifications.get("hsnCode") ||
-      null
-    );
+      null;
+    if (direct) return direct;
   }
 
   if (typeof specifications === "object") {
-    return (
+    const direct =
       specifications.HSN ||
       specifications.hsn ||
       specifications.Hsn ||
       specifications["HSN Code"] ||
       specifications.hsnCode ||
-      null
-    );
+      null;
+    if (direct) return direct;
+  }
+
+  const entries =
+    specifications instanceof Map
+      ? Array.from(specifications.entries())
+      : typeof specifications === "object"
+        ? Object.entries(specifications)
+        : [];
+  for (const [key, value] of entries) {
+    if (!key) continue;
+    if (!String(key).toLowerCase().includes("hsn")) continue;
+    const normalized = String(value || "").trim();
+    if (normalized) return normalized;
   }
 
   return null;
@@ -471,13 +485,18 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       {
         $lookup: {
           from: "products",
-          let: { pid: "$productObjectId", vid: "$products.variantId" },
+          let: {
+            pid: "$productObjectId",
+            vid: "$products.variantId",
+            vname: "$products.variantName",
+          },
           pipeline: [
             { $match: { $expr: { $eq: ["$_id", "$$pid"] } } },
             {
               $project: {
                 name: 1,
                 sku: 1,
+                hsnCode: 1,
                 specifications: 1,
                 shippingCost: 1,
                 freeShipping: 1,
@@ -495,7 +514,29 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
                     $filter: {
                       input: "$variants",
                       as: "v",
-                      cond: { $eq: [{ $toString: "$$v._id" }, "$$vid"] },
+                      cond: {
+                        $or: [
+                          { $eq: [{ $toString: "$$v._id" }, "$$vid"] },
+                          {
+                            $and: [
+                              { $ne: ["$$vname", null] },
+                              { $ne: ["$$vname", ""] },
+                              {
+                                $eq: [
+                                  {
+                                    $toLower: { $trim: { input: "$$v.name" } },
+                                  },
+                                  {
+                                    $toLower: {
+                                      $trim: { input: "$$vname" },
+                                    },
+                                  },
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
                     },
                   },
                 },
@@ -505,6 +546,7 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
               $project: {
                 name: 1,
                 sku: 1,
+                hsnCode: 1,
                 specifications: 1,
                 shippingCost: 1,
                 freeShipping: 1,
@@ -608,7 +650,9 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       const productDoc = row?.productDoc || null;
       const variantDoc = productDoc?.variant || null;
       const sku = String(variantDoc?.sku || productDoc?.sku || "").trim();
-      const hsn = extractHsnFromSpecifications(productDoc?.specifications);
+      const hsn =
+        String(productDoc?.hsnCode || "").trim() ||
+        extractHsnFromSpecifications(productDoc?.specifications);
       const deliveryStatus = String(
         row?.deliveryStatus || row?.shipmentStatus || row?.shipment_status || "pending",
       ).trim();
@@ -636,6 +680,25 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       if (productId) {
         const variantId = String(row?.variantId || "").trim();
         const pricingKey = `${productId}:${variantId || "default"}`;
+        const orderItemPrice = Number(row?.price || 0);
+        const mrpCandidate = Number(
+          variantDoc?.originalPrice ?? productDoc?.originalPrice ?? 0,
+        );
+        const sellingCandidate = Number(variantDoc?.price ?? productDoc?.price ?? 0);
+        const weightCandidate = Number(variantDoc?.weight ?? productDoc?.weight ?? 0);
+        const resolvedMrp =
+          Number.isFinite(mrpCandidate) && mrpCandidate > 0 ? mrpCandidate : null;
+        const resolvedSellingPrice =
+          Number.isFinite(sellingCandidate) && sellingCandidate > 0
+            ? sellingCandidate
+            : Number.isFinite(orderItemPrice) && orderItemPrice > 0
+              ? orderItemPrice
+              : null;
+        const resolvedWeight =
+          Number.isFinite(weightCandidate) && weightCandidate > 0
+            ? weightCandidate
+            : null;
+
         const influencerCode = normalizeInfluencerCode(
           row?.influencerCode || row?.affiliateCode,
         );
@@ -645,16 +708,16 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
             productId,
             variantId,
             productName: String(productDoc?.name || row?.productName || "").trim(),
-            variantName: String(variantDoc?.name || row?.variantName || "").trim(),
-            sku,
-            hsnCode: hsn ? String(hsn).trim() : "",
-            unit: String(variantDoc?.unit || productDoc?.unit || "").trim(),
-            weight: Number(variantDoc?.weight || productDoc?.weight || 0),
-            mrp: Number(variantDoc?.originalPrice || productDoc?.originalPrice || 0),
-            sellingPrice: Number(variantDoc?.price || productDoc?.price || 0),
-            costOfMaking: extractCostOfMaking(productDoc),
-            deliveryCost:
-              productDoc?.freeShipping === true
+             variantName: String(variantDoc?.name || row?.variantName || "").trim(),
+             sku,
+             hsnCode: hsn ? String(hsn).trim() : "",
+             unit: String(variantDoc?.unit || productDoc?.unit || "").trim(),
+             weight: resolvedWeight,
+             mrp: resolvedMrp,
+             sellingPrice: resolvedSellingPrice,
+             costOfMaking: extractCostOfMaking(productDoc),
+             deliveryCost:
+               productDoc?.freeShipping === true
                 ? 0
                 : Number(productDoc?.shippingCost || 0) > 0
                   ? Number(productDoc.shippingCost)
@@ -662,6 +725,26 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
             influencerCodeCounts: {},
           };
           pricingRows.set(pricingKey, pricingEntry);
+        }
+
+        if (!pricingEntry.sku && sku) pricingEntry.sku = sku;
+        if (!pricingEntry.hsnCode && hsn) {
+          pricingEntry.hsnCode = String(hsn).trim();
+        }
+        if (!pricingEntry.unit && (variantDoc?.unit || productDoc?.unit)) {
+          pricingEntry.unit = String(variantDoc?.unit || productDoc?.unit || "").trim();
+        }
+        if (
+          (!pricingEntry.weight || Number(pricingEntry.weight) <= 0) &&
+          resolvedWeight !== null
+        ) {
+          pricingEntry.weight = resolvedWeight;
+        }
+        if (pricingEntry.mrp === null && resolvedMrp !== null) {
+          pricingEntry.mrp = resolvedMrp;
+        }
+        if (pricingEntry.sellingPrice === null && resolvedSellingPrice !== null) {
+          pricingEntry.sellingPrice = resolvedSellingPrice;
         }
 
         if (influencerCode) {
@@ -700,6 +783,24 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       });
     }
 
+    const taxSetting = await SettingsModel.findOne({ key: "taxSettings" })
+      .select("value")
+      .lean();
+    const taxRateCandidate = Number(
+      taxSetting?.value?.taxRate ?? taxSetting?.value?.rate ?? NaN,
+    );
+    const effectiveGstRate =
+      Number.isFinite(taxRateCandidate) && taxRateCandidate > 0
+        ? taxRateCandidate
+        : Number(PRICING_ENGINE_DEFAULTS.cgstPercent || 0) +
+          Number(PRICING_ENGINE_DEFAULTS.sgstPercent || 0);
+    const defaultCgstPercent = Number.isFinite(effectiveGstRate)
+      ? Math.max(effectiveGstRate / 2, 0)
+      : Number(PRICING_ENGINE_DEFAULTS.cgstPercent || 0);
+    const defaultSgstPercent = Number.isFinite(effectiveGstRate)
+      ? Math.max(effectiveGstRate / 2, 0)
+      : Number(PRICING_ENGINE_DEFAULTS.sgstPercent || 0);
+
     for (const item of pricingRows.values()) {
       const rowNumber = pricingRowNumber;
       pricingRowNumber += 1;
@@ -714,20 +815,31 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
         resolvedInfluencerCode && influencerMap.has(resolvedInfluencerCode)
           ? influencerMap.get(resolvedInfluencerCode)
           : null;
-      const influencerCommissionPercent = influencer
+      const computedInfluencerCommissionPercent = influencer
         ? computeInfluencerPercent(
             influencer.commissionType,
             influencer.commissionValue,
             baseAmountForPercent,
           )
-        : PRICING_ENGINE_DEFAULTS.influencerCommissionPercent || 0;
-      const influencerCustomerDiscountPercent = influencer
+        : PRICING_ENGINE_DEFAULTS.influencerCommissionPercent;
+      const influencerCommissionPercent =
+        Number.isFinite(computedInfluencerCommissionPercent) &&
+        computedInfluencerCommissionPercent > 0
+          ? computedInfluencerCommissionPercent
+          : "";
+
+      const computedInfluencerCustomerDiscountPercent = influencer
         ? computeInfluencerPercent(
             influencer.discountType,
             influencer.discountValue,
             baseAmountForPercent,
           )
-        : PRICING_ENGINE_DEFAULTS.influencerCustomerDiscountPercent || 0;
+        : PRICING_ENGINE_DEFAULTS.influencerCustomerDiscountPercent;
+      const influencerCustomerDiscountPercent =
+        Number.isFinite(computedInfluencerCustomerDiscountPercent) &&
+        computedInfluencerCustomerDiscountPercent > 0
+          ? computedInfluencerCustomerDiscountPercent
+          : "";
 
       pricingWorksheet
         .addRow({
@@ -740,12 +852,17 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
               : Number(item.costOfMaking),
           deliveryCost: Number(item.deliveryCost || 0),
           targetProfitMarginPercent:
-            PRICING_ENGINE_DEFAULTS.targetProfitMarginPercent || 0,
+            Number(PRICING_ENGINE_DEFAULTS.targetProfitMarginPercent || 0) > 0
+              ? PRICING_ENGINE_DEFAULTS.targetProfitMarginPercent
+              : "",
           influencerCommissionPercent,
           influencerCustomerDiscountPercent,
-          couponDiscountPercent: PRICING_ENGINE_DEFAULTS.couponDiscountPercent || 0,
-          cgstPercent: PRICING_ENGINE_DEFAULTS.cgstPercent || 0,
-          sgstPercent: PRICING_ENGINE_DEFAULTS.sgstPercent || 0,
+          couponDiscountPercent:
+            Number(PRICING_ENGINE_DEFAULTS.couponDiscountPercent || 0) > 0
+              ? PRICING_ENGINE_DEFAULTS.couponDiscountPercent
+              : "",
+          cgstPercent: defaultCgstPercent,
+          sgstPercent: defaultSgstPercent,
           subtotalProduct: { formula: `B${rowNumber}` },
           influencerDiscountRs: { formula: `J${rowNumber}*(F${rowNumber}/100)` },
           couponDiscountRs: { formula: `J${rowNumber}*(G${rowNumber}/100)` },
@@ -768,9 +885,12 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           sku: item.sku,
           hsnCode: item.hsnCode,
           unit: item.unit,
-          weight: item.weight || 0,
-          mrp: item.mrp || 0,
-          sellingPrice: item.sellingPrice || 0,
+          weight: Number.isFinite(item.weight) && item.weight > 0 ? item.weight : "",
+          mrp: Number.isFinite(item.mrp) && item.mrp > 0 ? item.mrp : "",
+          sellingPrice:
+            Number.isFinite(item.sellingPrice) && item.sellingPrice > 0
+              ? item.sellingPrice
+              : "",
         })
         .commit();
     }
