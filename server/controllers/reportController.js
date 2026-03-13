@@ -509,10 +509,10 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
             },
             {
               $addFields: {
-                variant: {
+                matchedVariant: {
                   $first: {
                     $filter: {
-                      input: "$variants",
+                      input: { $ifNull: ["$variants", []] },
                       as: "v",
                       cond: {
                         $or: [
@@ -540,6 +540,23 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
                     },
                   },
                 },
+              },
+            },
+            {
+              $addFields: {
+                singleVariant: {
+                  $cond: [
+                    {
+                      $eq: [
+                        { $size: { $ifNull: ["$variants", []] } },
+                        1,
+                      ],
+                    },
+                    { $arrayElemAt: [{ $ifNull: ["$variants", []] }, 0] },
+                    null,
+                  ],
+                },
+                variant: { $ifNull: ["$matchedVariant", "$singleVariant"] },
               },
             },
             {
@@ -652,6 +669,7 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       const sku = String(variantDoc?.sku || productDoc?.sku || "").trim();
       const hsn =
         String(productDoc?.hsnCode || "").trim() ||
+        extractHsnFromSpecifications(variantDoc?.attributes) ||
         extractHsnFromSpecifications(productDoc?.specifications);
       const deliveryStatus = String(
         row?.deliveryStatus || row?.shipmentStatus || row?.shipment_status || "pending",
