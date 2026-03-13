@@ -24,6 +24,24 @@ const CatSlider = () => {
     const nextRef = useRef(null);
     const [hoverPrev, setHoverPrev] = useState(false);
     const [hoverNext, setHoverNext] = useState(false);
+    const resolveComboLink = (category) => {
+        const name = String(category?.name || "").toLowerCase();
+        const slug = String(category?.slug || "").toLowerCase();
+        const comboKeys = [
+            "combo-packs",
+            "combo-pack",
+            "combo-deals",
+            "combo-deal",
+            "combos",
+        ];
+        const isCombo =
+            comboKeys.includes(slug) ||
+            name.includes("combo pack") ||
+            name.includes("combo packs") ||
+            name.includes("combo deal") ||
+            name.includes("combo deals");
+        return isCombo ? "/combo-deals" : `/products?category=${category?._id}`;
+    };
 
     useEffect(() => {
         const fetchCategories = async () => {
@@ -161,7 +179,7 @@ const CatSlider = () => {
                                         className="h-full"
                                     >
                                         <Link
-                                            href={`/products?category=${category._id}`}
+                                            href={resolveComboLink(category)}
                                             className="group block rounded-[2.5rem] p-6 text-center transition-all duration-500 hover:-translate-y-2 bg-white border border-gray-100 shadow-sm hover:shadow-2xl hover:shadow-primary/10 hover:border-primary/30 h-[230px] min-h-[230px] flex flex-col items-center justify-center w-full"
                                         >
                                             <div className="relative aspect-square w-24 h-24 sm:w-28 sm:h-28 mb-6 rounded-[2rem] overflow-hidden bg-gray-50 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform duration-500 ring-8 ring-transparent group-hover:ring-primary/20">

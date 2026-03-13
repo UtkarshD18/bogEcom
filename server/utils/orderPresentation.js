@@ -70,12 +70,14 @@ export const resolveOrderDisplayTotal = (order = {}) => {
     subtotalField > 0 ? clampNonNegative(subtotalField) : deriveSubtotalFromProducts(order);
 
   const discount = clampNonNegative(order?.discount);
+  const comboDiscount = clampNonNegative(order?.comboDiscount);
   const tax = clampNonNegative(order?.tax);
   const coinRedemptionAmount = clampNonNegative(order?.coinRedemption?.amount);
   const storedShipping = clampNonNegative(order?.shipping);
 
+  const resolvedDiscount = discount > 0 ? discount : comboDiscount;
   const computedWithoutShipping = round2(
-    Math.max(subtotal - discount + tax - coinRedemptionAmount, 0),
+    Math.max(subtotal - resolvedDiscount + tax - coinRedemptionAmount, 0),
   );
 
   const dualPersistedAmountsMismatch =

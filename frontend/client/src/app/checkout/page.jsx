@@ -115,6 +115,9 @@ const Checkout = () => {
   const authToken = getValidAccessToken();
   const isGuestCheckout = !authToken;
 
+  const isComboItem = (item) =>
+    item?.itemType === "combo" || Boolean(item?.combo || item?.comboSnapshot?.comboId);
+
   // Get referral/influencer data from context
   const {
     referralCode,
@@ -129,6 +132,36 @@ const Checkout = () => {
 
   // Helper to normalize cart item data (handles both API and localStorage structures)
   const getItemData = (item) => {
+    if (isComboItem(item)) {
+      const combo = item?.comboSnapshot || item?.combo || {};
+      const comboItems = Array.isArray(combo?.items) ? combo.items : [];
+      const comboId =
+        combo?.comboId ||
+        combo?._id ||
+        item?.combo ||
+        item?.comboSnapshot?.comboId ||
+        item?._id ||
+        item?.id;
+
+      return {
+        id: comboId,
+        name: combo?.comboName || combo?.name || "Combo Bundle",
+        image:
+          combo?.thumbnail ||
+          combo?.image ||
+          item?.image ||
+          "/placeholder.png",
+        price: item?.price ?? combo?.comboPrice ?? 0,
+        quantity: item?.quantity || 1,
+        demandStatus: "NORMAL",
+        availableQuantity: Number.MAX_SAFE_INTEGER,
+        itemType: "combo",
+        comboType: combo?.comboType || "",
+        comboSlug: combo?.comboSlug || combo?.slug || "",
+        comboItems,
+      };
+    }
+
     // Check if item.product is an object (API) or ID (localStorage fallback)
     // If it's a string, we must use item.productData. If it's an object, we use it.
     const product =
@@ -157,6 +190,7 @@ const Checkout = () => {
       quantity: item.quantity || 1,
       demandStatus: product?.demandStatus || item.demandStatus || "NORMAL",
       availableQuantity,
+      itemType: "product",
     };
   };
 
@@ -415,8 +449,14 @@ const Checkout = () => {
     if (checkoutStartTrackedRef.current) return;
     if (!Array.isArray(cartItems) || cartItems.length === 0) return;
 
+    const comboCount = (cartItems || []).reduce(
+      (sum, item) => (isComboItem(item) ? sum + Number(item?.quantity || 1) : sum),
+      0,
+    );
+
     trackEvent("checkout_started", {
       itemCount: cartItems.length,
+      comboCount,
       isGuestCheckout,
       total,
     });
@@ -965,15 +1005,49 @@ const Checkout = () => {
   };
 
   const buildOrderProductsPayload = () =>
-    (cartItems || []).map((item) => {
-      const data = getItemData(item);
+    (cartItems || [])
+      .filter((item) => !isComboItem(item))
+      .map((item) => {
+        const data = getItemData(item);
+        return {
+          productId: data.id,
+          productTitle: data.name,
+          quantity: data.quantity,
+          price: data.price,
+          image: data.image,
+          subTotal: data.price * data.quantity,
+        };
+      });
+
+  const buildOrderCombosPayload = () =>
+    (cartItems || [])
+      .filter((item) => isComboItem(item))
+      .map((item) => {
+        const data = getItemData(item);
+        return {
+          comboId: data.id,
+          comboName: data.name,
+          comboSlug: data.comboSlug || "",
+          comboType: data.comboType || "",
+          quantity: data.quantity,
+        };
+      })
+      .filter((entry) => entry.comboId);
+
+  const buildOrderComboLineItems = () =>
+    buildOrderCombosPayload().map((combo) => {
+      const match = (cartItems || []).find(
+        (item) => isComboItem(item) && String(getItemData(item).id) === String(combo.comboId),
+      );
+      const matchData = match ? getItemData(match) : null;
+      const unitPrice = round2(matchData?.price || 0);
+      const quantity = Number(combo.quantity || 1);
       return {
-        productId: data.id,
-        productTitle: data.name,
-        quantity: data.quantity,
-        price: data.price,
-        image: data.image,
-        subTotal: data.price * data.quantity,
+        productId: combo.comboId,
+        name: combo.comboName || "Combo Bundle",
+        quantity,
+        unitPrice,
+        lineTotal: round2(unitPrice * quantity),
       };
     });
 
@@ -1037,6 +1111,14 @@ const Checkout = () => {
     if (typeof window === "undefined") return;
     try {
       const apiInvoice = responseData?.clientInvoice || null;
+      const fallbackProductLines = buildOrderProductsPayload().map((item) => ({
+        productId: item.productId || "",
+        name: item.productTitle || "Product",
+        quantity: Number(item.quantity || 0),
+        unitPrice: round2(item.price || 0),
+        lineTotal: round2(item.subTotal || 0),
+      }));
+      const fallbackComboLines = buildOrderComboLineItems();
       const lineItems = Array.isArray(apiInvoice?.items)
         ? apiInvoice.items.map((item) => ({
             productId: item.productId || "",
@@ -1045,13 +1127,7 @@ const Checkout = () => {
             unitPrice: round2(item.unitPrice ?? item.price ?? 0),
             lineTotal: round2(item.lineTotal ?? item.subTotal ?? 0),
           }))
-        : buildOrderProductsPayload().map((item) => ({
-            productId: item.productId || "",
-            name: item.productTitle || "Product",
-            quantity: Number(item.quantity || 0),
-            unitPrice: round2(item.price || 0),
-            lineTotal: round2(item.subTotal || 0),
-          }));
+        : [...fallbackProductLines, ...fallbackComboLines];
       const apiTotals = apiInvoice?.totals || {};
       const invoiceRecord = {
         invoiceId:
@@ -1231,6 +1307,7 @@ const Checkout = () => {
 
       const orderData = {
         products: buildOrderProductsPayload(),
+        combos: buildOrderCombosPayload(),
         totalAmt: total,
         originalAmount,
         finalAmount: total,
@@ -1351,6 +1428,7 @@ const Checkout = () => {
 
       const orderData = {
         products: buildOrderProductsPayload(),
+        combos: buildOrderCombosPayload(),
         totalAmt: total,
         delivery_address: isValidObjectId ? selectedAddress : null,
         location: isGuestCheckout ? guestLocationPayload : null,
@@ -1462,6 +1540,7 @@ const Checkout = () => {
       const guestPayload = buildGuestDetailsPayload();
       const demoPayload = {
         products: buildOrderProductsPayload(),
+        combos: buildOrderCombosPayload(),
         influencerCode: activeInfluencerCode,
         state: selectedAddrObj?.state || guestPayload.state || "",
         pincode: selectedAddrObj?.pincode || guestPayload.pincode || "",

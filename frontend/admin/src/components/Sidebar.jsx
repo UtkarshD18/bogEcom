@@ -16,6 +16,7 @@ import {
   MdOutlineArticle,
   MdOutlineCategory,
   MdOutlineInventory2,
+  MdOutlineLocalOffer,
   MdOutlinePolicy,
   MdSettings,
   MdSupportAgent,
@@ -163,6 +164,15 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       ],
     },
     {
+      name: "Combos",
+      icon: <MdOutlineLocalOffer size={22} />,
+      href: "/combos",
+      children: [
+        { name: "Management", href: "/combos" },
+        { name: "Analytics", href: "/combos/analytics" },
+      ],
+    },
+    {
       name: "Coins",
       icon: <RiCoupon2Line size={22} />,
       href: "/coins",
@@ -194,7 +204,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
     return pathname.startsWith(href);
   };
 
-  const isMembershipChildActive = (href) => {
+  const isChildActive = (href) => {
     if (href === "/membership") return pathname === "/membership";
     return pathname.startsWith(href);
   };
@@ -260,7 +270,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       <div className="flex flex-col gap-1 mt-4 px-3 flex-1 overflow-y-auto">
         {sidebarTabs.map((tab) => {
           const childActive = Array.isArray(tab.children)
-            ? tab.children.some((child) => isMembershipChildActive(child.href))
+            ? tab.children.some((child) => isChildActive(child.href))
             : false;
           const tabActive = isActive(tab.href) || childActive;
 
@@ -289,7 +299,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
               {Array.isArray(tab.children) && tab.children.length > 0 && (
                 <div className="ml-11 mt-1 mb-2 flex flex-col gap-1">
                   {tab.children.map((child) => {
-                    const childIsActive = isMembershipChildActive(child.href);
+                    const childIsActive = isChildActive(child.href);
                     return (
                       <Link
                         key={child.href}

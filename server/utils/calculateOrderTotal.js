@@ -64,6 +64,7 @@ export const calculateOrderTotal = (order = {}) => {
     round2(toSafeNumber(order?.membershipDiscount)),
     0,
   );
+  const comboDiscount = Math.max(round2(toSafeNumber(order?.comboDiscount)), 0);
   const influencerDiscount = Math.max(
     round2(toSafeNumber(order?.influencerDiscount)),
     0,
@@ -94,7 +95,9 @@ export const calculateOrderTotal = (order = {}) => {
   const totalDiscount =
     discount > 0
       ? discount
-      : round2(membershipDiscount + influencerDiscount + couponDiscount);
+      : round2(
+          membershipDiscount + influencerDiscount + couponDiscount + comboDiscount,
+        );
 
   return {
     itemsGross,

@@ -265,6 +265,37 @@ const normalizeEvent = (rawEvent) => {
       toSafeString(metadata.productName || metadata.name || metadata.product?.name || "", 256, "") ||
       null,
     quantity: toNumber(metadata.quantity, 0),
+    comboId:
+      toSafeString(
+        metadata.comboId ||
+          metadata.bundleId ||
+          metadata.combo?.id ||
+          metadata.combo?._id ||
+          "",
+        128,
+        "",
+      ) || null,
+    comboName:
+      toSafeString(
+        metadata.comboName || metadata.bundleName || metadata.combo?.name || "",
+        256,
+        "",
+      ) || null,
+    comboSlug:
+      toSafeString(
+        metadata.comboSlug || metadata.bundleSlug || metadata.combo?.slug || "",
+        256,
+        "",
+      ) || null,
+    comboType:
+      toSafeString(
+        metadata.comboType || metadata.bundleType || metadata.combo?.type || metadata.combo?.comboType || "",
+        128,
+        "",
+      ) || null,
+    comboPrice: toNumber(metadata.comboPrice ?? metadata.bundlePrice ?? metadata.price, 0),
+    comboQuantity: toNumber(metadata.comboQuantity ?? metadata.bundleQuantity ?? metadata.quantity, 0),
+    comboRevenue: toNumber(metadata.revenue ?? metadata.comboRevenue ?? metadata.amount, 0),
     sectionName: toSafeString(metadata.sectionName || "", 128, "") || null,
     sectionKey: toSafeString(metadata.sectionKey || "", 180, "") || null,
     activeTimeMs: toNumber(metadata.activeTimeMs ?? metadata.sessionActiveMs, 0),
@@ -381,6 +412,13 @@ const ensureIndexes = async () => {
       [{ productId: 1, timestamp: -1 }],
       [{ eventType: 1, timestamp: -1 }],
     ],
+    combo_events: [
+      [{ eventId: 1 }, { unique: true }],
+      [{ comboId: 1, timestamp: -1 }],
+      [{ eventType: 1, timestamp: -1 }],
+      [{ sessionId: 1, timestamp: -1 }],
+      [{ userId: 1, timestamp: -1 }],
+    ],
     purchases: [
       [{ eventId: 1 }, { unique: true }],
       [{ orderId: 1 }, { sparse: true }],
@@ -459,6 +497,7 @@ const persistEventsBatch = async (events, { consent = "unknown", source = "track
   const sectionViewOps = [];
   const productEventOps = [];
   const cartEventOps = [];
+  const comboEventOps = [];
   const purchaseOps = [];
   const searchOps = [];
   const sessionOwnershipMerges = new Map();
@@ -609,6 +648,40 @@ const persistEventsBatch = async (events, { consent = "unknown", source = "track
       });
     }
 
+    if (["combo_view", "combo_click", "combo_add_to_cart", "combo_purchase"].includes(event.eventType)) {
+      if (event.comboId) {
+        comboEventOps.push({
+          updateOne: {
+            filter: { eventId: event.eventId },
+            update: {
+              $setOnInsert: {
+                ...shared,
+                comboId: event.comboId,
+                comboName: event.comboName,
+                comboSlug: event.comboSlug,
+                comboType: event.comboType,
+                comboPrice: toNumber(event.comboPrice ?? event.metadata?.comboPrice, 0),
+                quantity: toNumber(
+                  event.comboQuantity ?? event.quantity ?? event.metadata?.comboQuantity,
+                  0,
+                ),
+                revenue: toNumber(
+                  event.comboRevenue ?? event.metadata?.revenue ?? event.metadata?.amount,
+                  0,
+                ),
+                orderId: event.orderId,
+                sectionName: event.sectionName,
+                sectionKey: event.sectionKey,
+                pageViewId: toSafeString(event.metadata?.pageViewId || "", 128, "") || null,
+                eventType: event.eventType,
+              },
+            },
+            upsert: true,
+          },
+        });
+      }
+    }
+
     if (event.eventType === "purchase_completed") {
       purchaseOps.push({
         updateOne: {
@@ -662,6 +735,9 @@ const persistEventsBatch = async (events, { consent = "unknown", source = "track
   if (cartEventOps.length > 0) {
     await db.collection("cart_events").bulkWrite(cartEventOps, { ordered: false });
   }
+  if (comboEventOps.length > 0) {
+    await db.collection("combo_events").bulkWrite(comboEventOps, { ordered: false });
+  }
   if (purchaseOps.length > 0) {
     await db.collection("purchases").bulkWrite(purchaseOps, { ordered: false });
   }
@@ -681,6 +757,7 @@ const persistEventsBatch = async (events, { consent = "unknown", source = "track
         db.collection("section_views").updateMany(mergeFilter, mergeUpdate),
         db.collection("product_events").updateMany(mergeFilter, mergeUpdate),
         db.collection("cart_events").updateMany(mergeFilter, mergeUpdate),
+        db.collection("combo_events").updateMany(mergeFilter, mergeUpdate),
         db.collection("purchases").updateMany(mergeFilter, mergeUpdate),
         db.collection("search_events").updateMany(mergeFilter, mergeUpdate),
       ]);

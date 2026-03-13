@@ -28,6 +28,49 @@ function ProductsPageContent() {
     const urlPriceDrop = searchParams.get("priceDrop") === "true";
     const urlMinDiscount = searchParams.get("minDiscount") || "";
     const [searchTerm, setSearchTerm] = useState(urlSearchTerm);
+    const isComboCategory = (category) => {
+        const name = String(category?.name || "").toLowerCase();
+        const slug = String(category?.slug || "").toLowerCase();
+        const comboKeys = [
+            "combo-packs",
+            "combo-pack",
+            "combo-deals",
+            "combo-deal",
+            "combos",
+        ];
+        return (
+            comboKeys.includes(slug) ||
+            name.includes("combo pack") ||
+            name.includes("combo packs") ||
+            name.includes("combo deal") ||
+            name.includes("combo deals")
+        );
+    };
+
+    useEffect(() => {
+        if (!urlCategory) return;
+        let isActive = true;
+        const checkCategory = async () => {
+            try {
+                const response = await fetchDataFromApi("/api/categories");
+                const list = response?.data || response?.categories || [];
+                const match = list.find(
+                    (category) =>
+                        String(category?._id || category?.id || "") ===
+                        String(urlCategory),
+                );
+                if (match && isComboCategory(match) && isActive) {
+                    router.replace("/combo-deals");
+                }
+            } catch (error) {
+                // Best effort redirect only
+            }
+        };
+        checkCategory();
+        return () => {
+            isActive = false;
+        };
+    }, [urlCategory, router]);
 
     // Sync state with URL when URL changes (e.g. from header search)
     useEffect(() => {
