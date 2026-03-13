@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import OrderModel from "../models/order.model.js";
+import InfluencerModel from "../models/influencer.model.js";
 import {
   AppError,
   asyncHandler,
@@ -150,6 +151,42 @@ const parseNumberLike = (value) => {
   if (!match) return null;
   const parsed = Number(match[0]);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeInfluencerCode = (value) => {
+  const raw = String(value || "").trim().toUpperCase();
+  if (!raw) return "";
+  const normalized = raw.replace(/[^A-Z0-9_-]/g, "");
+  return normalized.slice(0, 30);
+};
+
+const pickMostCommonInfluencerCode = (counts) => {
+  if (!counts || typeof counts !== "object") return "";
+  let bestCode = "";
+  let bestCount = 0;
+  for (const [code, count] of Object.entries(counts)) {
+    const numericCount = Number(count || 0);
+    if (!code) continue;
+    if (!Number.isFinite(numericCount) || numericCount <= 0) continue;
+    if (numericCount > bestCount) {
+      bestCode = code;
+      bestCount = numericCount;
+    }
+  }
+  return bestCode;
+};
+
+const computeInfluencerPercent = (type, value, baseAmount) => {
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return 0;
+  const normalizedType = String(type || "").trim().toUpperCase();
+  if (normalizedType === "PERCENT") return numericValue;
+  if (normalizedType === "FLAT") {
+    const base = Number(baseAmount || 0);
+    if (!Number.isFinite(base) || base <= 0) return 0;
+    return Math.round((numericValue / base) * 100 * 100) / 100;
+  }
+  return 0;
 };
 
 const extractCostOfMaking = (productDoc) => {
@@ -520,6 +557,9 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           },
           couponCode: 1,
           discountAmount: { $ifNull: ["$discountAmount", "$discount"] },
+          influencerId: 1,
+          influencerCode: 1,
+          affiliateCode: 1,
           influencerDiscount: 1,
           influencerCommission: 1,
           shipping: 1,
@@ -596,21 +636,21 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       if (productId) {
         const variantId = String(row?.variantId || "").trim();
         const pricingKey = `${productId}:${variantId || "default"}`;
-        if (!pricingRows.has(pricingKey)) {
-          pricingRows.set(pricingKey, {
+        const influencerCode = normalizeInfluencerCode(
+          row?.influencerCode || row?.affiliateCode,
+        );
+        let pricingEntry = pricingRows.get(pricingKey);
+        if (!pricingEntry) {
+          pricingEntry = {
             productId,
             variantId,
             productName: String(productDoc?.name || row?.productName || "").trim(),
-            variantName: String(
-              variantDoc?.name || row?.variantName || "",
-            ).trim(),
+            variantName: String(variantDoc?.name || row?.variantName || "").trim(),
             sku,
             hsnCode: hsn ? String(hsn).trim() : "",
             unit: String(variantDoc?.unit || productDoc?.unit || "").trim(),
             weight: Number(variantDoc?.weight || productDoc?.weight || 0),
-            mrp: Number(
-              variantDoc?.originalPrice || productDoc?.originalPrice || 0,
-            ),
+            mrp: Number(variantDoc?.originalPrice || productDoc?.originalPrice || 0),
             sellingPrice: Number(variantDoc?.price || productDoc?.price || 0),
             costOfMaking: extractCostOfMaking(productDoc),
             deliveryCost:
@@ -619,14 +659,76 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
                 : Number(productDoc?.shippingCost || 0) > 0
                   ? Number(productDoc.shippingCost)
                   : PRICING_ENGINE_DEFAULTS.deliveryCost,
-          });
+            influencerCodeCounts: {},
+          };
+          pricingRows.set(pricingKey, pricingEntry);
+        }
+
+        if (influencerCode) {
+          pricingEntry.influencerCodeCounts[influencerCode] =
+            (pricingEntry.influencerCodeCounts[influencerCode] || 0) + 1;
         }
       }
+    }
+
+    const influencerCodeOverride = normalizeInfluencerCode(req.query.influencerCode);
+    const influencerCodesToFetch = new Set();
+    if (influencerCodeOverride) {
+      influencerCodesToFetch.add(influencerCodeOverride);
+    }
+    for (const item of pricingRows.values()) {
+      const codes = item?.influencerCodeCounts
+        ? Object.keys(item.influencerCodeCounts)
+        : [];
+      for (const code of codes) {
+        const normalized = normalizeInfluencerCode(code);
+        if (normalized) influencerCodesToFetch.add(normalized);
+      }
+    }
+
+    const influencerMap = new Map();
+    if (influencerCodesToFetch.size > 0) {
+      const influencers = await InfluencerModel.find({
+        code: { $in: Array.from(influencerCodesToFetch) },
+      })
+        .select("code discountType discountValue commissionType commissionValue isActive")
+        .lean();
+
+      influencers.forEach((influencer) => {
+        const code = normalizeInfluencerCode(influencer?.code);
+        if (code) influencerMap.set(code, influencer);
+      });
     }
 
     for (const item of pricingRows.values()) {
       const rowNumber = pricingRowNumber;
       pricingRowNumber += 1;
+
+      const baseAmountForPercent =
+        Number(item?.sellingPrice || item?.mrp || 0) || 0;
+      const resolvedInfluencerCode =
+        influencerCodeOverride ||
+        pickMostCommonInfluencerCode(item?.influencerCodeCounts) ||
+        "";
+      const influencer =
+        resolvedInfluencerCode && influencerMap.has(resolvedInfluencerCode)
+          ? influencerMap.get(resolvedInfluencerCode)
+          : null;
+      const influencerCommissionPercent = influencer
+        ? computeInfluencerPercent(
+            influencer.commissionType,
+            influencer.commissionValue,
+            baseAmountForPercent,
+          )
+        : PRICING_ENGINE_DEFAULTS.influencerCommissionPercent || 0;
+      const influencerCustomerDiscountPercent = influencer
+        ? computeInfluencerPercent(
+            influencer.discountType,
+            influencer.discountValue,
+            baseAmountForPercent,
+          )
+        : PRICING_ENGINE_DEFAULTS.influencerCustomerDiscountPercent || 0;
+
       pricingWorksheet
         .addRow({
           product: item.variantName
@@ -639,10 +741,8 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           deliveryCost: Number(item.deliveryCost || 0),
           targetProfitMarginPercent:
             PRICING_ENGINE_DEFAULTS.targetProfitMarginPercent || 0,
-          influencerCommissionPercent:
-            PRICING_ENGINE_DEFAULTS.influencerCommissionPercent || 0,
-          influencerCustomerDiscountPercent:
-            PRICING_ENGINE_DEFAULTS.influencerCustomerDiscountPercent || 0,
+          influencerCommissionPercent,
+          influencerCustomerDiscountPercent,
           couponDiscountPercent: PRICING_ENGINE_DEFAULTS.couponDiscountPercent || 0,
           cgstPercent: PRICING_ENGINE_DEFAULTS.cgstPercent || 0,
           sgstPercent: PRICING_ENGINE_DEFAULTS.sgstPercent || 0,
