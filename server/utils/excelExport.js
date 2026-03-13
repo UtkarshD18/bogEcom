@@ -72,9 +72,10 @@ export const createOrderReportWriter = async ({
     useStyles: true,
     useSharedStrings: false,
   });
-  const worksheet = workbook.addWorksheet("Order Report");
+  const worksheet = workbook.addWorksheet("Order Report", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
   worksheet.columns = normalizedColumns;
-  worksheet.views = [{ state: "frozen", ySplit: 1 }];
 
   const headerRow = worksheet.getRow(1);
   if (templateMeta?.headerRowHeight) {

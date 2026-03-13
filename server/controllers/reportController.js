@@ -347,8 +347,7 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
 
     cursor = OrderModel.aggregate(exportPipeline)
       .allowDiskUse(true)
-      .cursor({ batchSize: 1000 })
-      .exec();
+      .cursor({ batchSize: 1000 });
 
     const filename = `order-report-${startDate
       .toISOString()
