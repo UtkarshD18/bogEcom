@@ -685,6 +685,7 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           variantDoc?.originalPrice ?? productDoc?.originalPrice ?? 0,
         );
         const sellingCandidate = Number(variantDoc?.price ?? productDoc?.price ?? 0);
+        const weightCandidate = Number(variantDoc?.weight ?? productDoc?.weight ?? 0);
         const resolvedMrp =
           Number.isFinite(mrpCandidate) && mrpCandidate > 0 ? mrpCandidate : null;
         const resolvedSellingPrice =
@@ -693,6 +694,10 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
             : Number.isFinite(orderItemPrice) && orderItemPrice > 0
               ? orderItemPrice
               : null;
+        const resolvedWeight =
+          Number.isFinite(weightCandidate) && weightCandidate > 0
+            ? weightCandidate
+            : null;
 
         const influencerCode = normalizeInfluencerCode(
           row?.influencerCode || row?.affiliateCode,
@@ -703,16 +708,16 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
             productId,
             variantId,
             productName: String(productDoc?.name || row?.productName || "").trim(),
-            variantName: String(variantDoc?.name || row?.variantName || "").trim(),
-            sku,
-            hsnCode: hsn ? String(hsn).trim() : "",
-            unit: String(variantDoc?.unit || productDoc?.unit || "").trim(),
-            weight: Number(variantDoc?.weight || productDoc?.weight || 0),
-            mrp: resolvedMrp,
-            sellingPrice: resolvedSellingPrice,
-            costOfMaking: extractCostOfMaking(productDoc),
-            deliveryCost:
-              productDoc?.freeShipping === true
+             variantName: String(variantDoc?.name || row?.variantName || "").trim(),
+             sku,
+             hsnCode: hsn ? String(hsn).trim() : "",
+             unit: String(variantDoc?.unit || productDoc?.unit || "").trim(),
+             weight: resolvedWeight,
+             mrp: resolvedMrp,
+             sellingPrice: resolvedSellingPrice,
+             costOfMaking: extractCostOfMaking(productDoc),
+             deliveryCost:
+               productDoc?.freeShipping === true
                 ? 0
                 : Number(productDoc?.shippingCost || 0) > 0
                   ? Number(productDoc.shippingCost)
@@ -731,9 +736,9 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
         }
         if (
           (!pricingEntry.weight || Number(pricingEntry.weight) <= 0) &&
-          Number(variantDoc?.weight || productDoc?.weight || 0) > 0
+          resolvedWeight !== null
         ) {
-          pricingEntry.weight = Number(variantDoc?.weight || productDoc?.weight || 0);
+          pricingEntry.weight = resolvedWeight;
         }
         if (pricingEntry.mrp === null && resolvedMrp !== null) {
           pricingEntry.mrp = resolvedMrp;
@@ -880,7 +885,7 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           sku: item.sku,
           hsnCode: item.hsnCode,
           unit: item.unit,
-          weight: item.weight || 0,
+          weight: Number.isFinite(item.weight) && item.weight > 0 ? item.weight : "",
           mrp: Number.isFinite(item.mrp) && item.mrp > 0 ? item.mrp : "",
           sellingPrice:
             Number.isFinite(item.sellingPrice) && item.sellingPrice > 0
