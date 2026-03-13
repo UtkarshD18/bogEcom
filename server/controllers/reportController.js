@@ -158,6 +158,16 @@ const extractHsnFromSpecifications = (specifications) => {
   return null;
 };
 
+const normalizeHsnSixDigit = (value) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length >= 6) return digits.slice(0, 6);
+  if (digits.length > 0) return digits.padEnd(6, "0");
+  return "";
+};
+
+const DEFAULT_HSN_6 =
+  normalizeHsnSixDigit(process.env.INVOICE_DEFAULT_HSN || "2106") || "210600";
+
 const parseNumberLike = (value) => {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -667,10 +677,11 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       const productDoc = row?.productDoc || null;
       const variantDoc = productDoc?.variant || null;
       const sku = String(variantDoc?.sku || productDoc?.sku || "").trim();
-      const hsn =
+      const rawHsn =
         String(productDoc?.hsnCode || "").trim() ||
         extractHsnFromSpecifications(variantDoc?.attributes) ||
         extractHsnFromSpecifications(productDoc?.specifications);
+      const hsn = normalizeHsnSixDigit(rawHsn) || DEFAULT_HSN_6;
       const deliveryStatus = String(
         row?.deliveryStatus || row?.shipmentStatus || row?.shipment_status || "pending",
       ).trim();
@@ -680,7 +691,7 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           orderId: orderDisplayId || orderId,
           productId: String(row?.productId || "").trim(),
           sku,
-          hsnCode: hsn ? String(hsn).trim() : "",
+          hsnCode: hsn,
           productName: String(row?.productName || "").trim(),
           variantName: String(row?.variantName || "").trim(),
           quantity: Number(row?.quantity || 0),
@@ -726,14 +737,14 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
             productId,
             variantId,
             productName: String(productDoc?.name || row?.productName || "").trim(),
-             variantName: String(variantDoc?.name || row?.variantName || "").trim(),
-             sku,
-             hsnCode: hsn ? String(hsn).trim() : "",
-             unit: String(variantDoc?.unit || productDoc?.unit || "").trim(),
-             weight: resolvedWeight,
-             mrp: resolvedMrp,
-             sellingPrice: resolvedSellingPrice,
-             costOfMaking: extractCostOfMaking(productDoc),
+            variantName: String(variantDoc?.name || row?.variantName || "").trim(),
+            sku,
+            hsnCode: hsn,
+            unit: String(variantDoc?.unit || productDoc?.unit || "").trim(),
+            weight: resolvedWeight,
+            mrp: resolvedMrp,
+            sellingPrice: resolvedSellingPrice,
+            costOfMaking: extractCostOfMaking(productDoc),
              deliveryCost:
                productDoc?.freeShipping === true
                 ? 0
@@ -746,9 +757,7 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
         }
 
         if (!pricingEntry.sku && sku) pricingEntry.sku = sku;
-        if (!pricingEntry.hsnCode && hsn) {
-          pricingEntry.hsnCode = String(hsn).trim();
-        }
+        if (!pricingEntry.hsnCode) pricingEntry.hsnCode = hsn;
         if (!pricingEntry.unit && (variantDoc?.unit || productDoc?.unit)) {
           pricingEntry.unit = String(variantDoc?.unit || productDoc?.unit || "").trim();
         }
