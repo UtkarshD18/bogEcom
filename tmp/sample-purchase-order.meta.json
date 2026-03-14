@@ -1,12 +1,6 @@
 {
-  "baseUrl": "http://127.0.0.1:51922",
-  "purchaseOrderId": "69b44d95642367ada575cac3",
-  "poNumber": "BOGPO25-26/001",
-  "intendedDownloadFilename": "attachment; filename=\"BOGPO25-26/001.pdf\"; filename*=UTF-8''BOGPO25-26%2F001.pdf",
-  "flavourPreview": {
-    "flavour_button_1_text": "Creamy Gold",
-    "flavour_button_1_bg_color": "#b8893c",
-    "flavour_button_1_text_color": "#fff8e7"
-  },
+  "purchaseOrderId": "69b4e9bc345f178cc40ae6ac",
+  "poNumber": "BOGPO25-26/106",
+  "intendedDownloadFilename": "attachment; filename=\"BOGPO25-26/106.pdf\"; filename*=UTF-8''BOGPO25-26%2F106.pdf",
   "savedPdfPath": "D:\\BogEcom\\tmp\\sample-purchase-order.pdf"
 }
