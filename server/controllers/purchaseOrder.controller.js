@@ -697,14 +697,21 @@ const buildPdfBuffer = (purchaseOrder) =>
       tableY += rowHeight;
     });
 
-    const summaryY = Math.max(tableY + 72, doc.page.height - 180);
-    if (summaryY > doc.page.height - doc.page.margins.bottom - 40) {
+    const summaryY = tableY + 26;
+    if (summaryY > doc.page.height - doc.page.margins.bottom - 50) {
       doc.addPage();
-      doc.y = 120;
+      doc.y = margin;
     } else {
       doc.y = summaryY;
     }
-    doc.font("Helvetica-Bold").fontSize(14).fillColor("#111");
+    doc
+      .strokeColor("#D1D5DB")
+      .lineWidth(1)
+      .moveTo(margin, doc.y)
+      .lineTo(margin + contentWidth, doc.y)
+      .stroke();
+    doc.moveDown(1.1);
+    doc.font("Helvetica-Bold").fontSize(18).fillColor("#111");
     doc.text(
       `Total Quantity: ${formatPdfKg(totalQuantityKg)} kg`,
       margin,

@@ -1761,32 +1761,87 @@ const SettingsPage = () => {
                   size="small"
                   fullWidth
                 />
-                <TextField
-                  label="Background Color"
-                  value={flavourButtonSettings[field.bgKey]}
-                  onChange={(e) =>
-                    setFlavourButtonSettings((prev) => ({
-                      ...prev,
-                      [field.bgKey]: e.target.value,
-                    }))
-                  }
-                  size="small"
-                  fullWidth
-                  placeholder="#F6E6C9"
-                />
-                <TextField
-                  label="Text Color"
-                  value={flavourButtonSettings[field.textColorKey]}
-                  onChange={(e) =>
-                    setFlavourButtonSettings((prev) => ({
-                      ...prev,
-                      [field.textColorKey]: e.target.value,
-                    }))
-                  }
-                  size="small"
-                  fullWidth
-                  placeholder="#6B4F2A"
-                />
+                <div className="flex items-center gap-3">
+                  <TextField
+                    label="Background Color"
+                    value={flavourButtonSettings[field.bgKey]}
+                    onChange={(e) =>
+                      setFlavourButtonSettings((prev) => ({
+                        ...prev,
+                        [field.bgKey]: e.target.value,
+                      }))
+                    }
+                    size="small"
+                    fullWidth
+                    placeholder="#F6E6C9"
+                  />
+                  <input
+                    type="color"
+                    value={
+                      isHexColor(flavourButtonSettings[field.bgKey])
+                        ? flavourButtonSettings[field.bgKey]
+                        : DEFAULT_FLAVOUR_BUTTON_SETTINGS[field.bgKey]
+                    }
+                    onChange={(e) =>
+                      setFlavourButtonSettings((prev) => ({
+                        ...prev,
+                        [field.bgKey]: e.target.value,
+                      }))
+                    }
+                    className="h-10 w-16 border border-gray-300 rounded cursor-pointer"
+                    aria-label={`${field.label} background color picker`}
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <TextField
+                    label="Text Color"
+                    value={flavourButtonSettings[field.textColorKey]}
+                    onChange={(e) =>
+                      setFlavourButtonSettings((prev) => ({
+                        ...prev,
+                        [field.textColorKey]: e.target.value,
+                      }))
+                    }
+                    size="small"
+                    fullWidth
+                    placeholder="#6B4F2A"
+                  />
+                  <input
+                    type="color"
+                    value={
+                      isHexColor(flavourButtonSettings[field.textColorKey])
+                        ? flavourButtonSettings[field.textColorKey]
+                        : DEFAULT_FLAVOUR_BUTTON_SETTINGS[field.textColorKey]
+                    }
+                    onChange={(e) =>
+                      setFlavourButtonSettings((prev) => ({
+                        ...prev,
+                        [field.textColorKey]: e.target.value,
+                      }))
+                    }
+                    className="h-10 w-16 border border-gray-300 rounded cursor-pointer"
+                    aria-label={`${field.label} text color picker`}
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <div
+                  className="inline-flex items-center justify-center rounded-xl border px-4 py-2 text-sm font-semibold"
+                  style={{
+                    backgroundColor:
+                      isHexColor(flavourButtonSettings[field.bgKey])
+                        ? flavourButtonSettings[field.bgKey]
+                        : DEFAULT_FLAVOUR_BUTTON_SETTINGS[field.bgKey],
+                    color:
+                      isHexColor(flavourButtonSettings[field.textColorKey])
+                        ? flavourButtonSettings[field.textColorKey]
+                        : DEFAULT_FLAVOUR_BUTTON_SETTINGS[field.textColorKey],
+                    borderColor: "rgba(17, 24, 39, 0.08)",
+                  }}
+                >
+                  {String(flavourButtonSettings[field.textKey] || "").trim() ||
+                    field.label}
+                </div>
               </div>
             </div>
           ))}
