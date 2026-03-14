@@ -2177,19 +2177,45 @@ const getOrderProductMetadata = async (order) => {
   if (productIds.length === 0) return {};
 
   const products = await ProductModel.find({ _id: { $in: productIds } })
-    .select("_id specifications hsnCode unit weight")
+    .select(
+      "_id specifications hsnCode unit weight variants._id variants.hsnCode variants.unit variants.weight variants.attributes",
+    )
     .lean();
 
   const metadata = {};
   products.forEach((product) => {
-    const hsn =
+    const baseHsn =
       String(product?.hsnCode || "").trim() ||
       extractHsnFromSpecifications(product?.specifications);
-    metadata[String(product._id)] = {
-      hsn: hsn ? String(hsn) : process.env.INVOICE_DEFAULT_HSN || "2106",
+    const baseMeta = {
+      hsn: baseHsn ? String(baseHsn) : process.env.INVOICE_DEFAULT_HSN || "2106",
       unit: product?.unit || "",
       weight: Number(product?.weight || 0),
     };
+
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
+    if (variants.length > 0) {
+      const variantMeta = {};
+      variants.forEach((variant) => {
+        const variantId = String(variant?._id || "").trim();
+        if (!variantId) return;
+
+        const variantHsn =
+          String(variant?.hsnCode || "").trim() ||
+          extractHsnFromSpecifications(variant?.attributes) ||
+          baseHsn;
+        variantMeta[variantId] = {
+          hsn: variantHsn ? String(variantHsn) : baseMeta.hsn,
+          unit: variant?.unit || baseMeta.unit,
+          weight: Number(variant?.weight || 0) || baseMeta.weight,
+        };
+      });
+      if (Object.keys(variantMeta).length > 0) {
+        baseMeta.variants = variantMeta;
+      }
+    }
+
+    metadata[String(product._id)] = baseMeta;
   });
 
   return metadata;

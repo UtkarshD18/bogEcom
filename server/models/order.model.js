@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { INDIA_COUNTRY } from "../utils/addressUtils.js";
+import OrderSequenceModel from "./orderSequence.model.js";
 
 const LEGACY_GATEWAY_METHOD = String.fromCharCode(82, 65, 90, 79, 82, 80, 65, 89);
 const ORDER_PAYMENT_METHODS = [
@@ -15,6 +16,34 @@ const deriveDisplayOrderNumber = (orderId) => {
   const rawOrderId = String(orderId || "").trim();
   if (!rawOrderId) return "";
   return `BOG-${rawOrderId.slice(-8).toUpperCase()}`;
+};
+
+const resolveFiscalYearCode = (date = new Date()) => {
+  const safeDate = date instanceof Date ? date : new Date(date);
+  const year = safeDate.getFullYear();
+  const month = safeDate.getMonth(); // 0-based
+  // India FY: Apr (3) -> Mar (2)
+  const startYear = month >= 3 ? year : year - 1;
+  const endYear = startYear + 1;
+  const yy = (value) => String(value).slice(-2);
+  return `${yy(startYear)}${yy(endYear)}`;
+};
+
+const buildOrderNumber = ({ fiscalYearCode, seq }) => {
+  const safeSeq = Math.max(Number(seq || 0), 0);
+  const padded = String(safeSeq).padStart(4, "0");
+  return `HOG-${String(fiscalYearCode || "").trim()}/${padded}`.toUpperCase();
+};
+
+const nextOrderSequence = async ({ fiscalYearCode }) => {
+  const key = `HOG-${String(fiscalYearCode || "").trim()}`.toUpperCase();
+  const updated = await OrderSequenceModel.findOneAndUpdate(
+    { _id: key },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+
+  return Number(updated?.seq || 0) || 0;
 };
 
 /**
@@ -760,7 +789,7 @@ orderSchema.index({ deliveryDate: -1 }, { sparse: true });
 orderSchema.index({ trackingSessionId: 1, createdAt: -1 }, { sparse: true });
 
 // Normalize legacy payment_status before validation
-orderSchema.pre("validate", function () {
+orderSchema.pre("validate", async function () {
   if (this.payment_status === "confirmed") {
     this.payment_status = "paid";
   }
@@ -769,9 +798,26 @@ orderSchema.pre("validate", function () {
     .trim()
     .toUpperCase();
   if (!normalizedOrderNumber) {
-    const generatedOrderNumber = deriveDisplayOrderNumber(this._id);
-    if (generatedOrderNumber) {
-      this.orderNumber = generatedOrderNumber;
+    if (this.isNew) {
+      try {
+        const fiscalYearCode = resolveFiscalYearCode(this.createdAt || new Date());
+        const seq = await nextOrderSequence({ fiscalYearCode });
+        const generatedOrderNumber = buildOrderNumber({ fiscalYearCode, seq });
+        if (generatedOrderNumber) {
+          this.orderNumber = generatedOrderNumber;
+        }
+      } catch {
+        // Never block order creation on the numbering system.
+        const legacyFallback = deriveDisplayOrderNumber(this._id);
+        if (legacyFallback) {
+          this.orderNumber = legacyFallback;
+        }
+      }
+    } else {
+      const generatedOrderNumber = deriveDisplayOrderNumber(this._id);
+      if (generatedOrderNumber) {
+        this.orderNumber = generatedOrderNumber;
+      }
     }
   } else if (normalizedOrderNumber !== this.orderNumber) {
     this.orderNumber = normalizedOrderNumber;

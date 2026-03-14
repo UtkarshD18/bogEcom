@@ -318,9 +318,14 @@ const allocateByWeight = (total, weights) => {
   });
 };
 
-const getProductMeta = (productMetaById, productId) => {
+const getProductMeta = (productMetaById, productId, variantId) => {
   const key = String(productId || "");
-  return productMetaById?.[key] || {};
+  const base = productMetaById?.[key] || {};
+  const variantKey = String(variantId || "").trim();
+  if (variantKey && base?.variants && base.variants[variantKey]) {
+    return { ...base, ...base.variants[variantKey] };
+  }
+  return base;
 };
 
 const buildAddressLines = (address) => {
@@ -884,7 +889,7 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
     const discount = discountAlloc[index] || 0;
     const grossAfterDiscount = roundMoney(Math.max(gross - discount, 0));
     const lineTax = taxAlloc[index] || 0;
-    const meta = getProductMeta(productMetaById, item?.productId);
+    const meta = getProductMeta(productMetaById, item?.productId, item?.variantId);
     const lineTaxRate = Number(meta?.taxRate || gstRate || 0);
     const hsn = normalizeHsnSixDigit(
       meta?.hsn || item?.hsnCode || item?.hsn || item?.productHsn || DEFAULT_HSN_6,

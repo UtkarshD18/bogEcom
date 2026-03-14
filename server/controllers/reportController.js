@@ -312,6 +312,7 @@ export const getOrdersReport = asyncHandler(async (req, res) => {
     const baseMatch = {
       purchaseOrder: null,
       createdAt: { $gte: startDate, $lte: endDate },
+      payment_status: { $in: ["paid", "confirmed", "PAID", "CONFIRMED"] },
     };
     const searchMatch = buildSearchMatch(searchTerm);
 
@@ -651,7 +652,9 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
       const variantDoc = productDoc?.variant || null;
       const sku = String(variantDoc?.sku || productDoc?.sku || "").trim();
       const hsn =
+        String(variantDoc?.hsnCode || "").trim() ||
         String(productDoc?.hsnCode || "").trim() ||
+        extractHsnFromSpecifications(variantDoc?.attributes) ||
         extractHsnFromSpecifications(productDoc?.specifications);
       const deliveryStatus = String(
         row?.deliveryStatus || row?.shipmentStatus || row?.shipment_status || "pending",

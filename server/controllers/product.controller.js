@@ -607,6 +607,7 @@ export const createProduct = async (req, res) => {
       category,
       subCategory,
       sku,
+      hsnCode,
       stock,
       hasVariants,
       variants,
@@ -743,6 +744,7 @@ export const createProduct = async (req, res) => {
       category,
       subCategory,
       sku,
+      hsnCode,
       stock: normalizedStock,
       stock_quantity: normalizedStock,
       reserved_quantity: Math.max(normalizedReserved, 0),
@@ -871,6 +873,20 @@ export const updateProduct = async (req, res) => {
       } else {
         delete updateData.originalPrice;
       }
+    }
+    if ("hsnCode" in updateData) {
+      updateData.hsnCode = String(updateData.hsnCode || "").replace(/\D/g, "");
+    }
+    if (Array.isArray(updateData.variants)) {
+      updateData.variants = updateData.variants.map((variant) => {
+        if (!Object.prototype.hasOwnProperty.call(variant || {}, "hsnCode")) {
+          return variant;
+        }
+        return {
+          ...variant,
+          hsnCode: String(variant?.hsnCode || "").replace(/\D/g, ""),
+        };
+      });
     }
 
     const product = await ProductModel.findById(id);
