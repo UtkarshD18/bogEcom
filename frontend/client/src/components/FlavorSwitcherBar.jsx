@@ -31,6 +31,77 @@ const hexToRgba = (value, alpha) => {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 };
 
+const mixHexColor = (baseColor, mixColor, ratio) => {
+  const base = normalizeHexColor(baseColor);
+  const mix = normalizeHexColor(mixColor);
+  if (!base || !mix) return "";
+
+  const safeRatio = Math.min(Math.max(Number(ratio || 0), 0), 1);
+  const blendChannel = (baseChannel, mixChannel) =>
+    Math.round(baseChannel + (mixChannel - baseChannel) * safeRatio);
+
+  const baseRed = Number.parseInt(base.slice(1, 3), 16);
+  const baseGreen = Number.parseInt(base.slice(3, 5), 16);
+  const baseBlue = Number.parseInt(base.slice(5, 7), 16);
+  const mixRed = Number.parseInt(mix.slice(1, 3), 16);
+  const mixGreen = Number.parseInt(mix.slice(3, 5), 16);
+  const mixBlue = Number.parseInt(mix.slice(5, 7), 16);
+
+  return `#${[blendChannel(baseRed, mixRed), blendChannel(baseGreen, mixGreen), blendChannel(baseBlue, mixBlue)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")}`;
+};
+
+const buildConfiguredFlavor = ({
+  flavor,
+  configuredBackground,
+  configuredTextColor,
+  configuredLabel,
+}) => {
+  const themeColor = normalizeHexColor(configuredBackground) || flavor.color;
+  const themeTextColor =
+    normalizeHexColor(configuredTextColor) || flavor.text || "#111111";
+  const hoverColor = mixHexColor(themeColor, "#000000", 0.14) || flavor.hover;
+  const lightColor = mixHexColor(themeColor, "#ffffff", 0.86) || flavor.light;
+  const cardBackground =
+    mixHexColor(themeColor, "#ffffff", 0.92) || flavor.cardBg;
+  const badgeColor = mixHexColor(themeColor, "#000000", 0.18) || flavor.badge;
+
+  return {
+    ...flavor,
+    color: themeColor,
+    hover: hoverColor,
+    text: themeTextColor,
+    light: lightColor,
+    glass: hexToRgba(themeColor, 0.24) || flavor.glass,
+    gradient: `linear-gradient(135deg, ${lightColor} 0%, ${cardBackground} 50%, #FFFFFF 100%)`,
+    cardBg: cardBackground,
+    badge: badgeColor,
+    buttonLabel: configuredLabel || flavor.name,
+    buttonBg: themeColor,
+    buttonTextColor: themeTextColor,
+    buttonGlass: hexToRgba(themeColor, 0.18) || flavor.glass,
+    buttonBorder: hexToRgba(themeColor, 0.24) || flavor.glass,
+    buttonShadow: hexToRgba(themeColor, 0.32) || flavor.glass,
+  };
+};
+
+const areFlavorsEqual = (firstFlavor, secondFlavor) =>
+  [
+    "name",
+    "color",
+    "hover",
+    "text",
+    "light",
+    "glass",
+    "gradient",
+    "cardBg",
+    "badge",
+  ].every(
+    (key) =>
+      String(firstFlavor?.[key] || "") === String(secondFlavor?.[key] || ""),
+  );
+
 export default function FlavorSwitcherBar() {
   const context = useContext(MyContext);
   const { settings } = useSettings();
@@ -53,15 +124,12 @@ export default function FlavorSwitcherBar() {
       flavor.text ||
       "#111111";
 
-    return {
-      ...flavor,
-      buttonLabel: configuredLabel || flavor.name,
-      buttonBg: configuredBackground,
-      buttonTextColor: configuredTextColor,
-      buttonGlass: hexToRgba(configuredBackground, 0.18) || flavor.glass,
-      buttonBorder: hexToRgba(configuredBackground, 0.24) || flavor.glass,
-      buttonShadow: hexToRgba(configuredBackground, 0.32) || flavor.glass,
-    };
+    return buildConfiguredFlavor({
+      flavor,
+      configuredBackground,
+      configuredTextColor,
+      configuredLabel,
+    });
   });
 
   useEffect(() => {
@@ -93,6 +161,31 @@ export default function FlavorSwitcherBar() {
 
   const currentFlavor =
     configuredFlavors.find((f) => f.name === selected) || configuredFlavors[0];
+
+  useEffect(() => {
+    if (!mounted || !currentFlavor || typeof window === "undefined") return;
+
+    const storedFlavor = (() => {
+      try {
+        const rawValue = localStorage.getItem("selectedFlavor");
+        return rawValue ? JSON.parse(rawValue) : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (
+      areFlavorsEqual(currentFlavor, storedFlavor) &&
+      areFlavorsEqual(currentFlavor, context?.flavor)
+    ) {
+      return;
+    }
+
+    localStorage.setItem("selectedFlavor", JSON.stringify(currentFlavor));
+    if (context?.setSelectedFlavor) {
+      context.setSelectedFlavor(currentFlavor);
+    }
+  }, [context, currentFlavor, mounted]);
 
   if (!mounted) return null;
 

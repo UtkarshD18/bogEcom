@@ -58,6 +58,23 @@ export const FLAVORS = {
 
 // Default flavor is Chocolate
 const DEFAULT_FLAVOR = FLAVORS.chocolate;
+const resolveFlavorWithOverrides = (candidate) => {
+  if (!candidate || typeof candidate !== "object") {
+    return DEFAULT_FLAVOR;
+  }
+
+  const flavorKey = Object.keys(FLAVORS).find(
+    (key) => FLAVORS[key].name === candidate.name,
+  );
+  const baseFlavor = flavorKey ? FLAVORS[flavorKey] : DEFAULT_FLAVOR;
+
+  return {
+    ...baseFlavor,
+    ...candidate,
+    name: String(candidate.name || baseFlavor.name || "").trim() || baseFlavor.name,
+  };
+};
+
 const resolveStoredFlavor = () => {
   if (typeof window === "undefined") {
     return DEFAULT_FLAVOR;
@@ -70,10 +87,7 @@ const resolveStoredFlavor = () => {
 
   try {
     const parsed = JSON.parse(savedFlavor);
-    const flavorKey = Object.keys(FLAVORS).find(
-      (key) => FLAVORS[key].name === parsed.name,
-    );
-    return flavorKey ? FLAVORS[flavorKey] : DEFAULT_FLAVOR;
+    return resolveFlavorWithOverrides(parsed);
   } catch {
     return DEFAULT_FLAVOR;
   }
@@ -264,11 +278,7 @@ const ThemeProvider = ({ children }) => {
   useEffect(() => {
     const handleFlavorChange = (event) => {
       const newFlavor = event.detail;
-      // Match with our FLAVORS object to get full palette
-      const flavorKey = Object.keys(FLAVORS).find(
-        (key) => FLAVORS[key].name === newFlavor.name,
-      );
-      const fullFlavor = flavorKey ? FLAVORS[flavorKey] : newFlavor;
+      const fullFlavor = resolveFlavorWithOverrides(newFlavor);
       setFlavor(fullFlavor);
       applyThemeToDOM(fullFlavor);
     };
@@ -278,9 +288,10 @@ const ThemeProvider = ({ children }) => {
   }, []);
 
   const setSelectedFlavor = (newFlavor) => {
-    setFlavor(newFlavor);
-    localStorage.setItem("selectedFlavor", JSON.stringify(newFlavor));
-    applyThemeToDOM(newFlavor);
+    const resolvedFlavor = resolveFlavorWithOverrides(newFlavor);
+    setFlavor(resolvedFlavor);
+    localStorage.setItem("selectedFlavor", JSON.stringify(resolvedFlavor));
+    applyThemeToDOM(resolvedFlavor);
   };
 
   const isOpenAddressPanel = () => {
