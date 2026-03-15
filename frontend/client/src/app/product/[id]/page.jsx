@@ -3,9 +3,7 @@
 import ProductItem from "@/components/ProductItem";
 import ProductZoom from "@/components/ProductZoom";
 import QtyBox from "@/components/QtyBox";
-import ComboCard from "@/components/ComboCard";
 import { useCart } from "@/context/CartContext";
-import { useWishlist } from "@/context/WishlistContext";
 import { formatPrice } from "@/config/siteConfig";
 import { fetchDataFromApi } from "@/utils/api";
 import { trackEvent } from "@/utils/analyticsTracker";
@@ -19,22 +17,23 @@ import {
   Snackbar,
 } from "@mui/material";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { HiOutlineFire } from "react-icons/hi";
-import { IoMdCart, IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
+import { IoMdCart } from "react-icons/io";
 import { MdLocalShipping, MdPolicy, MdVerified } from "react-icons/md";
 
 /**
  * Product Detail Page
  *
  * Displays single product details fetched from API (admin-managed products).
- * Features: Image gallery, pricing, add to cart, wishlist, reviews, related products.
+ * Features: Image gallery, pricing, add to cart, reviews, related products.
  */
 const ProductDetailPage = () => {
   const { id } = useParams();
-  const { addToCart, removeFromCart, isInCart } = useCart();
-  const { toggleWishlist, isInWishlist } = useWishlist();
+  const router = useRouter();
+  const { addToCart, removeFromCart, isInCart, cartItems, isComboCartItem } =
+    useCart();
 
   const [product, setProduct] = useState(null);
   const [customerReviews, setCustomerReviews] = useState([]);
@@ -44,11 +43,6 @@ const ProductDetailPage = () => {
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [activeTab, setActiveTab] = useState("description");
-  const [comboSections, setComboSections] = useState(null);
-  const [comboLoading, setComboLoading] = useState(false);
-  const [comboError, setComboError] = useState("");
-  const comboViewTracker = useRef(new Set());
-  const [fbtSelections, setFbtSelections] = useState(() => new Set());
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -95,24 +89,6 @@ const ProductDetailPage = () => {
   const productRating = Number(product?.adminStarRating ?? product?.rating ?? 0);
   const customerReviewCount = customerReviews.length;
 
-  const fbtProducts = useMemo(() => {
-    const pairs = Array.isArray(comboSections?.frequentlyBoughtTogether)
-      ? comboSections.frequentlyBoughtTogether
-      : [];
-    return pairs
-      .map((entry) => entry?.product)
-      .filter(Boolean);
-  }, [comboSections]);
-
-  const fbtSelectedTotal = useMemo(() => {
-    if (!fbtProducts.length) return 0;
-    return fbtProducts.reduce((sum, productItem) => {
-      const id = productItem?._id || productItem?.id;
-      if (!id || !fbtSelections.has(String(id))) return sum;
-      return sum + Number(productItem?.price || 0);
-    }, 0);
-  }, [fbtProducts, fbtSelections]);
-
   const fetchProductReviews = async (productId) => {
     if (!productId) {
       setCustomerReviews([]);
@@ -134,32 +110,6 @@ const ProductDetailPage = () => {
     }
   };
 
-  const fetchComboSections = async (productId) => {
-    if (!productId) {
-      setComboSections(null);
-      return;
-    }
-    try {
-      setComboLoading(true);
-      setComboError("");
-      const response = await fetchDataFromApi(
-        `/api/combos/sections?productId=${productId}`,
-      );
-      if (response?.success) {
-        setComboSections(response.data || null);
-      } else {
-        setComboSections(null);
-        setComboError(response?.message || "Failed to load combos");
-      }
-    } catch (error) {
-      console.error("Error fetching combo sections:", error);
-      setComboSections(null);
-      setComboError("Failed to load combos");
-    } finally {
-      setComboLoading(false);
-    }
-  };
-
   // Fetch product details from API
   const fetchProduct = async () => {
     try {
@@ -178,7 +128,6 @@ const ProductDetailPage = () => {
           price: Number(response.data?.price || 0),
         });
         fetchProductReviews(resolvedProductId);
-        fetchComboSections(resolvedProductId);
 
         // Auto-select default variant (or first) if product has variants
         if (
@@ -210,7 +159,6 @@ const ProductDetailPage = () => {
           price: Number(response?.price || response?.salePrice || 0),
         });
         fetchProductReviews(response?._id || response?.id);
-        fetchComboSections(response?._id || response?.id);
       } else {
         setCustomerReviews([]);
       }
@@ -229,47 +177,46 @@ const ProductDetailPage = () => {
     }
   }, [id]);
 
-  useEffect(() => {
-    const fbtProducts = Array.isArray(comboSections?.frequentlyBoughtTogether)
-      ? comboSections.frequentlyBoughtTogether
-      : [];
-    if (fbtProducts.length === 0) {
-      setFbtSelections(new Set());
-      return;
-    }
-    const defaults = new Set(
-      fbtProducts
-        .map((entry) => entry?.product?._id || entry?.product?.id)
-        .filter(Boolean),
-    );
-    setFbtSelections(defaults);
-  }, [comboSections?.frequentlyBoughtTogether]);
+  const buildCartProduct = () => {
+    if (!product) return null;
+    if (!selectedVariant) return product;
+    return {
+      ...product,
+      price: selectedVariant.price,
+      originalPrice: selectedVariant.originalPrice || product.originalPrice,
+      selectedVariant: {
+        _id: selectedVariant._id,
+        name: selectedVariant.name,
+        sku: selectedVariant.sku,
+        price: selectedVariant.price,
+        weight: selectedVariant.weight,
+        unit: selectedVariant.unit,
+      },
+      variantId: selectedVariant._id,
+    };
+  };
 
-  useEffect(() => {
-    if (!comboSections) return;
-
-    const sections = [
-      { key: "bundle_and_save", items: comboSections.bundleAndSave || [] },
-      { key: "complete_the_set", items: comboSections.completeTheSet || [] },
-      { key: "recommended_combos", items: comboSections.recommendedCombos || [] },
-    ];
-
-    sections.forEach((section) => {
-      (section.items || []).forEach((combo) => {
-        const comboId = String(combo?._id || combo?.id || "");
-        if (!comboId) return;
-        if (comboViewTracker.current.has(comboId)) return;
-        comboViewTracker.current.add(comboId);
-        trackEvent("combo_view", {
-          comboId,
-          comboName: combo?.name || "",
-          comboSlug: combo?.slug || "",
-          comboType: combo?.comboType || "",
-          sectionName: section.key,
-        });
-      });
+  const hasSelectedVariantInCart = (productId, variantId) => {
+    if (!productId) return false;
+    return cartItems.some((item) => {
+      if (typeof isComboCartItem === "function" && isComboCartItem(item)) {
+        return false;
+      }
+      const itemProductId =
+        item?.product?._id || item?.product?.id || item?.product || item?.id;
+      if (String(itemProductId) !== String(productId)) return false;
+      if (!variantId) return true;
+      const itemVariantId =
+        item?.variant?._id ||
+        item?.variant?.id ||
+        item?.variantId ||
+        item?.variant ||
+        item?.selectedVariant?._id ||
+        item?.selectedVariant?.id ||
+        null;
+      return String(itemVariantId || "") === String(variantId);
     });
-  }, [comboSections]);
+  };
 
   // Handle Add to Cart or Remove from Cart (toggle)
   const handleAddToCart = async () => {
@@ -300,22 +247,8 @@ const ProductDetailPage = () => {
           return;
         }
         // Add to cart - pass variant-adjusted product data
-        const cartProduct = selectedVariant
-          ? {
-              ...product,
-              price: selectedVariant.price,
-              originalPrice: selectedVariant.originalPrice || product.originalPrice,
-              selectedVariant: {
-                _id: selectedVariant._id,
-                name: selectedVariant.name,
-                sku: selectedVariant.sku,
-                price: selectedVariant.price,
-                weight: selectedVariant.weight,
-                unit: selectedVariant.unit,
-              },
-              variantId: selectedVariant._id,
-            }
-          : product;
+        const cartProduct = buildCartProduct();
+        if (!cartProduct) return;
         await addToCart(cartProduct, quantity);
       }
     } catch (error) {
@@ -327,90 +260,35 @@ const ProductDetailPage = () => {
     }
   };
 
-  const toggleFbtSelection = (productId) => {
-    if (!productId) return;
-    setFbtSelections((prev) => {
-      const next = new Set(prev);
-      if (next.has(String(productId))) {
-        next.delete(String(productId));
-      } else {
-        next.add(String(productId));
-      }
-      return next;
-    });
-  };
-
-  const handleAddFbtToCart = async () => {
-    if (!fbtProducts.length) return;
-    const selectedProducts = fbtProducts.filter((item) =>
-      fbtSelections.has(String(item?._id || item?.id || "")),
-    );
-    if (selectedProducts.length === 0) {
-      setSnackbar({
-        open: true,
-        message: "Select at least one item to add",
-        severity: "info",
-      });
-      return;
-    }
-
-    for (const productItem of selectedProducts) {
-      const defaultVariant = productItem?.hasVariants
-        ? productItem?.variants?.find((variant) => variant?.isDefault) ||
-          productItem?.variants?.[0]
-        : null;
-      const cartProduct = defaultVariant
-        ? {
-            ...productItem,
-            price: defaultVariant.price,
-            originalPrice: defaultVariant.originalPrice || productItem.originalPrice,
-            selectedVariant: {
-              _id: defaultVariant._id,
-              name: defaultVariant.name,
-              sku: defaultVariant.sku,
-              price: defaultVariant.price,
-              weight: defaultVariant.weight,
-              unit: defaultVariant.unit,
-            },
-            variantId: defaultVariant._id,
-          }
-        : productItem;
-      await addToCart(cartProduct, 1);
-    }
-
-    setSnackbar({
-      open: true,
-      message: "Added selected items to cart!",
-      severity: "success",
-    });
-  };
-
-  // Handle Wishlist Toggle
-  const handleWishlistToggle = async () => {
+  const handleBuyNow = async () => {
     try {
       if (!product) return;
       const productId = product._id || product.id;
-      const variantPayload = selectedVariant
-        ? {
-            variantId: selectedVariant?._id || null,
-            variantName: selectedVariant?.name || "",
-            quantity,
-          }
-        : { quantity };
-      const wasWishlisted = productId
-        ? isInWishlist(productId, variantPayload?.variantId || null)
-        : false;
-      await toggleWishlist(product, variantPayload);
+      const variantId = selectedVariant?._id || null;
+      const hasVariant = hasSelectedVariantInCart(productId, variantId);
 
-      setSnackbar({
-        open: true,
-        message: wasWishlisted ? "Removed from wishlist" : "Added to wishlist!",
-        severity: "success",
-      });
+      if (!hasVariant) {
+        if (availableQty < quantity) {
+          setSnackbar({
+            open: true,
+            message:
+              availableQty > 0
+                ? `Only ${availableQty} left in stock`
+                : "This product is currently out of stock",
+            severity: "error",
+          });
+          return;
+        }
+        const cartProduct = buildCartProduct();
+        if (!cartProduct) return;
+        await addToCart(cartProduct, quantity);
+      }
+
+      router.push("/checkout");
     } catch (error) {
       setSnackbar({
         open: true,
-        message: "Failed to update wishlist",
+        message: "Unable to proceed to checkout",
         severity: "error",
       });
     }
@@ -478,7 +356,11 @@ const ProductDetailPage = () => {
   const images =
     product.images || (product.image ? [product.image] : ["/product_1.png"]);
   const productId = product?._id || product?.id;
-  const isWishlisted = productId ? isInWishlist(productId) : false;
+  const isVariantInCart = hasSelectedVariantInCart(
+    productId,
+    selectedVariant?._id || null,
+  );
+  const isBuyNowDisabled = !isVariantInCart && availableQty === 0;
 
   return (
     <section
@@ -762,35 +644,27 @@ const ProductDetailPage = () => {
                 </Button>
 
                 <Button
-                  variant={isWishlisted ? "contained" : "outlined"}
+                  variant="outlined"
                   size="large"
-                  startIcon={
-                    isWishlisted ? (
-                      <IoMdHeart size={20} />
-                    ) : (
-                      <IoMdHeartEmpty size={20} />
-                    )
-                  }
-                  onClick={handleWishlistToggle}
-                  data-track="product_cta_wishlist_toggle"
+                  onClick={handleBuyNow}
+                  data-track="product_cta_buy_now"
                   data-product-id={String(productId || "")}
+                  disabled={isBuyNowDisabled}
                   sx={{
-                    borderColor: isWishlisted ? "#ef4444" : "#d1d5db",
-                    color: isWishlisted ? "#fff" : "#6b7280",
-                    backgroundColor: isWishlisted ? "#ef4444" : "transparent",
+                    borderColor: "var(--primary)",
+                    color: "var(--primary)",
+                    backgroundColor: "transparent",
                     "&:hover": {
-                      borderColor: "#ef4444",
-                      backgroundColor: isWishlisted
-                        ? "#dc2626"
-                        : "rgba(239, 68, 68, 0.04)",
+                      borderColor: "var(--primary)",
+                      backgroundColor: "rgba(var(--flavor-badge), 0.08)",
                     },
-                    padding: "12px 16px",
+                    padding: "12px 20px",
                     borderRadius: "14px",
                     textTransform: "none",
                     fontWeight: 600,
                   }}
                 >
-                  {isWishlisted ? "Wishlisted" : "Add to Wishlist"}
+                  Buy Now
                 </Button>
               </div>
 
@@ -959,159 +833,6 @@ const ProductDetailPage = () => {
             )}
           </div>
         </div>
-
-        {(comboLoading || comboSections) && (
-          <div className="mt-12 space-y-10">
-            {comboLoading && (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <CircularProgress size={18} />
-                Loading bundle recommendations...
-              </div>
-            )}
-
-            {comboError && (
-              <div className="text-sm text-red-500">{comboError}</div>
-            )}
-
-            {fbtProducts.length > 0 && (
-              <section data-track-section="fbt_section" className="space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    Frequently Bought Together
-                  </h2>
-                  <span className="text-sm text-gray-500">
-                    Hand-picked bundles based on recent orders.
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {fbtProducts.map((item) => {
-                    const productId = item?._id || item?.id;
-                    const isChecked = fbtSelections.has(String(productId));
-                    return (
-                      <label
-                        key={productId}
-                        className="cursor-pointer border border-gray-100 rounded-2xl p-3 bg-white shadow-sm hover:shadow-lg transition"
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleFbtSelection(productId)}
-                            className="accent-primary"
-                          />
-                          <span className="text-xs font-semibold text-gray-500">
-                            Select
-                          </span>
-                        </div>
-                        <div className="w-full h-28 bg-gray-50 rounded-xl flex items-center justify-center">
-                          <img
-                            src={getImageUrl(
-                              item?.thumbnail || item?.images?.[0] || "/product_1.png",
-                            )}
-                            alt={item?.name || "Product"}
-                            className="w-full h-full object-contain p-2"
-                          />
-                        </div>
-                        <p className="mt-2 text-sm font-semibold text-gray-900 line-clamp-2">
-                          {item?.name || "Product"}
-                        </p>
-                        <p className="text-sm font-bold text-primary">
-                          {formatPrice(Number(item?.price || 0))}
-                        </p>
-                      </label>
-                    );
-                  })}
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-gray-600">
-                    Selected total:{" "}
-                    <span className="font-bold text-gray-900">
-                      {formatPrice(Number(fbtSelectedTotal || 0))}
-                    </span>
-                  </p>
-                  <button
-                    onClick={handleAddFbtToCart}
-                    className="px-6 py-2 rounded-full bg-primary text-white font-semibold hover:brightness-110 transition"
-                  >
-                    Add selected to cart
-                  </button>
-                </div>
-              </section>
-            )}
-
-            {comboSections?.bundleAndSave?.length > 0 && (
-              <section data-track-section="bundle_and_save" className="space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    Bundle &amp; Save
-                  </h2>
-                  <span className="text-sm text-gray-500">
-                    Save more with curated bundles.
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {comboSections.bundleAndSave.map((combo) => (
-                    <ComboCard
-                      key={combo._id || combo.slug}
-                      combo={combo}
-                      variant="compact"
-                      context="bundle_and_save"
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {comboSections?.completeTheSet?.length > 0 && (
-              <section data-track-section="complete_the_set" className="space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    Complete the Set
-                  </h2>
-                  <span className="text-sm text-gray-500">
-                    Build the perfect stack with these combos.
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {comboSections.completeTheSet.map((combo) => (
-                    <ComboCard
-                      key={combo._id || combo.slug}
-                      combo={combo}
-                      variant="compact"
-                      context="complete_the_set"
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {comboSections?.recommendedCombos?.length > 0 && (
-              <section
-                data-track-section="recommended_combos"
-                className="space-y-4"
-              >
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    Recommended Combos
-                  </h2>
-                  <span className="text-sm text-gray-500">
-                    Personalized bundles just for you.
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {comboSections.recommendedCombos.map((combo) => (
-                    <ComboCard
-                      key={combo._id || combo.slug}
-                      combo={combo}
-                      variant="compact"
-                      context="recommended_combos"
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
 
         {/* Related Products */}
         {relatedProducts.length > 0 && (
