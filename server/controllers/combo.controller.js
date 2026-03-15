@@ -275,11 +275,14 @@ export const getComboSections = asyncHandler(async (req, res) => {
 
 export const getCartUpsells = asyncHandler(async (req, res) => {
   const cartItems = Array.isArray(req.body?.items) ? req.body.items : [];
-  const productIds = cartItems
-    .map((item) => String(item?.productId || item?.product || "").trim())
-    .filter(Boolean);
+  const normalizedItems = cartItems
+    .map((item) => ({
+      productId: String(item?.productId || item?.product || "").trim(),
+      variantId: String(item?.variantId || item?.variant || "").trim(),
+    }))
+    .filter((item) => item.productId);
 
-  const suggestions = await getCartUpsellCombos(productIds, { limit: 6 });
+  const suggestions = await getCartUpsellCombos(normalizedItems, { limit: 6 });
   return sendSuccess(res, { suggestions });
 });
 

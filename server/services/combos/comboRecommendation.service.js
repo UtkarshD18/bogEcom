@@ -110,9 +110,33 @@ export const getFrequentlyBoughtTogether = async (productId, { limit = 4 } = {})
   return result;
 };
 
-export const getCartUpsellCombos = async (cartProductIds = [], { limit = 6 } = {}) => {
-  const uniqueIds = Array.from(new Set(cartProductIds.map(String))).filter(Boolean);
-  if (uniqueIds.length === 0) return [];
+export const getCartUpsellCombos = async (cartItems = [], { limit = 6 } = {}) => {
+  const normalizedItems = Array.isArray(cartItems)
+    ? cartItems
+        .map((item) => ({
+          productId: String(item?.productId || item?.product || "").trim(),
+          variantId: String(item?.variantId || item?.variant || "").trim(),
+        }))
+        .filter((item) => item.productId)
+    : [];
+
+  if (normalizedItems.length === 0) return [];
+
+  const itemKeys = normalizedItems
+    .map((item) => `${item.productId}:${item.variantId || ""}`)
+    .sort();
+  const cacheKey = getCacheKey(
+    "cart_upsell",
+    `${itemKeys.join("|")}:${Number(limit || 6)}`,
+  );
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  const uniqueIds = Array.from(
+    new Set(normalizedItems.map((item) => String(item.productId))),
+  ).filter(Boolean);
+  const cartProductIdSet = new Set(uniqueIds);
+  const cartVariantKeySet = new Set(itemKeys);
 
   const combos = await ComboModel.find({
     ...buildActiveComboFilter(),
@@ -123,12 +147,23 @@ export const getCartUpsellCombos = async (cartProductIds = [], { limit = 6 } = {
     .lean();
 
   const suggestions = combos.map((combo) => {
-    const itemProductIds = (combo.items || []).map((item) => String(item.productId));
-    const missing = itemProductIds.filter((id) => !uniqueIds.includes(id));
+    const comboItems = Array.isArray(combo.items) ? combo.items : [];
+    const missingItems = comboItems.filter((item) => {
+      const productId = String(item?.productId || "");
+      if (!productId) return false;
+      const variantId = item?.variantId ? String(item.variantId) : "";
+      if (variantId) {
+        return !cartVariantKeySet.has(`${productId}:${variantId}`);
+      }
+      return !cartProductIdSet.has(productId);
+    });
+    const missingProductIds = missingItems
+      .map((item) => String(item?.productId || ""))
+      .filter(Boolean);
     return {
       combo,
-      missingCount: missing.length,
-      missingProductIds: missing,
+      missingCount: missingProductIds.length,
+      missingProductIds,
     };
   });
 
@@ -142,11 +177,14 @@ export const getCartUpsellCombos = async (cartProductIds = [], { limit = 6 } = {
     .slice(0, Math.max(Number(limit || 6), 1));
 
   const withAvailability = await attachAvailability(sorted.map((entry) => entry.combo));
-  return sorted.map((entry, index) => ({
+  const response = sorted.map((entry, index) => ({
     combo: withAvailability[index] || entry.combo,
     missingCount: entry.missingCount,
     missingProductIds: entry.missingProductIds,
   }));
+
+  setCached(cacheKey, response);
+  return response;
 };
 
 export const getRecommendedCombosForProduct = async (productId, { limit = 4 } = {}) => {

@@ -22,7 +22,6 @@ const CartDrawer = () => {
         setIsDrawerOpen,
         cartItems,
         addToCart,
-        addComboToCart,
         removeFromCart,
         removeComboFromCart,
         updateQuantity,
@@ -39,6 +38,8 @@ const CartDrawer = () => {
     const [comboUpsells, setComboUpsells] = useState([]);
     const [comboUpsellLoading, setComboUpsellLoading] = useState(false);
     const trackedComboViewsRef = useRef(new Set());
+    const comboUpsellCacheRef = useRef(new Map());
+    const lastUpsellKeyRef = useRef("");
     const router = useRouter();
     const subtotal = round2(cartSubTotalAmount || 0);
     const shippingCost = 0; // DISPLAY-ONLY shipping is shown struck-through below.
@@ -108,6 +109,20 @@ const CartDrawer = () => {
             variants.find(
                 (variant) => String(variant?._id || variant?.id) === String(variantId),
             ) || null
+        );
+    };
+
+    const resolveCartItemVariantId = (item) => {
+        if (!item) return null;
+        if (item?.variant && typeof item.variant === "object") {
+            return item.variant._id || item.variant.id || null;
+        }
+        return (
+            item?.variantId ||
+            item?.variant ||
+            item?.selectedVariant?._id ||
+            item?.selectedVariant?.id ||
+            null
         );
     };
 
@@ -195,6 +210,16 @@ const CartDrawer = () => {
         };
     };
 
+    const resolveVariantLabel = (variant, product) => {
+        if (!variant) return "";
+        if (variant?.name) return variant.name;
+        if (variant?.weight) {
+            const unit = variant?.unit || product?.unit || "";
+            return `${variant.weight}${unit}`.trim();
+        }
+        return "";
+    };
+
     const getOfferData = (product) => {
         const defaultVariant =
             product?.hasVariants && Array.isArray(product?.variants)
@@ -233,31 +258,146 @@ const CartDrawer = () => {
             originalPrice,
             savings,
             percentOff: Math.min(percentOff, 30),
+            variantId: defaultVariant?._id || defaultVariant?.id || null,
+            variantLabel: resolveVariantLabel(defaultVariant, product),
+            variant: defaultVariant || null,
         };
     };
 
-    const cartProductIds = useMemo(() => {
-        const ids = new Set();
+    const buildOfferItemFromProduct = (product) => {
+        if (!product) return null;
+        const offer = getOfferData(product);
+        const productId = product?._id || product?.id;
+        if (!productId) return null;
+        return {
+            source: "product",
+            productId: String(productId),
+            name: product?.name || product?.title || "Recommended product",
+            image: product?.thumbnail || product?.images?.[0] || "/product_1.png",
+            discountedPrice: offer.discountedPrice,
+            originalPrice: offer.originalPrice,
+            percentOff: offer.percentOff,
+            variantLabel: offer.variantLabel || "",
+            variantId: offer.variantId || null,
+            productRef: product,
+            offer,
+        };
+    };
+
+    const buildOfferItemFromCombo = (entry) => {
+        const combo = entry?.combo || entry;
+        if (!combo) return null;
+        const comboItems = Array.isArray(combo?.items) ? combo.items : [];
+        if (!comboItems.length) return null;
+        const missingIds = Array.isArray(entry?.missingProductIds)
+            ? entry.missingProductIds.map((id) => String(id))
+            : [];
+        const preferredItem =
+            (missingIds.length > 0
+                ? comboItems.find((item) =>
+                    missingIds.includes(String(item?.productId || "")),
+                )
+                : comboItems[0]) || comboItems[0];
+        if (!preferredItem) return null;
+
+        const productId =
+            preferredItem?.productId || preferredItem?.product?._id || preferredItem?.product?.id;
+        if (!productId) return null;
+        const productMatch = products?.find(
+            (product) => String(product?._id || product?.id) === String(productId),
+        );
+        const variantId = preferredItem?.variantId || null;
+        const matchedVariant =
+            variantId && Array.isArray(productMatch?.variants)
+                ? productMatch.variants.find(
+                    (variant) =>
+                        String(variant?._id || variant?.id) === String(variantId),
+                )
+                : null;
+        const discountedPrice = round2(
+            Number(preferredItem?.price ?? productMatch?.price ?? 0),
+        );
+        const originalPrice = round2(
+            Number(preferredItem?.originalPrice ?? productMatch?.originalPrice ?? 0),
+        );
+        const resolvedOriginal =
+            originalPrice > 0 ? originalPrice : discountedPrice;
+        const percentOff =
+            resolvedOriginal > discountedPrice
+                ? Math.round(
+                    ((resolvedOriginal - discountedPrice) / resolvedOriginal) * 100,
+                )
+                : 0;
+
+        return {
+            source: "combo",
+            productId: String(productId),
+            name:
+                preferredItem?.productTitle ||
+                productMatch?.name ||
+                combo?.name ||
+                "Recommended product",
+            image:
+                preferredItem?.image ||
+                productMatch?.thumbnail ||
+                productMatch?.images?.[0] ||
+                combo?.thumbnail ||
+                combo?.image ||
+                "/product_1.png",
+            discountedPrice,
+            originalPrice: resolvedOriginal,
+            percentOff,
+            variantLabel:
+                preferredItem?.variantName ||
+                resolveVariantLabel(matchedVariant, productMatch) ||
+                "",
+            variantId: variantId ? String(variantId) : null,
+            productRef: productMatch || null,
+        };
+    };
+
+    const cartUpsellItems = useMemo(() => {
+        const items = [];
         cartItems.forEach((item) => {
             if (isComboItem(item)) {
                 const comboItems = item?.comboSnapshot?.items || item?.combo?.items || [];
                 comboItems.forEach((entry) => {
                     const productId = entry?.productId || entry?.product?._id || entry?.product?.id;
-                    if (productId) ids.add(String(productId));
+                    if (!productId) return;
+                    items.push({
+                        productId: String(productId),
+                        variantId: entry?.variantId ? String(entry.variantId) : "",
+                    });
                 });
                 return;
             }
 
-            const id = resolveProductId(item);
-            if (id) ids.add(String(id));
+            const productId = resolveProductId(item);
+            if (!productId) return;
+            const variantId = resolveCartItemVariantId(item);
+            items.push({
+                productId: String(productId),
+                variantId: variantId ? String(variantId) : "",
+            });
         });
-        return ids;
+        return items;
     }, [cartItems, isComboItem]);
 
-    const cartProductIdList = useMemo(
-        () => Array.from(cartProductIds.values()),
-        [cartProductIds],
-    );
+    const cartUpsellKey = useMemo(() => {
+        if (!cartUpsellItems.length) return "";
+        return cartUpsellItems
+            .map((entry) => `${entry.productId}:${entry.variantId || ""}`)
+            .sort()
+            .join("|");
+    }, [cartUpsellItems]);
+
+    const cartProductIds = useMemo(() => {
+        const ids = new Set();
+        cartUpsellItems.forEach((entry) => {
+            if (entry?.productId) ids.add(String(entry.productId));
+        });
+        return ids;
+    }, [cartUpsellItems]);
 
     const relatedProducts = useMemo(() => {
         if (!Array.isArray(products)) return [];
@@ -274,15 +414,45 @@ const CartDrawer = () => {
         let active = true;
 
         const loadComboUpsells = async () => {
-            if (!isDrawerOpen) return;
-            if (!cartProductIdList.length) {
-                if (active) setComboUpsells([]);
+            if (!isDrawerOpen) {
+                if (active) setComboUpsellLoading(false);
                 return;
             }
+
+            if (!cartUpsellItems.length) {
+                if (active) {
+                    setComboUpsells([]);
+                    setComboUpsellLoading(false);
+                }
+                return;
+            }
+
+            if (cartUpsellKey && lastUpsellKeyRef.current !== cartUpsellKey) {
+                lastUpsellKeyRef.current = cartUpsellKey;
+                comboUpsellCacheRef.current.clear();
+                if (active) {
+                    setComboUpsells([]);
+                }
+            }
+
+            const cached = cartUpsellKey
+                ? comboUpsellCacheRef.current.get(cartUpsellKey)
+                : null;
+            if (cached) {
+                if (active) {
+                    setComboUpsells(cached);
+                    setComboUpsellLoading(false);
+                }
+                return;
+            }
+
             try {
                 setComboUpsellLoading(true);
                 const response = await postData("/api/combos/cart-upsell", {
-                    items: cartProductIdList.map((id) => ({ productId: id })),
+                    items: cartUpsellItems.map((entry) => ({
+                        productId: entry.productId,
+                        variantId: entry.variantId || undefined,
+                    })),
                 });
                 if (!active) return;
                 if (response?.success) {
@@ -290,6 +460,9 @@ const CartDrawer = () => {
                         ? response.data.suggestions
                         : [];
                     setComboUpsells(suggestions);
+                    if (cartUpsellKey) {
+                        comboUpsellCacheRef.current.set(cartUpsellKey, suggestions);
+                    }
                 } else {
                     setComboUpsells([]);
                 }
@@ -309,7 +482,7 @@ const CartDrawer = () => {
         return () => {
             active = false;
         };
-    }, [cartProductIdList, isDrawerOpen]);
+    }, [cartUpsellItems, cartUpsellKey, isDrawerOpen]);
 
     useEffect(() => {
         if (!comboUpsells.length) return;
@@ -349,41 +522,71 @@ const CartDrawer = () => {
         }, 0),
     );
 
-    const comboSavingsPreview = round2(
-        comboUpsells.reduce((sum, entry) => {
-            const combo = entry?.combo || entry;
-            return sum + Number(combo?.totalSavings || 0);
-        }, 0),
+    const offerItem = useMemo(() => {
+        if (comboUpsells.length > 0) {
+            const comboOffer = buildOfferItemFromCombo(comboUpsells[0]);
+            if (comboOffer) return comboOffer;
+        }
+        if (relatedProducts.length > 0) {
+            return buildOfferItemFromProduct(relatedProducts[0]);
+        }
+        return null;
+    }, [comboUpsells, relatedProducts, products]);
+
+    const offerPreviewSavings = round2(
+        offerItem
+            ? Math.max(
+                Number(offerItem.originalPrice || 0) -
+                Number(offerItem.discountedPrice || 0),
+                0,
+            )
+            : offerSavingsPreview,
     );
 
-    const handleAddOfferProduct = async (product) => {
-        if (!product) return;
-        const id = product?._id || product?.id;
-        if (!id || activeOfferId) return;
+    const handleAddOfferProduct = async (offer) => {
+        if (!offer || activeOfferId) return;
+        const id = offer?.productId;
+        if (!id) return;
         setActiveOfferId(String(id));
         try {
-            await addToCart(product, 1);
-        } finally {
-            setActiveOfferId(null);
-        }
-    };
-
-    const handleAddComboUpsell = async (entry) => {
-        const combo = entry?.combo || entry;
-        const comboId = combo?._id || combo?.id;
-        if (!comboId || activeOfferId) return;
-        const activeKey = `combo-${comboId}`;
-        setActiveOfferId(activeKey);
-        try {
-            trackEvent("combo_click", {
-                comboId: String(comboId),
-                comboName: combo?.name || "",
-                comboSlug: combo?.slug || "",
-                comboType: combo?.comboType || "",
-                sectionName: "cart_upsell",
-                action: "add",
-            });
-            await addComboToCart(combo, 1);
+            const baseProduct =
+                offer.productRef ||
+                ({
+                    _id: id,
+                    id,
+                    name: offer.name,
+                    thumbnail: offer.image,
+                    images: offer.image ? [offer.image] : undefined,
+                });
+            const variantFromProduct =
+                offer.variantId && Array.isArray(baseProduct?.variants)
+                    ? baseProduct.variants.find(
+                        (variant) =>
+                            String(variant?._id || variant?.id) ===
+                            String(offer.variantId),
+                    )
+                    : null;
+            const cartProduct = offer.variantId
+                ? {
+                    ...baseProduct,
+                    price: offer.discountedPrice,
+                    originalPrice: offer.originalPrice,
+                    selectedVariant: {
+                        _id: offer.variantId,
+                        name: offer.variantLabel || variantFromProduct?.name || "",
+                        sku: variantFromProduct?.sku,
+                        price: offer.discountedPrice,
+                        weight: variantFromProduct?.weight,
+                        unit: variantFromProduct?.unit,
+                    },
+                    variantId: offer.variantId,
+                }
+                : {
+                    ...baseProduct,
+                    price: offer.discountedPrice,
+                    originalPrice: offer.originalPrice,
+                };
+            await addToCart(cartProduct, 1);
         } finally {
             setActiveOfferId(null);
         }
@@ -561,147 +764,76 @@ const CartDrawer = () => {
                                 <p className="text-xs text-emerald-700 font-semibold">
                                     {cartSavings > 0
                                         ? `You're saving ₹${cartSavings} on this order.`
-                                        : comboUpsells.length > 0
-                                            ? `Unlock up to ₹${comboSavingsPreview} more with bundle deals.`
-                                            : `You can save up to ₹${offerSavingsPreview} more with these add-ons.`}
+                                        : offerPreviewSavings > 0
+                                            ? `Save ₹${offerPreviewSavings} more with this limited-time deal.`
+                                            : "Limited-time offer curated for your cart."}
                                 </p>
 
                                 <div className="space-y-3 pt-1">
-                                    {comboUpsellLoading ? (
-                                        <p className="text-xs text-gray-500">Loading bundle suggestions...</p>
-                                    ) : comboUpsells.length > 0 ? (
-                                        comboUpsells.map((entry) => {
-                                            const combo = entry?.combo || entry;
-                                            const comboId = combo?._id || combo?.id;
-                                            const isAdding = activeOfferId === `combo-${comboId}`;
-                                            const productsPreview = Array.isArray(combo?.items)
-                                                ? combo.items
-                                                    .map((item) => item?.productTitle || item?.name)
-                                                    .filter(Boolean)
-                                                    .slice(0, 3)
-                                                    .join(", ")
-                                                : "";
-                                            const missingCount = Number(entry?.missingCount || 0);
-                                            return (
-                                                <div
-                                                    key={comboId}
-                                                    className="rounded-xl border border-amber-100 bg-white p-3 shadow-sm"
-                                                >
-                                                    <div className="flex gap-3">
-                                                        <div className="w-16 h-16 rounded-lg border border-gray-100 bg-gray-50 flex items-center justify-center p-2 shrink-0">
-                                                            <img
-                                                                src={getImageUrl(combo?.thumbnail || combo?.image || "/combo_placeholder.png")}
-                                                                alt={combo?.name || "Combo deal"}
-                                                                className="w-full h-full object-contain"
-                                                            />
-                                                        </div>
+                                    {comboUpsellLoading && !offerItem ? (
+                                        <p className="text-xs text-gray-500">Loading offer...</p>
+                                    ) : offerItem ? (
+                                        <div className="rounded-xl border border-amber-100 bg-white p-3 shadow-sm">
+                                            <div className="flex gap-3">
+                                                <div className="w-16 h-16 rounded-lg border border-gray-100 bg-gray-50 flex items-center justify-center p-2 shrink-0">
+                                                    <img
+                                                        src={getImageUrl(offerItem.image)}
+                                                        alt={offerItem.name || "Recommended product"}
+                                                        className="w-full h-full object-contain"
+                                                    />
+                                                </div>
 
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center justify-between gap-2">
-                                                                <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">
-                                                                    Bundle upgrade
-                                                                </p>
-                                                                <span className="rounded-full bg-emerald-50 text-emerald-600 px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap">
-                                                                    Save ₹{round2(combo?.totalSavings || 0)}
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">
+                                                            Limited time offer
+                                                        </p>
+                                                        {offerItem.percentOff > 0 && (
+                                                            <span className="rounded-full bg-red-50 text-red-600 px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap">
+                                                                {offerItem.percentOff}% OFF
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <Link
+                                                        href={`/product/${offerItem.productId}`}
+                                                        onClick={handleCloseCart}
+                                                        className="line-clamp-1 text-sm font-semibold text-gray-900 hover:text-primary"
+                                                    >
+                                                        {offerItem.name}
+                                                    </Link>
+                                                    {offerItem.variantLabel && (
+                                                        <p className="mt-0.5 text-xs text-gray-500">
+                                                            {offerItem.variantLabel}
+                                                        </p>
+                                                    )}
+                                                    <p className="mt-0.5 text-xs text-gray-500">
+                                                        Earlier price ₹{round2(offerItem.originalPrice || 0)}, now only ₹{round2(offerItem.discountedPrice || 0)}
+                                                    </p>
+
+                                                    <div className="mt-2 flex items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-2">
+                                                            {offerItem.originalPrice > offerItem.discountedPrice && (
+                                                                <span className="text-xs text-gray-400 line-through">
+                                                                    ₹{round2(offerItem.originalPrice || 0)}
                                                                 </span>
-                                                            </div>
-                                                            <p className="line-clamp-1 text-sm font-semibold text-gray-900">
-                                                                {combo?.name || "Combo Deal"}
-                                                            </p>
-                                                            <p className="mt-0.5 text-xs text-gray-500">
-                                                                {missingCount > 0
-                                                                    ? `Complete ${missingCount} more item${missingCount > 1 ? "s" : ""} to unlock this bundle.`
-                                                                    : productsPreview || "Bundle curated for your cart."}
-                                                            </p>
-
-                                                            <div className="mt-2 flex items-center justify-between gap-2">
-                                                                <div className="flex items-center gap-2">
-                                                                    {combo?.originalTotal > combo?.comboPrice && (
-                                                                        <span className="text-xs text-gray-400 line-through">
-                                                                            ₹{round2(combo?.originalTotal || 0)}
-                                                                        </span>
-                                                                    )}
-                                                                    <span className="text-sm font-extrabold text-primary">
-                                                                        ₹{round2(combo?.comboPrice || 0)}
-                                                                    </span>
-                                                                </div>
-                                                                <button
-                                                                    onClick={() => handleAddComboUpsell(entry)}
-                                                                    disabled={isAdding}
-                                                                    className="rounded-full bg-primary text-white text-xs font-semibold px-3 py-1.5 hover:brightness-110 transition disabled:opacity-60"
-                                                                >
-                                                                    {isAdding ? "Adding..." : "Add Combo"}
-                                                                </button>
-                                                            </div>
+                                                            )}
+                                                            <span className="text-sm font-extrabold text-primary">
+                                                                ₹{round2(offerItem.discountedPrice || 0)}
+                                                            </span>
                                                         </div>
+                                                        <button
+                                                            onClick={() => handleAddOfferProduct(offerItem)}
+                                                            disabled={activeOfferId === String(offerItem.productId)}
+                                                            className="rounded-full bg-primary text-white text-xs font-semibold px-3 py-1.5 hover:brightness-110 transition disabled:opacity-60"
+                                                        >
+                                                            {activeOfferId === String(offerItem.productId)
+                                                                ? "Adding..."
+                                                                : "Add to cart"}
+                                                        </button>
                                                     </div>
                                                 </div>
-                                            );
-                                        })
-                                    ) : relatedProducts.length > 0 ? (
-                                        relatedProducts.map((product) => {
-                                            const productId = product?._id || product?.id;
-                                            const image = product?.thumbnail || product?.images?.[0] || "/product_1.png";
-                                            const name = product?.name || "Recommended product";
-                                            const offer = getOfferData(product);
-                                            const isAdding = activeOfferId === String(productId);
-
-                                            return (
-                                                <div
-                                                    key={productId}
-                                                    className="rounded-xl border border-amber-100 bg-white p-3 shadow-sm"
-                                                >
-                                                    <div className="flex gap-3">
-                                                        <div className="w-16 h-16 rounded-lg border border-gray-100 bg-gray-50 flex items-center justify-center p-2 shrink-0">
-                                                            <img
-                                                                src={getImageUrl(image)}
-                                                                alt={name}
-                                                                className="w-full h-full object-contain"
-                                                            />
-                                                        </div>
-
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center justify-between gap-2">
-                                                                <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">
-                                                                    You may also like
-                                                                </p>
-                                                                <span className="rounded-full bg-red-50 text-red-600 px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap">
-                                                                    {offer.percentOff}% OFF
-                                                                </span>
-                                                            </div>
-                                                            <Link
-                                                                href={`/product/${productId}`}
-                                                                onClick={handleCloseCart}
-                                                                className="line-clamp-1 text-sm font-semibold text-gray-900 hover:text-primary"
-                                                            >
-                                                                {name}
-                                                            </Link>
-                                                            <p className="mt-0.5 text-xs text-gray-500">
-                                                                Earlier price ₹{offer.originalPrice}, now only ₹{offer.discountedPrice}
-                                                            </p>
-
-                                                            <div className="mt-2 flex items-center justify-between gap-2">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-xs text-gray-400 line-through">
-                                                                        ₹{offer.originalPrice}
-                                                                    </span>
-                                                                    <span className="text-sm font-extrabold text-primary">
-                                                                        ₹{offer.discountedPrice}
-                                                                    </span>
-                                                                </div>
-                                                                <button
-                                                                    onClick={() => handleAddOfferProduct(product)}
-                                                                    disabled={isAdding}
-                                                                    className="rounded-full bg-primary text-white text-xs font-semibold px-3 py-1.5 hover:brightness-110 transition disabled:opacity-60"
-                                                                >
-                                                                    {isAdding ? "Adding..." : "Add"}
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
+                                            </div>
+                                        </div>
                                     ) : (
                                         <p className="text-xs text-gray-500">
                                             New deals will appear here based on your cart.
