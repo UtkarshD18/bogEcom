@@ -724,6 +724,7 @@ export const createProduct = async (req, res) => {
       category,
       subCategory,
       sku,
+      hsnCode,
       stock,
       hasVariants,
       variants,
@@ -784,6 +785,11 @@ export const createProduct = async (req, res) => {
       originalPrice === undefined || originalPrice === null
         ? undefined
         : roundWholeNumber(originalPrice);
+    const sanitizedHsnCode = String(hsnCode || "")
+      .replace(/\D/g, "")
+      .slice(0, 6);
+    const normalizedHsnCode =
+      sanitizedHsnCode.length > 0 ? sanitizedHsnCode : undefined;
 
     // Check if category exists
     const categoryExists = await CategoryModel.findById(category);
@@ -828,6 +834,10 @@ export const createProduct = async (req, res) => {
         });
       }
       processedVariants = processedVariants.map((variant) => {
+        const variantHsnRaw = String(variant?.hsnCode || "")
+          .replace(/\D/g, "")
+          .slice(0, 6);
+        const variantHsnCode = variantHsnRaw.length > 0 ? variantHsnRaw : undefined;
         const variantPrice = roundWholeNumber(variant.price);
         const variantOriginalPrice =
           variant.originalPrice === undefined || variant.originalPrice === null
@@ -843,6 +853,7 @@ export const createProduct = async (req, res) => {
             : 0;
         return {
           ...variant,
+          hsnCode: variantHsnCode,
           price: variantPrice ?? 0,
           originalPrice: variantOriginalPrice,
           discountPercent,
@@ -878,6 +889,7 @@ export const createProduct = async (req, res) => {
       category,
       subCategory,
       sku,
+      hsnCode: normalizedHsnCode,
       stock: variantInventoryTotals?.stock ?? normalizedStock,
       stock_quantity: variantInventoryTotals?.stock ?? normalizedStock,
       reserved_quantity:
@@ -1007,6 +1019,26 @@ export const updateProduct = async (req, res) => {
       } else {
         delete updateData.originalPrice;
       }
+    }
+    if ("hsnCode" in updateData) {
+      const sanitized = String(updateData.hsnCode || "")
+        .replace(/\D/g, "")
+        .slice(0, 6);
+      updateData.hsnCode = sanitized.length > 0 ? sanitized : undefined;
+    }
+    if (Array.isArray(updateData.variants)) {
+      updateData.variants = updateData.variants.map((variant) => {
+        if (!Object.prototype.hasOwnProperty.call(variant || {}, "hsnCode")) {
+          return variant;
+        }
+        const sanitized = String(variant?.hsnCode || "")
+          .replace(/\D/g, "")
+          .slice(0, 6);
+        return {
+          ...variant,
+          hsnCode: sanitized.length > 0 ? sanitized : undefined,
+        };
+      });
     }
 
     const product = await ProductModel.findById(id);

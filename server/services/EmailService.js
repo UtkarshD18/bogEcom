@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import nodemailer from "nodemailer";
 import { logger } from "../utils/errorHandler.js";
+import SettingsModel from "../models/settings.model.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,12 +59,108 @@ const escapeHtml = (value) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+const toTemplateString = (value) => String(value ?? "");
+
 const sanitizeTemplateData = (data = {}) => {
   const out = {};
   Object.entries(data || {}).forEach(([key, value]) => {
     out[key] = escapeHtml(value);
   });
   return out;
+};
+
+const normalizeTemplateData = (data = {}) => {
+  const out = {};
+  Object.entries(data || {}).forEach(([key, value]) => {
+    out[key] = toTemplateString(value);
+  });
+  return out;
+};
+
+const EMAIL_TEMPLATE_OVERRIDE_PREFIX = "emailTemplateOverride__";
+const TEMPLATE_OVERRIDE_CACHE_TTL_MS = 30_000;
+const templateOverrideCache = new Map();
+
+const RAW_HTML_KEYS = new Set([
+  // Transactional order emails (optional): rich HTML table/cards of ordered items.
+  "items_html",
+]);
+
+const buildOverrideKey = (templateFile) =>
+  `${EMAIL_TEMPLATE_OVERRIDE_PREFIX}${String(templateFile || "").trim()}`;
+
+const normalizeOverrideValue = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const enabled = value.enabled !== false;
+  const html = String(value.html ?? "").trim();
+  const subject = String(value.subject ?? "").trim();
+  const text = String(value.text ?? "").trim();
+  return { enabled, html, subject, text };
+};
+
+const getTemplateOverride = async (templateFile) => {
+  const safeTemplateFile = String(templateFile || "").trim();
+  if (!safeTemplateFile) return null;
+
+  const now = Date.now();
+  const cached = templateOverrideCache.get(safeTemplateFile);
+  if (cached && now - cached.loadedAt < TEMPLATE_OVERRIDE_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  let override = null;
+  try {
+    const setting = await SettingsModel.findOne({
+      key: buildOverrideKey(safeTemplateFile),
+      isActive: true,
+    })
+      .select("value -_id")
+      .lean();
+
+    override = normalizeOverrideValue(setting?.value);
+  } catch (error) {
+    logger.warn("EmailService", "Failed to load email template override", {
+      templateFile: safeTemplateFile,
+      error: error?.message || String(error),
+    });
+    override = null;
+  }
+
+  templateOverrideCache.set(safeTemplateFile, { loadedAt: now, value: override });
+  return override;
+};
+
+export const invalidateEmailTemplateOverrideCache = (templateFile = "") => {
+  const safeTemplateFile = String(templateFile || "").trim();
+  if (!safeTemplateFile) {
+    templateOverrideCache.clear();
+    return;
+  }
+  templateOverrideCache.delete(safeTemplateFile);
+};
+
+const renderTemplateString = (
+  template,
+  data = {},
+  { escapeValues = true } = {},
+) => {
+  const source = toTemplateString(template);
+  const safeData = escapeValues
+    ? sanitizeTemplateData(data)
+    : normalizeTemplateData(data);
+
+  const withRawHtml = source.replace(
+    /\{\{\{\s*([a-zA-Z0-9_]+)\s*\}\}\}/g,
+    (_match, key) => {
+      if (!RAW_HTML_KEYS.has(key)) return "";
+      if (!(key in (data || {}))) return "";
+      return toTemplateString(data?.[key]);
+    },
+  );
+
+  return withRawHtml.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) =>
+    key in safeData ? toTemplateString(safeData[key]) : "",
+  );
 };
 
 const normalizeEnvString = (value) => {
@@ -377,12 +474,22 @@ export const initializeEmailService = async () => {
 };
 
 export const renderEmailTemplate = async (templateFile, data = {}) => {
-  const filePath = path.resolve(EMAIL_TEMPLATES_DIR, templateFile);
-  const raw = await fs.readFile(filePath, "utf8");
-  const safeData = sanitizeTemplateData(data);
-  return raw.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) =>
-    key in safeData ? String(safeData[key]) : "",
-  );
+  const safeTemplateFile = String(templateFile || "").trim();
+  if (!safeTemplateFile) {
+    throw new Error("Missing templateFile");
+  }
+
+  const override = await getTemplateOverride(safeTemplateFile);
+
+  let raw = "";
+  if (override?.enabled && override?.html) {
+    raw = override.html;
+  } else {
+    const filePath = path.resolve(EMAIL_TEMPLATES_DIR, safeTemplateFile);
+    raw = await fs.readFile(filePath, "utf8");
+  }
+
+  return renderTemplateString(raw, data, { escapeValues: true });
 };
 
 export const sendEmail = async ({
@@ -469,12 +576,33 @@ export const sendTemplatedEmail = async ({
   from = null,
 }) => {
   try {
+    const safeTemplateFile = String(templateFile || "").trim();
+    if (!safeTemplateFile) {
+      throw new Error("Missing templateFile");
+    }
+
+    const override = await getTemplateOverride(safeTemplateFile);
     const html = await renderEmailTemplate(templateFile, templateData);
+
+    const resolvedSubject =
+      override?.enabled && override?.subject
+        ? renderTemplateString(override.subject, templateData, {
+            escapeValues: false,
+          })
+        : subject;
+
+    const resolvedText =
+      override?.enabled && override?.text
+        ? renderTemplateString(override.text, templateData, {
+            escapeValues: false,
+          })
+        : text;
+
     return sendEmail({
       to,
-      subject,
+      subject: resolvedSubject,
       html,
-      text,
+      text: resolvedText,
       context,
       from,
     });

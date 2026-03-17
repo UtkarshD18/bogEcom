@@ -108,7 +108,9 @@ export const downloadInvoiceByOrder = async (req, res) => {
     }
 
     await fsPromises.access(absolutePath);
-    const filename = `${order.invoiceNumber || `invoice_${orderId}`}.pdf`;
+    const rawFilename = String(order.invoiceNumber || `invoice_${orderId}`);
+    const safeFilename = rawFilename.replace(/[\\/:*?"<>|]/g, "-");
+    const filename = `${safeFilename}.pdf`;
     return res.download(absolutePath, filename);
   } catch (error) {
     return res.status(500).json({

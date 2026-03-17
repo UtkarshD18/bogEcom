@@ -18,4 +18,19 @@ router.delete(
   newsletterController.deleteSubscriber,
 );
 
+// Campaign management (admin-only)
+router.get(
+  "/campaign/template",
+  auth,
+  admin,
+  newsletterController.getCampaignTemplate,
+);
+router.put(
+  "/campaign/template",
+  auth,
+  admin,
+  newsletterController.updateCampaignTemplate,
+);
+router.post("/campaign/send", auth, admin, newsletterController.sendCampaign);
+
 export default router;

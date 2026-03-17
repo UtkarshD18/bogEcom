@@ -1,11 +1,17 @@
 import {
   initializeEmailService,
+  invalidateEmailTemplateOverrideCache,
   sendEmail as sendEmailObjectApi,
   sendTemplatedEmail,
   renderEmailTemplate,
 } from "../services/EmailService.js";
 
-export { initializeEmailService, sendTemplatedEmail, renderEmailTemplate };
+export {
+  initializeEmailService,
+  invalidateEmailTemplateOverrideCache,
+  sendTemplatedEmail,
+  renderEmailTemplate,
+};
 
 // Backward-compatible and modern signatures:
 // - sendEmail({ to, subject, text, html, context, from })

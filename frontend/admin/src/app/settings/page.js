@@ -25,6 +25,7 @@ import {
   MdLocalShipping,
   MdPercent,
   MdRefresh,
+  MdReceiptLong,
   MdSave,
   MdShoppingCart,
   MdStore,
@@ -93,8 +94,21 @@ const FLAVOUR_BUTTON_FIELDS = [
   },
 ];
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const SERIES_PREFIX_PATTERN = /^[a-z0-9]{1,10}$/i;
+const FISCAL_YEAR_CODE_PATTERN = /^\d{4}$/;
 
 const isHexColor = (value) => HEX_COLOR_PATTERN.test(String(value || "").trim());
+
+const resolveFiscalYearCode = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  const year = date.getFullYear();
+  const month = date.getMonth(); // 0-based
+  // India FY: Apr (3) -> Mar (2)
+  const startYear = month >= 3 ? year : year - 1;
+  const endYear = startYear + 1;
+  const yy = (num) => String(num).slice(-2);
+  return `${yy(startYear)}${yy(endYear)}`;
+};
 
 const toDateTimeLocal = (value) => {
   if (!value) return "";
@@ -149,6 +163,12 @@ const SettingsPage = () => {
     codEnabled: false,
     codMinOrder: 200,
     codMaxOrder: 5000,
+  });
+
+  const [orderNumberSeries, setOrderNumberSeries] = useState({
+    enabled: false,
+    prefix: "H1G",
+    fiscalYearCode: "",
   });
 
   const [discountSettings, setDiscountSettings] = useState({
@@ -486,6 +506,25 @@ const SettingsPage = () => {
             case "orderSettings":
               setOrderSettings(setting.value);
               break;
+            case "orderNumberSeries": {
+              const raw =
+                setting?.value && typeof setting.value === "object"
+                  ? setting.value
+                  : null;
+              setOrderNumberSeries((prev) => ({
+                ...prev,
+                ...(raw
+                  ? {
+                      enabled: raw.enabled === true,
+                      prefix: String(raw.prefix || prev.prefix || "H1G")
+                        .trim()
+                        .toUpperCase(),
+                      fiscalYearCode: String(raw.fiscalYearCode || "").trim(),
+                    }
+                  : {}),
+              }));
+              break;
+            }
             case "discountSettings":
               setDiscountSettings(setting.value);
               break;
@@ -630,6 +669,19 @@ const SettingsPage = () => {
       return;
     }
 
+    if (orderNumberSeries.enabled) {
+      const safePrefix = String(orderNumberSeries.prefix || "").trim();
+      if (!SERIES_PREFIX_PATTERN.test(safePrefix)) {
+        setToast("Order series prefix must be 1-10 letters/numbers.", "error");
+        return;
+      }
+      const safeFy = String(orderNumberSeries.fiscalYearCode || "").trim();
+      if (safeFy && !FISCAL_YEAR_CODE_PATTERN.test(safeFy)) {
+        setToast("Fiscal year code must be 4 digits (e.g., 2526).", "error");
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const flavourButtonSaveCalls = Object.entries(flavourButtonSettings).map(
@@ -639,6 +691,7 @@ const SettingsPage = () => {
         popupSaveResult,
         shippingSaved,
         orderSaved,
+        orderNumberSeriesSaved,
         discountSaved,
         storeSaved,
         trafficSaved,
@@ -655,6 +708,7 @@ const SettingsPage = () => {
         savePopupConfig(popupSettings),
         saveSetting("shippingSettings", shippingSettings),
         saveSetting("orderSettings", orderSettings),
+        saveSetting("orderNumberSeries", orderNumberSeries),
         saveSetting("discountSettings", discountSettings),
         saveSetting("storeInfo", storeInfo),
         saveSetting("highTrafficNotice", highTrafficNotice),
@@ -691,6 +745,7 @@ const SettingsPage = () => {
       const coreSettingsSaved = [
         shippingSaved,
         orderSaved,
+        orderNumberSeriesSaved,
         discountSaved,
         storeSaved,
         trafficSaved,
@@ -1007,6 +1062,107 @@ const SettingsPage = () => {
             </>
           )}
         </div>
+      </div>
+
+      {/* Invoice / Order Series */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <MdReceiptLong className="text-2xl text-indigo-500" />
+          <h2 className="text-lg font-semibold text-gray-800">
+            Invoice / Order Series
+          </h2>
+        </div>
+        <Divider className="mb-4" />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={orderNumberSeries.enabled}
+                onChange={(e) =>
+                  setOrderNumberSeries((prev) => ({
+                    ...prev,
+                    enabled: e.target.checked,
+                  }))
+                }
+                color="primary"
+              />
+            }
+            label="Enable admin override (recommended only when changing series)"
+          />
+
+          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TextField
+              label="Series Prefix"
+              value={orderNumberSeries.prefix}
+              onChange={(e) =>
+                setOrderNumberSeries((prev) => ({
+                  ...prev,
+                  prefix: e.target.value,
+                }))
+              }
+              size="small"
+              fullWidth
+              helperText="Letters/numbers only. Example: H1G"
+              disabled={!orderNumberSeries.enabled}
+            />
+
+            <TextField
+              label="Fiscal Year Code (optional)"
+              value={orderNumberSeries.fiscalYearCode}
+              onChange={(e) =>
+                setOrderNumberSeries((prev) => ({
+                  ...prev,
+                  fiscalYearCode: e.target.value,
+                }))
+              }
+              size="small"
+              fullWidth
+              helperText="4 digits. Leave blank for auto FY (India Apr-Mar). Example: 2526"
+              disabled={!orderNumberSeries.enabled}
+            />
+          </div>
+        </div>
+
+        {(() => {
+          const now = new Date();
+          const month = now.getMonth();
+          const year = now.getFullYear();
+          const startYear = month >= 3 ? year : year - 1;
+          const currentFy = resolveFiscalYearCode(now);
+          const nextFy = resolveFiscalYearCode(new Date(startYear + 1, 3, 1));
+          const safePrefix = String(
+            orderNumberSeries.prefix || "H1G",
+          ).trim().toUpperCase();
+          const safeFyOverride = String(
+            orderNumberSeries.fiscalYearCode || "",
+          ).trim();
+          const effectivePrefix = orderNumberSeries.enabled
+            ? safePrefix
+            : "H1G";
+          const effectiveFy =
+            orderNumberSeries.enabled && safeFyOverride
+              ? safeFyOverride
+              : currentFy;
+
+          return (
+            <div className="mt-4 text-sm text-gray-600">
+              <p>
+                Current FY code:{" "}
+                <span className="font-mono font-semibold">{currentFy}</span>{" "}
+                (next:{" "}
+                <span className="font-mono font-semibold">{nextFy}</span>)
+              </p>
+              <p className="mt-1">
+                Preview:{" "}
+                <span className="font-mono font-semibold">
+                  {effectivePrefix}
+                  {effectiveFy}/0001
+                </span>
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Discount Settings */}

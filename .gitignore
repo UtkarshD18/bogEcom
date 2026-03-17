@@ -88,3 +88,4 @@ github-deployer-key.json
 .aider*
 server/invoices/
 test-artifacts/
+tmp/order-report-preview-*.xlsx

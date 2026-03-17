@@ -144,6 +144,11 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       href: "/newsletter",
     },
     {
+      name: "Email Templates",
+      icon: <MdMailOutline size={22} />,
+      href: "/email-templates",
+    },
+    {
       name: "Banners",
       icon: <PiImageSquare size={22} />,
       href: "/banners",
