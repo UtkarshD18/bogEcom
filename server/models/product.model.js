@@ -223,6 +223,11 @@ const productSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    hsnCode: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     stock: {
       type: Number,
       default: 0,

@@ -11,6 +11,24 @@ router.post("/unsubscribe", newsletterController.unsubscribe);
 
 // Admin routes
 router.get("/subscribers", auth, admin, newsletterController.getAllSubscribers);
+router.get(
+  "/admin/template",
+  auth,
+  admin,
+  newsletterController.getAdminNewsletterTemplate,
+);
+router.put(
+  "/admin/template",
+  auth,
+  admin,
+  newsletterController.updateAdminNewsletterTemplate,
+);
+router.post(
+  "/admin/send-broadcast",
+  auth,
+  admin,
+  newsletterController.sendNewsletterBroadcast,
+);
 router.delete(
   "/subscribers/:id",
   auth,

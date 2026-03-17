@@ -67,7 +67,6 @@ import {
   resolveUserSegment,
   isComboEligibleForSegment,
 } from "../services/combos/combo.service.js";
-import { recordOrderPairings } from "../services/combos/frequentlyBoughtTogether.service.js";
 import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 import {
   AppError,
@@ -271,6 +270,70 @@ const isPaymentEnabled = async () => {
 const isMaintenanceMode = async () => {
   const maintenanceSetting = await getCachedSetting("maintenanceMode");
   return Boolean(maintenanceSetting?.value);
+};
+
+const ORDER_SERIES_DEFAULTS = Object.freeze({
+  prefix: "H1G",
+  padding: 4,
+});
+
+const escapeRegExp = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const resolveFinancialYearCode = (date = new Date()) => {
+  const current = date instanceof Date ? date : new Date(date);
+  const year = current.getFullYear();
+  const month = current.getMonth();
+  const fyStartYear = month >= 3 ? year : year - 1;
+  const fyEndYear = fyStartYear + 1;
+  return `${String(fyStartYear).slice(-2)}${String(fyEndYear).slice(-2)}`;
+};
+
+const resolveOrderSeriesSettings = async () => {
+  const orderSettings = await getCachedSetting("orderSettings");
+  const rawPrefix = String(orderSettings?.value?.orderSeriesPrefix || ORDER_SERIES_DEFAULTS.prefix)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 6);
+  const rawPadding = Number(orderSettings?.value?.orderSeriesPadding);
+
+  return {
+    prefix: rawPrefix || ORDER_SERIES_DEFAULTS.prefix,
+    padding: Math.min(8, Math.max(3, Number.isFinite(rawPadding) ? rawPadding : ORDER_SERIES_DEFAULTS.padding)),
+  };
+};
+
+const parseOrderSequenceNumber = (value, scopePrefix) => {
+  const raw = String(value || "").trim().toUpperCase();
+  if (!raw.startsWith(scopePrefix)) return null;
+  const sequenceText = raw.slice(scopePrefix.length);
+  const sequence = Number(sequenceText);
+  return Number.isFinite(sequence) && sequence > 0 ? sequence : null;
+};
+
+const generateOrderSeriesNumber = async (referenceDate = new Date()) => {
+  const settings = await resolveOrderSeriesSettings();
+  const fyCode = resolveFinancialYearCode(referenceDate);
+  const scopePrefix = `${settings.prefix}${fyCode}/`;
+  const regex = new RegExp(`^${escapeRegExp(scopePrefix)}\\d+$`, "i");
+
+  const latest = await OrderModel.findOne({ orderNumber: { $regex: regex } })
+    .select("orderNumber")
+    .sort({ createdAt: -1, _id: -1 })
+    .lean();
+
+  let nextSequence =
+    parseOrderSequenceNumber(latest?.orderNumber, scopePrefix) || 0;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    nextSequence += 1;
+    const candidate = `${scopePrefix}${String(nextSequence).padStart(settings.padding, "0")}`;
+    const exists = await OrderModel.exists({ orderNumber: candidate });
+    if (!exists) return candidate;
+  }
+
+  const fallbackSequence = Date.now().toString().slice(-settings.padding);
+  return `${scopePrefix}${fallbackSequence}`;
 };
 
 const isDateOnlyString = (value) =>
@@ -789,76 +852,6 @@ const stringifyOrderItemsForEmail = (order) => {
     .join("\n");
 };
 
-const escapeHtmlForEmail = (value) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-const buildOrderItemsHtmlForEmail = (order) => {
-  const items = Array.isArray(order?.products) ? order.products : [];
-  if (items.length === 0) return "";
-
-  const siteUrl = getPrimaryStoreUrl();
-
-  const rows = items
-    .map((item) => {
-      const productId = String(item?.productId || "").trim();
-      const productUrl = productId
-        ? `${siteUrl}/product/${encodeURIComponent(productId)}`
-        : siteUrl;
-      const title = escapeHtmlForEmail(
-        String(item?.productTitle || item?.name || "Item").trim(),
-      );
-      const variant = escapeHtmlForEmail(String(item?.variantName || "").trim());
-      const quantity = Math.max(Number(item?.quantity || 0), 0);
-      const lineTotal = round2(
-        Number(item?.subTotal || item?.subTotalAmt || item?.price * quantity || 0),
-      );
-      const imageUrl = String(item?.image || "").trim();
-      const imageCell = imageUrl
-        ? `<a href="${escapeHtmlForEmail(
-            productUrl,
-          )}" style="text-decoration:none;display:inline-block;">
-             <img src="${escapeHtmlForEmail(
-               imageUrl,
-             )}" alt="${title}" width="56" height="56" style="display:block;border-radius:10px;object-fit:cover;border:1px solid #ece3d8;background:#fff;" />
-           </a>`
-        : "";
-
-      return `
-<tr>
-  <td style="padding:10px;border-bottom:1px solid #ece3d8;vertical-align:top;width:70px;">${imageCell}</td>
-  <td style="padding:10px;border-bottom:1px solid #ece3d8;vertical-align:top;">
-    <div style="font-weight:700;color:#1c1c1c;font-size:13px;line-height:1.3;">
-      <a href="${escapeHtmlForEmail(
-        productUrl,
-      )}" style="color:#1c1c1c;text-decoration:none;">${title}</a>
-    </div>
-    ${
-      variant
-        ? `<div style="margin-top:2px;color:#6b5b4d;font-size:12px;">${variant}</div>`
-        : ""
-    }
-    <div style="margin-top:6px;color:#51443a;font-size:12px;">Qty: ${quantity}</div>
-  </td>
-  <td style="padding:10px;border-bottom:1px solid #ece3d8;vertical-align:top;text-align:right;white-space:nowrap;font-weight:700;color:#1c1c1c;font-size:13px;">
-    ${escapeHtmlForEmail(formatInr(lineTotal))}
-  </td>
-</tr>`;
-    })
-    .join("");
-
-  return `
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #ece3d8;border-radius:12px;overflow:hidden;background:#ffffff;">
-  <tbody>
-    ${rows}
-  </tbody>
-</table>`;
-};
-
 const resolveOrderRecipient = async (order) => {
   const fallbackName =
     String(
@@ -1055,7 +1048,6 @@ const sendOrderConfirmationEmail = async (order) => {
         order_status: String(order?.order_status || "pending"),
         payment_status: String(order?.payment_status || "pending"),
         items_text: stringifyOrderItemsForEmail(order),
-        items_html: buildOrderItemsHtmlForEmail(order),
         subtotal: formatInr(originalSubtotal),
         discount: formatInr(discount),
         taxable_amount: formatInr(taxableAmount),
@@ -1161,7 +1153,6 @@ const sendOrderPaymentSuccessEmail = async (
         order_status: String(order?.order_status || "accepted"),
         payment_provider: providerLabel,
         items_text: stringifyOrderItemsForEmail(order),
-        items_html: buildOrderItemsHtmlForEmail(order),
         final_amount: formatInr(finalAmount),
         action_url: actionUrl,
         site_url: siteUrl,
@@ -1232,7 +1223,6 @@ const sendOrderCancelledEmail = async (order) => {
         order_date: formatOrderDateForEmail(order?.createdAt),
         order_status: "cancelled",
         items_text: stringifyOrderItemsForEmail(order),
-        items_html: buildOrderItemsHtmlForEmail(order),
         site_url: siteUrl,
         support_contact: supportContact,
         support_url: supportUrl,
@@ -1394,7 +1384,6 @@ const sendOrderPaymentReminderEmail = async (
             : "Failed",
         failure_message: failureMessage,
         items_text: stringifyOrderItemsForEmail(order),
-        items_html: buildOrderItemsHtmlForEmail(order),
         final_amount: formatInr(finalAmount),
         action_label: actionLabel,
         action_url: actionUrl,
@@ -2252,45 +2241,19 @@ const getOrderProductMetadata = async (order) => {
   if (productIds.length === 0) return {};
 
   const products = await ProductModel.find({ _id: { $in: productIds } })
-    .select(
-      "_id specifications hsnCode unit weight variants._id variants.hsnCode variants.unit variants.weight variants.attributes",
-    )
+    .select("_id specifications hsnCode unit weight")
     .lean();
 
   const metadata = {};
   products.forEach((product) => {
-    const baseHsn =
+    const hsn =
       String(product?.hsnCode || "").trim() ||
       extractHsnFromSpecifications(product?.specifications);
-    const baseMeta = {
-      hsn: baseHsn ? String(baseHsn) : process.env.INVOICE_DEFAULT_HSN || "2106",
+    metadata[String(product._id)] = {
+      hsn: hsn ? String(hsn) : process.env.INVOICE_DEFAULT_HSN || "2106",
       unit: product?.unit || "",
       weight: Number(product?.weight || 0),
     };
-
-    const variants = Array.isArray(product?.variants) ? product.variants : [];
-    if (variants.length > 0) {
-      const variantMeta = {};
-      variants.forEach((variant) => {
-        const variantId = String(variant?._id || "").trim();
-        if (!variantId) return;
-
-        const variantHsn =
-          String(variant?.hsnCode || "").trim() ||
-          extractHsnFromSpecifications(variant?.attributes) ||
-          baseHsn;
-        variantMeta[variantId] = {
-          hsn: variantHsn ? String(variantHsn) : baseMeta.hsn,
-          unit: variant?.unit || baseMeta.unit,
-          weight: Number(variant?.weight || 0) || baseMeta.weight,
-        };
-      });
-      if (Object.keys(variantMeta).length > 0) {
-        baseMeta.variants = variantMeta;
-      }
-    }
-
-    metadata[String(product._id)] = baseMeta;
   });
 
   return metadata;
@@ -3751,17 +3714,13 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
         stack: invoiceResult.error?.stack || null,
       });
 
-        if (fallbackInvoiceAbsolutePath) {
-          try {
-            await fsPromises.access(fallbackInvoiceAbsolutePath);
-          const rawFallbackFilename = String(
+      if (fallbackInvoiceAbsolutePath) {
+        try {
+          await fsPromises.access(fallbackInvoiceAbsolutePath);
+          const fallbackFilename = `${sanitizeFileComponent(
             order.invoiceNumber || `invoice_${orderId}`,
-          );
-          const fallbackFilenameSafe = rawFallbackFilename.replace(
-            /[\\/:*?"<>|]/g,
-            "-",
-          );
-          const fallbackFilename = `${fallbackFilenameSafe}.pdf`;
+            `invoice_${orderId}`,
+          )}.pdf`;
           logger.warn(
             "downloadOrderInvoice",
             "Serving fallback invoice file after generation failure",
@@ -3792,11 +3751,10 @@ export const downloadOrderInvoice = asyncHandler(async (req, res) => {
 
     await fsPromises.access(invoiceResult.absolutePath);
 
-    const rawFilename = String(
+    const filename = `${sanitizeFileComponent(
       invoiceResult.order.invoiceNumber || `invoice_${orderId}`,
-    );
-    const safeFilename = rawFilename.replace(/[\\/:*?"<>|]/g, "-");
-    const filename = `${safeFilename}.pdf`;
+      `invoice_${orderId}`,
+    )}.pdf`;
 
     return res.download(invoiceResult.absolutePath, filename, (error) => {
       if (error) {
@@ -3988,6 +3946,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       userId,
       checkoutContact,
     });
+    const generatedOrderNumber = await generateOrderSeriesNumber();
     const billingDetails = buildBillingDetailsFromCheckoutContact(checkoutContact);
     const guestOrderDetails = buildGuestOrderDetails(checkoutContact, {
       include: !userId,
@@ -4032,6 +3991,8 @@ export const createOrder = asyncHandler(async (req, res) => {
       trackingSessionId:
         String(req.analyticsSessionId || req.cookies?.hog_sid || "")
           .trim() || null,
+      orderNumber: generatedOrderNumber,
+      displayOrderId: generatedOrderNumber,
       analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       coinRedemption: {
         coinsUsed: Number(redemption.coinsUsed || 0),
@@ -4610,6 +4571,7 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       userId,
       checkoutContact,
     });
+    const generatedOrderNumber = await generateOrderSeriesNumber();
     const billingDetails = buildBillingDetailsFromCheckoutContact(checkoutContact);
     const guestOrderDetails = buildGuestOrderDetails(checkoutContact, {
       include: !userId,
@@ -4659,6 +4621,8 @@ export const saveOrderForLater = asyncHandler(async (req, res) => {
       trackingSessionId:
         String(req.analyticsSessionId || req.cookies?.hog_sid || "")
           .trim() || null,
+      orderNumber: generatedOrderNumber,
+      displayOrderId: generatedOrderNumber,
       analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       coinRedemption: {
         coinsUsed: Number(redemption.coinsUsed || 0),
@@ -5844,13 +5808,6 @@ const applyResolvedPaymentStatus = async ({
       });
     }
 
-    recordOrderPairings(order).catch((err) =>
-      logger.warn(logContext, "Failed to record product pairings", {
-        orderId: order?._id,
-        error: err?.message || String(err),
-      }),
-    );
-
     await runPostPaymentSuccessTasks({
       order,
       webhookContext: logContext,
@@ -6651,6 +6608,7 @@ export const createTestOrder = asyncHandler(async (req, res) => {
     const taxableAmount = round2(Number(pricing.taxableAmount || 0));
     const gstAmount = round2(Number(pricing.gstAmount || 0));
     const finalAmount = round2(taxableAmount + gstAmount + shippingCharge);
+    const generatedOrderNumber = await generateOrderSeriesNumber();
     const billingDetails = buildBillingDetailsFromCheckoutContact(checkoutContact);
 
     // Create test order (paid + accepted), but shipping-suppressed.
@@ -6698,6 +6656,8 @@ export const createTestOrder = asyncHandler(async (req, res) => {
       trackingSessionId:
         String(req.analyticsSessionId || req.cookies?.hog_sid || "")
           .trim() || null,
+      orderNumber: generatedOrderNumber,
+      displayOrderId: generatedOrderNumber,
       analyticsConsent: resolveAnalyticsConsentFromRequest(req),
       isSavedOrder: true,
       isDemoOrder: true,

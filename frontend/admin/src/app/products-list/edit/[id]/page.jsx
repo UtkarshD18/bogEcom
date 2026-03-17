@@ -25,13 +25,13 @@ const EditProduct = () => {
   const [categoryVal, setCategoryVal] = useState("");
   const [price, setPrice] = useState("");
   const [oldPrice, setOldPrice] = useState("");
-  const [hsnCode, setHsnCode] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
   const [isNewArrival, setIsNewArrival] = useState(false);
   const [isBestSeller, setIsBestSeller] = useState(false);
   const [isExclusive, setIsExclusive] = useState(false);
   const [demandStatus, setDemandStatus] = useState("NORMAL");
   const [brand, setBrand] = useState("");
+  const [hsnCode, setHsnCode] = useState("");
   const [discount, setDiscount] = useState("");
   const [rating, setRating] = useState(4);
   const [tags, setTags] = useState("");
@@ -54,7 +54,6 @@ const EditProduct = () => {
         originalPrice: "",
         stock: "",
         sku: "",
-        hsnCode: "",
         weight: "",
         unit: "g",
         isDefault: variants.length === 0,
@@ -142,13 +141,13 @@ const EditProduct = () => {
             ? Math.round(Number(product.originalPrice || product.oldPrice))
             : "",
         );
-        setHsnCode(product.hsnCode || "");
         setIsFeatured(product.isFeatured || false);
         setIsNewArrival(product.isNewArrival || false);
         setIsBestSeller(product.isBestSeller || false);
         setIsExclusive(Boolean(product.isExclusive));
         setDemandStatus(product.demandStatus || "NORMAL");
         setBrand(product.brand || "");
+        setHsnCode(product.hsnCode || "");
         setDiscount(product.discount || "");
         setRating(product.rating || 4);
         setTags(product.tags ? product.tags.join(", ") : "");
@@ -186,7 +185,6 @@ const EditProduct = () => {
                 originalPrice: variantOriginalPrice,
                 stock: v.stock_quantity ?? v.stock ?? "",
                 sku: v.sku || "",
-                hsnCode: v.hsnCode || "",
                 weight: parsedWeight || "",
                 unit: parsedUnit,
                 isDefault: v.isDefault || false,
@@ -323,13 +321,13 @@ const EditProduct = () => {
         category: categoryVal,
         price: normalizedPrice,
         originalPrice: normalizedOldPrice,
-        hsnCode: String(hsnCode || "").replace(/[^0-9]/g, ""),
         isFeatured,
         isNewArrival,
         isBestSeller,
         isExclusive,
         demandStatus,
         brand,
+        hsnCode: String(hsnCode || "").trim(),
         discount: discount ? Number(discount) : 0,
         rating,
         tags: tags ? tags.split(",").map((t) => t.trim()) : [],
@@ -345,7 +343,6 @@ const EditProduct = () => {
                 sku:
                   v.sku ||
                   `${productName.substring(0, 3).toUpperCase()}-V${i + 1}`,
-                hsnCode: String(v.hsnCode || "").replace(/[^0-9]/g, ""),
                 price: Math.round(Number(v.price)),
                 originalPrice: v.originalPrice
                   ? Math.round(Number(v.originalPrice))
@@ -508,7 +505,7 @@ const EditProduct = () => {
           </div>
 
           {/* Product Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
             <div className="col flex flex-col gap-1">
               <span className="text-[15px] text-gray-800 font-medium">
                 Brand
@@ -530,15 +527,10 @@ const EditProduct = () => {
                 type="text"
                 value={hsnCode}
                 onChange={(e) =>
-                  setHsnCode(
-                    String(e.target.value || "")
-                      .replace(/[^0-9]/g, "")
-                      .slice(0, 6),
-                  )
+                  setHsnCode(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))
                 }
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="e.g. 210600"
+                placeholder="e.g., 2106"
+                maxLength={12}
                 className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
               />
             </div>
@@ -724,7 +716,7 @@ const EditProduct = () => {
                   {variants.map((v, i) => (
                     <div
                       key={v._id || i}
-                      className={`grid grid-cols-1 sm:grid-cols-9 gap-3 items-end p-4 rounded-lg relative ${v.isDefault ? "bg-blue-50 border border-blue-200" : "bg-gray-50"}`}
+                      className={`grid grid-cols-1 sm:grid-cols-8 gap-3 items-end p-4 rounded-lg relative ${v.isDefault ? "bg-blue-50 border border-blue-200" : "bg-gray-50"}`}
                     >
                       {v.isDefault && (
                         <span className="absolute -top-2 left-3 bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -819,28 +811,6 @@ const EditProduct = () => {
                             updateVariant(i, "sku", e.target.value)
                           }
                           placeholder="Auto"
-                          className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
-                        />
-                      </div>
-                      <div className="sm:col-span-1 flex flex-col gap-1">
-                        <span className="text-xs text-gray-600 font-medium">
-                          HSN
-                        </span>
-                        <input
-                          type="text"
-                          value={v.hsnCode}
-                          onChange={(e) =>
-                            updateVariant(
-                              i,
-                              "hsnCode",
-                              String(e.target.value || "")
-                                .replace(/[^0-9]/g, "")
-                                .slice(0, 6),
-                            )
-                          }
-                          inputMode="numeric"
-                          maxLength={6}
-                          placeholder="210600"
                           className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
                         />
                       </div>

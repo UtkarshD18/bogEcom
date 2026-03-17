@@ -21,6 +21,53 @@ const ALLOWED_SOURCES = new Set([
   "other",
 ]);
 
+const NEWSLETTER_TEMPLATE_SETTING_KEY = "newsletterEmailTemplate";
+const DEFAULT_NEWSLETTER_SUBJECT = "Latest updates from HealthyOneGram";
+const DEFAULT_NEWSLETTER_HTML = `
+<div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; color: #1f2937; line-height: 1.6;">
+  <h1 style="margin-bottom: 12px;">HealthyOneGram Newsletter</h1>
+  <p>Hello {{email}},</p>
+  <p>Thanks for being part of our community. This is your newsletter content preview.</p>
+  <p>Update this template from the admin panel before sending.</p>
+</div>
+`.trim();
+
+const resolveBroadcastEnabled = () => {
+  const raw = String(process.env.NEWSLETTER_BROADCAST_ENABLED || "")
+    .trim()
+    .toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+};
+
+const normalizeTemplatePayload = (value = {}) => {
+  const subject = String(value.subject || "").trim();
+  const html = String(value.html || "").trim();
+  return {
+    subject: subject || DEFAULT_NEWSLETTER_SUBJECT,
+    html: html || DEFAULT_NEWSLETTER_HTML,
+    updatedAt: new Date(),
+  };
+};
+
+const getStoredNewsletterTemplate = async () => {
+  const setting = await SettingsModel.findOne({
+    key: NEWSLETTER_TEMPLATE_SETTING_KEY,
+    isActive: true,
+  })
+    .select("value")
+    .lean();
+
+  return normalizeTemplatePayload(setting?.value || {});
+};
+
+const renderBroadcastHtml = (html, email) => {
+  const safeEmail = String(email || "").trim();
+  return String(html || "")
+    .replaceAll("{{email}}", safeEmail)
+    .replaceAll("{{ year }}", String(new Date().getFullYear()))
+    .replaceAll("{{year}}", String(new Date().getFullYear()));
+};
+
 const normalizeSource = (source) => {
   const value = String(source || "").trim().toLowerCase();
   return ALLOWED_SOURCES.has(value) ? value : "other";
@@ -34,94 +81,6 @@ const getPublicSiteUrl = () => {
   const first = String(raw).split(",")[0].trim();
   return first.replace(/\/+$/, "");
 };
-
-const NEWSLETTER_CAMPAIGN_TEMPLATE_KEY = "newsletterCampaignTemplate";
-const NEWSLETTER_CAMPAIGN_DEFAULTS = Object.freeze({
-  subject: "HealthyOneGram Updates",
-  // Allow HTML templates to be managed via admin; keep a safe fallback.
-  html: "",
-  text: "",
-});
-
-const normalizeTemplateString = (value, maxLen) => {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  if (!Number.isFinite(maxLen) || maxLen <= 0) return raw;
-  return raw.slice(0, maxLen);
-};
-
-const buildCampaignHtmlFallback = ({ subject, text }) => {
-  const siteUrl = getPublicSiteUrl();
-  const safeSubject = normalizeTemplateString(subject, 180) || "Newsletter";
-  const safeText = normalizeTemplateString(text, 20000);
-
-  const body =
-    safeText
-      ? safeText
-          .split(/\r?\n/)
-          .map((line) => line.replace(/</g, "&lt;").replace(/>/g, "&gt;"))
-          .join("<br/>")
-      : "Updates from HealthyOneGram.";
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${safeSubject}</title>
-</head>
-<body style="margin:0;padding:0;font-family:Segoe UI,Arial,sans-serif;background:#f9f5f0;">
-  <div style="max-width:640px;margin:0 auto;background:#ffffff;">
-    <div style="background:linear-gradient(135deg,#c1591c 0%,#e07830 100%);padding:28px 20px;text-align:center;color:#fff;">
-      <h1 style="margin:0;font-size:22px;line-height:1.3;">${safeSubject}</h1>
-    </div>
-    <div style="padding:24px 20px;color:#333;line-height:1.6;font-size:14px;">
-      ${body}
-      <div style="margin-top:18px;">
-        <a href="${siteUrl}" style="display:inline-block;background:#c1591c;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;">Visit HealthyOneGram</a>
-      </div>
-      <p style="margin:18px 0 0;color:#666;font-size:12px;">
-        If you don't want these emails, you can unsubscribe by replying "unsubscribe".
-      </p>
-    </div>
-    <div style="background:#2c2c2c;padding:16px 20px;color:#aaa;font-size:12px;">
-      <p style="margin:0;">&copy; ${new Date().getFullYear()} HealthyOneGram. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>
-  `;
-};
-
-const broadcastEnabled = () =>
-  String(process.env.NEWSLETTER_BROADCAST_ENABLED || "")
-    .trim()
-    .toLowerCase() === "true";
-
-const resolveBroadcastLimits = () => {
-  const maxPerRun = Number.parseInt(
-    String(process.env.NEWSLETTER_BROADCAST_MAX_PER_RUN || "200"),
-    10,
-  );
-  const batchSize = Number.parseInt(
-    String(process.env.NEWSLETTER_BROADCAST_BATCH_SIZE || "25"),
-    10,
-  );
-  const delayMs = Number.parseInt(
-    String(process.env.NEWSLETTER_BROADCAST_BATCH_DELAY_MS || "250"),
-    10,
-  );
-
-  return {
-    maxPerRun: Number.isFinite(maxPerRun) && maxPerRun > 0 ? maxPerRun : 200,
-    batchSize: Number.isFinite(batchSize) && batchSize > 0 ? batchSize : 25,
-    delayMs: Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 250,
-  };
-};
-
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, Math.max(Number(ms || 0), 0)));
 
 /**
  * Generate welcome email HTML template
@@ -518,80 +477,49 @@ export const deleteSubscriber = async (req, res) => {
   }
 };
 
-// ==================== ADMIN CAMPAIGN APIs ====================
-
-export const getCampaignTemplate = async (_req, res) => {
+export const getAdminNewsletterTemplate = async (_req, res) => {
   try {
-    const setting = await SettingsModel.findOne({
-      key: NEWSLETTER_CAMPAIGN_TEMPLATE_KEY,
-      isActive: true,
-    })
-      .select("value updatedAt -_id")
-      .lean();
-
-    const value = setting?.value && typeof setting.value === "object"
-      ? setting.value
-      : {};
-
+    const template = await getStoredNewsletterTemplate();
     return res.status(200).json({
       success: true,
-      template: {
-        subject: normalizeTemplateString(value.subject, 180) || NEWSLETTER_CAMPAIGN_DEFAULTS.subject,
-        html: normalizeTemplateString(value.html, 200000) || "",
-        text: normalizeTemplateString(value.text, 20000) || "",
-      },
-      updatedAt: setting?.updatedAt || null,
+      data: template,
     });
   } catch (error) {
-    logger.error("newsletter.getCampaignTemplate", "Failed to fetch campaign template", {
-      error: error?.message || String(error),
-    });
+    console.error("Get newsletter template error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to load newsletter template",
+      message: "Failed to fetch newsletter template",
     });
   }
 };
 
-export const updateCampaignTemplate = async (req, res) => {
+export const updateAdminNewsletterTemplate = async (req, res) => {
   try {
+    const { subject, html } = req.body || {};
+    const template = normalizeTemplatePayload({ subject, html });
     const adminId = req.user?.id || req.user || null;
-    const subject = normalizeTemplateString(req.body?.subject, 180);
-    const html = normalizeTemplateString(req.body?.html, 200000);
-    const text = normalizeTemplateString(req.body?.text, 20000);
 
-    if (!subject) {
-      return res.status(400).json({
-        success: false,
-        message: "Subject is required",
-      });
-    }
-
-    const setting = await SettingsModel.findOneAndUpdate(
-      { key: NEWSLETTER_CAMPAIGN_TEMPLATE_KEY },
+    await SettingsModel.findOneAndUpdate(
+      { key: NEWSLETTER_TEMPLATE_SETTING_KEY },
       {
         $set: {
-          key: NEWSLETTER_CAMPAIGN_TEMPLATE_KEY,
-          value: { subject, html, text },
-          description: "Admin-managed newsletter campaign template",
+          value: template,
+          description: "Newsletter HTML template for admin broadcasts",
           category: "notification",
-          isActive: true,
           updatedBy: adminId,
+          isActive: true,
         },
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
-    ).lean();
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
 
     return res.status(200).json({
       success: true,
       message: "Newsletter template saved",
-      template: setting?.value || { subject, html, text },
-      updatedAt: setting?.updatedAt || null,
+      data: template,
     });
   } catch (error) {
-    logger.error("newsletter.updateCampaignTemplate", "Failed to save campaign template", {
-      error: error?.message || String(error),
-    });
+    console.error("Update newsletter template error:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to save newsletter template",
@@ -599,166 +527,82 @@ export const updateCampaignTemplate = async (req, res) => {
   }
 };
 
-export const sendCampaign = async (req, res) => {
+export const sendNewsletterBroadcast = async (req, res) => {
   try {
-    const mode = String(req.body?.mode || "test").trim().toLowerCase();
-    const subject = normalizeTemplateString(req.body?.subject, 180);
-    const html = normalizeTemplateString(req.body?.html, 200000);
-    const text = normalizeTemplateString(req.body?.text, 20000);
-
-    if (!subject) {
-      return res.status(400).json({
-        success: false,
-        message: "Subject is required",
-      });
-    }
-
-    const resolvedHtml = html || buildCampaignHtmlFallback({ subject, text });
-    const resolvedText =
-      text ||
-      String(resolvedHtml || "")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 20000);
-
-    if (mode === "test") {
-      const testEmail = String(req.body?.testEmail || "").trim().toLowerCase();
-      if (!testEmail || !isValidEmail(testEmail)) {
-        return res.status(400).json({
-          success: false,
-          message: "Valid testEmail is required for test mode",
-        });
-      }
-
-      const result = await sendEmail({
-        to: testEmail,
-        subject,
-        text: resolvedText,
-        html: resolvedHtml,
-        context: "newsletter.campaign.test",
-      });
-
-      return res.status(result?.success ? 200 : 502).json({
-        success: Boolean(result?.success),
-        message: result?.success
-          ? "Test newsletter sent"
-          : "Failed to send test newsletter",
-        result,
-      });
-    }
-
-    if (mode !== "active") {
-      return res.status(400).json({
-        success: false,
-        message: "mode must be 'test' or 'active'",
-      });
-    }
-
-    if (!broadcastEnabled()) {
+    if (!resolveBroadcastEnabled()) {
       return res.status(403).json({
         success: false,
         message:
-          "Newsletter broadcast is disabled. Set NEWSLETTER_BROADCAST_ENABLED=true on the server to enable sending to all subscribers.",
+          "Broadcast sending is disabled. Set NEWSLETTER_BROADCAST_ENABLED=true to enable.",
       });
     }
 
-    const confirm = String(req.body?.confirm || "")
-      .trim()
-      .toLowerCase();
-    if (confirm !== "true") {
-      return res.status(400).json({
-        success: false,
-        message: "confirm=true is required to send to all subscribers",
+    const { subject, html, status = "active" } = req.body || {};
+    const storedTemplate = await getStoredNewsletterTemplate();
+    const template = normalizeTemplatePayload({
+      subject: subject || storedTemplate.subject,
+      html: html || storedTemplate.html,
+    });
+
+    const query = {};
+    if (status === "active") query.isActive = true;
+    if (status === "inactive") query.isActive = false;
+
+    const subscribers = await Newsletter.find(query)
+      .select("email isActive")
+      .lean();
+
+    if (!subscribers.length) {
+      return res.status(200).json({
+        success: true,
+        message: "No subscribers available for broadcast",
+        data: {
+          attempted: 0,
+          sent: 0,
+          failed: 0,
+        },
       });
     }
 
-    const limits = resolveBroadcastLimits();
-    const requestedLimit = Number.parseInt(String(req.body?.limit || ""), 10);
-    const limit =
-      Number.isFinite(requestedLimit) && requestedLimit > 0
-        ? Math.min(requestedLimit, limits.maxPerRun)
-        : limits.maxPerRun;
-
-    const cursor = Newsletter.find({ isActive: true })
-      .sort({ subscribedAt: -1 })
-      .select("email -_id")
-      .cursor();
-
-    let attempted = 0;
     let sent = 0;
-    const failures = [];
+    let failed = 0;
 
-    let batch = [];
-    for await (const doc of cursor) {
-      const email = String(doc?.email || "").trim().toLowerCase();
-      if (!email || !isValidEmail(email)) continue;
-
-      batch.push(email);
-      if (batch.length < limits.batchSize) continue;
-
-      for (const address of batch) {
-        if (attempted >= limit) break;
-        attempted += 1;
-        const result = await sendEmail({
-          to: address,
-          subject,
-          text: resolvedText,
-          html: resolvedHtml,
-          context: "newsletter.campaign.broadcast",
-        });
-        if (result?.success) {
-          sent += 1;
-        } else {
-          failures.push({ email: address, error: result?.error || "send_failed" });
-        }
+    for (const subscriber of subscribers) {
+      const email = String(subscriber?.email || "").trim().toLowerCase();
+      if (!email || !isValidEmail(email)) {
+        failed += 1;
+        continue;
       }
 
-      batch = [];
-      if (attempted >= limit) break;
-      if (limits.delayMs) {
-        await sleep(limits.delayMs);
-      }
-    }
+      const result = await sendEmail({
+        to: email,
+        subject: template.subject,
+        html: renderBroadcastHtml(template.html, email),
+        text: template.subject,
+        context: "newsletter.broadcast",
+      });
 
-    // Flush last partial batch
-    if (attempted < limit && batch.length) {
-      for (const address of batch) {
-        if (attempted >= limit) break;
-        attempted += 1;
-        const result = await sendEmail({
-          to: address,
-          subject,
-          text: resolvedText,
-          html: resolvedHtml,
-          context: "newsletter.campaign.broadcast",
-        });
-        if (result?.success) {
-          sent += 1;
-        } else {
-          failures.push({ email: address, error: result?.error || "send_failed" });
-        }
+      if (result?.success) {
+        sent += 1;
+      } else {
+        failed += 1;
       }
     }
 
     return res.status(200).json({
       success: true,
-      message: "Newsletter broadcast completed",
-      summary: {
-        attempted,
+      message: "Newsletter broadcast processed",
+      data: {
+        attempted: subscribers.length,
         sent,
-        failed: failures.length,
-        limit,
+        failed,
       },
-      failures: failures.slice(0, 50),
     });
   } catch (error) {
-    logger.error("newsletter.sendCampaign", "Failed to send campaign", {
-      error: error?.message || String(error),
-    });
+    console.error("Newsletter broadcast error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to send newsletter campaign",
+      message: "Failed to send newsletter broadcast",
     });
   }
 };

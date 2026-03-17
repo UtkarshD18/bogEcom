@@ -182,14 +182,30 @@ const resolveInvoiceLogoPath = (preferredPath = "") => {
 const buildInvoiceNumber = (order) => {
   if (order?.invoiceNumber) return order.invoiceNumber;
 
-  const orderNumberCandidate =
-    order?.orderNumber ||
-    order?.displayOrderId ||
-    order?.order_id ||
-    order?.orderId ||
-    "";
-  if (String(orderNumberCandidate || "").trim()) {
-    return String(orderNumberCandidate).trim().toUpperCase();
+  const normalizedOrderNumber = String(
+    order?.orderNumber || order?.displayOrderId || "",
+  )
+    .trim()
+    .toUpperCase();
+
+  if (normalizedOrderNumber) {
+    const directMatch = normalizedOrderNumber.match(/^([A-Z0-9]+?)-?(\d{4})\/(\d+)$/i);
+    if (directMatch) {
+      return `${directMatch[1]}-${directMatch[2]}/${directMatch[3]}`;
+    }
+
+    const slashIndex = normalizedOrderNumber.indexOf("/");
+    if (slashIndex > 0) {
+      const left = normalizedOrderNumber.slice(0, slashIndex).replace(/-/g, "");
+      const right = normalizedOrderNumber.slice(slashIndex + 1);
+      if (/^\d+$/.test(right) && left.length > 4) {
+        const fy = left.slice(-4);
+        const prefix = left.slice(0, -4);
+        if (prefix && /^\d{4}$/.test(fy)) {
+          return `${prefix}-${fy}/${right}`;
+        }
+      }
+    }
   }
 
   const date = new Date();
@@ -328,14 +344,9 @@ const allocateByWeight = (total, weights) => {
   });
 };
 
-const getProductMeta = (productMetaById, productId, variantId) => {
+const getProductMeta = (productMetaById, productId) => {
   const key = String(productId || "");
-  const base = productMetaById?.[key] || {};
-  const variantKey = String(variantId || "").trim();
-  if (variantKey && base?.variants && base.variants[variantKey]) {
-    return { ...base, ...base.variants[variantKey] };
-  }
-  return base;
+  return productMetaById?.[key] || {};
 };
 
 const buildAddressLines = (address) => {
@@ -899,7 +910,7 @@ const prepareInvoiceData = (order, sellerDetails, productMetaById = {}) => {
     const discount = discountAlloc[index] || 0;
     const grossAfterDiscount = roundMoney(Math.max(gross - discount, 0));
     const lineTax = taxAlloc[index] || 0;
-    const meta = getProductMeta(productMetaById, item?.productId, item?.variantId);
+    const meta = getProductMeta(productMetaById, item?.productId);
     const lineTaxRate = Number(meta?.taxRate || gstRate || 0);
     const hsn = normalizeHsnSixDigit(
       meta?.hsn || item?.hsnCode || item?.hsn || item?.productHsn || DEFAULT_HSN_6,

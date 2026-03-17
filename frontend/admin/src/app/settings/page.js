@@ -19,7 +19,7 @@ import {
   Switch,
   TextField,
 } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   MdLocalOffer,
   MdLocalShipping,
@@ -130,6 +130,35 @@ const toIsoIfPresent = (value) => {
   return date.toISOString();
 };
 
+const ORDER_SETTINGS_DEFAULTS = {
+  minimumOrderValue: 0,
+  maximumOrderValue: 50000,
+  maxItemsPerOrder: 20,
+  codEnabled: false,
+  codMinOrder: 200,
+  codMaxOrder: 5000,
+  orderSeriesPrefix: "H1G",
+  orderSeriesPadding: 4,
+};
+
+const buildOrderSeriesPreview = (settings = {}) => {
+  const prefix = String(settings.orderSeriesPrefix || "H1G")
+    .trim()
+    .toUpperCase() || "H1G";
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const fyStart = month >= 3 ? year : year - 1;
+  const fyEnd = fyStart + 1;
+  const fyCode = `${String(fyStart).slice(-2)}${String(fyEnd).slice(-2)}`;
+  const padding = Math.min(
+    8,
+    Math.max(3, Number(settings.orderSeriesPadding) || 4),
+  );
+  const sequence = String(1).padStart(padding, "0");
+  return `${prefix}${fyCode}/${sequence}`;
+};
+
 /**
  * Store Settings Page
  * Admin panel for managing shipping, store, and order settings
@@ -156,14 +185,7 @@ const SettingsPage = () => {
     },
   });
 
-  const [orderSettings, setOrderSettings] = useState({
-    minimumOrderValue: 0,
-    maximumOrderValue: 50000,
-    maxItemsPerOrder: 20,
-    codEnabled: false,
-    codMinOrder: 200,
-    codMaxOrder: 5000,
-  });
+  const [orderSettings, setOrderSettings] = useState(ORDER_SETTINGS_DEFAULTS);
 
   const [orderNumberSeries, setOrderNumberSeries] = useState({
     enabled: false,
@@ -226,6 +248,11 @@ const SettingsPage = () => {
       severity,
     });
   }, []);
+
+  const orderSeriesPreview = useMemo(
+    () => buildOrderSeriesPreview(orderSettings),
+    [orderSettings],
+  );
 
   const validatePopupConfig = useCallback((value) => {
     if (!String(value.title || "").trim()) {
@@ -504,7 +531,10 @@ const SettingsPage = () => {
               setShippingSettings(setting.value);
               break;
             case "orderSettings":
-              setOrderSettings(setting.value);
+              setOrderSettings({
+                ...ORDER_SETTINGS_DEFAULTS,
+                ...(setting.value || {}),
+              });
               break;
             case "orderNumberSeries": {
               const raw =
@@ -1003,6 +1033,50 @@ const SettingsPage = () => {
             size="small"
             fullWidth
           />
+
+          <TextField
+            label="Order Series Prefix"
+            value={orderSettings.orderSeriesPrefix || ""}
+            onChange={(e) =>
+              setOrderSettings({
+                ...orderSettings,
+                orderSeriesPrefix: String(e.target.value || "")
+                  .toUpperCase()
+                  .replace(/[^A-Z0-9]/g, "")
+                  .slice(0, 6),
+              })
+            }
+            size="small"
+            fullWidth
+            helperText="Example: H1G"
+          />
+
+          <TextField
+            label="Order Series Padding"
+            type="number"
+            value={orderSettings.orderSeriesPadding ?? 4}
+            onChange={(e) =>
+              setOrderSettings({
+                ...orderSettings,
+                orderSeriesPadding: Math.min(
+                  8,
+                  Math.max(3, Number(e.target.value) || 4),
+                ),
+              })
+            }
+            size="small"
+            fullWidth
+            helperText="Digits after slash"
+          />
+
+          <div className="md:col-span-2 rounded-lg border border-green-100 bg-green-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-green-700">
+              FY Order Series Preview
+            </p>
+            <p className="mt-1 text-lg font-bold text-green-900">
+              {orderSeriesPreview}
+            </p>
+          </div>
 
           <FormControlLabel
             control={

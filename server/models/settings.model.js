@@ -243,6 +243,8 @@ settingsSchema.statics.defaultSettings = [
       codEnabled: false, // Cash on Delivery
       codMinOrder: 200,
       codMaxOrder: 5000,
+      orderSeriesPrefix: "H1G",
+      orderSeriesPadding: 4,
     },
     description: "Order limits and COD settings",
     category: "checkout",

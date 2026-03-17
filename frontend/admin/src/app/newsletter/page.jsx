@@ -1,79 +1,13 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData, postData, putData, uploadFile } from "@/utils/api";
-import { getImageUrl } from "@/utils/imageUtils";
-import {
-  Button,
-  CircularProgress,
-  Divider,
-  FormControlLabel,
-  Modal,
-  MenuItem,
-  Select,
-  Switch,
-  TextField,
-} from "@mui/material";
-import Link from "next/link";
+import { deleteData, getData, postData, putData } from "@/utils/api";
+import { Button, CircularProgress, MenuItem, Select, TextField } from "@mui/material";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
-import { MdImage, MdMailOutline, MdSearch } from "react-icons/md";
+import { MdMailOutline } from "react-icons/md";
 import Pagination from "@mui/material/Pagination";
-
-const resolveStorefrontBaseUrl = () => {
-  if (typeof window === "undefined") return "https://healthyonegram.com";
-  const hostname = String(window.location.hostname || "").toLowerCase();
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return "http://localhost:3000";
-  }
-  return String(window.location.origin || "https://healthyonegram.com").replace(
-    /\/+$/,
-    "",
-  );
-};
-
-const buildProductCardHtml = ({ product, offerText = "" }) => {
-  const baseUrl = resolveStorefrontBaseUrl();
-  const productUrl = `${baseUrl}/product/${encodeURIComponent(product?._id)}`;
-  const imageUrl = getImageUrl(product?.thumbnail || product?.images?.[0] || "");
-  const safeName = String(product?.name || "Product").trim();
-  const safeOffer = String(offerText || "").trim();
-  const price =
-    typeof product?.price === "number"
-      ? `₹${product.price}`
-      : product?.price
-        ? `₹${product.price}`
-        : "";
-
-  return `
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:14px 0;border:1px solid #ece3d8;border-radius:14px;overflow:hidden;background:#ffffff;">
-  <tr>
-    <td style="padding:14px;width:140px;vertical-align:top;">
-      <a href="${productUrl}" style="text-decoration:none;display:inline-block;">
-        <img src="${imageUrl}" alt="${safeName}" width="120" height="120" style="display:block;border-radius:12px;object-fit:cover;border:1px solid #ece3d8;background:#fff;" />
-      </a>
-    </td>
-    <td style="padding:14px;vertical-align:top;">
-      <div style="font-size:14px;font-weight:800;color:#111;line-height:1.3;">${safeName}</div>
-      ${price ? `<div style="margin-top:6px;font-size:13px;color:#444;">Price: <strong>${price}</strong></div>` : ""}
-      ${safeOffer ? `<div style="margin-top:6px;font-size:13px;color:#b45309;"><strong>Offer:</strong> ${safeOffer}</div>` : ""}
-      <div style="margin-top:12px;">
-        <a href="${productUrl}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 14px;border-radius:10px;font-weight:800;font-size:13px;">View Product</a>
-      </div>
-    </td>
-  </tr>
-</table>
-`.trim();
-};
-
-const insertAtCursor = (textareaEl, snippet) => {
-  if (!textareaEl) return snippet;
-  const start = textareaEl.selectionStart ?? 0;
-  const end = textareaEl.selectionEnd ?? 0;
-  const value = String(textareaEl.value || "");
-  return value.slice(0, start) + snippet + value.slice(end);
-};
 
 const NewsletterPage = () => {
   const { token, isAuthenticated, loading } = useAdmin();
@@ -85,27 +19,13 @@ const NewsletterPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
-
-  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateSubject, setTemplateSubject] = useState(
+    "Latest updates from HealthyOneGram",
+  );
+  const [templateHtml, setTemplateHtml] = useState("");
+  const [templateLoading, setTemplateLoading] = useState(true);
   const [templateSaving, setTemplateSaving] = useState(false);
-  const [campaign, setCampaign] = useState({
-    subject: "",
-    text: "",
-    html: "",
-  });
-  const htmlRef = useRef(null);
-
-  const [productModalOpen, setProductModalOpen] = useState(false);
-  const [productQuery, setProductQuery] = useState("");
-  const [productResults, setProductResults] = useState([]);
-  const [productLoading, setProductLoading] = useState(false);
-  const [productOfferText, setProductOfferText] = useState("");
-  const [templateUpdatedAt, setTemplateUpdatedAt] = useState(null);
-  const [testEmail, setTestEmail] = useState("");
-  const [sendTestLoading, setSendTestLoading] = useState(false);
-  const [sendBroadcastLoading, setSendBroadcastLoading] = useState(false);
-  const [broadcastLimit, setBroadcastLimit] = useState(200);
-  const [broadcastConfirm, setBroadcastConfirm] = useState(false);
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
 
   const fetchSubscribers = useCallback(async () => {
     setIsLoading(true);
@@ -131,29 +51,6 @@ const NewsletterPage = () => {
     setIsLoading(false);
   }, [page, statusFilter, token]);
 
-  const fetchTemplate = useCallback(async () => {
-    if (!token) return;
-    setTemplateLoading(true);
-    try {
-      const response = await getData("/api/newsletter/campaign/template", token);
-      if (response?.success) {
-        setCampaign({
-          subject: response?.template?.subject || "",
-          text: response?.template?.text || "",
-          html: response?.template?.html || "",
-        });
-        setTemplateUpdatedAt(response?.updatedAt || null);
-      } else {
-        toast.error(response?.message || "Failed to load template");
-      }
-    } catch (error) {
-      console.error("Failed to fetch newsletter template:", error);
-      toast.error("Failed to load template");
-    } finally {
-      setTemplateLoading(false);
-    }
-  }, [token]);
-
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.push("/login");
@@ -167,186 +64,21 @@ const NewsletterPage = () => {
   }, [isAuthenticated, token, fetchSubscribers]);
 
   useEffect(() => {
-    if (isAuthenticated && token) {
-      fetchTemplate();
-    }
-  }, [isAuthenticated, token, fetchTemplate]);
-
-  const handleSaveTemplate = async () => {
-    if (!campaign?.subject?.trim()) {
-      toast.error("Subject is required");
-      return;
-    }
-    setTemplateSaving(true);
-    try {
-      const response = await putData(
-        "/api/newsletter/campaign/template",
-        campaign,
-        token,
-      );
-      if (response?.success) {
-        toast.success("Template saved");
-        setCampaign({
-          subject: response?.template?.subject || campaign.subject,
-          text: response?.template?.text || campaign.text,
-          html: response?.template?.html || campaign.html,
-        });
-        setTemplateUpdatedAt(response?.updatedAt || null);
-      } else {
-        toast.error(response?.message || "Failed to save template");
-      }
-    } catch (error) {
-      console.error("Failed to save newsletter template:", error);
-      toast.error("Failed to save template");
-    } finally {
-      setTemplateSaving(false);
-    }
-  };
-
-  const handleSearchProducts = async () => {
-    if (!token) return;
-    const q = String(productQuery || "").trim();
-    if (!q) {
-      setProductResults([]);
-      return;
-    }
-
-    setProductLoading(true);
-    try {
-      const response = await getData(
-        `/api/products?search=${encodeURIComponent(q)}&limit=12`,
-        token,
-      );
-      if (response?.success) {
-        setProductResults(response?.data || []);
-      } else {
-        toast.error(response?.message || "Product search failed");
-      }
-    } catch (error) {
-      toast.error("Product search failed");
-    } finally {
-      setProductLoading(false);
-    }
-  };
-
-  const handleInsertProduct = (product) => {
-    const snippet = buildProductCardHtml({
-      product,
-      offerText: productOfferText,
-    });
-    const next = insertAtCursor(htmlRef.current, `\n${snippet}\n`);
-    setCampaign((prev) => ({ ...prev, html: next }));
-    setProductModalOpen(false);
-    setProductOfferText("");
-  };
-
-  const handleInsertImage = async (event) => {
-    const file = event.target.files?.[0] || null;
-    if (!file || !token) return;
-
-    try {
-      const upload = await uploadFile(file, token);
-      const url = upload?.data?.url || "";
-      if (!upload?.success || !url) {
-        toast.error(upload?.message || "Image upload failed");
-        return;
-      }
-
-      const snippet = `<p style=\"margin:16px 0;\"><img src=\"${url}\" alt=\"\" style=\"max-width:100%;height:auto;border-radius:14px;border:1px solid #ece3d8;display:block;\" /></p>`;
-      const next = insertAtCursor(htmlRef.current, `\n${snippet}\n`);
-      setCampaign((prev) => ({ ...prev, html: next }));
-      toast.success("Image inserted");
-    } catch (error) {
-      toast.error("Image upload failed");
-    } finally {
-      event.target.value = "";
-    }
-  };
-
-  const handleSendTest = async () => {
-    if (!campaign?.subject?.trim()) {
-      toast.error("Subject is required");
-      return;
-    }
-    if (!testEmail?.trim()) {
-      toast.error("Test email is required");
-      return;
-    }
-
-    setSendTestLoading(true);
-    try {
-      const response = await postData(
-        "/api/newsletter/campaign/send",
-        {
-          mode: "test",
-          testEmail,
-          ...campaign,
-        },
-        token,
-      );
-      if (response?.success) {
-        toast.success("Test newsletter sent");
-      } else {
-        toast.error(response?.message || "Failed to send test newsletter");
-      }
-    } catch (error) {
-      console.error("Failed to send test newsletter:", error);
-      toast.error("Failed to send test newsletter");
-    } finally {
-      setSendTestLoading(false);
-    }
-  };
-
-  const handleSendBroadcast = async () => {
-    if (!campaign?.subject?.trim()) {
-      toast.error("Subject is required");
-      return;
-    }
-
-    const limit = Number.parseInt(String(broadcastLimit || ""), 10);
-    if (!Number.isFinite(limit) || limit <= 0) {
-      toast.error("Broadcast limit must be a positive number");
-      return;
-    }
-
-    if (!broadcastConfirm) {
-      toast.error("Enable the confirmation switch before broadcasting");
-      return;
-    }
-
-    const ok = confirm(
-      `Send newsletter broadcast to up to ${limit} active subscribers?`,
-    );
-    if (!ok) return;
-
-    setSendBroadcastLoading(true);
-    try {
-      const response = await postData(
-        "/api/newsletter/campaign/send",
-        {
-          mode: "active",
-          confirm: true,
-          limit,
-          ...campaign,
-        },
-        token,
-      );
-
-      if (response?.success) {
-        const summary = response?.summary || {};
-        toast.success(
-          `Broadcast done: sent ${summary.sent || 0}/${summary.attempted || 0}`,
+    const fetchTemplate = async () => {
+      if (!isAuthenticated || !token) return;
+      setTemplateLoading(true);
+      const response = await getData("/api/newsletter/admin/template", token);
+      if (response?.success && response?.data) {
+        setTemplateSubject(
+          response.data.subject || "Latest updates from HealthyOneGram",
         );
-      } else {
-        toast.error(response?.message || "Failed to send broadcast");
+        setTemplateHtml(response.data.html || "");
       }
-    } catch (error) {
-      console.error("Failed to send newsletter broadcast:", error);
-      toast.error("Failed to send broadcast");
-    } finally {
-      setSendBroadcastLoading(false);
-    }
-  };
+      setTemplateLoading(false);
+    };
+
+    fetchTemplate();
+  }, [isAuthenticated, token]);
 
   const handleDelete = async (id) => {
     if (!confirm("Delete this subscriber?")) return;
@@ -361,6 +93,68 @@ const NewsletterPage = () => {
     } catch (error) {
       toast.error("Failed to delete subscriber");
     }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!String(templateSubject || "").trim()) {
+      toast.error("Subject is required");
+      return;
+    }
+    if (!String(templateHtml || "").trim()) {
+      toast.error("Template HTML is required");
+      return;
+    }
+
+    setTemplateSaving(true);
+    const response = await putData(
+      "/api/newsletter/admin/template",
+      {
+        subject: templateSubject,
+        html: templateHtml,
+      },
+      token,
+    );
+
+    if (response?.success) {
+      toast.success("Newsletter template saved");
+    } else {
+      toast.error(response?.message || "Failed to save template");
+    }
+    setTemplateSaving(false);
+  };
+
+  const handleSendBroadcast = async () => {
+    if (!String(templateSubject || "").trim()) {
+      toast.error("Subject is required");
+      return;
+    }
+    if (!String(templateHtml || "").trim()) {
+      toast.error("Template HTML is required");
+      return;
+    }
+
+    if (!confirm("Send newsletter broadcast to subscribers now?")) return;
+
+    setSendingBroadcast(true);
+    const response = await postData(
+      "/api/newsletter/admin/send-broadcast",
+      {
+        subject: templateSubject,
+        html: templateHtml,
+        status: "active",
+      },
+      token,
+    );
+
+    if (response?.success) {
+      const result = response?.data || {};
+      toast.success(
+        `Broadcast done: ${result.sent || 0} sent, ${result.failed || 0} failed`,
+      );
+    } else {
+      toast.error(response?.message || "Broadcast failed");
+    }
+    setSendingBroadcast(false);
   };
 
   if (loading || !isAuthenticated) {
@@ -413,172 +207,68 @@ const NewsletterPage = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-800">
-              Campaign (Send Newsletter)
+              Newsletter HTML Editor
             </h2>
             <p className="text-sm text-gray-500">
-              Save a template and send a test/broadcast to subscribers.
+              Save template and preview before broadcast.
             </p>
-            <p className="text-xs text-gray-400 mt-1">
-              Newsletter section on Blogs page can be edited in{" "}
-              <Link href="/blogs-page" className="text-blue-600 hover:underline">
-                Blogs Page
-              </Link>
-              .
-            </p>
-            {templateUpdatedAt ? (
-              <p className="text-xs text-gray-400 mt-1">
-                Last saved: {new Date(templateUpdatedAt).toLocaleString()}
-              </p>
-            ) : null}
           </div>
-
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2">
             <Button
               variant="outlined"
-              onClick={fetchTemplate}
-              disabled={templateLoading}
-            >
-              {templateLoading ? "Loading..." : "Reload"}
-            </Button>
-            <Button
-              variant="contained"
               onClick={handleSaveTemplate}
-              disabled={templateSaving}
-              sx={{ textTransform: "none" }}
+              disabled={templateSaving || templateLoading}
             >
               {templateSaving ? "Saving..." : "Save Template"}
             </Button>
             <Button
-              variant="outlined"
-              startIcon={<MdSearch />}
-              onClick={() => setProductModalOpen(true)}
-              sx={{ textTransform: "none" }}
+              variant="contained"
+              onClick={handleSendBroadcast}
+              disabled={sendingBroadcast || templateLoading}
+              sx={{ bgcolor: "#c1591c", "&:hover": { bgcolor: "#a04a15" } }}
             >
-              Insert Product
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<MdImage />}
-              component="label"
-              sx={{ textTransform: "none" }}
-            >
-              Insert Image
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={handleInsertImage}
-              />
+              {sendingBroadcast ? "Sending..." : "Send Broadcast"}
             </Button>
           </div>
         </div>
 
-        <Divider className="!my-4" />
-
-        <div className="grid grid-cols-1 gap-4">
-          <TextField
-            label="Subject"
-            value={campaign.subject}
-            onChange={(e) =>
-              setCampaign((prev) => ({ ...prev, subject: e.target.value }))
-            }
-            fullWidth
-            size="small"
-          />
-          <TextField
-            label="Text (optional)"
-            helperText="If HTML is empty, the server will generate a safe HTML email from this text."
-            value={campaign.text}
-            onChange={(e) =>
-              setCampaign((prev) => ({ ...prev, text: e.target.value }))
-            }
-            fullWidth
-            size="small"
-            multiline
-            minRows={4}
-          />
-          <TextField
-            label="HTML (optional)"
-            helperText="Paste raw HTML for the email body. Keep it lightweight."
-            value={campaign.html}
-            onChange={(e) =>
-              setCampaign((prev) => ({ ...prev, html: e.target.value }))
-            }
-            inputRef={htmlRef}
-            fullWidth
-            size="small"
-            multiline
-            minRows={6}
-          />
-
-          {String(campaign.html || "").trim() ? (
-            <div className="border rounded-lg p-3 bg-white max-h-[360px] overflow-auto">
-              <div
-                dangerouslySetInnerHTML={{ __html: String(campaign.html || "") }}
+        {templateLoading ? (
+          <div className="flex justify-center py-8">
+            <CircularProgress size={26} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <TextField
+                label="Subject"
+                value={templateSubject}
+                onChange={(e) => setTemplateSubject(e.target.value)}
+                fullWidth
+                size="small"
+              />
+              <TextField
+                label="HTML"
+                value={templateHtml}
+                onChange={(e) => setTemplateHtml(e.target.value)}
+                multiline
+                minRows={14}
+                fullWidth
               />
             </div>
-          ) : null}
-        </div>
 
-        <Divider className="!my-4" />
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-          <TextField
-            label="Send Test To"
-            placeholder="name@domain.com"
-            value={testEmail}
-            onChange={(e) => setTestEmail(e.target.value)}
-            fullWidth
-            size="small"
-          />
-          <Button
-            variant="outlined"
-            onClick={handleSendTest}
-            disabled={sendTestLoading}
-            sx={{ textTransform: "none", height: 40 }}
-          >
-            {sendTestLoading ? "Sending..." : "Send Test"}
-          </Button>
-          <div className="flex items-center gap-2">
-            <TextField
-              label="Broadcast Limit"
-              type="number"
-              value={broadcastLimit}
-              onChange={(e) => setBroadcastLimit(e.target.value)}
-              size="small"
-              fullWidth
-              inputProps={{ min: 1 }}
-            />
-            <Button
-              variant="contained"
-              color="warning"
-              onClick={handleSendBroadcast}
-              disabled={sendBroadcastLoading}
-              sx={{ textTransform: "none", height: 40, whiteSpace: "nowrap" }}
-            >
-              {sendBroadcastLoading ? "Sending..." : "Send Broadcast"}
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-3">
-          <FormControlLabel
-            control={
-              <Switch
-                checked={broadcastConfirm}
-                onChange={(e) => setBroadcastConfirm(e.target.checked)}
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Preview</p>
+              <iframe
+                title="Newsletter Preview"
+                srcDoc={templateHtml}
+                className="w-full h-[430px] border border-gray-200 rounded-lg bg-white"
               />
-            }
-            label="I understand this will email real subscribers (required)"
-          />
-          <p className="text-xs text-gray-400">
-            Broadcast is disabled by default on the server. To enable, set{" "}
-            <span className="font-mono">NEWSLETTER_BROADCAST_ENABLED=true</span>.
-          </p>
-        </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-5">
@@ -656,89 +346,6 @@ const NewsletterPage = () => {
           </>
         )}
       </div>
-
-      <Modal open={productModalOpen} onClose={() => setProductModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-lg p-5 w-[92vw] max-w-3xl mx-auto mt-16 outline-none">
-          <h2 className="text-lg font-semibold text-gray-800">
-            Insert Product Card
-          </h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Search products and insert a clickable product card into the HTML.
-          </p>
-
-          <Divider className="my-4" />
-
-          <div className="flex items-center gap-2">
-            <TextField
-              label="Search"
-              value={productQuery}
-              onChange={(e) => setProductQuery(e.target.value)}
-              size="small"
-              fullWidth
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSearchProducts();
-              }}
-            />
-            <Button
-              variant="contained"
-              onClick={handleSearchProducts}
-              disabled={productLoading}
-              sx={{ textTransform: "none", height: 40, whiteSpace: "nowrap" }}
-              startIcon={productLoading ? <CircularProgress size={18} /> : null}
-            >
-              Search
-            </Button>
-          </div>
-
-          <div className="mt-3">
-            <TextField
-              label="Offer Text (optional)"
-              value={productOfferText}
-              onChange={(e) => setProductOfferText(e.target.value)}
-              size="small"
-              fullWidth
-              placeholder="e.g., Use code PB10 for 10% off"
-            />
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[420px] overflow-auto pr-1">
-            {productResults.map((p) => (
-              <button
-                key={p._id}
-                type="button"
-                onClick={() => handleInsertProduct(p)}
-                className="flex gap-3 items-start border rounded-lg p-3 hover:bg-gray-50 text-left"
-              >
-                <img
-                  src={getImageUrl(p?.thumbnail || p?.images?.[0] || "")}
-                  alt={p?.name || "product"}
-                  className="w-14 h-14 rounded-lg object-cover border"
-                  loading="lazy"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-gray-800">
-                    {p?.name}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">{p?._id}</div>
-                </div>
-              </button>
-            ))}
-            {!productLoading && productResults.length === 0 && (
-              <div className="text-sm text-gray-500">Search to find products.</div>
-            )}
-          </div>
-
-          <div className="mt-5 flex justify-end gap-2">
-            <Button
-              variant="outlined"
-              onClick={() => setProductModalOpen(false)}
-              sx={{ textTransform: "none" }}
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 };
