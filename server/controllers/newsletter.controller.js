@@ -606,3 +606,112 @@ export const sendNewsletterBroadcast = async (req, res) => {
     });
   }
 };
+
+// Backward-compatible campaign endpoints used by admin UI/routes
+export const getCampaignTemplate = async (_req, res) => {
+  try {
+    const template = await getStoredNewsletterTemplate();
+    return res.status(200).json({
+      success: true,
+      template: {
+        subject: template.subject,
+        html: template.html,
+        text: "",
+      },
+      updatedAt: template.updatedAt || null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch newsletter template",
+    });
+  }
+};
+
+export const updateCampaignTemplate = async (req, res) => {
+  try {
+    const { subject, html } = req.body || {};
+    const template = normalizeTemplatePayload({ subject, html });
+    const adminId = req.user?.id || req.user || null;
+
+    await SettingsModel.findOneAndUpdate(
+      { key: NEWSLETTER_TEMPLATE_SETTING_KEY },
+      {
+        $set: {
+          value: template,
+          description: "Newsletter HTML template for admin broadcasts",
+          category: "notification",
+          updatedBy: adminId,
+          isActive: true,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Newsletter template saved",
+      template: {
+        subject: template.subject,
+        html: template.html,
+        text: "",
+      },
+      updatedAt: template.updatedAt || null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to save newsletter template",
+    });
+  }
+};
+
+export const sendCampaign = async (req, res) => {
+  try {
+    const mode = String(req.body?.mode || "active").trim().toLowerCase();
+    const storedTemplate = await getStoredNewsletterTemplate();
+    const template = normalizeTemplatePayload({
+      subject: req.body?.subject || storedTemplate.subject,
+      html: req.body?.html || storedTemplate.html,
+    });
+
+    if (mode === "test") {
+      const testEmail = String(req.body?.testEmail || "").trim().toLowerCase();
+      if (!testEmail || !isValidEmail(testEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid testEmail is required for test mode",
+        });
+      }
+
+      const result = await sendEmail({
+        to: testEmail,
+        subject: template.subject,
+        html: renderBroadcastHtml(template.html, testEmail),
+        text: template.subject,
+        context: "newsletter.campaign.test",
+      });
+
+      return res.status(result?.success ? 200 : 502).json({
+        success: Boolean(result?.success),
+        message: result?.success
+          ? "Test newsletter sent"
+          : "Failed to send test newsletter",
+        result,
+      });
+    }
+
+    req.body = {
+      ...req.body,
+      subject: template.subject,
+      html: template.html,
+      status: "active",
+    };
+    return sendNewsletterBroadcast(req, res);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send newsletter campaign",
+    });
+  }
+};
