@@ -28,10 +28,15 @@ const cartItemSchema = new mongoose.Schema({
     comboId: { type: String, default: "" },
     comboName: { type: String, default: "" },
     comboSlug: { type: String, default: "" },
+    comboSku: { type: String, default: "" },
     comboType: { type: String, default: "" },
     comboPrice: { type: Number, default: 0 },
     originalPrice: { type: Number, default: 0 },
     savings: { type: Number, default: 0 },
+    variantIds: {
+      type: [String],
+      default: [],
+    },
     items: {
       type: [
         {
@@ -39,7 +44,26 @@ const cartItemSchema = new mongoose.Schema({
           productTitle: { type: String, default: "" },
           variantId: { type: String, default: "" },
           variantName: { type: String, default: "" },
+          variantSku: { type: String, default: "" },
           quantity: { type: Number, default: 1 },
+          quantityRequired: { type: Number, default: 1 },
+          price: { type: Number, default: 0 },
+          originalPrice: { type: Number, default: 0 },
+          image: { type: String, default: "" },
+        },
+      ],
+      default: [],
+    },
+    productsInsideCombo: {
+      type: [
+        {
+          productId: { type: String, default: "" },
+          productTitle: { type: String, default: "" },
+          variantId: { type: String, default: "" },
+          variantName: { type: String, default: "" },
+          variantSku: { type: String, default: "" },
+          quantity: { type: Number, default: 1 },
+          quantityRequired: { type: Number, default: 1 },
           price: { type: Number, default: 0 },
           originalPrice: { type: Number, default: 0 },
           image: { type: String, default: "" },

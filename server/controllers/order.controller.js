@@ -67,6 +67,7 @@ import {
   resolveUserSegment,
   isComboEligibleForSegment,
 } from "../services/combos/combo.service.js";
+import { recordOrderPairings } from "../services/combos/frequentlyBoughtTogether.service.js";
 import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
 import {
   AppError,
@@ -5731,6 +5732,13 @@ const applyResolvedPaymentStatus = async ({
         source: trackingSource,
       });
     }
+
+    recordOrderPairings(order).catch((err) =>
+      logger.warn(logContext, "Failed to record product pairings", {
+        orderId: order?._id,
+        error: err?.message || String(err),
+      }),
+    );
 
     await runPostPaymentSuccessTasks({
       order,

@@ -7,6 +7,7 @@ import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import {
   applyPurchaseOrderInventory,
   logInventoryAudit,
+  logStockMovement,
   releaseInventory,
   reserveInventory,
   syncParentStockFromVariants,
@@ -1298,6 +1299,20 @@ export const updatePurchaseOrderReceipt = async (req, res) => {
             },
             source: "PO",
             referenceId: String(po._id || ""),
+            session,
+          });
+
+          await logStockMovement({
+            productId: adjustment.productId,
+            variantId: resolvedVariantId || null,
+            changeType: "po_receive",
+            quantityChange: Number(adjustment.quantity || 0),
+            source: "purchase_order",
+            referenceId: String(po._id || ""),
+            previousStock: Number(
+              auditBefore?.stock_quantity ?? auditBefore?.stock ?? 0,
+            ),
+            newStock: Number(auditAfter?.stock_quantity ?? auditAfter?.stock ?? 0),
             session,
           });
         }

@@ -4,6 +4,8 @@ import {
   createProduct,
   deleteProduct,
   getExclusiveProducts,
+  getFrequentlyBoughtProducts,
+  getCartUpsellProduct,
   getFeaturedProducts,
   getProductById,
   getProducts,
@@ -44,6 +46,17 @@ router.get("/exclusive", auth, requireActiveMembership, getExclusiveProducts);
 
 // Get related products
 router.get("/:id/related", optionalAuth, attachMembershipStatus, getRelatedProducts);
+
+// Frequently bought together
+router.get(
+  "/:id/frequently-bought",
+  optionalAuth,
+  attachMembershipStatus,
+  getFrequentlyBoughtProducts,
+);
+
+// Cart upsell suggestion
+router.post("/upsell", optionalAuth, attachMembershipStatus, getCartUpsellProduct);
 
 // Get single product by ID or slug
 router.get("/:id", optionalAuth, attachMembershipStatus, getProductById);

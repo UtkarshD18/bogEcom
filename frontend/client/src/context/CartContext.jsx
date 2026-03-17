@@ -99,6 +99,34 @@ const resolveComboPrice = (value) =>
       0,
   );
 
+const buildComboCartPayload = (combo, quantity = 1) => {
+  const comboId = resolveComboId(combo);
+  const name = resolveComboLabel(combo) || "Combo Bundle";
+  const price = resolveComboPrice(combo);
+  const image =
+    combo?.comboThumbnail ||
+    combo?.thumbnail ||
+    combo?.image ||
+    combo?.comboImages?.[0] ||
+    "/combo_placeholder.png";
+  const items = (Array.isArray(combo?.items) ? combo.items : []).map((item) => ({
+    productId: String(item?.productId || item?.product || "").trim(),
+    variantId: String(item?.variantId || item?.variant || "").trim() || undefined,
+    quantity: Math.max(Number(item?.quantity || item?.quantityRequired || 1), 1),
+  }));
+
+  return {
+    type: "combo",
+    itemType: "combo",
+    comboId,
+    name,
+    price,
+    quantity: Math.max(Number(quantity || 1), 1),
+    image,
+    items: items.filter((item) => item.productId),
+  };
+};
+
 const isComboCartItem = (item) =>
   item?.itemType === "combo" || Boolean(item?.combo || item?.comboSnapshot?.comboId);
 
@@ -274,9 +302,15 @@ export const CartProvider = ({ children }) => {
       const sessionId = getSessionId();
       const isComboRequest = isComboPayload(product);
       const comboId = isComboRequest ? resolveComboId(product) : "";
+      const comboPayload = isComboRequest ? buildComboCartPayload(product, quantity) : null;
 
       if (isComboRequest && !comboId) {
         toast.error("Combo is unavailable right now.");
+        return { success: false, message: "Combo unavailable" };
+      }
+
+      if (isComboRequest && (!comboPayload?.items || comboPayload.items.length === 0)) {
+        toast.error("Combo items are unavailable right now.");
         return { success: false, message: "Combo unavailable" };
       }
 
@@ -297,11 +331,7 @@ export const CartProvider = ({ children }) => {
         credentials: "include",
         body: JSON.stringify(
           isComboRequest
-            ? {
-                itemType: "combo",
-                comboId: comboId || undefined,
-                quantity,
-              }
+            ? comboPayload
             : {
                 productId: product._id || product.id,
                 quantity,
@@ -778,7 +808,7 @@ export const CartProvider = ({ children }) => {
   };
 
   const addComboToCart = (combo, quantity = 1) =>
-    addToCart({ ...combo, itemType: "combo" }, quantity);
+    addToCart({ ...combo, ...buildComboCartPayload(combo, quantity), itemType: "combo" }, quantity);
 
   const updateComboQuantity = (comboId, quantity) =>
     updateQuantity(comboId, quantity, null, { itemType: "combo", comboId });

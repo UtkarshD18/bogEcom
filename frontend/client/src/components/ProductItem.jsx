@@ -4,6 +4,8 @@ import { formatPrice } from "@/config/siteConfig";
 import { useCart } from "@/context/CartContext";
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { useWishlist } from "@/context/WishlistContext";
+import ProductCardBadges from "@/components/productCard/ProductCardBadges";
+import ProductCardPriceBlock from "@/components/productCard/ProductCardPriceBlock";
 import { getProductCardImageUrl } from "@/utils/imageUtils";
 import Image from "next/image";
 import Link from "next/link";
@@ -13,17 +15,19 @@ import { MdDeleteOutline } from "react-icons/md";
 
 const ProductItem = (props) => {
     const {
-        id, _id, name, brand, price, originalPrice, discount, rating, image, product
+        id, _id, name, brand, price, originalPrice, discount, rating, image, product, itemType
     } = props;
 
     const [isAddingToCart, setIsAddingToCart] = useState(false);
-    const { addToCart, removeFromCart, isInCart } = useCart();
+    const { addToCart, removeFromCart, isInCart, addComboToCart, removeComboFromCart, isComboInCart } = useCart();
     const { toggleWishlist, isInWishlist } = useWishlist();
     const context = useContext(MyContext);
     const flavor = context?.flavor || FLAVORS.creamy;
 
     const productId = id || _id || product?._id || product?.id;
-    const alreadyInCart = isInCart(productId);
+    const resolvedItemType = String(itemType || product?.itemType || "product").toLowerCase();
+    const isComboItem = resolvedItemType === "combo";
+    const alreadyInCart = isComboItem ? isComboInCart(productId) : isInCart(productId);
 
     const productData = product || {
         _id: id || _id || product?.id || 1,
@@ -35,6 +39,9 @@ const ProductItem = (props) => {
         rating: rating || 4.5,
         discount: discount || 30
     };
+    const isOutOfStock = isComboItem
+        ? Number(productData.availableStock ?? productData.stock ?? 0) <= 0
+        : productData.stock === 0;
 
     // Derive display values from default variant when hasVariants
     const defaultVariant = productData.hasVariants && productData.variants?.length > 0
@@ -72,27 +79,37 @@ const ProductItem = (props) => {
 
         if (alreadyInCart) {
             setIsAddingToCart(true);
-            try { await removeFromCart(productId); } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
+            try {
+                if (isComboItem) {
+                    await removeComboFromCart(productId);
+                } else {
+                    await removeFromCart(productId);
+                }
+            } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
         } else {
             setIsAddingToCart(true);
             try {
-                const cartPayload = defaultVariant
-                    ? {
-                        ...productData,
-                        price: defaultVariant.price,
-                        originalPrice: defaultVariant.originalPrice || productData.originalPrice,
-                        selectedVariant: {
-                            _id: defaultVariant._id,
-                            name: defaultVariant.name,
-                            sku: defaultVariant.sku,
+                if (isComboItem) {
+                    await addComboToCart(productData, 1);
+                } else {
+                    const cartPayload = defaultVariant
+                        ? {
+                            ...productData,
                             price: defaultVariant.price,
-                            weight: defaultVariant.weight,
-                            unit: defaultVariant.unit,
-                        },
-                        variantId: defaultVariant._id,
-                    }
-                    : productData;
-                await addToCart(cartPayload, 1);
+                            originalPrice: defaultVariant.originalPrice || productData.originalPrice,
+                            selectedVariant: {
+                                _id: defaultVariant._id,
+                                name: defaultVariant.name,
+                                sku: defaultVariant.sku,
+                                price: defaultVariant.price,
+                                weight: defaultVariant.weight,
+                                unit: defaultVariant.unit,
+                            },
+                            variantId: defaultVariant._id,
+                        }
+                        : productData;
+                    await addToCart(cartPayload, 1);
+                }
             } catch (error) { console.error(error); } finally { setIsAddingToCart(false); }
         }
     };
@@ -109,29 +126,19 @@ const ProductItem = (props) => {
         }
         return stars;
     };
+    const displayReviewCount = Number(productData.reviewCount || 0);
 
     return (
-        <Link href={`/product/${productId}`} className="group relative flex h-full w-full flex-col rounded-3xl bg-white p-3 transition-all hover:shadow-xl hover:-translate-y-1 border border-gray-100">
+        <Link href={isComboItem ? `/combo/${productId}` : `/product/${productId}`} className="group relative flex h-full w-full flex-col rounded-3xl bg-white p-3 transition-all hover:shadow-xl hover:-translate-y-1 border border-gray-100">
 
             {/* Image Container */}
             <div className="relative mb-3 h-40 w-full overflow-hidden rounded-2xl bg-gray-50 flex items-center justify-center">
-                {productData.isBestSeller && (
-                    <span className="absolute -left-8 top-4 z-20 -rotate-45 bg-red-600 px-8 py-1 text-[9px] font-extrabold tracking-[0.2em] text-white shadow-md">
-                        BEST SELLER
-                    </span>
-                )}
-
-                {/* Discount Badge */}
-                {showDiscountBadge && (
-                    <span className="absolute left-2 top-2 z-10 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                        {displayDiscount}% OFF
-                    </span>
-                )}
-                {isExclusiveProduct && (
-                    <span className={`absolute left-2 z-10 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm ${showDiscountBadge ? "top-8" : "top-2"}`}>
-                        Members Only
-                    </span>
-                )}
+                <ProductCardBadges
+                    isBestSeller={Boolean(productData.isBestSeller)}
+                    showDiscountBadge={showDiscountBadge}
+                    discountLabel={`${displayDiscount}% OFF`}
+                    isExclusive={isExclusiveProduct}
+                />
 
                 {/* Wishlist Button */}
                 <button
@@ -179,28 +186,22 @@ const ProductItem = (props) => {
                 {/* Rating */}
                 <div className="mt-1 flex items-center gap-1">
                     <div className="flex text-xs">{renderStars()}</div>
-                    <span className="text-[10px] text-gray-400">({productData.rating})</span>
+                    <span className="text-[10px] text-gray-400">({displayReviewCount > 0 ? displayReviewCount : productData.rating})</span>
                 </div>
 
                 {/* Price & Cart */}
                 <div className="mt-auto flex items-end justify-between pt-3">
-                    <div>
-                        {displayOriginalPrice > displayPrice && (
-                            <span className="block text-[10px] font-medium text-gray-400 line-through">
-                                {formatPrice(Number(displayOriginalPrice || 0))}
-                            </span>
-                        )}
-                        <span className="block text-lg font-bold text-primary">
-                            {formatPrice(Number(displayPrice || 0))}
-                        </span>
-                    </div>
+                    <ProductCardPriceBlock
+                        originalPrice={displayOriginalPrice}
+                        finalPrice={displayPrice}
+                    />
 
                     <button
                         onClick={handleAddToCart}
-                        disabled={isAddingToCart || (!alreadyInCart && productData.stock === 0)}
+                        disabled={isAddingToCart || (!alreadyInCart && isOutOfStock)}
                         className={`flex h-10 w-10 items-center justify-center rounded-full shadow-md transition-all active:scale-90 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed ${alreadyInCart
                             ? "bg-gradient-to-r from-red-500 to-pink-500 text-white"
-                            : productData.stock === 0
+                            : isOutOfStock
                                 ? "bg-gray-200 text-gray-400"
                                 : "bg-[var(--color-primary)]/20 text-[var(--color-primary)] border border-[var(--color-primary)]/30"
                             }`}

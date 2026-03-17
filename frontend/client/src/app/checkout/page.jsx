@@ -1347,6 +1347,9 @@ const Checkout = () => {
 
       const data = await response.json();
       if (!data.success) {
+        if (String(data?.code || "").toUpperCase() === "INSUFFICIENT_STOCK") {
+          throw new Error("Stock changed. Please update your cart.");
+        }
         throw new Error(data.message || "Payment initialization failed");
       }
 

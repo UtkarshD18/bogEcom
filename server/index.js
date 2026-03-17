@@ -1,6 +1,7 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import dotenv from "dotenv";
+import dns from "node:dns";
 import express from "express";
 import helmet from "helmet";
 import http from "http";
@@ -26,6 +27,30 @@ import { UPLOAD_ROOT } from "./middlewares/upload.js";
 import analyticsSession from "./middlewares/analyticsSession.js";
 
 dotenv.config();
+
+const applyLocalDnsOverrides = () => {
+  try {
+    const currentServers = dns.getServers();
+    const usesOnlyLoopback = currentServers.length > 0 &&
+      currentServers.every((server) =>
+        /^127\.0\.0\.1$|^::1$/.test(String(server || "").trim()),
+      );
+
+    if (usesOnlyLoopback) {
+      dns.setServers(["1.1.1.1", "8.8.8.8"]);
+      console.log(
+        "[startup] DNS servers overridden for Atlas SRV lookups (1.1.1.1, 8.8.8.8).",
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "[startup] Unable to override DNS servers for SRV lookups:",
+      error?.message || error,
+    );
+  }
+};
+
+applyLocalDnsOverrides();
 
 const normalizeEnvValue = (value) => {
   let normalized = String(value || "").trim();
@@ -203,6 +228,7 @@ import { startInventoryReservationExpiryJob } from "./services/inventoryReservat
 import { startMembershipExpiryJob } from "./services/membershipExpiry.service.js";
 import { startLocationLogRetentionJob } from "./services/userLocationLog.service.js";
 import { startFrequentlyBoughtTogetherJob } from "./services/combos/frequentlyBoughtTogether.service.js";
+import { startComboAnalysisJob } from "./services/combos/comboAnalysis.service.js";
 
 // Get __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -560,6 +586,7 @@ connectDb().then(async () => {
   startMembershipExpiryJob();
   startOrderFeedbackJob();
   startFrequentlyBoughtTogetherJob();
+  startComboAnalysisJob();
 }).catch((error) => {
   console.error(
     "Server startup failed:",

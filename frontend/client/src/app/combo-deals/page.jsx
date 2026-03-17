@@ -3,7 +3,7 @@
 import ComboCard from "@/components/ComboCard";
 import { fetchDataFromApi } from "@/utils/api";
 import { trackEvent } from "@/utils/analyticsTracker";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function ComboDealsPage() {
   const [combos, setCombos] = useState([]);
@@ -82,6 +82,15 @@ export default function ComboDealsPage() {
   }, [loaderRef, loading, page, pages]);
 
   const hasCombos = combos.length > 0;
+  const renderedCombos = useMemo(() => {
+    const seen = new Set();
+    return combos.filter((combo) => {
+      const comboId = String(combo?._id || combo?.id || combo?.slug || "").trim();
+      if (!comboId || seen.has(comboId)) return false;
+      seen.add(comboId);
+      return true;
+    });
+  }, [combos]);
 
   return (
     <div className="min-h-screen px-4 py-10">
@@ -101,12 +110,13 @@ export default function ComboDealsPage() {
 
         <section data-track-section="combo_deals_grid">
           {hasCombos ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {combos.map((combo) => (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {renderedCombos.map((combo) => (
                 <ComboCard
                   key={combo._id || combo.slug}
                   combo={combo}
                   context="combo_deals"
+                  action="details"
                 />
               ))}
             </div>

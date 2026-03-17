@@ -1,7 +1,7 @@
 ﻿import ComboAnalyticsModel from "../../models/comboAnalytics.model.js";
 import ComboOrderModel from "../../models/comboOrder.model.js";
 import ComboModel from "../../models/combo.model.js";
-import FrequentlyBoughtTogetherModel from "../../models/frequentlyBoughtTogether.model.js";
+import ProductPairingModel from "../../models/productPairing.model.js";
 import { getAnalyticsDb } from "../analytics/analyticsDb.service.js";
 import { getAnalyticsCollection } from "../analytics/collectionResolver.service.js";
 
@@ -311,11 +311,11 @@ export const buildComboPairingHeatmap = async ({ limit = 20 } = {}) => {
     { $limit: Math.max(toPositiveInt(limit, 20), 1) },
   ];
 
-  const pairs = await FrequentlyBoughtTogetherModel.aggregate(pipeline);
+  const pairs = await ProductPairingModel.aggregate(pipeline);
 
   return pairs.map((pair) => ({
-    productId: String(pair.productId || ""),
-    relatedProductId: String(pair.relatedProductId || ""),
+    productId: String(pair.productAId || ""),
+    relatedProductId: String(pair.productBId || ""),
     pairCount: toNumber(pair.pairCount, 0),
     confidenceScore: toNumber(pair.confidenceScore, 0),
   }));

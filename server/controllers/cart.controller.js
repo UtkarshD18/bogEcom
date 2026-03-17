@@ -71,7 +71,7 @@ const normalizeItemType = (value) => {
 };
 
 const resolveItemTypeFromRequest = (req) =>
-  normalizeItemType(req.body?.itemType || req.query?.itemType || "");
+  normalizeItemType(req.body?.itemType || req.body?.type || req.query?.itemType || "");
 
 const isComboCartItem = (item) =>
   item?.itemType === "combo" || Boolean(item?.combo || item?.comboSnapshot?.comboId);
@@ -286,6 +286,38 @@ export const addToCart = async (req, res) => {
         });
       }
 
+      const comboItems = Array.isArray(combo.items) ? combo.items : [];
+      if (comboItems.length === 0) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "Combo items are unavailable",
+        });
+      }
+
+      const comboProductIds = Array.from(
+        new Set(
+          comboItems
+            .map((item) => String(item?.productId || "").trim())
+            .filter(Boolean),
+        ),
+      );
+
+      const existingProducts = await ProductModel.find({
+        _id: { $in: comboProductIds },
+        isActive: true,
+      })
+        .select("_id")
+        .lean();
+
+      if (existingProducts.length !== comboProductIds.length) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: "One of the items in this combo is unavailable",
+        });
+      }
+
       if (combo.maxPerOrder && quantity > combo.maxPerOrder) {
         return res.status(400).json({
           error: true,
@@ -296,10 +328,15 @@ export const addToCart = async (req, res) => {
 
       const availability = await computeComboAvailability(combo);
       if (availability.available < quantity) {
+        const unavailableMessage =
+          availability.available <= 0
+            ? "One of the items in this combo is out of stock"
+            : `Only ${availability.available} combos available`;
         return res.status(400).json({
           error: true,
           success: false,
-          message: `Only ${availability.available} combos available`,
+          code: "INSUFFICIENT_STOCK",
+          message: unavailableMessage,
         });
       }
 

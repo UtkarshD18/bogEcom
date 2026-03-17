@@ -1,5 +1,5 @@
 ﻿import OrderModel from "../../models/order.model.js";
-import FrequentlyBoughtTogetherModel from "../../models/frequentlyBoughtTogether.model.js";
+import ProductPairingModel from "../../models/productPairing.model.js";
 import { logger } from "../../utils/errorHandler.js";
 
 let jobTimer = null;
@@ -55,31 +55,21 @@ const buildOrderProductIds = (order) => {
   return Array.from(new Set(ids));
 };
 
-export const generateFrequentlyBoughtTogether = async () => {
-  const config = getConfig();
-  const since = new Date(Date.now() - config.lookbackDays * 24 * 60 * 60 * 1000);
-
-  const orders = await OrderModel.find(resolveEligibleOrderFilter(since))
-    .select("products createdAt")
-    .sort({ createdAt: -1 })
-    .limit(config.maxOrders)
-    .lean();
-
+const buildPairingStats = (orders = []) => {
   const productOrderCount = new Map();
   const pairCount = new Map();
 
   for (const order of orders) {
     const ids = buildOrderProductIds(order);
-    if (ids.length < 2) {
-      ids.forEach((id) => {
-        productOrderCount.set(id, (productOrderCount.get(id) || 0) + 1);
-      });
-      continue;
-    }
+    if (ids.length === 0) continue;
 
     ids.forEach((id) => {
       productOrderCount.set(id, (productOrderCount.get(id) || 0) + 1);
     });
+
+    if (ids.length < 2) {
+      continue;
+    }
 
     for (let i = 0; i < ids.length; i += 1) {
       for (let j = i + 1; j < ids.length; j += 1) {
@@ -93,24 +83,37 @@ export const generateFrequentlyBoughtTogether = async () => {
     }
   }
 
+  return { productOrderCount, pairCount };
+};
+
+export const generateFrequentlyBoughtTogether = async () => {
+  const config = getConfig();
+  const since = new Date(Date.now() - config.lookbackDays * 24 * 60 * 60 * 1000);
+
+  const orders = await OrderModel.find(resolveEligibleOrderFilter(since))
+    .select("products createdAt")
+    .sort({ createdAt: -1 })
+    .limit(config.maxOrders)
+    .lean();
+
+  const { productOrderCount, pairCount } = buildPairingStats(orders);
+
   const now = new Date();
   const bulkOps = [];
 
   for (const [key, count] of pairCount.entries()) {
     if (count < config.minPairCount) continue;
-    const [productId, relatedProductId] = key.split("::");
-    const baseCount = productOrderCount.get(productId) || 0;
+    const [productAId, productBId] = key.split("::");
+    const baseCount = productOrderCount.get(productAId) || 0;
     const confidenceScore = baseCount > 0 ? count / baseCount : 0;
 
     bulkOps.push({
       updateOne: {
-        filter: { productId, relatedProductId },
+        filter: { productAId, productBId },
         update: {
           $set: {
-            frequencyScore: count,
-            confidenceScore: Number(confidenceScore.toFixed(4)),
             pairCount: count,
-            orderCount: baseCount,
+            confidenceScore: Number(confidenceScore.toFixed(4)),
             lastUpdated: now,
           },
           $setOnInsert: { createdAt: now },
@@ -121,13 +124,60 @@ export const generateFrequentlyBoughtTogether = async () => {
   }
 
   if (bulkOps.length > 0) {
-    await FrequentlyBoughtTogetherModel.bulkWrite(bulkOps, { ordered: false });
+    await ProductPairingModel.bulkWrite(bulkOps, { ordered: false });
   }
 
   return {
     processedOrders: orders.length,
     pairs: bulkOps.length,
+    productOrderCounts: productOrderCount,
   };
+};
+
+export const recordOrderPairings = async (order) => {
+  const ids = buildOrderProductIds(order);
+  if (ids.length < 2) {
+    return { pairs: 0 };
+  }
+
+  const now = new Date();
+  const bulkOps = [];
+
+  for (let i = 0; i < ids.length; i += 1) {
+    for (let j = i + 1; j < ids.length; j += 1) {
+      const a = ids[i];
+      const b = ids[j];
+
+      bulkOps.push({
+        updateOne: {
+          filter: { productAId: a, productBId: b },
+          update: {
+            $inc: { pairCount: 1 },
+            $set: { lastUpdated: now },
+            $setOnInsert: { confidenceScore: 0, createdAt: now },
+          },
+          upsert: true,
+        },
+      });
+      bulkOps.push({
+        updateOne: {
+          filter: { productAId: b, productBId: a },
+          update: {
+            $inc: { pairCount: 1 },
+            $set: { lastUpdated: now },
+            $setOnInsert: { confidenceScore: 0, createdAt: now },
+          },
+          upsert: true,
+        },
+      });
+    }
+  }
+
+  if (bulkOps.length > 0) {
+    await ProductPairingModel.bulkWrite(bulkOps, { ordered: false });
+  }
+
+  return { pairs: bulkOps.length };
 };
 
 export const startFrequentlyBoughtTogetherJob = () => {
@@ -169,6 +219,7 @@ export const stopFrequentlyBoughtTogetherJob = () => {
 
 export default {
   generateFrequentlyBoughtTogether,
+  recordOrderPairings,
   startFrequentlyBoughtTogetherJob,
   stopFrequentlyBoughtTogetherJob,
 };

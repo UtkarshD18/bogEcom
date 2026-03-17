@@ -11,6 +11,9 @@ export const COMBO_TYPES = [
 
 export const COMBO_TAGS = [
   "best_seller",
+  "featured",
+  "high_demand",
+  "members_exclusive",
   "trending",
   "recommended",
   "festival_deal",
@@ -49,9 +52,19 @@ const comboItemSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    variantSku: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     quantity: {
       type: Number,
       required: true,
+      min: 1,
+    },
+    quantityRequired: {
+      type: Number,
+      default: 1,
       min: 1,
     },
     price: {
@@ -99,6 +112,29 @@ const comboSchema = new mongoose.Schema(
       default: "",
       maxLength: 5000,
     },
+    shortDescription: {
+      type: String,
+      default: "",
+      maxLength: 500,
+    },
+    brand: {
+      type: String,
+      default: "",
+      trim: true,
+      maxLength: 120,
+    },
+    category: {
+      type: String,
+      default: "",
+      trim: true,
+      maxLength: 120,
+      index: true,
+    },
+    reviewCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     image: {
       type: String,
       default: "",
@@ -106,6 +142,27 @@ const comboSchema = new mongoose.Schema(
     thumbnail: {
       type: String,
       default: "",
+    },
+    comboImages: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: function (value) {
+          return Array.isArray(value) ? value.length <= 10 : true;
+        },
+        message: "Cannot have more than 10 combo images",
+      },
+    },
+    comboThumbnail: {
+      type: String,
+      default: "",
+    },
+    sku: {
+      type: String,
+      default: "",
+      trim: true,
+      uppercase: true,
+      index: true,
     },
     items: {
       type: [comboItemSchema],
@@ -133,6 +190,11 @@ const comboSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    originalPrice: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     totalSavings: {
       type: Number,
       default: 0,
@@ -143,6 +205,11 @@ const comboSchema = new mongoose.Schema(
       default: 0,
       min: 0,
       max: 100,
+    },
+    price: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     comboType: {
       type: String,
@@ -170,6 +237,41 @@ const comboSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
       index: true,
+    },
+    isFeatured: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    isBestSeller: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    isExclusive: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    demandStatus: {
+      type: String,
+      enum: ["NORMAL", "HIGH"],
+      default: "NORMAL",
+      index: true,
+    },
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    adminStarRating: {
+      type: Number,
+      default: function () {
+        return typeof this.rating === "number" ? this.rating : 0;
+      },
+      min: 0,
+      max: 5,
     },
     startDate: {
       type: Date,
@@ -277,6 +379,45 @@ const slugify = (value) =>
 comboSchema.pre("validate", function () {
   if (!this.slug && this.name) {
     this.slug = slugify(this.name);
+  }
+
+  const normalizedImages = Array.isArray(this.comboImages)
+    ? this.comboImages.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 10)
+    : [];
+  this.comboImages = normalizedImages;
+
+  const resolvedThumbnail =
+    String(this.comboThumbnail || this.thumbnail || normalizedImages[0] || "").trim();
+  this.comboThumbnail = resolvedThumbnail;
+  this.thumbnail = resolvedThumbnail;
+
+  const resolvedImage = String(this.image || normalizedImages[0] || resolvedThumbnail || "").trim();
+  this.image = resolvedImage;
+
+  this.price = Number(this.comboPrice || 0);
+  this.originalPrice = Number(this.originalTotal || this.originalPrice || 0);
+  this.reviewCount = Math.max(Number(this.reviewCount || 0), 0);
+
+  if (
+    this.isModified("adminStarRating") &&
+    typeof this.adminStarRating === "number"
+  ) {
+    this.rating = this.adminStarRating;
+  } else if (this.isModified("rating") && typeof this.rating === "number") {
+    this.adminStarRating = this.rating;
+  }
+
+  if (Array.isArray(this.items)) {
+    this.items = this.items.map((item) => {
+      const normalizedQuantity = Math.max(Number(item?.quantity || item?.quantityRequired || 1), 1);
+      const normalizedVariantSku = String(item?.variantSku || "").trim().toUpperCase();
+      return {
+        ...item,
+        quantity: normalizedQuantity,
+        quantityRequired: normalizedQuantity,
+        variantSku: normalizedVariantSku,
+      };
+    });
   }
 });
 

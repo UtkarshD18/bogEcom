@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import ProductModel from "../models/product.model.js";
 import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import InventoryAuditModel from "../models/inventoryAudit.model.js";
+import StockMovementModel from "../models/stockMovement.model.js";
 import { AppError, logger } from "../utils/errorHandler.js";
 
 // Atomic inventory updates rely on $inc with $expr guards to avoid race conditions.
@@ -356,6 +357,40 @@ const mapAuditSource = (source = "") => {
   return "ORDER";
 };
 
+const mapStockMovementSource = (source = "") => {
+  const normalized = String(source).toUpperCase();
+  if (normalized.includes("PO")) return "purchase_order";
+  if (normalized.includes("ADMIN")) return "admin_adjustment";
+  if (normalized.includes("SYSTEM")) return "system";
+  return "order";
+};
+
+const isTransactionUnsupportedError = (error) => {
+  const message = String(error?.message || "");
+  return (
+    message.includes("Transaction numbers are only allowed") ||
+    message.includes("Transaction support is not available")
+  );
+};
+
+const runWithMongoTransaction = async (work) => {
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      result = await work(session);
+    });
+    return result;
+  } catch (error) {
+    if (isTransactionUnsupportedError(error)) {
+      return work(null);
+    }
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
 export const logInventoryAudit = async ({
   productId,
   variantId = null,
@@ -388,6 +423,54 @@ export const logInventoryAudit = async ({
       productId,
       variantId,
       action,
+      error: error?.message,
+    });
+  }
+};
+
+export const logStockMovement = async ({
+  productId,
+  variantId = null,
+  changeType,
+  quantityChange,
+  source,
+  referenceId,
+  previousStock,
+  newStock,
+  session = null,
+}) => {
+  try {
+    await StockMovementModel.create(
+      [
+        {
+          product_id: productId,
+          variant_id: variantId,
+          change_type: changeType,
+          quantity_change: quantityChange,
+          source,
+          reference_id: referenceId,
+          previous_stock: previousStock,
+          new_stock: newStock,
+        },
+      ],
+      session ? { session } : undefined,
+    );
+
+    logger.info("inventoryChange", "Stock movement recorded", {
+      productId,
+      variantId,
+      changeType,
+      quantityChange,
+      previousStock,
+      newStock,
+      referenceId,
+      source,
+    });
+  } catch (error) {
+    logger.warn("stockMovement", "Failed to log stock movement", {
+      productId,
+      variantId,
+      changeType,
       error: error?.message,
     });
   }
@@ -798,6 +881,17 @@ export const confirmInventory = async (order, source = "PAYMENT_SUCCESS") => {
         referenceId: String(order._id || ""),
       });
 
+      await logStockMovement({
+        productId: item.productId,
+        variantId: variantObjectId,
+        changeType: "order_sale",
+        quantityChange: -Number(item.quantity || 0),
+        source: mapStockMovementSource(source),
+        referenceId: String(order._id || ""),
+        previousStock: Number(auditBefore?.stock_quantity ?? auditBefore?.stock ?? 0),
+        newStock: Number(auditAfter?.stock_quantity ?? auditAfter?.stock ?? 0),
+      });
+
       maybeEmitLowStockAlert(productAfter, variantObjectId ? auditAfter : null);
 
       applied.push({ ...item, deductReserved });
@@ -1022,6 +1116,17 @@ export const restoreInventory = async (order, source = "ORDER_CANCELLED") => {
         referenceId: String(order._id || ""),
       });
 
+      await logStockMovement({
+        productId: item.productId,
+        variantId: variantObjectId,
+        changeType: "return_restock",
+        quantityChange: Number(item.quantity || 0),
+        source: mapStockMovementSource(source),
+        referenceId: String(order._id || ""),
+        previousStock: Number(auditBefore?.stock_quantity ?? auditBefore?.stock ?? 0),
+        newStock: Number(auditAfter?.stock_quantity ?? auditAfter?.stock ?? 0),
+      });
+
       applied.push(item);
     }
 
@@ -1040,235 +1145,273 @@ export const restoreInventory = async (order, source = "ORDER_CANCELLED") => {
 
 export const applyPurchaseOrderInventory = async (
   poOrId,
-  { receivedItems = [], adminId = null } = {},
+  { receivedItems = [], adminId = null, session: providedSession = null } = {},
 ) => {
-  const po =
-    typeof poOrId === "string"
-      ? await PurchaseOrderModel.findById(poOrId)
-      : poOrId;
-  if (!po) {
-    throw new AppError("NOT_FOUND", { message: "Purchase order not found" });
-  }
+  const applyWithSession = async (session) => {
+    const poId =
+      typeof poOrId === "string" ? poOrId : String(poOrId?._id || "");
+    const poQuery = PurchaseOrderModel.findById(poId);
+    if (session) {
+      poQuery.session(session);
+    }
+    const po =
+      typeof poOrId === "string" || session ? await poQuery : poOrId;
+    if (!po) {
+      throw new AppError("NOT_FOUND", { message: "Purchase order not found" });
+    }
 
-  if (po.inventory_applied) {
-    return { status: "noop", reason: "already_applied", purchaseOrder: po };
-  }
+    if (po.inventory_applied) {
+      return { status: "noop", reason: "already_applied", purchaseOrder: po };
+    }
 
-  const receivedMap = new Map();
-  for (const receivedItem of receivedItems) {
-    const key = buildReceivedItemKey({
-      lineIndex: receivedItem?.lineIndex,
-      productId: receivedItem?.productId || receivedItem?._id || receivedItem?.id,
-      variantId: receivedItem?.variantId,
-      variantName: receivedItem?.variantName,
-      packing: receivedItem?.packing || receivedItem?.packSize,
-    });
-    if (!key) continue;
-    const qty = resolveReceivedQuantity(receivedItem);
-    if (qty <= 0) continue;
-    const existing = Number(receivedMap.get(key) || 0);
-    receivedMap.set(key, Math.max(existing + qty, 0));
-  }
-
-  const applied = [];
-  const consumedReceivedKeys = new Set();
-  try {
-    for (const [lineIndex, item] of (po.items || []).entries()) {
-      const productId = String(item.productId || "");
-      if (!productId) continue;
-
-      const lineKey = buildReceivedItemKey({ lineIndex });
-      const variantKey = buildReceivedItemKey({
-        productId,
-        variantId: item?.variantId,
-        variantName: item?.variantName,
-        packing: item?.packing || item?.packSize,
+    const receivedMap = new Map();
+    for (const receivedItem of receivedItems) {
+      const key = buildReceivedItemKey({
+        lineIndex: receivedItem?.lineIndex,
+        productId: receivedItem?.productId || receivedItem?._id || receivedItem?.id,
+        variantId: receivedItem?.variantId,
+        variantName: receivedItem?.variantName,
+        packing: receivedItem?.packing || receivedItem?.packSize,
       });
-      const productOnlyKey = buildReceivedItemKey({ productId });
-      const preferredKeys = [lineKey, variantKey, productOnlyKey];
-
-      let matchedKey = "";
-      for (const key of preferredKeys) {
-        if (!key) continue;
-        if (!receivedMap.has(key)) continue;
-        if (consumedReceivedKeys.has(key)) continue;
-        matchedKey = key;
-        break;
-      }
-
-      const fallbackQty = resolveReceivedQuantity(item);
-      const qty = matchedKey
-        ? Math.max(Number(receivedMap.get(matchedKey) || 0), 0)
-        : fallbackQty;
-
-      if (matchedKey) {
-        consumedReceivedKeys.add(matchedKey);
-      }
-
+      if (!key) continue;
+      const qty = resolveReceivedQuantity(receivedItem);
       if (qty <= 0) continue;
+      const existing = Number(receivedMap.get(key) || 0);
+      receivedMap.set(key, Math.max(existing + qty, 0));
+    }
 
-      const productBefore = await ProductModel.findById(productId)
-        .select(
-          "track_inventory trackInventory stock stock_quantity reserved_quantity low_stock_threshold variants",
-        )
-        .lean();
-      if (!productBefore) {
-        throw new AppError("PRODUCT_NOT_FOUND", { productId });
-      }
-      if (!isInventoryTracked(productBefore)) {
-        continue;
-      }
+    const applied = [];
+    const consumedReceivedKeys = new Set();
+    try {
+      for (const [lineIndex, item] of (po.items || []).entries()) {
+        const productId = String(item.productId || "");
+        if (!productId) continue;
 
-      const variantObjectId = resolvePreferredVariantObjectId({
-        product: productBefore,
-        variantId: item?.variantId,
-        variantName: item?.variantName,
-        packing: item?.packing || item?.packSize,
-      });
-      const hasVariantOptions =
-        Array.isArray(productBefore?.variants) && productBefore.variants.length > 0;
-      if (hasVariantOptions && !variantObjectId) {
-        throw new AppError("INVALID_INPUT", {
-          message: "Unable to resolve variant for purchase-order receive item",
+        const lineKey = buildReceivedItemKey({ lineIndex });
+        const variantKey = buildReceivedItemKey({
           productId,
-          packing: String(item?.packing || item?.packSize || ""),
-          variantId: normalizeVariantRef(item?.variantId),
-          variantName: String(item?.variantName || ""),
+          variantId: item?.variantId,
+          variantName: item?.variantName,
+          packing: item?.packing || item?.packSize,
+        });
+        const productOnlyKey = buildReceivedItemKey({ productId });
+        const preferredKeys = [lineKey, variantKey, productOnlyKey];
+
+        let matchedKey = "";
+        for (const key of preferredKeys) {
+          if (!key) continue;
+          if (!receivedMap.has(key)) continue;
+          if (consumedReceivedKeys.has(key)) continue;
+          matchedKey = key;
+          break;
+        }
+
+        const fallbackQty = resolveReceivedQuantity(item);
+        const qty = matchedKey
+          ? Math.max(Number(receivedMap.get(matchedKey) || 0), 0)
+          : fallbackQty;
+
+        if (matchedKey) {
+          consumedReceivedKeys.add(matchedKey);
+        }
+
+        if (qty <= 0) continue;
+
+        const productBeforeQuery = ProductModel.findById(productId).select(
+          "track_inventory trackInventory stock stock_quantity reserved_quantity low_stock_threshold variants",
+        );
+        if (session) {
+          productBeforeQuery.session(session);
+        }
+        const productBefore = await productBeforeQuery.lean();
+        if (!productBefore) {
+          throw new AppError("PRODUCT_NOT_FOUND", { productId });
+        }
+        if (!isInventoryTracked(productBefore)) {
+          continue;
+        }
+
+        const variantObjectId = resolvePreferredVariantObjectId({
+          product: productBefore,
+          variantId: item?.variantId,
+          variantName: item?.variantName,
+          packing: item?.packing || item?.packSize,
+        });
+        const hasVariantOptions =
+          Array.isArray(productBefore?.variants) && productBefore.variants.length > 0;
+        if (hasVariantOptions && !variantObjectId) {
+          throw new AppError("INVALID_INPUT", {
+            message: "Unable to resolve variant for purchase-order receive item",
+            productId,
+            packing: String(item?.packing || item?.packSize || ""),
+            variantId: normalizeVariantRef(item?.variantId),
+            variantName: String(item?.variantName || ""),
+          });
+        }
+
+        if (variantObjectId) {
+          const resolvedVariant = getVariantFromDoc(productBefore, variantObjectId);
+          const derivedPacking = buildPackingFromWeightAndUnit(
+            resolvedVariant?.weight,
+            resolvedVariant?.unit,
+          );
+          const resolvedPacking = String(
+            item?.packing ||
+              item?.packSize ||
+              derivedPacking ||
+              item?.variantName ||
+              resolvedVariant?.name ||
+              "",
+          ).trim();
+          const resolvedVariantName = String(
+            item?.variantName || resolvedVariant?.name || resolvedPacking || "",
+          ).trim();
+
+          item.variantId = String(variantObjectId);
+          item.variantName = resolvedVariantName;
+          item.packing = resolvedPacking;
+        }
+
+        const updateFilter = variantObjectId
+          ? {
+              _id: productId,
+              ...TRACK_INVENTORY_FILTER,
+              "variants._id": variantObjectId,
+            }
+          : { _id: productId, ...TRACK_INVENTORY_FILTER };
+        const updateOperation = variantObjectId
+          ? {
+              $inc: {
+                "variants.$[v].stock_quantity": qty,
+                "variants.$[v].stock": qty,
+              },
+            }
+          : { $inc: { stock_quantity: qty, stock: qty } };
+        const updateOptions = variantObjectId
+          ? {
+              arrayFilters: [{ "v._id": variantObjectId }],
+              ...(session ? { session } : {}),
+            }
+          : session
+            ? { session }
+            : undefined;
+
+        const result = await ProductModel.updateOne(
+          updateFilter,
+          updateOperation,
+          updateOptions,
+        );
+
+        if (result.modifiedCount !== 1) {
+          throw new AppError("INTERNAL_ERROR");
+        }
+
+        // Recalculate parent stock from variants after PO receive
+        if (variantObjectId) {
+          await syncParentStockFromVariants(productId, session);
+        }
+
+        const productAfterQuery = ProductModel.findById(productId).select(
+          "stock stock_quantity reserved_quantity low_stock_threshold variants",
+        );
+        if (session) {
+          productAfterQuery.session(session);
+        }
+        const productAfter = await productAfterQuery.lean();
+
+        const auditBefore = variantObjectId
+          ? getVariantFromDoc(productBefore, variantObjectId) || {}
+          : productBefore;
+        const auditAfter = variantObjectId
+          ? getVariantFromDoc(productAfter, variantObjectId) || {}
+          : productAfter;
+
+        await logInventoryAudit({
+          productId,
+          variantId: variantObjectId || null,
+          action: "PO_RECEIVE",
+          quantity: qty,
+          before: {
+            stock_quantity: Number(
+              auditBefore?.stock_quantity ?? auditBefore?.stock ?? 0,
+            ),
+            reserved_quantity: Number(auditBefore?.reserved_quantity ?? 0),
+          },
+          after: {
+            stock_quantity: Number(auditAfter?.stock_quantity ?? auditAfter?.stock ?? 0),
+            reserved_quantity: Number(auditAfter?.reserved_quantity ?? 0),
+          },
+          source: "PO",
+          referenceId: String(po._id || ""),
+          session,
+        });
+
+        await logStockMovement({
+          productId,
+          variantId: variantObjectId || null,
+          changeType: "po_receive",
+          quantityChange: Number(qty || 0),
+          source: "purchase_order",
+          referenceId: String(po._id || ""),
+          previousStock: Number(
+            auditBefore?.stock_quantity ?? auditBefore?.stock ?? 0,
+          ),
+          newStock: Number(auditAfter?.stock_quantity ?? auditAfter?.stock ?? 0),
+          session,
+        });
+
+        item.qty_received = qty;
+        item.receivedQuantity = qty;
+        applied.push({
+          productId,
+          quantity: qty,
+          variantId: variantObjectId ? String(variantObjectId) : null,
         });
       }
 
-      if (variantObjectId) {
-        const resolvedVariant = getVariantFromDoc(productBefore, variantObjectId);
-        const derivedPacking = buildPackingFromWeightAndUnit(
-          resolvedVariant?.weight,
-          resolvedVariant?.unit,
-        );
-        const resolvedPacking = String(
-          item?.packing ||
-            item?.packSize ||
-            derivedPacking ||
-            item?.variantName ||
-            resolvedVariant?.name ||
-            "",
-        ).trim();
-        const resolvedVariantName = String(
-          item?.variantName || resolvedVariant?.name || resolvedPacking || "",
-        ).trim();
-
-        item.variantId = String(variantObjectId);
-        item.variantName = resolvedVariantName;
-        item.packing = resolvedPacking;
+      po.status = "received";
+      po.inventory_applied = true;
+      po.receivedAt = new Date();
+      if (adminId) {
+        po.receivedBy = adminId;
       }
+      await po.save(session ? { session } : undefined);
 
-      const updateFilter = variantObjectId
-        ? {
-            _id: productId,
-            ...TRACK_INVENTORY_FILTER,
-            "variants._id": variantObjectId,
-          }
-        : { _id: productId, ...TRACK_INVENTORY_FILTER };
-      const updateOperation = variantObjectId
-        ? {
-            $inc: {
-              "variants.$[v].stock_quantity": qty,
-              "variants.$[v].stock": qty,
-            },
-          }
-        : { $inc: { stock_quantity: qty, stock: qty } };
-      const updateOptions = variantObjectId
-        ? { arrayFilters: [{ "v._id": variantObjectId }] }
-        : undefined;
-
-      const result = await ProductModel.updateOne(
-        updateFilter,
-        updateOperation,
-        updateOptions,
-      );
-
-      if (result.modifiedCount !== 1) {
-        throw new AppError("INTERNAL_ERROR");
-      }
-
-      // Recalculate parent stock from variants after PO receive
-      if (variantObjectId) {
-        await syncParentStockFromVariants(productId);
-      }
-
-      const productAfter = await ProductModel.findById(productId)
-        .select(
-          "stock stock_quantity reserved_quantity low_stock_threshold variants",
-        )
-        .lean();
-
-      const auditBefore = variantObjectId
-        ? getVariantFromDoc(productBefore, variantObjectId) || {}
-        : productBefore;
-      const auditAfter = variantObjectId
-        ? getVariantFromDoc(productAfter, variantObjectId) || {}
-        : productAfter;
-
-      await logInventoryAudit({
-        productId,
-        variantId: variantObjectId || null,
-        action: "PO_RECEIVE",
-        quantity: qty,
-        before: {
-          stock_quantity: Number(auditBefore?.stock_quantity ?? auditBefore?.stock ?? 0),
-          reserved_quantity: Number(auditBefore?.reserved_quantity ?? 0),
-        },
-        after: {
-          stock_quantity: Number(auditAfter?.stock_quantity ?? auditAfter?.stock ?? 0),
-          reserved_quantity: Number(auditAfter?.reserved_quantity ?? 0),
-        },
-        source: "PO",
-        referenceId: String(po._id || ""),
+      logger.info("applyPurchaseOrderInventory", "Inventory updated from PO", {
+        purchaseOrderId: po._id,
+        itemCount: applied.length,
       });
 
-      item.qty_received = qty;
-      item.receivedQuantity = qty;
-      applied.push({
-        productId,
-        quantity: qty,
-        variantId: variantObjectId ? String(variantObjectId) : null,
-      });
-    }
-
-    po.status = "received";
-    po.inventory_applied = true;
-    po.receivedAt = new Date();
-    if (adminId) {
-      po.receivedBy = adminId;
-    }
-    await po.save();
-
-    logger.info("applyPurchaseOrderInventory", "Inventory updated from PO", {
-      purchaseOrderId: po._id,
-      itemCount: applied.length,
-    });
-
-    return { status: "applied", purchaseOrder: po };
-  } catch (error) {
-    if (applied.length > 0) {
-      for (const item of applied) {
-        if (item.variantId) {
-          await ProductModel.updateOne(
-            { _id: item.productId, "variants._id": item.variantId },
-            {
-              $inc: {
-                "variants.$.stock_quantity": -item.quantity,
-                "variants.$.stock": -item.quantity,
+      return { status: "applied", purchaseOrder: po };
+    } catch (error) {
+      if (!session && applied.length > 0) {
+        for (const item of applied) {
+          if (item.variantId) {
+            await ProductModel.updateOne(
+              { _id: item.productId, "variants._id": item.variantId },
+              {
+                $inc: {
+                  "variants.$.stock_quantity": -item.quantity,
+                  "variants.$.stock": -item.quantity,
+                },
               },
-            },
+            );
+            await syncParentStockFromVariants(item.productId);
+            continue;
+          }
+          await ProductModel.updateOne(
+            { _id: item.productId },
+            { $inc: { stock_quantity: -item.quantity, stock: -item.quantity } },
           );
-          await syncParentStockFromVariants(item.productId);
-          continue;
         }
-        await ProductModel.updateOne(
-          { _id: item.productId },
-          { $inc: { stock_quantity: -item.quantity, stock: -item.quantity } },
-        );
       }
+      throw error;
     }
-    throw error;
+  };
+
+  if (providedSession) {
+    return applyWithSession(providedSession);
   }
+
+  return runWithMongoTransaction((session) => applyWithSession(session));
 };

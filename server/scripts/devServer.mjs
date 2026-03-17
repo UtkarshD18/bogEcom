@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import dns from "node:dns/promises";
+import dns from "node:dns";
+import dnsPromises from "node:dns/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
@@ -20,6 +21,7 @@ const nodemonBinary = path.resolve(
 let mongoServer = null;
 let childProcess = null;
 let shuttingDown = false;
+const SKIP_MEMORY_SEED_FLAG = "--no-seed";
 
 const normalizeEnvValue = (value) => {
   let normalized = String(value || "").trim();
@@ -37,6 +39,27 @@ const normalizeEnvValue = (value) => {
 };
 
 const isValidMongoUri = (value) => /^mongodb(\+srv)?:\/\//.test(value);
+const applyLocalDnsOverrides = () => {
+  try {
+    const currentServers = dns.getServers();
+    const usesOnlyLoopback = currentServers.length > 0 &&
+      currentServers.every((server) =>
+        /^127\.0\.0\.1$|^::1$/.test(String(server || "").trim()),
+      );
+
+    if (usesOnlyLoopback) {
+      dns.setServers(["1.1.1.1", "8.8.8.8"]);
+      console.log(
+        "[local-dev] DNS servers overridden for Atlas SRV lookups (1.1.1.1, 8.8.8.8).",
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "[local-dev] Unable to override DNS servers for SRV lookups:",
+      error?.message || error,
+    );
+  }
+};
 
 const resolveMongoUri = () => {
   const primaryMongoUri = normalizeEnvValue(process.env.MONGO_URI);
@@ -75,7 +98,7 @@ const resolveSrvWithTimeout = async (hostname, timeoutMs = 4000) => {
   });
 
   return Promise.race([
-    dns.resolveSrv(`_mongodb._tcp.${hostname}`),
+    dnsPromises.resolveSrv(`_mongodb._tcp.${hostname}`),
     timer,
   ]);
 };
@@ -171,8 +194,32 @@ const spawnNodemon = (env) => {
   });
 };
 
+const runSeeder = (mongoUri) =>
+  new Promise((resolve, reject) => {
+    const env = buildChildEnv(mongoUri);
+    const child = spawn(process.execPath, ["seeder.js"], {
+      cwd: serverRoot,
+      env,
+      stdio: "inherit",
+    });
+
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`Seeder exited with code ${code ?? "unknown"}`));
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+  });
+
 try {
+  applyLocalDnsOverrides();
   const forceMemory = process.argv.includes("--memory");
+  const skipSeed = process.argv.includes(SKIP_MEMORY_SEED_FLAG);
   const configuredMongoUri = resolveMongoUri();
   const decision = await shouldUseMemoryMongo(configuredMongoUri, forceMemory);
 
@@ -182,6 +229,12 @@ try {
     mongoUriToUse = await startMemoryMongo();
     console.log(`[local-dev] Using in-memory MongoDB because ${decision.reason}.`);
     console.log(`[local-dev] Memory Mongo URI: ${mongoUriToUse}`);
+    if (!skipSeed) {
+      console.log("[local-dev] Seeding in-memory MongoDB for local development.");
+      await runSeeder(mongoUriToUse);
+    } else {
+      console.log("[local-dev] Skipping seed for in-memory MongoDB.");
+    }
   } else {
     console.log(`[local-dev] Using configured MongoDB because ${decision.reason}.`);
   }

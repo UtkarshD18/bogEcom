@@ -1,18 +1,19 @@
 ﻿import ComboModel from "../models/combo.model.js";
+import ComboDraftModel from "../models/comboDraft.model.js";
 import ComboOrderModel from "../models/comboOrder.model.js";
-import ProductModel from "../models/product.model.js";
-import FrequentlyBoughtTogetherModel from "../models/frequentlyBoughtTogether.model.js";
 import { AppError, asyncHandler, sendSuccess } from "../utils/errorHandler.js";
 import {
   attachComboAvailability,
   buildComboItemsSnapshot,
   buildComboPricing,
+  buildComboSkuFromItems,
   computeComboAvailability,
   normalizeComboItemsPayload,
   normalizeComboTags,
   resolveComboStatus,
   resolveUserSegment,
   isComboEligibleForSegment,
+  applyComboUpdates,
   upsertComboItems,
 } from "../services/combos/combo.service.js";
 import {
@@ -26,7 +27,7 @@ import {
   refreshComboAnalyticsBuckets,
   resolveRange,
 } from "../services/combos/comboAnalytics.service.js";
-import { generateFrequentlyBoughtTogether } from "../services/combos/frequentlyBoughtTogether.service.js";
+import { generateComboDrafts } from "../services/combos/comboDraft.service.js";
 
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -116,13 +117,74 @@ const ensureUniqueSlug = async (baseSlug, ignoreId = null) => {
   }
 };
 
+const normalizeDraftItems = (draft) => {
+  const items = Array.isArray(draft?.productsIncluded)
+    ? draft.productsIncluded
+    : [];
+  return items.map((item) => ({
+    productId: String(item?.productId || item?.product || "").trim(),
+    quantity: Math.max(Number(item?.quantity || 1), 1),
+    variantId: String(item?.variantId || item?.variant || "").trim(),
+    variantName: String(item?.variantName || "").trim(),
+  }));
+};
+
+const resolveDraftName = (draft, items = []) => {
+  const name = String(draft?.name || "").trim();
+  if (name) return name;
+  if (items.length >= 2) {
+    return "AI Combo Draft";
+  }
+  return "AI Combo";
+};
+
+const buildComboPayloadFromDraft = async (draft) => {
+  const items = normalizeDraftItems(draft);
+  if (items.length === 0) {
+    throw new AppError("EMPTY_PRODUCTS", { fieldName: "items" });
+  }
+
+  const pricingType = String(draft?.pricingType || "percent_discount").trim();
+  const pricingValue = Number(
+    draft?.pricingValue ?? draft?.discountPercentage ?? 0,
+  );
+
+  const { payload, items: snapshots } = await parseComboPayload(
+    {
+      name: resolveDraftName(draft, items),
+      items,
+      pricingType,
+      pricingValue,
+      comboType: "ai_suggested",
+      tags: Array.isArray(draft?.tags) ? draft.tags : ["recommended"],
+      source: "ai",
+      status: "draft",
+    },
+    undefined,
+  );
+
+  return {
+    payload: {
+      ...payload,
+      aiScore: Number(draft?.aiScore || 0),
+      generatedFrom: String(draft?.generatedFrom || "order_history"),
+      source: "ai",
+      status: "draft",
+      isActive: false,
+      isVisible: false,
+    },
+    snapshots,
+  };
+};
+
 const parseComboPayload = async (body = {}, { existingCombo = null } = {}) => {
   const name = String(body?.name || body?.comboName || "").trim();
   if (!name) {
     throw new AppError("MISSING_FIELD", { fieldName: "name" });
   }
 
-  const slugCandidate = String(body?.slug || "").trim() || slugify(name);
+  const slugCandidate =
+    slugify(String(body?.slug || "").trim()) || slugify(name);
   const slug = await ensureUniqueSlug(slugCandidate, existingCombo?._id || null);
 
   const itemsPayload = normalizeComboItemsPayload(body?.items || body?.products || []);
@@ -162,16 +224,59 @@ const parseComboPayload = async (body = {}, { existingCombo = null } = {}) => {
         : [],
   };
 
+  const comboImages = Array.isArray(body?.comboImages || body?.combo_images)
+    ? (body?.comboImages || body?.combo_images)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+        .slice(0, 10)
+    : [];
+
+  const comboThumbnail = String(
+    body?.comboThumbnail ||
+      body?.combo_thumbnail ||
+      body?.thumbnail ||
+      existingCombo?.comboThumbnail ||
+      existingCombo?.thumbnail ||
+      comboImages[0] ||
+      "",
+  ).trim();
+
+  const comboImage = String(
+    body?.image ||
+      body?.banner ||
+      existingCombo?.image ||
+      comboImages[0] ||
+      comboThumbnail ||
+      "",
+  ).trim();
+
+  const adminStarRating = Math.max(
+    Math.min(Number(body?.adminStarRating ?? body?.rating ?? existingCombo?.adminStarRating ?? 0), 5),
+    0,
+  );
+
+  const comboSkuInput = String(body?.sku || "").trim().toUpperCase();
+  const comboSku = comboSkuInput || buildComboSkuFromItems(snapshots);
+
   const payload = {
     name,
     slug,
     description: String(body?.description || "").trim(),
-    image: String(body?.image || body?.banner || "").trim(),
-    thumbnail: String(body?.thumbnail || "").trim(),
+    shortDescription: String(body?.shortDescription || body?.short_description || "").trim(),
+    brand: String(body?.brand || existingCombo?.brand || "").trim(),
+    category: String(body?.category || body?.categoryName || existingCombo?.category || "").trim(),
+    reviewCount: Math.max(Number(body?.reviewCount ?? existingCombo?.reviewCount ?? 0), 0),
+    image: comboImage,
+    thumbnail: comboThumbnail,
+    comboImages,
+    comboThumbnail,
+    sku: comboSku,
     items: snapshots,
     pricing: { type: pricingType, value: pricingValue },
     originalTotal: pricing.originalTotal,
+    originalPrice: pricing.originalTotal,
     comboPrice: pricing.comboPrice,
+    price: pricing.comboPrice,
     totalSavings: pricing.totalSavings,
     discountPercentage: pricing.discountPercentage,
     comboType,
@@ -179,6 +284,17 @@ const parseComboPayload = async (body = {}, { existingCombo = null } = {}) => {
     priority: Number(body?.priority || 0),
     isActive,
     isVisible,
+    isFeatured: Boolean(body?.isFeatured ?? existingCombo?.isFeatured ?? false),
+    isBestSeller: Boolean(body?.isBestSeller ?? existingCombo?.isBestSeller ?? false),
+    isExclusive: Boolean(body?.isExclusive ?? body?.isMembersExclusive ?? existingCombo?.isExclusive ?? false),
+    demandStatus:
+      String(body?.demandStatus || body?.isHighDemand || existingCombo?.demandStatus || "NORMAL")
+        .trim()
+        .toUpperCase() === "HIGH"
+        ? "HIGH"
+        : "NORMAL",
+    rating: adminStarRating,
+    adminStarRating,
     startDate,
     endDate,
     geoTargets: normalizeGeoTargets(body?.geoTargets),
@@ -252,7 +368,12 @@ export const getComboById = asyncHandler(async (req, res) => {
     throw new AppError("NOT_FOUND", { field: "comboId" });
   }
   const availability = await computeComboAvailability(combo);
-  return sendSuccess(res, { ...combo, availableStock: availability.available });
+  return sendSuccess(res, {
+    ...combo,
+    availableStock: availability.available,
+    availability,
+    outOfStockItems: availability.outOfStockItems || [],
+  });
 });
 
 export const getComboBySlug = asyncHandler(async (req, res) => {
@@ -261,7 +382,12 @@ export const getComboBySlug = asyncHandler(async (req, res) => {
     throw new AppError("NOT_FOUND", { field: "comboSlug" });
   }
   const availability = await computeComboAvailability(combo);
-  return sendSuccess(res, { ...combo, availableStock: availability.available });
+  return sendSuccess(res, {
+    ...combo,
+    availableStock: availability.available,
+    availability,
+    outOfStockItems: availability.outOfStockItems || [],
+  });
 });
 
 export const getComboSections = asyncHandler(async (req, res) => {
@@ -412,123 +538,24 @@ export const getAdminCombos = asyncHandler(async (req, res) => {
 export const generateComboSuggestions = asyncHandler(async (req, res) => {
   const limit = toPositiveInt(req.body?.limit, 8);
   const previewOnly = Boolean(req.body?.previewOnly);
-  const pairLimit = Math.max(limit * 4, 20);
+  const result = await generateComboDrafts({
+    limit,
+    previewOnly,
+    refreshIfEmpty: true,
+  });
 
-  const fetchPairs = async () =>
-    FrequentlyBoughtTogetherModel.find({})
-      .sort({ frequencyScore: -1, confidenceScore: -1 })
-      .limit(pairLimit)
-      .lean();
-
-  let pairs = await fetchPairs();
-  let refreshResult = null;
-
-  if (pairs.length === 0) {
-    try {
-      refreshResult = await generateFrequentlyBoughtTogether();
-      if (refreshResult?.pairs > 0) {
-        pairs = await fetchPairs();
-      }
-    } catch (error) {
-      refreshResult = { error: error?.message || String(error) };
-    }
-  }
-
-  const suggestions = [];
-  const seenSlugs = new Set();
-  const productIds = pairs.flatMap((pair) => [
-    String(pair.productId || ""),
-    String(pair.relatedProductId || ""),
-  ]);
-  const uniqueProductIds = Array.from(new Set(productIds.filter(Boolean)));
-  const products = uniqueProductIds.length
-    ? await ProductModel.find({ _id: { $in: uniqueProductIds }, isActive: true })
-        .select("_id name price originalPrice images thumbnail category")
-        .lean()
+  const suggestions = Array.isArray(result?.suggestions)
+    ? result.suggestions.map((draft) => ({
+        ...draft,
+        items: draft.itemsSnapshot || draft.items || [],
+      }))
     : [];
-  const productMap = new Map(products.map((product) => [String(product._id), product]));
-
-  for (const pair of pairs) {
-    if (suggestions.length >= limit) break;
-
-    const primaryProduct = productMap.get(String(pair.productId || ""));
-    const secondaryProduct = productMap.get(String(pair.relatedProductId || ""));
-    if (!primaryProduct || !secondaryProduct) continue;
-
-    const items = [primaryProduct, secondaryProduct].map((product) => ({
-      productId: String(product._id),
-      quantity: 1,
-    }));
-
-    const { payload, items: snapshots } = await parseComboPayload(
-      {
-        name: `${primaryProduct.name} + ${secondaryProduct.name}`,
-        items,
-        pricingType: "percent_discount",
-        pricingValue: 10,
-        comboType: "ai_suggested",
-        tags: ["recommended"],
-        source: "ai",
-        status: "draft",
-      },
-      undefined,
-    );
-
-    if (seenSlugs.has(payload.slug)) continue;
-    const existing = await ComboModel.findOne({
-      name: { $regex: `^${escapeRegex(payload.name)}$`, $options: "i" },
-    })
-      .select("_id")
-      .lean();
-    if (existing) continue;
-
-    seenSlugs.add(payload.slug);
-
-    if (previewOnly) {
-      suggestions.push({
-        ...payload,
-        items: snapshots,
-        aiScore: round2(pair.confidenceScore * 100),
-        generatedFrom: "frequently_bought_together",
-      });
-      continue;
-    }
-
-    const combo = await ComboModel.create({
-      ...payload,
-      source: "ai",
-      status: "draft",
-      isActive: false,
-      aiScore: round2(pair.confidenceScore * 100),
-      generatedFrom: "frequently_bought_together",
-    });
-
-    await upsertComboItems(combo._id, snapshots);
-    suggestions.push(combo);
-  }
-
-  if (previewOnly) {
-    const previewMessage =
-      suggestions.length > 0
-        ? "AI combo preview ready"
-        : "No AI suggestions available yet. Place a few orders to build pairings.";
-
-    return sendSuccess(
-      res,
-      {
-        suggestions,
-        generated: suggestions.length,
-        pairsEvaluated: pairs.length,
-        refreshResult,
-        preview: true,
-      },
-      previewMessage,
-    );
-  }
 
   const message =
     suggestions.length > 0
-      ? "Combo suggestions generated"
+      ? previewOnly
+        ? "AI combo preview ready"
+        : "Combo draft suggestions generated"
       : "No AI suggestions available yet. Place a few orders to build pairings.";
 
   return sendSuccess(
@@ -536,11 +563,144 @@ export const generateComboSuggestions = asyncHandler(async (req, res) => {
     {
       suggestions,
       generated: suggestions.length,
-      pairsEvaluated: pairs.length,
-      refreshResult,
+      pairsEvaluated: result?.pairsEvaluated || 0,
+      refreshResult: result?.refreshResult || null,
+      preview: previewOnly,
     },
     message,
   );
+});
+
+export const getComboDrafts = asyncHandler(async (req, res) => {
+  const status = String(req.query.status || "").trim();
+  const filter = status ? { status } : {};
+  const drafts = await ComboDraftModel.find(filter)
+    .sort({ updatedAt: -1 })
+    .limit(100)
+    .lean();
+
+  return sendSuccess(res, {
+    items: drafts.map((draft) => ({
+      ...draft,
+      items: draft.itemsSnapshot || [],
+    })),
+  });
+});
+
+export const updateComboDraft = asyncHandler(async (req, res) => {
+  const draft = await ComboDraftModel.findById(req.params.id);
+  if (!draft) {
+    throw new AppError("NOT_FOUND", { field: "comboDraftId" });
+  }
+
+  const name = req.body?.name;
+  const pricingType = req.body?.pricingType;
+  const pricingValue = req.body?.pricingValue;
+  const discountPercentage = req.body?.discountPercentage;
+  const suggestedPrice = req.body?.suggestedPrice;
+
+  if (name !== undefined) {
+    draft.name = String(name || "").trim();
+  }
+  if (pricingType) {
+    draft.pricingType = String(pricingType).trim();
+  }
+  if (pricingValue !== undefined) {
+    draft.pricingValue = Number(pricingValue || 0);
+  }
+  if (discountPercentage !== undefined) {
+    draft.discountPercentage = Number(discountPercentage || 0);
+  }
+  if (suggestedPrice !== undefined) {
+    draft.suggestedPrice = Number(suggestedPrice || 0);
+  }
+  draft.lastUpdated = new Date();
+  await draft.save();
+
+  return sendSuccess(res, {
+    ...draft.toObject(),
+    items: draft.itemsSnapshot || [],
+  });
+});
+
+export const approveComboDraft = asyncHandler(async (req, res) => {
+  const draft = await ComboDraftModel.findById(req.params.id);
+  if (!draft) {
+    throw new AppError("NOT_FOUND", { field: "comboDraftId" });
+  }
+
+  if (draft.comboId) {
+    draft.status = "approved";
+    draft.lastUpdated = new Date();
+    await draft.save();
+    const combo = await ComboModel.findById(draft.comboId).lean();
+    return sendSuccess(res, { draft, combo }, "Combo draft approved");
+  }
+
+  const { payload, snapshots } = await buildComboPayloadFromDraft(draft);
+  const combo = await ComboModel.create({
+    ...payload,
+    createdBy: req.user || null,
+    updatedBy: req.user || null,
+  });
+  await upsertComboItems(combo._id, snapshots);
+
+  draft.status = "approved";
+  draft.comboId = combo._id;
+  draft.lastUpdated = new Date();
+  await draft.save();
+
+  return sendSuccess(res, { draft, combo }, "Combo draft approved");
+});
+
+export const publishComboDraft = asyncHandler(async (req, res) => {
+  const draft = await ComboDraftModel.findById(req.params.id);
+  if (!draft) {
+    throw new AppError("NOT_FOUND", { field: "comboDraftId" });
+  }
+
+  let combo = null;
+  if (!draft.comboId) {
+    const { payload, snapshots } = await buildComboPayloadFromDraft(draft);
+    combo = await ComboModel.create({
+      ...payload,
+      createdBy: req.user || null,
+      updatedBy: req.user || null,
+    });
+    await upsertComboItems(combo._id, snapshots);
+    draft.comboId = combo._id;
+  } else {
+    combo = await applyComboUpdates(draft.comboId, {
+      isActive: true,
+      isVisible: true,
+      status: "active",
+    });
+  }
+
+  if (combo && combo.isActive === false) {
+    combo = await applyComboUpdates(combo._id, {
+      isActive: true,
+      isVisible: true,
+      status: "active",
+    });
+  }
+
+  draft.status = "approved";
+  draft.lastUpdated = new Date();
+  await draft.save();
+
+  return sendSuccess(res, { draft, combo }, "Combo published");
+});
+
+export const rejectComboDraft = asyncHandler(async (req, res) => {
+  const draft = await ComboDraftModel.findById(req.params.id);
+  if (!draft) {
+    throw new AppError("NOT_FOUND", { field: "comboDraftId" });
+  }
+  draft.status = "rejected";
+  draft.lastUpdated = new Date();
+  await draft.save();
+  return sendSuccess(res, draft, "Combo draft rejected");
 });
 
 export const getComboAnalyticsDashboard = asyncHandler(async (req, res) => {

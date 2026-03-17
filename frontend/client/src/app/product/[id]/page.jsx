@@ -3,6 +3,7 @@
 import ProductItem from "@/components/ProductItem";
 import ProductZoom from "@/components/ProductZoom";
 import QtyBox from "@/components/QtyBox";
+import ComboCard from "@/components/ComboCard";
 import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/config/siteConfig";
 import { fetchDataFromApi } from "@/utils/api";
@@ -39,6 +40,10 @@ const ProductDetailPage = () => {
   const [customerReviews, setCustomerReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState([]);
+  const [frequentlyBought, setFrequentlyBought] = useState([]);
+  const [fbtLoading, setFbtLoading] = useState(false);
+  const [recommendedCombos, setRecommendedCombos] = useState([]);
+  const [recommendedLoading, setRecommendedLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState(null);
@@ -110,6 +115,52 @@ const ProductDetailPage = () => {
     }
   };
 
+  const fetchFrequentlyBought = async (productId) => {
+    if (!productId) {
+      setFrequentlyBought([]);
+      return;
+    }
+    try {
+      setFbtLoading(true);
+      const response = await fetchDataFromApi(
+        `/api/products/${productId}/frequently-bought?limit=3`,
+      );
+      if (response?.success && Array.isArray(response?.data)) {
+        setFrequentlyBought(response.data);
+      } else {
+        setFrequentlyBought([]);
+      }
+    } catch (error) {
+      console.error("Error fetching frequently bought together:", error);
+      setFrequentlyBought([]);
+    } finally {
+      setFbtLoading(false);
+    }
+  };
+
+  const fetchRecommendedCombos = async (productId) => {
+    if (!productId) {
+      setRecommendedCombos([]);
+      return;
+    }
+    try {
+      setRecommendedLoading(true);
+      const response = await fetchDataFromApi(
+        `/api/combos/sections?productId=${productId}`,
+      );
+      if (response?.success) {
+        setRecommendedCombos(response?.data?.recommendedCombos || []);
+      } else {
+        setRecommendedCombos([]);
+      }
+    } catch (error) {
+      console.error("Error fetching recommended combos:", error);
+      setRecommendedCombos([]);
+    } finally {
+      setRecommendedLoading(false);
+    }
+  };
+
   // Fetch product details from API
   const fetchProduct = async () => {
     try {
@@ -128,6 +179,8 @@ const ProductDetailPage = () => {
           price: Number(response.data?.price || 0),
         });
         fetchProductReviews(resolvedProductId);
+        fetchFrequentlyBought(resolvedProductId);
+        fetchRecommendedCombos(resolvedProductId);
 
         // Auto-select default variant (or first) if product has variants
         if (
@@ -158,7 +211,10 @@ const ProductDetailPage = () => {
           categoryId: String(response?.category?._id || response?.category || ""),
           price: Number(response?.price || response?.salePrice || 0),
         });
-        fetchProductReviews(response?._id || response?.id);
+        const resolvedId = response?._id || response?.id;
+        fetchProductReviews(resolvedId);
+        fetchFrequentlyBought(resolvedId);
+        fetchRecommendedCombos(resolvedId);
       } else {
         setCustomerReviews([]);
       }
@@ -193,6 +249,42 @@ const ProductDetailPage = () => {
         unit: selectedVariant.unit,
       },
       variantId: selectedVariant._id,
+    };
+  };
+
+  const buildCartProductFromRecommendation = (item) => {
+    const recProduct = item?.product;
+    if (!recProduct) return null;
+    const variant = item?.variant || null;
+    const price = Number(item?.price ?? variant?.price ?? recProduct?.price ?? 0);
+    const originalPrice = Number(
+      item?.originalPrice ??
+        variant?.originalPrice ??
+        recProduct?.originalPrice ??
+        price,
+    );
+
+    if (variant?._id) {
+      return {
+        ...recProduct,
+        price,
+        originalPrice,
+        selectedVariant: {
+          _id: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: price,
+          weight: variant.weight,
+          unit: variant.unit,
+        },
+        variantId: variant._id,
+      };
+    }
+
+    return {
+      ...recProduct,
+      price,
+      originalPrice,
     };
   };
 
@@ -294,6 +386,53 @@ const ProductDetailPage = () => {
     }
   };
 
+  const handleAddAllToCart = async () => {
+    if (!product) return;
+    const itemsToAdd = [];
+    const currentProductPayload = buildCartProduct();
+    if (currentProductPayload) {
+      itemsToAdd.push({
+        payload: currentProductPayload,
+        quantity: quantity,
+      });
+    }
+
+    frequentlyBought.forEach((item) => {
+      const payload = buildCartProductFromRecommendation(item);
+      if (!payload) return;
+      itemsToAdd.push({ payload, quantity: 1 });
+    });
+
+    try {
+      let addedCount = 0;
+      for (const entry of itemsToAdd) {
+        const productId = entry.payload?._id || entry.payload?.id;
+        const variantId = entry.payload?.variantId || null;
+        if (!productId) continue;
+        if (hasSelectedVariantInCart(productId, variantId)) {
+          continue;
+        }
+        await addToCart(entry.payload, entry.quantity);
+        addedCount += 1;
+      }
+
+      setSnackbar({
+        open: true,
+        message:
+          addedCount > 0
+            ? "Added bundle items to cart!"
+            : "All items are already in your cart.",
+        severity: "success",
+      });
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: "Failed to add bundle items",
+        severity: "error",
+      });
+    }
+  };
+
   // Calculate discount
   const calculateDiscount = () => {
     const p = activePrice || product?.price;
@@ -309,6 +448,15 @@ const ProductDetailPage = () => {
     if (!w || w <= 0) return null;
     if (u === "g" && w >= 1000) return `${w / 1000} kg`;
     return `${w}${u && u !== "piece" ? " " + u : " g"}`;
+  };
+
+  const resolveVariantLabel = (variant, baseProduct) => {
+    if (variant?.name) return variant.name;
+    const weightLabel = formatWeight(
+      variant?.weight || baseProduct?.weight,
+      variant?.unit || baseProduct?.unit,
+    );
+    return weightLabel || "";
   };
 
   // Loading State
@@ -588,9 +736,9 @@ const ProductDetailPage = () => {
               </div>
 
               {/* Quantity & Add to Cart */}
-              <div className="flex flex-wrap items-center gap-4 mb-6" data-track-section="product_cta">
+              <div className="mb-6" data-track-section="product_cta">
                 {!isInCart(product._id || product.id) && (
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 mb-4">
                     <span className="text-gray-700 font-medium">Qty:</span>
                     <div className="flex flex-col">
                       <QtyBox
@@ -611,7 +759,8 @@ const ProductDetailPage = () => {
                   </div>
                 )}
 
-                <Button
+                <div className="flex items-center gap-3 w-full">
+                  <Button
                   variant="contained"
                   size="large"
                   startIcon={<IoMdCart />}
@@ -619,6 +768,7 @@ const ProductDetailPage = () => {
                   data-track="product_cta_add_to_cart"
                   data-product-id={String(productId || "")}
                   disabled={!isInCart(product._id || product.id) && availableQty === 0}
+                  className="!flex-1"
                   sx={{
                     backgroundColor: isInCart(product._id || product.id)
                       ? "#dc2626"
@@ -637,35 +787,36 @@ const ProductDetailPage = () => {
                       ? "0 16px 30px -20px rgba(220,38,38,0.85)"
                       : "0 16px 30px -20px rgba(var(--flavor-badge),0.85)",
                   }}
-                >
-                  {isInCart(product._id || product.id)
-                    ? "Remove from Cart"
-                    : "Add to Cart"}
-                </Button>
+                  >
+                    {isInCart(product._id || product.id)
+                      ? "Remove from Cart"
+                      : "Add to Cart"}
+                  </Button>
 
-                <Button
-                  variant="outlined"
+                  <Button
+                  variant="contained"
                   size="large"
                   onClick={handleBuyNow}
                   data-track="product_cta_buy_now"
                   data-product-id={String(productId || "")}
                   disabled={isBuyNowDisabled}
+                  className="!flex-1"
                   sx={{
-                    borderColor: "var(--primary)",
-                    color: "var(--primary)",
-                    backgroundColor: "transparent",
+                    backgroundColor: "#dc2626",
+                    color: "#fff",
                     "&:hover": {
-                      borderColor: "var(--primary)",
-                      backgroundColor: "rgba(var(--flavor-badge), 0.08)",
+                      backgroundColor: "#b91c1c",
                     },
                     padding: "12px 20px",
                     borderRadius: "14px",
                     textTransform: "none",
                     fontWeight: 600,
+                    boxShadow: "0 16px 30px -20px rgba(220,38,38,0.7)",
                   }}
-                >
-                  Buy Now
-                </Button>
+                  >
+                    Buy Now
+                  </Button>
+                </div>
               </div>
 
               {/* Features */}
@@ -833,6 +984,149 @@ const ProductDetailPage = () => {
             )}
           </div>
         </div>
+
+        {/* Frequently Bought Together */}
+        <div className="mt-12" data-track-section="frequently_bought_together">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Frequently Bought Together
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Popular add-ons customers purchase with this item.
+                </p>
+              </div>
+              <Button
+                variant="contained"
+                onClick={handleAddAllToCart}
+                disabled={frequentlyBought.length === 0}
+                sx={{
+                  backgroundColor: "var(--primary)",
+                  "&:hover": { backgroundColor: "var(--flavor-hover)" },
+                  borderRadius: "999px",
+                  textTransform: "none",
+                  fontWeight: 600,
+                }}
+              >
+                Add All To Cart
+              </Button>
+            </div>
+
+            {fbtLoading ? (
+              <p className="text-sm text-gray-500">Loading suggestions...</p>
+            ) : frequentlyBought.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2">
+                      <img
+                        src={getImageUrl(images?.[0])}
+                        alt={product.name || product.title}
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wider text-gray-400">
+                        This product
+                      </p>
+                      <h4 className="text-sm font-semibold text-gray-900 line-clamp-1">
+                        {product.name || product.title}
+                      </h4>
+                      {resolveVariantLabel(selectedVariant, product) && (
+                        <p className="text-xs text-gray-500">
+                          {resolveVariantLabel(selectedVariant, product)}
+                        </p>
+                      )}
+                      <p className="text-sm font-bold text-primary">
+                        {formatPrice(Number(activePrice || product.price || 0))}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {frequentlyBought.map((item) => {
+                  const recProduct = item.product || {};
+                  const variant = item.variant || null;
+                  const label = resolveVariantLabel(variant, recProduct);
+                  const price = Number(item.price || 0);
+                  const originalPrice = Number(item.originalPrice || 0);
+                  return (
+                    <div
+                      key={item.productId || recProduct._id || recProduct.id}
+                      className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-16 h-16 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2">
+                          <img
+                            src={getImageUrl(item.image || recProduct.thumbnail)}
+                            alt={recProduct.name || "Recommended product"}
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs uppercase tracking-wider text-gray-400">
+                            Add-on
+                          </p>
+                          <h4 className="text-sm font-semibold text-gray-900 line-clamp-1">
+                            {recProduct.name || recProduct.title}
+                          </h4>
+                          {label && <p className="text-xs text-gray-500">{label}</p>}
+                          <div className="flex items-center gap-2">
+                            {originalPrice > price && (
+                              <span className="text-xs text-gray-400 line-through">
+                                {formatPrice(originalPrice)}
+                              </span>
+                            )}
+                            <span className="text-sm font-bold text-primary">
+                              {formatPrice(price)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">
+                No suggestions available yet.
+              </p>
+            )}
+          </div>
+
+        {/* Recommended Combos */}
+        <div className="mt-12" data-track-section="recommended_combos">
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Recommended Combos
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Bundles that include this product.
+                </p>
+              </div>
+              <Link href="/combo-deals" className="text-sm text-primary font-semibold">
+                View all combos
+              </Link>
+            </div>
+            {recommendedLoading ? (
+              <p className="text-sm text-gray-500">Loading combos...</p>
+            ) : recommendedCombos.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {recommendedCombos.map((combo) => (
+                  <ComboCard
+                    key={combo._id || combo.slug}
+                    combo={combo}
+                    context="product_recommended_combos"
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">
+                No recommended combos available right now.
+              </p>
+            )}
+          </div>
 
         {/* Related Products */}
         {relatedProducts.length > 0 && (

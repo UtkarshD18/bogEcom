@@ -27,7 +27,9 @@ const parseEmbeddedImages = (value) => {
 
 function ProductImageZoomContent() {
   const searchParams = useSearchParams();
+  const viewType = String(searchParams.get("type") || "product").trim().toLowerCase();
   const productId = String(searchParams.get("productId") || "").trim();
+  const comboId = String(searchParams.get("comboId") || "").trim();
   const requestedIndex = Math.max(Number(searchParams.get("index") || 0), 0);
   const embeddedImagesParam = searchParams.get("images") || "";
 
@@ -63,11 +65,12 @@ function ProductImageZoomContent() {
         return;
       }
 
-      if (!productId) {
+      const lookupId = viewType === "combo" ? comboId : productId;
+      if (!lookupId) {
         if (!cancelled) {
           setImages([]);
           setLoading(false);
-          setError("Missing product id");
+          setError("Missing viewer id");
         }
         return;
       }
@@ -75,13 +78,28 @@ function ProductImageZoomContent() {
       setLoading(true);
       setError("");
       try {
-        const response = await fetchDataFromApi(`/api/products/${productId}`);
-        const product = response?.data || response?.product || null;
-        const rawImages = Array.isArray(product?.images)
-          ? product.images
-          : product?.image
-            ? [product.image]
-            : [];
+        const endpoint =
+          viewType === "combo"
+            ? `/api/combos/${lookupId}`
+            : `/api/products/${lookupId}`;
+        const response = await fetchDataFromApi(endpoint);
+        const entity = response?.data || response?.product || null;
+        const rawImages =
+          viewType === "combo"
+            ? [
+                ...(Array.isArray(entity?.comboImages) ? entity.comboImages : []),
+                entity?.comboThumbnail,
+                entity?.thumbnail,
+                entity?.image,
+                ...((Array.isArray(entity?.items) ? entity.items : [])
+                  .map((item) => item?.image)
+                  .filter(Boolean)),
+              ].filter(Boolean)
+            : Array.isArray(entity?.images)
+              ? entity.images
+              : entity?.image
+                ? [entity.image]
+                : [];
         const normalizedImages = rawImages
           .map((image) => getImageUrl(image))
           .filter(Boolean);
@@ -93,7 +111,7 @@ function ProductImageZoomContent() {
       } catch {
         if (!cancelled) {
           setImages([]);
-          setError("Failed to load product images");
+          setError("Failed to load images");
         }
       } finally {
         if (!cancelled) {
@@ -106,7 +124,7 @@ function ProductImageZoomContent() {
     return () => {
       cancelled = true;
     };
-  }, [embeddedImages, productId, requestedIndex]);
+  }, [comboId, embeddedImages, productId, requestedIndex, viewType]);
 
   useEffect(() => {
     setZoomScale(1);
@@ -115,7 +133,14 @@ function ProductImageZoomContent() {
   const activeImage = images[clampIndex(activeIndex, images.length)] || "";
   const canGoPrev = activeIndex > 0;
   const canGoNext = activeIndex < images.length - 1;
-  const closeHref = productId ? `/product/${productId}` : "/products";
+  const closeHref =
+    viewType === "combo"
+      ? comboId
+        ? `/combo/${comboId}`
+        : "/combo-deals"
+      : productId
+        ? `/product/${productId}`
+        : "/products";
 
   return (
     <section className="fixed inset-0 z-[200] bg-black text-white">

@@ -6,6 +6,7 @@ import ProductModel from "../models/product.model.js";
 import OrderModel from "../models/order.model.js";
 import PurchaseOrderModel from "../models/purchaseOrder.model.js";
 import InventoryAuditModel from "../models/inventoryAudit.model.js";
+import StockMovementModel from "../models/stockMovement.model.js";
 import { updatePurchaseOrderReceipt } from "../controllers/purchaseOrder.controller.js";
 import {
   applyPurchaseOrderInventory,
@@ -54,6 +55,7 @@ test.afterEach(async () => {
   await ProductModel.deleteMany({});
   await PurchaseOrderModel.deleteMany({});
   await InventoryAuditModel.deleteMany({});
+  await StockMovementModel.deleteMany({});
 });
 
 test("reserveInventory reserves stock when available", async () => {
@@ -638,4 +640,54 @@ test("concurrent PO receipts atomically accumulate variant stock", async () => {
   );
   assert.equal(updatedVariant.stock_quantity, 85);
   assert.equal(updatedVariant.stock, 85);
+});
+
+test("concurrent order deductions never drive stock below zero", async () => {
+  const product = await ProductModel.create({
+    name: "Concurrent Order Stock",
+    slug: "order-concurrent-stock",
+    price: 199,
+    category: new mongoose.Types.ObjectId(),
+    stock: 5,
+    stock_quantity: 5,
+  });
+
+  const order1 = new OrderModel({
+    products: [
+      {
+        productId: product._id.toString(),
+        productTitle: "Concurrent Order Stock",
+        quantity: 4,
+        price: 199,
+        subTotal: 796,
+      },
+    ],
+    totalAmt: 796,
+  });
+
+  const order2 = new OrderModel({
+    products: [
+      {
+        productId: product._id.toString(),
+        productTitle: "Concurrent Order Stock",
+        quantity: 4,
+        price: 199,
+        subTotal: 796,
+      },
+    ],
+    totalAmt: 796,
+  });
+
+  const results = await Promise.allSettled([
+    confirmInventory(order1, "TEST_ORDER_1"),
+    confirmInventory(order2, "TEST_ORDER_2"),
+  ]);
+
+  const successCount = results.filter((result) => result.status === "fulfilled")
+    .length;
+  assert.equal(successCount, 1);
+
+  const updated = await ProductModel.findById(product._id).lean();
+  assert.ok(updated.stock_quantity >= 0);
+  assert.equal(updated.stock_quantity, 1);
 });

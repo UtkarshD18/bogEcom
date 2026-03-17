@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 import CategoryModel from "../models/category.model.js";
 import ProductModel from "../models/product.model.js";
 import { checkExclusiveAccess } from "../middlewares/membershipGuard.js";
+import { logStockMovement } from "../services/inventory.service.js";
+import {
+  getCartUpsellProductSuggestion,
+  getFrequentlyBoughtTogether,
+} from "../services/combos/comboRecommendation.service.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 // Debug-only logging to keep production output clean
@@ -603,6 +608,102 @@ export const getRelatedProducts = async (req, res) => {
   }
 };
 
+/**
+ * Get frequently bought together products for a product
+ * @route GET /api/products/:id/frequently-bought
+ */
+export const getFrequentlyBoughtProducts = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = Math.max(Number(req.query.limit || 3), 1);
+    const canViewExclusive = await canRequestViewExclusive(req);
+    const resolvedId = mongoose.Types.ObjectId.isValid(id)
+      ? id
+      : (await ProductModel.findOne({ slug: id, isActive: true }).select("_id").lean())
+          ?._id || id;
+    const pairs = await getFrequentlyBoughtTogether(resolvedId, { limit });
+    const items = Array.isArray(pairs)
+      ? pairs.map((pair) => ({
+          productId: String(pair?.productBId || ""),
+          pairCount: Number(pair?.pairCount || 0),
+          confidenceScore: Number(pair?.confidenceScore || 0),
+          product: pair?.recommendation?.product || null,
+          variant: pair?.recommendation?.variant || null,
+          price: Number(pair?.recommendation?.price || 0),
+          originalPrice: Number(pair?.recommendation?.originalPrice || 0),
+          image: pair?.recommendation?.image || "",
+          availableStock: Number(pair?.recommendation?.availableStock || 0),
+        }))
+      : [];
+    const filtered = canViewExclusive
+      ? items
+      : items.filter((item) => !item?.product?.isExclusive);
+
+    res.status(200).json({
+      error: false,
+      success: true,
+      data: filtered,
+    });
+  } catch (error) {
+    console.error("Error fetching frequently bought together products:", error);
+    res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to fetch frequently bought together products",
+    });
+  }
+};
+
+/**
+ * Get cart upsell product suggestion
+ * @route POST /api/products/upsell
+ */
+export const getCartUpsellProduct = async (req, res) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const suggestion = await getCartUpsellProductSuggestion(items, { limit: 1 });
+    if (!suggestion) {
+      return res.status(200).json({
+        error: false,
+        success: true,
+        data: null,
+      });
+    }
+
+    const recommendation = suggestion?.recommendation || {};
+    const product = recommendation?.product || null;
+    const canViewExclusive = await canRequestViewExclusive(req);
+    if (product?.isExclusive && !canViewExclusive) {
+      return res.status(200).json({
+        error: false,
+        success: true,
+        data: null,
+      });
+    }
+    return res.status(200).json({
+      error: false,
+      success: true,
+      data: {
+        pairCount: Number(suggestion?.pairCount || 0),
+        confidenceScore: Number(suggestion?.confidenceScore || 0),
+        product,
+        variant: recommendation?.variant || null,
+        price: Number(recommendation?.price || 0),
+        originalPrice: Number(recommendation?.originalPrice || 0),
+        image: recommendation?.image || "",
+        availableStock: Number(recommendation?.availableStock || 0),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching cart upsell product:", error);
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to fetch cart upsell product",
+    });
+  }
+};
+
 // ==================== ADMIN ENDPOINTS ====================
 
 /**
@@ -1135,21 +1236,49 @@ export const updateStock = async (req, res) => {
       });
     }
 
+    let previousStock = null;
+    let updatedVariantId = variantId || null;
+
     if (variantId) {
       // Update variant stock
       const variant = product.variants.id(variantId);
       if (variant) {
+        previousStock = Number(variant.stock_quantity ?? variant.stock ?? 0);
         variant.stock = normalizedStock;
         variant.stock_quantity = normalizedStock;
+      } else {
+        updatedVariantId = null;
       }
       // Parent stock will be synced automatically by pre-save hook
     } else if (!product.hasVariants || !product.variants.length) {
+      previousStock = Number(product.stock_quantity ?? product.stock ?? 0);
       product.stock = normalizedStock;
       product.stock_quantity = normalizedStock;
     }
     // If hasVariants and no variantId, skip — parent is derived from variants
 
     await product.save();
+
+    if (previousStock !== null) {
+      const nextStock = updatedVariantId
+        ? Number(
+            product.variants.id(updatedVariantId)?.stock_quantity ??
+              product.variants.id(updatedVariantId)?.stock ??
+              0,
+          )
+        : Number(product.stock_quantity ?? product.stock ?? 0);
+
+      await logStockMovement({
+        productId: product._id,
+        variantId: updatedVariantId,
+        changeType: "manual_adjustment",
+        quantityChange: Number(nextStock) - Number(previousStock),
+        source: "admin_adjustment",
+        referenceId: String(req.user?._id || req.user || ""),
+        previousStock: Number(previousStock),
+        newStock: Number(nextStock),
+      });
+    }
 
     res.status(200).json({
       error: false,
@@ -1337,6 +1466,8 @@ export default {
   getFeaturedProducts,
   getExclusiveProducts,
   getRelatedProducts,
+  getFrequentlyBoughtProducts,
+  getCartUpsellProduct,
   createProduct,
   updateProduct,
   deleteProduct,

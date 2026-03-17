@@ -16,6 +16,7 @@ import { Swiper, SwiperSlide } from "swiper/react";
 const ProductZoom = ({
   images = ["/product_1.png", "/product_1.png", "/product_1.png"],
   productId = "",
+  zoomType = "product",
 }) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const bigSliderRef = useRef(null);
@@ -33,10 +34,10 @@ const ProductZoom = ({
 
   const openFullImageView = (index) => {
     if (!productId) return;
+    const isComboZoom = String(zoomType || "").toLowerCase() === "combo";
+    const idParam = isComboZoom ? "comboId" : "productId";
     router.push(
-      `/product-image-zoom?productId=${encodeURIComponent(
-        productId,
-      )}&index=${Math.max(Number(index || 0), 0)}`,
+      `/product-image-zoom?${idParam}=${encodeURIComponent(productId)}&type=${encodeURIComponent(zoomType)}&index=${Math.max(Number(index || 0), 0)}`,
     );
   };
 

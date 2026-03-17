@@ -7,6 +7,11 @@ import {
   deleteCombo,
   duplicateCombo,
   generateComboSuggestions,
+  getComboDrafts,
+  updateComboDraft,
+  approveComboDraft,
+  rejectComboDraft,
+  publishComboDraft,
   getAdminCombos,
   getCartUpsells,
   getComboAnalyticsDashboard,
@@ -36,6 +41,11 @@ router.delete("/admin/:id", auth, admin, deleteCombo);
 router.post("/admin/:id/duplicate", auth, admin, duplicateCombo);
 router.patch("/admin/:id/toggle", auth, admin, toggleCombo);
 router.post("/admin/suggestions", auth, admin, generateComboSuggestions);
+router.get("/admin/drafts", auth, admin, getComboDrafts);
+router.put("/admin/drafts/:id", auth, admin, updateComboDraft);
+router.patch("/admin/drafts/:id/approve", auth, admin, approveComboDraft);
+router.patch("/admin/drafts/:id/reject", auth, admin, rejectComboDraft);
+router.patch("/admin/drafts/:id/publish", auth, admin, publishComboDraft);
 router.get("/admin/analytics", auth, admin, getComboAnalyticsDashboard);
 router.get("/admin/analytics/orders", auth, admin, getComboOrderInsights);
 

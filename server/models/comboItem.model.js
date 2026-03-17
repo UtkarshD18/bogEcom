@@ -28,9 +28,19 @@ const comboItemSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    variantSku: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     quantity: {
       type: Number,
       required: true,
+      min: 1,
+    },
+    quantityRequired: {
+      type: Number,
+      default: 1,
       min: 1,
     },
     price: {

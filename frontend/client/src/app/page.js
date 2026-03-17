@@ -1,5 +1,6 @@
 import Banners from "@/components/Banners";
 import CatSlider from "@/components/CatSlider";
+import HomeComboDeals from "@/components/HomeComboDeals";
 import HomeSlider from "@/components/HomeSlider";
 import MembershipCTA from "@/components/MembershipCTA";
 import PopularProducts from "@/components/PopularProducts";
@@ -17,6 +18,7 @@ export default function Home() {
         <HomeSlider />
         <CatSlider />
         <Banners />
+        <HomeComboDeals />
         <PopularProducts />
         <MembershipCTA />
       </div>

@@ -1,148 +1,105 @@
 "use client";
 
-import { useCart } from "@/context/CartContext";
-import { trackEvent } from "@/utils/analyticsTracker";
-import { getImageUrl } from "@/utils/imageUtils";
-import { useMemo, useState } from "react";
+import ProductItem from "@/components/ProductItem";
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const buildItemsPreview = (items = []) => {
-  const names = items
-    .map((item) => item?.productTitle || item?.name)
-    .filter(Boolean);
-  const preview = names.slice(0, 3).join(", ");
-  if (names.length > 3) {
-    return `${preview} + ${names.length - 3} more`;
-  }
-  return preview;
-};
-
-const resolveDiscountPercent = (combo) => {
-  const original = toNumber(combo?.originalTotal, 0);
-  const price = toNumber(combo?.comboPrice, 0);
-  if (original > 0 && price < original) {
-    return Math.round(((original - price) / original) * 100);
-  }
-  return Math.round(toNumber(combo?.discountPercentage, 0));
-};
-
-const ComboCard = ({ combo, variant = "grid", context = "combo_list" }) => {
-  const { addComboToCart } = useCart();
-  const [isAdding, setIsAdding] = useState(false);
-
-  const itemsPreview = useMemo(
-    () => buildItemsPreview(combo?.items || []),
-    [combo],
-  );
-  const comboImage = useMemo(() => {
-    const items = Array.isArray(combo?.items) ? combo.items : [];
-    return (
-      combo?.thumbnail ||
-      combo?.image ||
-      items.find((item) => item?.image)?.image ||
-      "/combo_placeholder.png"
-    );
-  }, [combo]);
-
-  const discountPercent = resolveDiscountPercent(combo);
-  const savings = Math.max(
-    toNumber(combo?.totalSavings, 0),
-    toNumber(combo?.originalTotal, 0) - toNumber(combo?.comboPrice, 0),
-  );
-  const isOutOfStock = Number(combo?.availableStock) === 0;
-
-  const handleAddCombo = async () => {
-    const comboId = combo?._id || combo?.id;
-    if (!comboId || isAdding) return;
-    setIsAdding(true);
-    try {
-      trackEvent("combo_click", {
-        comboId: String(comboId),
-        comboName: combo?.name || "",
-        comboSlug: combo?.slug || "",
-        comboType: combo?.comboType || "",
-        sectionName: context,
-        action: "add",
-      });
-      await addComboToCart(combo, 1);
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  const cardBaseClasses =
-    variant === "compact"
-      ? "p-4 rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-lg transition"
-      : "p-5 rounded-3xl border border-gray-100 bg-white shadow-sm hover:shadow-xl transition";
-
+const isImageCandidate = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized || /\s/.test(normalized)) return false;
   return (
-    <div className={cardBaseClasses}>
-      <div className="flex gap-4">
-        <div className="w-20 h-20 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2 shrink-0">
-          <img
-            src={getImageUrl(comboImage)}
-            alt={combo?.name || "Combo deal"}
-            className="w-full h-full object-contain"
-          />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-bold text-gray-900 line-clamp-1">
-              {combo?.name || "Combo Deal"}
-            </h3>
-            {discountPercent > 0 && (
-              <span className="rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5">
-                {discountPercent}% OFF
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-            {itemsPreview || "Curated bundle savings"}
-          </p>
-          {Array.isArray(combo?.tags) && combo.tags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {combo.tags.slice(0, 3).map((tag) => (
-                <span
-                  key={tag}
-                  className="text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700"
-                >
-                  {String(tag || "").replace(/_/g, " ")}
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div>
-              {toNumber(combo?.originalTotal, 0) > toNumber(combo?.comboPrice, 0) && (
-                <p className="text-[11px] text-gray-400 line-through">
-                  ₹{toNumber(combo?.originalTotal, 0).toFixed(0)}
-                </p>
-              )}
-              <p className="text-base font-extrabold text-primary">
-                ₹{toNumber(combo?.comboPrice, 0).toFixed(0)}
-              </p>
-              {savings > 0 && (
-                <p className="text-[10px] text-emerald-700 font-semibold">
-                  Save ₹{savings.toFixed(0)}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={handleAddCombo}
-              disabled={isAdding || isOutOfStock}
-              className="rounded-full bg-primary text-white text-xs font-semibold px-4 py-2 hover:brightness-110 transition disabled:opacity-60"
-            >
-              {isOutOfStock ? "Out of Stock" : isAdding ? "Adding..." : "Buy Combo"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    normalized.startsWith("http://") ||
+    normalized.startsWith("https://") ||
+    normalized.startsWith("res.cloudinary.com/") ||
+    normalized.startsWith("/uploads/") ||
+    normalized.startsWith("uploads/") ||
+    normalized.startsWith("data:image/")
   );
+};
+
+const FALLBACK_COMBO_IMAGE =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='480' viewBox='0 0 480 480'%3E%3Crect width='480' height='480' fill='%23f3f4f6'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%239ca3af' font-family='Arial,sans-serif' font-size='28'%3ECombo%20Image%3C/text%3E%3C/svg%3E";
+
+const resolveComboImage = (combo) => {
+  const comboImages = Array.isArray(combo?.images)
+    ? combo.images
+    : Array.isArray(combo?.comboImages)
+      ? combo.comboImages
+      : Array.isArray(combo?.combo_images)
+        ? combo.combo_images
+        : [];
+
+  const itemImage = (Array.isArray(combo?.items) ? combo.items : [])
+    .map((item) => item?.image)
+    .find((entry) => isImageCandidate(entry));
+
+  const candidate = [
+    comboImages[0],
+    combo?.comboThumbnail,
+    combo?.combo_thumbnail,
+    combo?.thumbnail,
+    combo?.image,
+    itemImage,
+  ].find((entry) => isImageCandidate(entry));
+
+  if (candidate?.startsWith("res.cloudinary.com/")) {
+    return `https://${candidate}`;
+  }
+  return candidate || FALLBACK_COMBO_IMAGE;
+};
+
+const resolveDiscount = (combo, originalPrice, finalPrice) => {
+  const explicitDiscount = toNumber(combo?.discountPercentage, 0);
+  if (explicitDiscount > 0) return explicitDiscount;
+  if (originalPrice > 0 && finalPrice < originalPrice) {
+    return Math.round(((originalPrice - finalPrice) / originalPrice) * 100);
+  }
+  return 0;
+};
+
+const mapComboToProductCard = (combo) => {
+  const id = combo?._id || combo?.id || "";
+  const name = String(combo?.name || "").trim() || "Untitled Combo";
+  const shortDescription = String(combo?.shortDescription || "").trim();
+  const normalizedName = name.toLowerCase();
+  const normalizedDescription = shortDescription.toLowerCase();
+  const finalPrice = toNumber(combo?.finalPrice ?? combo?.comboPrice ?? combo?.price, 0);
+  const originalPrice = toNumber(combo?.originalPrice ?? combo?.originalTotal, 0);
+
+  return {
+    id,
+    _id: id,
+    name,
+    image: resolveComboImage(combo),
+    price: finalPrice,
+    originalPrice,
+    discount: resolveDiscount(combo, originalPrice, finalPrice),
+    rating: toNumber(combo?.rating ?? combo?.adminStarRating, 0),
+    reviewCount: toNumber(combo?.reviewCount, 0),
+    shortDescription:
+      normalizedDescription && normalizedDescription !== normalizedName
+        ? shortDescription
+        : "",
+    isBestSeller: Boolean(combo?.isBestSeller),
+    isFeatured: Boolean(combo?.isFeatured),
+    isHighDemand:
+      Boolean(combo?.isHighDemand) || String(combo?.demandStatus || "").toUpperCase() === "HIGH",
+    availableStock: toNumber(combo?.availableStock ?? combo?.stockQuantity ?? 0, 0),
+    stock: toNumber(combo?.availableStock ?? combo?.stockQuantity ?? 0, 0),
+    brand: String(combo?.brand || "").trim() || "Buy One Gram",
+    images: [resolveComboImage(combo)],
+    itemType: "combo",
+    comboId: id,
+    items: Array.isArray(combo?.items) ? combo.items : [],
+  };
+};
+
+const ComboCard = ({ combo }) => {
+  const mapped = mapComboToProductCard(combo || {});
+  return <ProductItem product={mapped} itemType="combo" />;
 };
 
 export default ComboCard;

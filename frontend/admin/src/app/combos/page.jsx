@@ -1,7 +1,8 @@
 "use client";
 
 import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData, patchData, postData, putData } from "@/utils/api";
+import { deleteData, getData, patchData, postData, putData, uploadFile } from "@/utils/api";
+import UploadBox from "@/components/UploadBox";
 import {
   Button,
   CircularProgress,
@@ -54,7 +55,13 @@ const SEGMENT_OPTIONS = [
 const defaultFormData = {
   name: "",
   slug: "",
+  shortDescription: "",
   description: "",
+  brand: "",
+  category: "",
+  reviewCount: 0,
+  sku: "",
+  price: "",
   image: "",
   thumbnail: "",
   comboType: "fixed_bundle",
@@ -73,9 +80,21 @@ const defaultFormData = {
   segments: [],
   segmentCategories: "",
   geoTargets: "",
+  isFeatured: false,
+  isBestSeller: false,
+  isExclusive: false,
+  demandStatus: "NORMAL",
+  adminStarRating: 0,
 };
 
-const defaultItem = { productId: "", quantity: 1, variantId: "", variantName: "" };
+const defaultItem = {
+  productId: "",
+  quantity: 1,
+  quantityRequired: 1,
+  variantId: "",
+  variantName: "",
+  variantSku: "",
+};
 
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -92,6 +111,15 @@ const normalizeDateValue = (value) => {
   return candidate.toISOString().split("T")[0];
 };
 
+const slugifyInput = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
 const buildItemsPreview = (items = []) => {
   const names = items
     .map((item) => item?.productTitle || item?.name)
@@ -105,7 +133,11 @@ const buildItemsPreview = (items = []) => {
 
 const resolveSuggestionImage = (suggestion) => {
   if (!suggestion) return "/placeholder.png";
-  const items = Array.isArray(suggestion.items) ? suggestion.items : [];
+  const items = Array.isArray(suggestion.items)
+    ? suggestion.items
+    : Array.isArray(suggestion.itemsSnapshot)
+      ? suggestion.itemsSnapshot
+      : [];
   return (
     suggestion.thumbnail ||
     suggestion.image ||
@@ -252,6 +284,18 @@ const formatGeoTargets = (targets) =>
         .join(", ")
     : "";
 
+const isLikelyImageValue = (value) => {
+  const input = String(value || "").trim();
+  if (!input || /\s/.test(input)) return false;
+  return (
+    input.startsWith("http://") ||
+    input.startsWith("https://") ||
+    input.startsWith("/uploads/") ||
+    input.startsWith("uploads/") ||
+    input.startsWith("data:image/")
+  );
+};
+
 export default function ComboManagementPage() {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
@@ -267,9 +311,13 @@ export default function ComboManagementPage() {
   const [suggestionsError, setSuggestionsError] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionsMeta, setSuggestionsMeta] = useState(null);
+  const [drafts, setDrafts] = useState([]);
+  const [draftsLoading, setDraftsLoading] = useState(false);
+  const [draftsError, setDraftsError] = useState("");
   const [editingCombo, setEditingCombo] = useState(null);
   const [formData, setFormData] = useState(defaultFormData);
   const [comboItems, setComboItems] = useState([defaultItem]);
+  const [comboImages, setComboImages] = useState([]);
 
   const productMap = useMemo(
     () =>
@@ -308,6 +356,26 @@ export default function ComboManagementPage() {
     }
   }, [search, token]);
 
+  const fetchDrafts = useCallback(async () => {
+    if (!token) return;
+    setDraftsLoading(true);
+    setDraftsError("");
+    try {
+      const response = await getData("/api/combos/admin/drafts", token);
+      if (response?.success) {
+        setDrafts(response.data?.items || []);
+      } else {
+        setDrafts([]);
+        setDraftsError(response?.message || "Failed to load combo drafts");
+      }
+    } catch (error) {
+      setDrafts([]);
+      setDraftsError("Failed to load combo drafts");
+    } finally {
+      setDraftsLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.push("/login");
@@ -318,8 +386,9 @@ export default function ComboManagementPage() {
     if (isAuthenticated && token) {
       fetchCombos();
       fetchProducts();
+      fetchDrafts();
     }
-  }, [isAuthenticated, token, fetchCombos, fetchProducts]);
+  }, [isAuthenticated, token, fetchCombos, fetchProducts, fetchDrafts]);
 
   const pricingPreview = useMemo(() => {
     const itemTotals = comboItems.map((item) => {
@@ -364,9 +433,20 @@ export default function ComboManagementPage() {
     return { avgScore };
   }, [suggestions]);
 
+  const draftStats = useMemo(() => {
+    const scores = drafts
+      .map((draft) => Number(draft?.aiScore || 0))
+      .filter((score) => Number.isFinite(score));
+    const avgScore = scores.length
+      ? round2(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+      : 0;
+    return { avgScore };
+  }, [drafts]);
+
   const resetForm = () => {
     setFormData(defaultFormData);
     setComboItems([defaultItem]);
+    setComboImages([]);
     setEditingCombo(null);
   };
 
@@ -376,7 +456,13 @@ export default function ComboManagementPage() {
       setFormData({
         name: combo.name || "",
         slug: combo.slug || "",
+        shortDescription: combo.shortDescription || combo.short_description || "",
         description: combo.description || "",
+        brand: combo.brand || "",
+        category: combo.category || combo.categoryName || "",
+        reviewCount: combo.reviewCount ?? 0,
+        sku: combo.sku || "",
+        price: combo.price ?? combo.comboPrice ?? "",
         image: combo.image || "",
         thumbnail: combo.thumbnail || "",
         comboType: combo.comboType || "fixed_bundle",
@@ -397,14 +483,30 @@ export default function ComboManagementPage() {
           ? combo.segmentTargets.categories.join(", ")
           : "",
         geoTargets: formatGeoTargets(combo.geoTargets),
+        isFeatured: combo.isFeatured === true,
+        isBestSeller: combo.isBestSeller === true,
+        isExclusive: combo.isExclusive === true,
+        demandStatus: combo.demandStatus || "NORMAL",
+        adminStarRating: combo.adminStarRating ?? combo.rating ?? 0,
       });
+      const existingImages = Array.isArray(combo.comboImages)
+        ? combo.comboImages
+        : [combo.comboThumbnail, combo.thumbnail, combo.image].filter(Boolean);
+      setComboImages(
+        existingImages
+          .filter((entry) => isLikelyImageValue(entry))
+          .slice(0, 10)
+          .map((entry) => ({ preview: entry, existing: true })),
+      );
       setComboItems(
         Array.isArray(combo.items) && combo.items.length > 0
           ? combo.items.map((item) => ({
               productId: String(item.productId || ""),
               quantity: item.quantity || 1,
+              quantityRequired: item.quantityRequired || item.quantity || 1,
               variantId: item.variantId || "",
               variantName: item.variantName || "",
+              variantSku: item.variantSku || "",
             }))
           : [defaultItem],
       );
@@ -426,6 +528,7 @@ export default function ComboManagementPage() {
       if (field === "productId") {
         updated.variantId = "";
         updated.variantName = "";
+        updated.variantSku = "";
       }
       if (field === "variantId") {
         const product = productMap.get(String(updated.productId || ""));
@@ -433,6 +536,7 @@ export default function ComboManagementPage() {
           (variantItem) => String(variantItem._id) === String(value),
         );
         updated.variantName = variant?.name || "";
+        updated.variantSku = variant?.sku || "";
       }
       next[index] = updated;
       return next;
@@ -443,6 +547,37 @@ export default function ComboManagementPage() {
     setComboItems((prev) => [...prev, { ...defaultItem }]);
   };
 
+  const handleComboImageUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    setComboImages((prev) => {
+      const remaining = Math.max(10 - prev.length, 0);
+      const acceptedFiles = files.slice(0, remaining);
+      acceptedFiles.forEach((file) => {
+        if (file.size > 5 * 1024 * 1024) {
+          toast.error(`${file.name}: image size should be less than 5MB`);
+        }
+      });
+
+      acceptedFiles.forEach((file) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setComboImages((current) => {
+            if (current.length >= 10) return current;
+            return [...current, { file, preview: reader.result }];
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+      return prev;
+    });
+  };
+
+  const removeComboImage = (index) => {
+    setComboImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleRemoveItem = (index) => {
     setComboItems((prev) => prev.filter((_, idx) => idx !== index));
   };
@@ -451,7 +586,13 @@ export default function ComboManagementPage() {
     const payload = {
       name: formData.name.trim(),
       slug: formData.slug.trim() || undefined,
+      shortDescription: formData.shortDescription.trim(),
       description: formData.description.trim(),
+      brand: formData.brand.trim(),
+      category: formData.category.trim(),
+      reviewCount: Math.max(toSafeNumber(formData.reviewCount, 0), 0),
+      sku: formData.sku.trim() || undefined,
+      price: toSafeNumber(formData.price, 0),
       image: formData.image.trim(),
       thumbnail: formData.thumbnail.trim(),
       comboType: formData.comboType,
@@ -480,12 +621,19 @@ export default function ComboManagementPage() {
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean),
+      isFeatured: Boolean(formData.isFeatured),
+      isBestSeller: Boolean(formData.isBestSeller),
+      isExclusive: Boolean(formData.isExclusive),
+      demandStatus: String(formData.demandStatus || "NORMAL").toUpperCase() === "HIGH" ? "HIGH" : "NORMAL",
+      adminStarRating: Math.max(Math.min(toSafeNumber(formData.adminStarRating, 0), 5), 0),
       items: comboItems
         .map((item) => ({
           productId: item.productId,
           quantity: Math.max(toSafeNumber(item.quantity, 1), 1),
+          quantityRequired: Math.max(toSafeNumber(item.quantityRequired || item.quantity, 1), 1),
           variantId: item.variantId || undefined,
           variantName: item.variantName || undefined,
+          variantSku: item.variantSku || undefined,
         }))
         .filter((item) => item.productId),
     };
@@ -507,6 +655,29 @@ export default function ComboManagementPage() {
     const payload = buildPayload();
 
     try {
+      const existingUrls = comboImages
+        .filter((entry) => entry?.existing && entry?.preview)
+        .map((entry) => String(entry.preview).trim())
+        .filter(Boolean);
+      const pendingUploads = comboImages.filter((entry) => entry?.file);
+      const uploadedUrls = [];
+
+      for (const imageEntry of pendingUploads) {
+        const uploadResult = await uploadFile(imageEntry.file, token);
+        if (uploadResult?.success && uploadResult?.data?.url) {
+          uploadedUrls.push(uploadResult.data.url);
+        } else {
+          toast.error(uploadResult?.message || "Failed to upload combo image");
+          return;
+        }
+      }
+
+      const resolvedComboImages = [...existingUrls, ...uploadedUrls].slice(0, 10);
+      payload.comboImages = resolvedComboImages;
+      payload.comboThumbnail = resolvedComboImages[0] || payload.thumbnail || payload.image || "";
+      payload.thumbnail = payload.comboThumbnail;
+      payload.image = payload.image || resolvedComboImages[0] || payload.comboThumbnail;
+
       const response = editingCombo
         ? await putData(`/api/combos/admin/${editingCombo._id}`, payload, token)
         : await postData("/api/combos/admin/create", payload, token);
@@ -601,6 +772,7 @@ export default function ComboManagementPage() {
       setSuggestionsError("Failed to load AI suggestions");
     } finally {
       setSuggestionsLoading(false);
+      fetchDrafts();
     }
   };
 
@@ -629,6 +801,7 @@ export default function ComboManagementPage() {
         setSuggestions([]);
         setSuggestionsMeta(null);
         fetchCombos();
+        fetchDrafts();
       } else {
         setSuggestionsError(response?.message || "Failed to create AI combos");
       }
@@ -637,6 +810,82 @@ export default function ComboManagementPage() {
     } finally {
       setSuggestionsLoading(false);
     }
+  };
+
+  const handleApproveDraft = async (draftId) => {
+    if (!draftId) return;
+    try {
+      const response = await patchData(
+        `/api/combos/admin/drafts/${draftId}/approve`,
+        {},
+        token,
+      );
+      if (response?.success) {
+        toast.success("Combo draft approved");
+        fetchCombos();
+        fetchDrafts();
+      } else {
+        toast.error(response?.message || "Failed to approve draft");
+      }
+    } catch (error) {
+      toast.error("Failed to approve draft");
+    }
+  };
+
+  const handleRejectDraft = async (draftId) => {
+    if (!draftId) return;
+    try {
+      const response = await patchData(
+        `/api/combos/admin/drafts/${draftId}/reject`,
+        {},
+        token,
+      );
+      if (response?.success) {
+        toast.success("Combo draft rejected");
+        fetchDrafts();
+      } else {
+        toast.error(response?.message || "Failed to reject draft");
+      }
+    } catch (error) {
+      toast.error("Failed to reject draft");
+    }
+  };
+
+  const handlePublishDraft = async (draftId) => {
+    if (!draftId) return;
+    try {
+      const response = await patchData(
+        `/api/combos/admin/drafts/${draftId}/publish`,
+        {},
+        token,
+      );
+      if (response?.success) {
+        toast.success("Combo published");
+        fetchCombos();
+        fetchDrafts();
+      } else {
+        toast.error(response?.message || "Failed to publish combo");
+      }
+    } catch (error) {
+      toast.error("Failed to publish combo");
+    }
+  };
+
+  const handleEditDraftCombo = (draft) => {
+    const comboId = draft?.comboId?._id || draft?.comboId || null;
+    if (!comboId) {
+      toast("Approve this draft to edit the combo.");
+      return;
+    }
+    const combo = combos.find(
+      (item) => String(item?._id || item?.id) === String(comboId),
+    );
+    if (combo) {
+      handleOpenDialog(combo);
+      return;
+    }
+    toast("Refreshing combos list...");
+    fetchCombos();
   };
 
   if (loading || !isAuthenticated) {
@@ -717,9 +966,13 @@ export default function ComboManagementPage() {
             {combos.map((combo) => (
               <TableRow key={combo._id || combo.slug}>
                 <TableCell>
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-gray-800">{combo.name}</span>
-                    <span className="text-xs text-gray-500">{combo.slug}</span>
+                  <div className="flex flex-col max-w-[320px] leading-tight gap-0.5">
+                    <span className="font-semibold text-gray-800 break-words line-clamp-1">
+                      {combo.name}
+                    </span>
+                    <span className="text-xs text-gray-500 break-all line-clamp-1">
+                      {combo.slug}
+                    </span>
                   </div>
                 </TableCell>
                 <TableCell>{combo.comboType || "fixed_bundle"}</TableCell>
@@ -807,27 +1060,104 @@ export default function ComboManagementPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TextField
               label="Combo Name"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.name}
               onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              inputProps={{ maxLength: 140 }}
               helperText="Shown on storefront cards and analytics."
               fullWidth
             />
             <TextField
               label="Combo Slug"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.slug}
-              onChange={(e) => setFormData((prev) => ({ ...prev, slug: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  slug: slugifyInput(e.target.value),
+                }))
+              }
+              inputProps={{ maxLength: 180 }}
               helperText="Leave blank to auto-generate from the name."
               fullWidth
             />
             <TextField
+              label="Short Description"
+              size="small"
+              multiline
+              minRows={2}
+              InputLabelProps={{ shrink: true }}
+              value={formData.shortDescription}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, shortDescription: e.target.value }))
+              }
+              helperText="Short text shown under combo name."
+              fullWidth
+            />
+            <TextField
               label="Description"
+              size="small"
+              multiline
+              minRows={2}
+              InputLabelProps={{ shrink: true }}
               value={formData.description}
               onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
               helperText="Short summary displayed on combo detail views."
               fullWidth
             />
             <TextField
+              label="Brand"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={formData.brand}
+              onChange={(e) => setFormData((prev) => ({ ...prev, brand: e.target.value }))}
+              helperText="Brand text shown above combo title."
+              fullWidth
+            />
+            <TextField
+              label="Category"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={formData.category}
+              onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
+              helperText="Category label shown on combo detail page."
+              fullWidth
+            />
+            <TextField
+              label="Review Count"
+              type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={formData.reviewCount}
+              onChange={(e) => setFormData((prev) => ({ ...prev, reviewCount: e.target.value }))}
+              helperText="Displayed next to star rating."
+              fullWidth
+            />
+            <TextField
+              label="Combo SKU"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={formData.sku}
+              onChange={(e) => setFormData((prev) => ({ ...prev, sku: e.target.value }))}
+              helperText="Leave blank to auto-generate from selected variants."
+              fullWidth
+            />
+            <TextField
+              label="Combo Price Override"
+              type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={formData.price}
+              onChange={(e) => setFormData((prev) => ({ ...prev, price: e.target.value }))}
+              helperText="Optional explicit price value."
+              fullWidth
+            />
+            <TextField
               label="Banner Image URL"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.image}
               onChange={(e) => setFormData((prev) => ({ ...prev, image: e.target.value }))}
               helperText="Large hero image (optional)."
@@ -835,6 +1165,8 @@ export default function ComboManagementPage() {
             />
             <TextField
               label="Thumbnail URL"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.thumbnail}
               onChange={(e) => setFormData((prev) => ({ ...prev, thumbnail: e.target.value }))}
               helperText="Square card image for grids."
@@ -842,6 +1174,8 @@ export default function ComboManagementPage() {
             />
             <TextField
               label="Tags (comma separated)"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.tags}
               onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
               helperText="Comma-separated badges like best_seller, festival_deal."
@@ -850,6 +1184,8 @@ export default function ComboManagementPage() {
             <TextField
               label="Priority"
               type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.priority}
               onChange={(e) => setFormData((prev) => ({ ...prev, priority: e.target.value }))}
               helperText="Higher number ranks this combo first."
@@ -890,6 +1226,8 @@ export default function ComboManagementPage() {
             <TextField
               label="Pricing Value"
               type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.pricingValue}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, pricingValue: e.target.value }))
@@ -931,6 +1269,8 @@ export default function ComboManagementPage() {
             <TextField
               label="Stock Quantity"
               type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.stockQuantity}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, stockQuantity: e.target.value }))
@@ -942,6 +1282,8 @@ export default function ComboManagementPage() {
             <TextField
               label="Min Order Quantity"
               type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.minOrderQuantity}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, minOrderQuantity: e.target.value }))
@@ -952,6 +1294,8 @@ export default function ComboManagementPage() {
             <TextField
               label="Max Per Order"
               type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.maxPerOrder}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, maxPerOrder: e.target.value }))
@@ -978,6 +1322,8 @@ export default function ComboManagementPage() {
             </div>
             <TextField
               label="Segment Categories (IDs, comma separated)"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.segmentCategories}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, segmentCategories: e.target.value }))
@@ -987,6 +1333,8 @@ export default function ComboManagementPage() {
             />
             <TextField
               label="Geo Targets (comma separated)"
+              size="small"
+              InputLabelProps={{ shrink: true }}
               value={formData.geoTargets}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, geoTargets: e.target.value }))
@@ -994,6 +1342,64 @@ export default function ComboManagementPage() {
               helperText="Add country/state/city or pincodes to target locations."
               fullWidth
             />
+            <div className="flex flex-col gap-2">
+              <label className="text-xs text-gray-500">Demand Status</label>
+              <Select
+                value={formData.demandStatus}
+                onChange={(e) => setFormData((prev) => ({ ...prev, demandStatus: e.target.value }))}
+              >
+                <MenuItem value="NORMAL">Normal</MenuItem>
+                <MenuItem value="HIGH">High Demand</MenuItem>
+              </Select>
+            </div>
+            <TextField
+              label="Star Rating"
+              type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={formData.adminStarRating}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, adminStarRating: e.target.value }))
+              }
+              inputProps={{ min: 0, max: 5, step: 0.1 }}
+              helperText="0 to 5"
+              fullWidth
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 mt-2">
+            <h3 className="text-sm font-semibold text-gray-700">
+              Combo Images <span className="text-xs font-normal text-gray-500">(Max 10, first image = thumbnail)</span>
+            </h3>
+            <div className="flex items-center gap-3 flex-wrap">
+              {comboImages.map((img, index) => (
+                <div
+                  key={`${img.preview}-${index}`}
+                  className="w-[120px] h-[120px] rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center relative overflow-hidden"
+                >
+                  <img
+                    src={img.preview}
+                    alt={`combo-preview-${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  {index === 0 && (
+                    <span className="absolute top-1 left-1 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded">
+                      Thumbnail
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeComboImage(index)}
+                    className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {comboImages.length < 10 && (
+                <UploadBox onChange={handleComboImageUpload} multiple />
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-6">
@@ -1029,6 +1435,39 @@ export default function ComboManagementPage() {
                 Hide from storefront listings without disabling it.
               </p>
             </div>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={formData.isFeatured}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, isFeatured: e.target.checked }))
+                  }
+                />
+              }
+              label="Featured"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={formData.isBestSeller}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, isBestSeller: e.target.checked }))
+                  }
+                />
+              }
+              label="Best Seller"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={formData.isExclusive}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, isExclusive: e.target.checked }))
+                  }
+                />
+              }
+              label="Members Exclusive"
+            />
           </div>
 
           <div className="space-y-3">
@@ -1160,7 +1599,9 @@ export default function ComboManagementPage() {
                 Drafts Ready
               </p>
               <p className="text-lg font-semibold text-gray-900">
-                {suggestionsMeta?.generated ?? (suggestions.length || 0)}
+                {drafts.length > 0
+                  ? drafts.length
+                  : suggestionsMeta?.generated ?? (suggestions.length || 0)}
               </p>
             </div>
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
@@ -1168,7 +1609,7 @@ export default function ComboManagementPage() {
                 Avg AI Score
               </p>
               <p className="text-lg font-semibold text-gray-900">
-                {suggestionStats.avgScore}
+                {drafts.length > 0 ? draftStats.avgScore : suggestionStats.avgScore}
               </p>
             </div>
           </div>
@@ -1206,7 +1647,9 @@ export default function ComboManagementPage() {
                     ? round2(((originalTotal - comboPrice) / originalTotal) * 100)
                     : round2(Number(suggestion.discountPercentage || 0));
                 const tags = Array.isArray(suggestion.tags) ? suggestion.tags : [];
-                const itemsPreview = buildItemsPreview(suggestion.items || []);
+                const itemsPreview = buildItemsPreview(
+                  suggestion.items || suggestion.itemsSnapshot || [],
+                );
                 const aiScore = round2(Number(suggestion.aiScore || 0));
                 const comboTypeLabel = resolveComboTypeLabel(suggestion.comboType);
                 return (
@@ -1283,6 +1726,160 @@ export default function ComboManagementPage() {
               })}
             </div>
           )}
+
+          <div className="pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  Draft Combos Ready
+                </p>
+                <p className="text-xs text-gray-500">
+                  Approve, reject, edit, or publish AI-generated drafts.
+                </p>
+              </div>
+              <Button size="small" variant="outlined" onClick={fetchDrafts}>
+                Refresh Drafts
+              </Button>
+            </div>
+
+            {draftsLoading && (
+              <div className="flex items-center gap-3 mt-3 rounded-xl border border-dashed border-blue-100 bg-blue-50/40 p-4 text-sm text-blue-700">
+                <CircularProgress size={18} />
+                <div>
+                  <p className="font-semibold">Loading combo drafts...</p>
+                </div>
+              </div>
+            )}
+            {!draftsLoading && draftsError && (
+              <div className="mt-3 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-600">
+                {draftsError}
+              </div>
+            )}
+            {!draftsLoading && !draftsError && drafts.length === 0 && (
+              <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                No draft combos yet. Generate suggestions to create drafts.
+              </div>
+            )}
+            {!draftsLoading && drafts.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                {drafts.map((draft) => {
+                  const originalTotal = round2(Number(draft.originalTotal || 0));
+                  const comboPrice = round2(Number(draft.suggestedPrice || 0));
+                  const savings = round2(
+                    Number(
+                      draft.discountPercentage
+                        ? (originalTotal * draft.discountPercentage) / 100
+                        : originalTotal - comboPrice || 0,
+                    ),
+                  );
+                  const itemsPreview = buildItemsPreview(
+                    draft.items || draft.itemsSnapshot || [],
+                  );
+                  const aiScore = round2(Number(draft.aiScore || 0));
+                  const statusLabel = String(draft.status || "draft").toUpperCase();
+                  const comboId =
+                    draft?.comboId?._id || draft?.comboId || draft?.combo?._id || null;
+                  return (
+                    <div
+                      key={draft._id}
+                      className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm hover:shadow-md transition"
+                    >
+                      <div className="flex gap-4">
+                        <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2 shrink-0">
+                          <img
+                            src={resolveSuggestionImage(draft)}
+                            alt={draft.name || "Combo draft"}
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="text-sm font-semibold text-gray-900 line-clamp-1">
+                              {draft.name || "Combo draft"}
+                            </h4>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                                {statusLabel}
+                              </span>
+                              <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                                AI {aiScore}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {itemsPreview || "Combo bundle preview"}
+                          </p>
+                          <div className="mt-2 flex items-center gap-2 text-xs">
+                            {originalTotal > comboPrice && (
+                              <span className="text-gray-400 line-through">
+                                â‚¹{originalTotal}
+                              </span>
+                            )}
+                            <span className="text-gray-900 font-semibold">
+                              â‚¹{comboPrice}
+                            </span>
+                            {savings > 0 && (
+                              <span className="text-emerald-600">
+                                Save â‚¹{savings}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {draft.status === "draft" && (
+                              <>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleApproveDraft(draft._id)}
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  variant="outlined"
+                                  onClick={() => handleRejectDraft(draft._id)}
+                                >
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+                            {comboId && (
+                              <>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleEditDraftCombo(draft)}
+                                >
+                                  Edit Combo
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  sx={{
+                                    backgroundColor: "#2563eb",
+                                    color: "#fff",
+                                    "&:hover": { backgroundColor: "#1d4ed8" },
+                                    "&.Mui-disabled": {
+                                      backgroundColor: "#bfdbfe",
+                                      color: "#1e3a8a",
+                                    },
+                                  }}
+                                  onClick={() => handlePublishDraft(draft._id)}
+                                >
+                                  Publish
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleGenerateSuggestions} disabled={suggestionsLoading}>
@@ -1290,7 +1887,15 @@ export default function ComboManagementPage() {
           </Button>
           <Button
             variant="contained"
-            className="!bg-blue-600"
+            sx={{
+              backgroundColor: "#2563eb",
+              color: "#fff",
+              "&:hover": { backgroundColor: "#1d4ed8" },
+              "&.Mui-disabled": {
+                backgroundColor: "#bfdbfe",
+                color: "#1e3a8a",
+              },
+            }}
             onClick={handleCreateSuggestions}
             disabled={suggestionsLoading || suggestions.length === 0}
           >
