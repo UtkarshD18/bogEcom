@@ -34,5 +34,6 @@ export const sendEmail = async (...args) => {
     html,
     context: options?.context || "legacy",
     from: options?.from || null,
+    attachments: Array.isArray(options?.attachments) ? options.attachments : [],
   });
 };

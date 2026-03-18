@@ -499,7 +499,10 @@ export const sendEmail = async ({
   text = "",
   context = "general",
   from = null,
+  attachments = [],
 }) => {
+  const attachmentCount = Array.isArray(attachments) ? attachments.length : 0;
+
   const { ok, reason, config } = ensureTransporter();
   if (!ok || !transporter) {
     logger.error("EmailService", "Email send skipped", {
@@ -528,6 +531,7 @@ export const sendEmail = async ({
           subject,
           text,
           html,
+          attachments,
         }),
         config.operationTimeoutMs,
         "SMTP send",
@@ -537,6 +541,7 @@ export const sendEmail = async ({
         to,
         subject,
         attempt,
+        attachmentCount,
         messageId: infoWithTimeout?.messageId,
       });
       return { success: true, messageId: infoWithTimeout?.messageId };
@@ -548,6 +553,7 @@ export const sendEmail = async ({
         subject,
         attempt,
         attempts,
+        attachmentCount,
         error: error?.message || String(error),
       });
       if (attempt < attempts) {
@@ -561,6 +567,7 @@ export const sendEmail = async ({
     to,
     subject,
     attempts,
+    attachmentCount,
     error: lastError?.message || String(lastError),
   });
   return { success: false, error: lastError?.message || "Email send failed" };
@@ -574,6 +581,7 @@ export const sendTemplatedEmail = async ({
   text = "",
   context = "templated",
   from = null,
+  attachments = [],
 }) => {
   try {
     const safeTemplateFile = String(templateFile || "").trim();
@@ -605,6 +613,7 @@ export const sendTemplatedEmail = async ({
       text: resolvedText,
       context,
       from,
+      attachments,
     });
   } catch (error) {
     logger.error("EmailService", "Template render failed", {

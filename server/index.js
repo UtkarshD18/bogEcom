@@ -26,7 +26,9 @@ import {
 import { UPLOAD_ROOT } from "./middlewares/upload.js";
 import analyticsSession from "./middlewares/analyticsSession.js";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, ".env") });
 
 const applyLocalDnsOverrides = () => {
   try {
@@ -230,10 +232,6 @@ import { startMembershipExpiryJob } from "./services/membershipExpiry.service.js
 import { startLocationLogRetentionJob } from "./services/userLocationLog.service.js";
 import { startFrequentlyBoughtTogetherJob } from "./services/combos/frequentlyBoughtTogether.service.js";
 import { startComboAnalysisJob } from "./services/combos/comboAnalysis.service.js";
-
-// Get __dirname in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);

@@ -221,6 +221,16 @@ export const patchData = async (url, formData, token = null) =>
     fallbackMessage: "Failed to update data",
   });
 
+export const postMultipartData = async (url, formData, token = null) =>
+  requestWithRetry({
+    method: "post",
+    url,
+    data: formData,
+    token,
+    headers: { "Content-Type": "multipart/form-data" },
+    fallbackMessage: "Failed to submit request",
+  });
+
 export const uploadFile = async (file, token) => {
   const formData = new FormData();
   formData.append("image", file);

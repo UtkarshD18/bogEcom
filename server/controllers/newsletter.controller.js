@@ -36,7 +36,16 @@ const resolveBroadcastEnabled = () => {
   const raw = String(process.env.NEWSLETTER_BROADCAST_ENABLED || "")
     .trim()
     .toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes";
+
+  if (!raw) {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  if (["0", "false", "no", "off", "disabled"].includes(raw)) {
+    return false;
+  }
+
+  return ["1", "true", "yes", "on", "enabled"].includes(raw);
 };
 
 const normalizeTemplatePayload = (value = {}) => {
@@ -66,6 +75,22 @@ const renderBroadcastHtml = (html, email) => {
     .replaceAll("{{email}}", safeEmail)
     .replaceAll("{{ year }}", String(new Date().getFullYear()))
     .replaceAll("{{year}}", String(new Date().getFullYear()));
+};
+
+const getBroadcastAttachments = (req) => {
+  const files = Array.isArray(req?.files) ? req.files : [];
+
+  return files
+    .map((file) => {
+      if (!file?.buffer) return null;
+
+      return {
+        filename: String(file.originalname || file.filename || "attachment"),
+        content: file.buffer,
+        contentType: String(file.mimetype || "application/octet-stream"),
+      };
+    })
+    .filter(Boolean);
 };
 
 const normalizeSource = (source) => {
@@ -538,6 +563,7 @@ export const sendNewsletterBroadcast = async (req, res) => {
     }
 
     const { subject, html, status = "active" } = req.body || {};
+    const attachments = getBroadcastAttachments(req);
     const storedTemplate = await getStoredNewsletterTemplate();
     const template = normalizeTemplatePayload({
       subject: subject || storedTemplate.subject,
@@ -580,6 +606,7 @@ export const sendNewsletterBroadcast = async (req, res) => {
         html: renderBroadcastHtml(template.html, email),
         text: template.subject,
         context: "newsletter.broadcast",
+        attachments,
       });
 
       if (result?.success) {
@@ -596,6 +623,7 @@ export const sendNewsletterBroadcast = async (req, res) => {
         attempted: subscribers.length,
         sent,
         failed,
+        attachments: attachments.map((item) => item.filename),
       },
     });
   } catch (error) {
