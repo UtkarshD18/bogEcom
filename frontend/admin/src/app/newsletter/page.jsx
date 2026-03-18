@@ -61,6 +61,9 @@ const normalizeOptionalImageUrl = (value) => {
   }
 };
 
+const DEFAULT_LOGO_URL = "https://healthyonegram.com/logo-og-v2.png";
+const DEFAULT_HERO_URL = "https://healthyonegram.com/logo-header.png";
+
 const buildSimpleNewsletterHtml = ({
   title,
   greeting,
@@ -286,11 +289,22 @@ const NewsletterPage = () => {
     ctaLabel: "Explore Products",
     ctaUrl: "https://healthyonegram.com/products",
     footer: "Regards, HealthyOneGram Team",
-    logoUrl: "https://healthyonegram.com/logo-og-v2.png",
+    logoUrl: DEFAULT_LOGO_URL,
     showLogoImage: true,
-    heroImageUrl: "https://healthyonegram.com/logo-header.png",
+    heroImageUrl: DEFAULT_HERO_URL,
     showHeroImage: true,
   });
+
+  const restoreBothImages = () => {
+    setSimpleTemplate((prev) => ({
+      ...prev,
+      logoUrl: DEFAULT_LOGO_URL,
+      showLogoImage: true,
+      heroImageUrl: DEFAULT_HERO_URL,
+      showHeroImage: true,
+    }));
+    toast.success("Logo and hero images restored");
+  };
 
   const applySimplePreset = (presetKey) => {
     const preset = SIMPLE_NEWSLETTER_PRESETS[presetKey];
@@ -819,7 +833,7 @@ const NewsletterPage = () => {
                             onClick={() => {
                               setSimpleTemplate((prev) => ({
                                 ...prev,
-                                logoUrl: "https://healthyonegram.com/logo-og-v2.png",
+                                logoUrl: DEFAULT_LOGO_URL,
                                 showLogoImage: true,
                               }));
                             }}
@@ -887,6 +901,13 @@ const NewsletterPage = () => {
                       >
                         Delete Hero
                       </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={restoreBothImages}
+                      >
+                        Restore Both Images
+                      </Button>
                     </div>
 
                     {showHeroCustomize ? (
@@ -908,7 +929,7 @@ const NewsletterPage = () => {
                             onClick={() => {
                               setSimpleTemplate((prev) => ({
                                 ...prev,
-                                heroImageUrl: "https://healthyonegram.com/logo-header.png",
+                                heroImageUrl: DEFAULT_HERO_URL,
                                 showHeroImage: true,
                               }));
                             }}

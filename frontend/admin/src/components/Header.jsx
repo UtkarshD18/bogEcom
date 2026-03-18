@@ -120,11 +120,15 @@ const Header = ({ onMenuClick }) => {
         {orders.length === 0 ? (
           <MenuItem disabled>No new orders</MenuItem>
         ) : (
-          <>
-            <MenuItem disabled style={{ fontWeight: "bold", color: "#c1591c" }}>
+          [
+            <MenuItem
+              key="orders-header"
+              disabled
+              style={{ fontWeight: "bold", color: "#c1591c" }}
+            >
               New Orders ({orders.length})
-            </MenuItem>
-            {orders.map((order) => (
+            </MenuItem>,
+            ...orders.map((order) => (
               <MenuItem
                 key={order.id}
                 onClick={() => {
@@ -156,8 +160,9 @@ const Header = ({ onMenuClick }) => {
                   </div>
                 </div>
               </MenuItem>
-            ))}
+            )),
             <MenuItem
+              key="mark-all-read"
               onClick={() => {
                 clearAllNotifications();
                 handleNotificationClose();
@@ -169,8 +174,8 @@ const Header = ({ onMenuClick }) => {
               }}
             >
               Mark all as read
-            </MenuItem>
-          </>
+            </MenuItem>,
+          ]
         )}
       </Menu>
     </header>
