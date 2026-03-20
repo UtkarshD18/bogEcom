@@ -11,12 +11,14 @@ import { LiaImageSolid } from "react-icons/lia";
 import {
   MdInfoOutline,
   MdInsights,
+  MdKey,
   MdMailOutline,
   MdNotificationsActive,
   MdOutlineArticle,
   MdOutlineCategory,
   MdOutlineInventory2,
   MdOutlineLocalOffer,
+  MdOutlinePictureAsPdf,
   MdOutlinePolicy,
   MdSettings,
   MdSupportAgent,
@@ -147,6 +149,16 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       name: "Email Templates",
       icon: <MdMailOutline size={22} />,
       href: "/email-templates",
+    },
+    {
+      name: "API PDFs",
+      icon: <MdOutlinePictureAsPdf size={22} />,
+      href: "/api-docs",
+    },
+    {
+      name: "Partner API",
+      icon: <MdKey size={22} />,
+      href: "/partner-api",
     },
     {
       name: "Banners",

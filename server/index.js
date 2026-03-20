@@ -182,6 +182,7 @@ import { initializeFirebaseAdmin } from "./config/firebaseAdmin.js";
 import { initializeSettings } from "./controllers/settings.controller.js";
 import { initSocket } from "./realtime/socket.js";
 import aboutPageRouter from "./routes/aboutPage.route.js";
+import apiDocumentRouter from "./routes/apiDocument.route.js";
 import addressRouter from "./routes/address.route.js";
 import adminMembershipRouter from "./routes/adminMembership.route.js";
 import adminOrdersRouter from "./routes/adminOrders.js";
@@ -210,6 +211,7 @@ import notificationRouter from "./routes/notification.route.js";
 import orderRouter from "./routes/order.route.js";
 import policyRouter from "./routes/policy.route.js";
 import popupRouter from "./routes/popup.route.js";
+import partnerApiRouter from "./routes/partnerApi.route.js";
 import productRouter from "./routes/product.route.js";
 import purchaseOrderRouter from "./routes/purchaseOrder.route.js";
 import refundRouter from "./routes/refund.route.js";
@@ -399,6 +401,7 @@ app.get("/", (req, res) => {
 
 // API routes with rate limiting
 app.use("/api/about", generalLimiter, aboutPageRouter);
+app.use("/api/api-docs", generalLimiter, apiDocumentRouter);
 app.use("/api", analyticsLimiter, trackingRouter);
 app.use("/api/analytics", analyticsLimiter, analyticsRouter);
 app.use("/api/user", generalLimiter, userRouter);
@@ -432,6 +435,7 @@ app.use("/api/influencers", generalLimiter, influencerRouter);
 app.use("/api/invoices", generalLimiter, invoiceRouter);
 app.use("/api/notifications", generalLimiter, notificationRouter);
 app.use("/api/newsletter", generalLimiter, newsletterRouter);
+app.use("/api/v1/partner", generalLimiter, partnerApiRouter);
 app.use("/api/settings", generalLimiter, settingsRouter);
 app.use("/api/shipping", generalLimiter, shippingRouter);
 app.use("/api/webhooks", generalLimiter, webhookRouter);
