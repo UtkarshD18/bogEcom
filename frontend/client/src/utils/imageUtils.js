@@ -10,13 +10,24 @@
 import { API_BASE_URL } from "@/utils/api";
 
 const API_URL = API_BASE_URL;
-const DEFAULT_PLACEHOLDER = "/placeholder.png";
+const DEFAULT_PLACEHOLDER = "/product_1.png";
 
 const normalizeImageInput = (imageValue) => {
   if (!imageValue) return "";
 
   if (typeof imageValue === "string") {
-    return imageValue.trim();
+    const normalized = imageValue.trim();
+    if (!normalized) return "";
+    const lowered = normalized.toLowerCase();
+    if (
+      lowered === "undefined" ||
+      lowered === "null" ||
+      lowered === "nan" ||
+      lowered === "[object object]"
+    ) {
+      return "";
+    }
+    return normalized;
   }
 
   if (typeof imageValue === "object") {
@@ -74,6 +85,19 @@ export const getImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
     normalizedPath.startsWith("http://") ||
     normalizedPath.startsWith("https://")
   ) {
+    // Rewrite localhost upload links to current API base to avoid broken production/media URLs.
+    if (
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/uploads\//i.test(
+        normalizedPath,
+      )
+    ) {
+      const uploadPath = normalizedPath.replace(
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i,
+        "",
+      );
+      return `${API_URL}${uploadPath}`;
+    }
+
     if (normalizedPath.includes("res.cloudinary.com")) {
       return buildCloudinaryUrl(normalizedPath, [
         "f_auto",
@@ -137,7 +161,9 @@ export const getOptimizedImageUrl = (
         : "limit");
 
     const transformations = [
-      Number.isFinite(safeWidth) && safeWidth > 0 ? `w_${Math.round(safeWidth)}` : "",
+      Number.isFinite(safeWidth) && safeWidth > 0
+        ? `w_${Math.round(safeWidth)}`
+        : "",
       Number.isFinite(safeHeight) && safeHeight > 0
         ? `h_${Math.round(safeHeight)}`
         : "",

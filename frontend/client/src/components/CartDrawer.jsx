@@ -2,10 +2,12 @@
 
 import { useCart } from "@/context/CartContext";
 import { useShippingDisplayCharge } from "@/hooks/useShippingDisplayCharge";
+import { postData } from "@/utils/api";
 import { round2 } from "@/utils/gst";
 import { getImageUrl } from "@/utils/imageUtils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { IoBagCheckOutline, IoCartOutline, IoClose } from "react-icons/io5";
 import { MdAdd, MdDeleteOutline, MdRemove } from "react-icons/md";
 
@@ -22,9 +24,15 @@ const CartDrawer = () => {
     cartSubTotalAmount,
     orderNote,
     setOrderNote,
+    addToCart,
+    addComboToCart,
   } = useCart();
   const { displayShippingCharge } = useShippingDisplayCharge();
   const router = useRouter();
+  const [upsellLoading, setUpsellLoading] = useState(false);
+  const [upsellCombo, setUpsellCombo] = useState(null);
+  const [upsellProduct, setUpsellProduct] = useState(null);
+  const COMBO_FALLBACK_IMAGE = "/product_1.png";
 
   const subtotal = round2(cartSubTotalAmount || 0);
   const shippingCost = 0;
@@ -44,16 +52,28 @@ const CartDrawer = () => {
       return item.product._id || item.product.id || null;
     }
     if (item.product) return item.product;
-    if (item.productData) return item.productData._id || item.productData.id || null;
+    if (item.productData)
+      return item.productData._id || item.productData.id || null;
     return item._id || item.id || null;
   };
 
   const getItemData = (item) => {
     if (isComboCartItem(item)) {
-      const combo = item?.comboSnapshot || item?.combo || {};
+      const comboSnapshot =
+        item?.comboSnapshot && typeof item.comboSnapshot === "object"
+          ? item.comboSnapshot
+          : {};
+      const comboDoc =
+        item?.combo && typeof item.combo === "object" ? item.combo : {};
+      const combo = {
+        ...comboDoc,
+        ...comboSnapshot,
+      };
       const comboItems = Array.isArray(combo?.items) ? combo.items : [];
       const comboId =
         combo?.comboId ||
+        comboSnapshot?.comboId ||
+        comboDoc?._id ||
         combo?._id ||
         item?.combo ||
         item?.comboSnapshot?.comboId ||
@@ -70,9 +90,29 @@ const CartDrawer = () => {
       return {
         id: comboId,
         name: combo?.comboName || combo?.name || "Combo Bundle",
-        image: combo?.thumbnail || combo?.image || item?.image || "/combo_placeholder.png",
+        image:
+          comboSnapshot?.comboThumbnail ||
+          comboDoc?.comboThumbnail ||
+          combo?.comboThumbnail ||
+          comboSnapshot?.thumbnail ||
+          comboDoc?.thumbnail ||
+          combo?.thumbnail ||
+          comboSnapshot?.image ||
+          comboDoc?.image ||
+          combo?.image ||
+          comboSnapshot?.comboImages?.[0] ||
+          comboDoc?.comboImages?.[0] ||
+          combo?.comboImages?.[0] ||
+          comboItems?.[0]?.image ||
+          item?.image ||
+          COMBO_FALLBACK_IMAGE,
         price: Number(item?.price ?? combo?.comboPrice ?? 0),
-        originalPrice: Number(item?.originalPrice ?? combo?.originalPrice ?? combo?.originalTotal ?? 0),
+        originalPrice: Number(
+          item?.originalPrice ??
+            combo?.originalPrice ??
+            combo?.originalTotal ??
+            0,
+        ),
         brand: "Combo Deal",
         quantity: Number(item?.quantity || 1),
         quantityUnit: preview || "Bundle",
@@ -87,7 +127,11 @@ const CartDrawer = () => {
     return {
       id: productId || item?._id || item?.id,
       name: product?.name || item?.name || "Product",
-      image: product?.thumbnail || product?.images?.[0] || item?.image || "/product_1.png",
+      image:
+        product?.thumbnail ||
+        product?.images?.[0] ||
+        item?.image ||
+        "/product_1.png",
       price: Number(item?.price ?? product?.price ?? 0),
       originalPrice: Number(item?.originalPrice ?? product?.originalPrice ?? 0),
       brand: product?.brand || "BOG",
@@ -108,6 +152,122 @@ const CartDrawer = () => {
       }
       return sum;
     }, 0),
+  );
+
+  const upsellRequestItems = useMemo(() => {
+    const normalized = [];
+    for (const item of cartItems) {
+      const isComboLine =
+        item?.itemType === "combo" ||
+        Boolean(item?.combo || item?.comboSnapshot?.comboId);
+
+      if (isComboLine) {
+        const comboSnapshot =
+          item?.comboSnapshot && typeof item.comboSnapshot === "object"
+            ? item.comboSnapshot
+            : {};
+        const comboDoc =
+          item?.combo && typeof item.combo === "object" ? item.combo : {};
+        const combo = {
+          ...comboDoc,
+          ...comboSnapshot,
+        };
+        const comboItems = Array.isArray(combo?.items) ? combo.items : [];
+        for (const comboItem of comboItems) {
+          const productId = String(comboItem?.productId || "").trim();
+          if (!productId) continue;
+          const variantId = String(comboItem?.variantId || "").trim();
+          normalized.push({
+            productId,
+            variantId: variantId || undefined,
+          });
+        }
+        continue;
+      }
+
+      const productId = String(resolveProductId(item) || "").trim();
+      if (!productId) continue;
+      const variantId = String(
+        item?.variant || item?.variantId || item?.selectedVariant?._id || "",
+      ).trim();
+      normalized.push({
+        productId,
+        variantId: variantId || undefined,
+      });
+    }
+
+    const deduped = [];
+    const seen = new Set();
+    for (const entry of normalized) {
+      const key = `${entry.productId}:${entry.variantId || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(entry);
+    }
+    return deduped;
+  }, [cartItems]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchUpsells = async () => {
+      if (!isDrawerOpen || upsellRequestItems.length === 0) {
+        setUpsellCombo(null);
+        setUpsellProduct(null);
+        setUpsellLoading(false);
+        return;
+      }
+
+      setUpsellLoading(true);
+      try {
+        const response = await postData("/api/combos/cart-upsell", {
+          items: upsellRequestItems,
+        });
+        if (!active) return;
+
+        if (response?.success) {
+          const suggestions = Array.isArray(response?.data?.suggestions)
+            ? response.data.suggestions
+            : [];
+          setUpsellCombo(suggestions[0] || null);
+          setUpsellProduct(response?.data?.productSuggestion || null);
+        } else {
+          setUpsellCombo(null);
+          setUpsellProduct(null);
+        }
+      } catch {
+        if (!active) return;
+        setUpsellCombo(null);
+        setUpsellProduct(null);
+      } finally {
+        if (active) setUpsellLoading(false);
+      }
+    };
+
+    fetchUpsells();
+    return () => {
+      active = false;
+    };
+  }, [isDrawerOpen, upsellRequestItems]);
+
+  const upsellComboData = upsellCombo?.combo || null;
+  const upsellComboSavings = round2(Number(upsellComboData?.totalSavings || 0));
+  const upsellComboPrice = Number(
+    upsellComboData?.comboPrice ?? upsellComboData?.price ?? 0,
+  );
+  const upsellComboOriginal = Number(
+    upsellComboData?.originalPrice ??
+      upsellComboData?.originalTotal ??
+      upsellComboPrice,
+  );
+  const upsellComboTitle = String(upsellComboData?.name || "").trim();
+  const upsellProductData = upsellProduct?.recommendation || null;
+  const upsellProductEntity = upsellProductData?.product || null;
+  const upsellProductPrice = Number(upsellProductData?.price || 0);
+  const upsellProductOriginal = Number(
+    upsellProductData?.originalPrice || upsellProductPrice,
+  );
+  const upsellProductSavings = round2(
+    Math.max(upsellProductOriginal - upsellProductPrice, 0),
   );
 
   return (
@@ -147,8 +307,12 @@ const CartDrawer = () => {
                 <IoCartOutline size={40} className="text-gray-300" />
               </div>
               <div>
-                <p className="text-lg font-bold text-gray-900">Your cart is empty</p>
-                <p className="text-sm text-gray-500">Looks like you haven&apos;t added anything yet.</p>
+                <p className="text-lg font-bold text-gray-900">
+                  Your cart is empty
+                </p>
+                <p className="text-sm text-gray-500">
+                  Looks like you haven&apos;t added anything yet.
+                </p>
               </div>
               <Link
                 href="/products"
@@ -171,25 +335,39 @@ const CartDrawer = () => {
                   const isComboLine = data.itemType === "combo";
 
                   return (
-                    <div key={`${data.id}-${item?.variant || item?.variantId || "base"}`} className="flex gap-4 p-3 rounded-2xl bg-white border border-gray-100 shadow-sm">
+                    <div
+                      key={`${data.id}-${item?.variant || item?.variantId || "base"}`}
+                      className="flex gap-4 p-3 rounded-2xl bg-white border border-gray-100 shadow-sm"
+                    >
                       <div className="w-20 h-20 shrink-0 bg-white rounded-xl flex items-center justify-center p-2 border border-gray-100">
-                        <img src={getImageUrl(data.image)} alt={data.name} className="w-full h-full object-contain" />
+                        <img
+                          src={getImageUrl(data.image)}
+                          alt={data.name}
+                          className="w-full h-full object-contain"
+                        />
                       </div>
 
                       <div className="flex-1 flex flex-col justify-between min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <h4 className="text-sm font-bold text-gray-900 line-clamp-1">{data.name}</h4>
+                            <h4 className="text-sm font-bold text-gray-900 line-clamp-1">
+                              {data.name}
+                            </h4>
                             <p className="text-xs text-gray-500">
                               {data.brand}
-                              {data.quantityUnit ? ` • ${data.quantityUnit}` : ""}
+                              {data.quantityUnit
+                                ? ` • ${data.quantityUnit}`
+                                : ""}
                             </p>
                           </div>
                           <button
                             onClick={() =>
                               isComboLine
                                 ? removeComboFromCart(data.id)
-                                : removeFromCart(productId || data.id, item?.variant || null)
+                                : removeFromCart(
+                                    productId || data.id,
+                                    item?.variant || null,
+                                  )
                             }
                             className="p-1.5 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90"
                             aria-label="Remove item"
@@ -203,26 +381,44 @@ const CartDrawer = () => {
                             <button
                               onClick={() =>
                                 isComboLine
-                                  ? updateComboQuantity(data.id, Number(data.quantity) - 1)
-                                  : updateQuantity(productId || data.id, Number(data.quantity) - 1, item?.variant || null)
+                                  ? updateComboQuantity(
+                                      data.id,
+                                      Number(data.quantity) - 1,
+                                    )
+                                  : updateQuantity(
+                                      productId || data.id,
+                                      Number(data.quantity) - 1,
+                                      item?.variant || null,
+                                    )
                               }
                               className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-red-500 active:scale-90 transition-all"
                             >
                               <MdRemove size={14} />
                             </button>
-                            <span className="text-sm font-bold w-4 text-center">{data.quantity}</span>
+                            <span className="text-sm font-bold w-4 text-center">
+                              {data.quantity}
+                            </span>
                             <button
                               onClick={() =>
                                 isComboLine
-                                  ? updateComboQuantity(data.id, Number(data.quantity) + 1)
-                                  : updateQuantity(productId || data.id, Number(data.quantity) + 1, item?.variant || null)
+                                  ? updateComboQuantity(
+                                      data.id,
+                                      Number(data.quantity) + 1,
+                                    )
+                                  : updateQuantity(
+                                      productId || data.id,
+                                      Number(data.quantity) + 1,
+                                      item?.variant || null,
+                                    )
                               }
                               className="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-600 hover:text-primary active:scale-90 transition-all"
                             >
                               <MdAdd size={14} />
                             </button>
                           </div>
-                          <span className="text-sm font-bold text-primary">₹{round2(data.price * data.quantity)}</span>
+                          <span className="text-sm font-bold text-primary">
+                            ₹{round2(data.price * data.quantity)}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -231,6 +427,141 @@ const CartDrawer = () => {
               </section>
 
               <div className="my-6 border-t border-gray-200" />
+
+              {(upsellLoading || upsellComboData || upsellProductEntity) && (
+                <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-sm font-bold uppercase tracking-[0.12em] text-gray-900 flex items-center gap-1">
+                      <span className="text-amber-500">⚡</span> Limited Time
+                      Offer
+                    </p>
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold text-white bg-amber-500">
+                      LIMITED TIME DEAL
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-gray-600 mb-1">
+                    Limited time offer - grab this at a discounted price.
+                  </p>
+                  {cartSavings > 0 && (
+                    <p className="text-sm font-semibold text-emerald-700 mb-2">
+                      You&apos;re saving ₹{cartSavings} on this order.
+                    </p>
+                  )}
+
+                  {upsellLoading &&
+                    !upsellComboData &&
+                    !upsellProductEntity && (
+                      <p className="text-sm text-gray-500">
+                        Loading bundle suggestions...
+                      </p>
+                    )}
+
+                  <div className="space-y-3">
+                    {!upsellLoading && upsellComboData && (
+                      <div className="rounded-xl bg-white border border-amber-100 p-3">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={getImageUrl(
+                              upsellComboData?.comboThumbnail ||
+                                upsellComboData?.thumbnail ||
+                                upsellComboData?.image ||
+                                upsellComboData?.comboImages?.[0] ||
+                                COMBO_FALLBACK_IMAGE,
+                            )}
+                            alt={upsellComboTitle || "Combo suggestion"}
+                            className="w-14 h-14 rounded-lg object-cover bg-gray-100"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-gray-900 line-clamp-1">
+                              {upsellComboTitle || "Suggested Combo"}
+                            </p>
+                            <p className="text-xs text-emerald-700 font-semibold">
+                              Save ₹{upsellComboSavings}
+                              {Number(upsellCombo?.missingCount || 0) > 0
+                                ? ` by adding ${upsellCombo.missingCount} item${
+                                    Number(upsellCombo.missingCount) > 1
+                                      ? "s"
+                                      : ""
+                                  }`
+                                : ""}
+                            </p>
+                            <p className="text-xs font-semibold text-gray-900 mt-0.5">
+                              ₹{round2(upsellComboPrice)}
+                              {upsellComboOriginal > upsellComboPrice && (
+                                <span className="line-through text-gray-400 ml-2 font-medium">
+                                  ₹{round2(upsellComboOriginal)}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => addComboToCart(upsellComboData, 1)}
+                            className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                          >
+                            Add Combo
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!upsellLoading && upsellProductEntity && (
+                      <div className="rounded-xl bg-white border border-amber-100 p-3">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={getImageUrl(
+                              upsellProductData?.image ||
+                                upsellProductEntity?.thumbnail ||
+                                upsellProductEntity?.images?.[0] ||
+                                "/product_1.png",
+                            )}
+                            alt={
+                              upsellProductEntity?.name || "Product suggestion"
+                            }
+                            className="w-14 h-14 rounded-lg object-cover bg-gray-100"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-gray-900 line-clamp-1">
+                              {upsellProductEntity?.name || "Suggested Product"}
+                            </p>
+                            <p className="text-xs text-emerald-700 font-semibold">
+                              Save ₹{upsellProductSavings} on this add-on
+                            </p>
+                            <p className="text-xs font-semibold text-gray-900 mt-0.5">
+                              ₹{round2(upsellProductPrice)}
+                              {upsellProductOriginal > upsellProductPrice && (
+                                <span className="line-through text-gray-400 ml-2 font-medium">
+                                  ₹{round2(upsellProductOriginal)}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() =>
+                              addToCart(
+                                {
+                                  ...upsellProductEntity,
+                                  price: upsellProductPrice,
+                                  originalPrice: upsellProductOriginal,
+                                  selectedVariant:
+                                    upsellProductData?.variant || undefined,
+                                  variantId:
+                                    upsellProductData?.variant?._id ||
+                                    undefined,
+                                },
+                                1,
+                              )
+                            }
+                            className="px-3 py-1.5 rounded-full text-xs font-bold bg-sky-600 text-white hover:bg-sky-700 transition-colors"
+                          >
+                            Add Product
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
 
               <section className="rounded-2xl border border-gray-100 bg-gray-50/60 p-4">
                 <div className="space-y-2 mb-4">
@@ -242,7 +573,9 @@ const CartDrawer = () => {
                     <span className="text-gray-500">Shipping</span>
                     <span className="font-bold text-primary flex items-center gap-2">
                       {displayShippingCharge > 0 && (
-                        <span className="line-through text-gray-500">₹{displayShippingCharge.toFixed(2)}</span>
+                        <span className="line-through text-gray-500">
+                          ₹{displayShippingCharge.toFixed(2)}
+                        </span>
                       )}
                       <span>₹0.00</span>
                     </span>

@@ -1,8 +1,15 @@
 "use client";
 
-import { useAdmin } from "@/context/AdminContext";
-import { deleteData, getData, patchData, postData, putData, uploadFile } from "@/utils/api";
 import UploadBox from "@/components/UploadBox";
+import { useAdmin } from "@/context/AdminContext";
+import {
+  deleteData,
+  getData,
+  patchData,
+  postData,
+  putData,
+  uploadFile,
+} from "@/utils/api";
 import {
   Button,
   CircularProgress,
@@ -61,6 +68,7 @@ const defaultFormData = {
   category: "",
   reviewCount: 0,
   sku: "",
+  originalPrice: "",
   price: "",
   image: "",
   thumbnail: "",
@@ -158,7 +166,8 @@ const HELP_SECTIONS = [
     items: [
       {
         label: "Search",
-        description: "Filter combos by name or slug. Press Enter or click Search.",
+        description:
+          "Filter combos by name or slug. Press Enter or click Search.",
       },
       {
         label: "AI Suggestions",
@@ -174,13 +183,34 @@ const HELP_SECTIONS = [
   {
     title: "Combo Basics",
     items: [
-      { label: "Combo Name", description: "Primary title shown on storefront." },
-      { label: "Combo Slug", description: "URL-friendly ID. Auto-generated if blank." },
-      { label: "Description", description: "Short description for listings and SEO." },
-      { label: "Banner Image URL", description: "Large hero image for combo pages." },
-      { label: "Thumbnail URL", description: "Small card image used in grids." },
-      { label: "Tags", description: "Comma-separated labels for badges and filters." },
-      { label: "Priority", description: "Higher numbers rank the combo first." },
+      {
+        label: "Combo Name",
+        description: "Primary title shown on storefront.",
+      },
+      {
+        label: "Combo Slug",
+        description: "URL-friendly ID. Auto-generated if blank.",
+      },
+      {
+        label: "Description",
+        description: "Short description for listings and SEO.",
+      },
+      {
+        label: "Banner Image URL",
+        description: "Large hero image for combo pages.",
+      },
+      {
+        label: "Thumbnail URL",
+        description: "Small card image used in grids.",
+      },
+      {
+        label: "Tags",
+        description: "Comma-separated labels for badges and filters.",
+      },
+      {
+        label: "Priority",
+        description: "Higher numbers rank the combo first.",
+      },
     ],
   },
   {
@@ -204,8 +234,14 @@ const HELP_SECTIONS = [
   {
     title: "Schedule & Visibility",
     items: [
-      { label: "Active", description: "Controls whether the combo can be used." },
-      { label: "Visible", description: "Controls whether it appears on storefront." },
+      {
+        label: "Active",
+        description: "Controls whether the combo can be used.",
+      },
+      {
+        label: "Visible",
+        description: "Controls whether it appears on storefront.",
+      },
       {
         label: "Start/End Date",
         description: "Schedule combo availability. Leave blank for always on.",
@@ -237,7 +273,8 @@ const HELP_SECTIONS = [
       },
       {
         label: "Segment Categories",
-        description: "Category IDs to restrict which products can see this combo.",
+        description:
+          "Category IDs to restrict which products can see this combo.",
       },
       {
         label: "Geo Targets",
@@ -278,10 +315,7 @@ const formatGeoTarget = (target) => {
 
 const formatGeoTargets = (targets) =>
   Array.isArray(targets)
-    ? targets
-        .map(formatGeoTarget)
-        .filter(Boolean)
-        .join(", ")
+    ? targets.map(formatGeoTarget).filter(Boolean).join(", ")
     : "";
 
 const isLikelyImageValue = (value) => {
@@ -401,24 +435,33 @@ export default function ComboManagementPage() {
       const quantity = Math.max(toSafeNumber(item.quantity, 1), 1);
       return price * quantity;
     });
-    const originalTotal = round2(itemTotals.reduce((sum, value) => sum + value, 0));
+    const computedOriginalTotal = round2(
+      itemTotals.reduce((sum, value) => sum + value, 0),
+    );
     const pricingValue = toSafeNumber(formData.pricingValue, 0);
+    const manualOriginalPrice = toSafeNumber(formData.originalPrice, 0);
+    const manualComboPrice = toSafeNumber(formData.price, 0);
+    const originalTotal =
+      manualOriginalPrice > 0
+        ? round2(manualOriginalPrice)
+        : computedOriginalTotal;
     let comboPrice = originalTotal;
 
-    if (formData.pricingType === "fixed_price" && pricingValue > 0) {
+    if (manualComboPrice > 0) {
+      comboPrice = round2(manualComboPrice);
+    } else if (formData.pricingType === "fixed_price" && pricingValue > 0) {
       comboPrice = pricingValue;
-    }
-    if (formData.pricingType === "percent_discount") {
+    } else if (formData.pricingType === "percent_discount") {
       comboPrice = round2(originalTotal * (1 - pricingValue / 100));
-    }
-    if (formData.pricingType === "fixed_discount") {
+    } else if (formData.pricingType === "fixed_discount") {
       comboPrice = round2(originalTotal - pricingValue);
     }
 
     comboPrice = Math.max(comboPrice, 0);
     if (comboPrice > originalTotal) comboPrice = originalTotal;
     const savings = round2(Math.max(originalTotal - comboPrice, 0));
-    const discountPercent = originalTotal > 0 ? round2((savings / originalTotal) * 100) : 0;
+    const discountPercent =
+      originalTotal > 0 ? round2((savings / originalTotal) * 100) : 0;
 
     return { originalTotal, comboPrice, savings, discountPercent };
   }, [comboItems, formData.pricingType, formData.pricingValue, productMap]);
@@ -456,12 +499,14 @@ export default function ComboManagementPage() {
       setFormData({
         name: combo.name || "",
         slug: combo.slug || "",
-        shortDescription: combo.shortDescription || combo.short_description || "",
+        shortDescription:
+          combo.shortDescription || combo.short_description || "",
         description: combo.description || "",
         brand: combo.brand || "",
         category: combo.category || combo.categoryName || "",
         reviewCount: combo.reviewCount ?? 0,
         sku: combo.sku || "",
+        originalPrice: combo.originalPrice ?? combo.originalTotal ?? "",
         price: combo.price ?? combo.comboPrice ?? "",
         image: combo.image || "",
         thumbnail: combo.thumbnail || "",
@@ -592,6 +637,8 @@ export default function ComboManagementPage() {
       category: formData.category.trim(),
       reviewCount: Math.max(toSafeNumber(formData.reviewCount, 0), 0),
       sku: formData.sku.trim() || undefined,
+      originalPrice: toSafeNumber(formData.originalPrice, 0),
+      comboPrice: toSafeNumber(formData.price, 0),
       price: toSafeNumber(formData.price, 0),
       image: formData.image.trim(),
       thumbnail: formData.thumbnail.trim(),
@@ -609,7 +656,9 @@ export default function ComboManagementPage() {
       endDate: formData.endDate || null,
       stockMode: formData.stockMode,
       stockQuantity:
-        formData.stockMode === "manual" ? toSafeNumber(formData.stockQuantity, 0) : 0,
+        formData.stockMode === "manual"
+          ? toSafeNumber(formData.stockQuantity, 0)
+          : 0,
       minOrderQuantity: Math.max(toSafeNumber(formData.minOrderQuantity, 1), 1),
       maxPerOrder: Math.max(toSafeNumber(formData.maxPerOrder, 0), 0),
       segments: formData.segments,
@@ -624,13 +673,22 @@ export default function ComboManagementPage() {
       isFeatured: Boolean(formData.isFeatured),
       isBestSeller: Boolean(formData.isBestSeller),
       isExclusive: Boolean(formData.isExclusive),
-      demandStatus: String(formData.demandStatus || "NORMAL").toUpperCase() === "HIGH" ? "HIGH" : "NORMAL",
-      adminStarRating: Math.max(Math.min(toSafeNumber(formData.adminStarRating, 0), 5), 0),
+      demandStatus:
+        String(formData.demandStatus || "NORMAL").toUpperCase() === "HIGH"
+          ? "HIGH"
+          : "NORMAL",
+      adminStarRating: Math.max(
+        Math.min(toSafeNumber(formData.adminStarRating, 0), 5),
+        0,
+      ),
       items: comboItems
         .map((item) => ({
           productId: item.productId,
           quantity: Math.max(toSafeNumber(item.quantity, 1), 1),
-          quantityRequired: Math.max(toSafeNumber(item.quantityRequired || item.quantity, 1), 1),
+          quantityRequired: Math.max(
+            toSafeNumber(item.quantityRequired || item.quantity, 1),
+            1,
+          ),
           variantId: item.variantId || undefined,
           variantName: item.variantName || undefined,
           variantSku: item.variantSku || undefined,
@@ -672,11 +730,16 @@ export default function ComboManagementPage() {
         }
       }
 
-      const resolvedComboImages = [...existingUrls, ...uploadedUrls].slice(0, 10);
+      const resolvedComboImages = [...existingUrls, ...uploadedUrls].slice(
+        0,
+        10,
+      );
       payload.comboImages = resolvedComboImages;
-      payload.comboThumbnail = resolvedComboImages[0] || payload.thumbnail || payload.image || "";
+      payload.comboThumbnail =
+        resolvedComboImages[0] || payload.thumbnail || payload.image || "";
       payload.thumbnail = payload.comboThumbnail;
-      payload.image = payload.image || resolvedComboImages[0] || payload.comboThumbnail;
+      payload.image =
+        payload.image || resolvedComboImages[0] || payload.comboThumbnail;
 
       const response = editingCombo
         ? await putData(`/api/combos/admin/${editingCombo._id}`, payload, token)
@@ -711,7 +774,11 @@ export default function ComboManagementPage() {
 
   const handleDuplicateCombo = async (comboId) => {
     try {
-      const response = await postData(`/api/combos/admin/${comboId}/duplicate`, {}, token);
+      const response = await postData(
+        `/api/combos/admin/${comboId}/duplicate`,
+        {},
+        token,
+      );
       if (response?.success) {
         toast.success("Combo duplicated");
         fetchCombos();
@@ -766,7 +833,9 @@ export default function ComboManagementPage() {
           );
         }
       } else {
-        setSuggestionsError(response?.message || "Failed to load AI suggestions");
+        setSuggestionsError(
+          response?.message || "Failed to load AI suggestions",
+        );
       }
     } catch (error) {
       setSuggestionsError("Failed to load AI suggestions");
@@ -900,7 +969,9 @@ export default function ComboManagementPage() {
     <section className="w-full py-3 px-5">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-[18px] text-gray-700 font-[600]">Combo Management</h2>
+          <h2 className="text-[18px] text-gray-700 font-[600]">
+            Combo Management
+          </h2>
           <p className="text-xs text-gray-500">
             Create, schedule, and monitor bundle performance.
           </p>
@@ -1045,7 +1116,12 @@ export default function ComboManagementPage() {
         </Table>
       </TableContainer>
 
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="lg" fullWidth>
+      <Dialog
+        open={openDialog}
+        onClose={handleCloseDialog}
+        maxWidth="lg"
+        fullWidth
+      >
         <DialogTitle>
           <div className="flex items-center justify-between gap-2">
             <span>{editingCombo ? "Edit Combo" : "Create Combo"}</span>
@@ -1063,7 +1139,9 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.name}
-              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, name: e.target.value }))
+              }
               inputProps={{ maxLength: 140 }}
               helperText="Shown on storefront cards and analytics."
               fullWidth
@@ -1091,7 +1169,10 @@ export default function ComboManagementPage() {
               InputLabelProps={{ shrink: true }}
               value={formData.shortDescription}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, shortDescription: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  shortDescription: e.target.value,
+                }))
               }
               helperText="Short text shown under combo name."
               fullWidth
@@ -1103,7 +1184,12 @@ export default function ComboManagementPage() {
               minRows={2}
               InputLabelProps={{ shrink: true }}
               value={formData.description}
-              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
               helperText="Short summary displayed on combo detail views."
               fullWidth
             />
@@ -1112,7 +1198,9 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.brand}
-              onChange={(e) => setFormData((prev) => ({ ...prev, brand: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, brand: e.target.value }))
+              }
               helperText="Brand text shown above combo title."
               fullWidth
             />
@@ -1121,7 +1209,9 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.category}
-              onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, category: e.target.value }))
+              }
               helperText="Category label shown on combo detail page."
               fullWidth
             />
@@ -1131,7 +1221,12 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.reviewCount}
-              onChange={(e) => setFormData((prev) => ({ ...prev, reviewCount: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  reviewCount: e.target.value,
+                }))
+              }
               helperText="Displayed next to star rating."
               fullWidth
             />
@@ -1140,18 +1235,37 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.sku}
-              onChange={(e) => setFormData((prev) => ({ ...prev, sku: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, sku: e.target.value }))
+              }
               helperText="Leave blank to auto-generate from selected variants."
               fullWidth
             />
             <TextField
-              label="Combo Price Override"
+              label="Combo MRP (Original Price)"
+              type="number"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={formData.originalPrice}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  originalPrice: e.target.value,
+                }))
+              }
+              helperText="Optional MRP shown with strike-through on storefront."
+              fullWidth
+            />
+            <TextField
+              label="Combo Selling Price"
               type="number"
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.price}
-              onChange={(e) => setFormData((prev) => ({ ...prev, price: e.target.value }))}
-              helperText="Optional explicit price value."
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, price: e.target.value }))
+              }
+              helperText="Optional final combo price shown as payable amount."
               fullWidth
             />
             <TextField
@@ -1159,7 +1273,9 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.image}
-              onChange={(e) => setFormData((prev) => ({ ...prev, image: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, image: e.target.value }))
+              }
               helperText="Large hero image (optional)."
               fullWidth
             />
@@ -1168,7 +1284,9 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.thumbnail}
-              onChange={(e) => setFormData((prev) => ({ ...prev, thumbnail: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, thumbnail: e.target.value }))
+              }
               helperText="Square card image for grids."
               fullWidth
             />
@@ -1177,7 +1295,9 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.tags}
-              onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, tags: e.target.value }))
+              }
               helperText="Comma-separated badges like best_seller, festival_deal."
               fullWidth
             />
@@ -1187,7 +1307,9 @@ export default function ComboManagementPage() {
               size="small"
               InputLabelProps={{ shrink: true }}
               value={formData.priority}
-              onChange={(e) => setFormData((prev) => ({ ...prev, priority: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, priority: e.target.value }))
+              }
               helperText="Higher number ranks this combo first."
               fullWidth
             />
@@ -1195,7 +1317,12 @@ export default function ComboManagementPage() {
               <label className="text-xs text-gray-500">Combo Type</label>
               <Select
                 value={formData.comboType}
-                onChange={(e) => setFormData((prev) => ({ ...prev, comboType: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    comboType: e.target.value,
+                  }))
+                }
               >
                 {COMBO_TYPES.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
@@ -1211,7 +1338,12 @@ export default function ComboManagementPage() {
               <label className="text-xs text-gray-500">Pricing Type</label>
               <Select
                 value={formData.pricingType}
-                onChange={(e) => setFormData((prev) => ({ ...prev, pricingType: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    pricingType: e.target.value,
+                  }))
+                }
               >
                 {PRICING_TYPES.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
@@ -1230,7 +1362,10 @@ export default function ComboManagementPage() {
               InputLabelProps={{ shrink: true }}
               value={formData.pricingValue}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, pricingValue: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  pricingValue: e.target.value,
+                }))
               }
               helperText="Enter ₹ amount or % depending on pricing type."
               fullWidth
@@ -1240,7 +1375,9 @@ export default function ComboManagementPage() {
               type="date"
               InputLabelProps={{ shrink: true }}
               value={formData.startDate}
-              onChange={(e) => setFormData((prev) => ({ ...prev, startDate: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, startDate: e.target.value }))
+              }
               helperText="Optional start date for scheduling."
               fullWidth
             />
@@ -1249,7 +1386,9 @@ export default function ComboManagementPage() {
               type="date"
               InputLabelProps={{ shrink: true }}
               value={formData.endDate}
-              onChange={(e) => setFormData((prev) => ({ ...prev, endDate: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, endDate: e.target.value }))
+              }
               helperText="Optional end date for scheduling."
               fullWidth
             />
@@ -1257,7 +1396,12 @@ export default function ComboManagementPage() {
               <label className="text-xs text-gray-500">Stock Mode</label>
               <Select
                 value={formData.stockMode}
-                onChange={(e) => setFormData((prev) => ({ ...prev, stockMode: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    stockMode: e.target.value,
+                  }))
+                }
               >
                 <MenuItem value="auto">Auto</MenuItem>
                 <MenuItem value="manual">Manual</MenuItem>
@@ -1273,7 +1417,10 @@ export default function ComboManagementPage() {
               InputLabelProps={{ shrink: true }}
               value={formData.stockQuantity}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, stockQuantity: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  stockQuantity: e.target.value,
+                }))
               }
               helperText="Only used when Stock Mode is Manual."
               fullWidth
@@ -1286,7 +1433,10 @@ export default function ComboManagementPage() {
               InputLabelProps={{ shrink: true }}
               value={formData.minOrderQuantity}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, minOrderQuantity: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  minOrderQuantity: e.target.value,
+                }))
               }
               helperText="Minimum bundles per order."
               fullWidth
@@ -1298,7 +1448,10 @@ export default function ComboManagementPage() {
               InputLabelProps={{ shrink: true }}
               value={formData.maxPerOrder}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, maxPerOrder: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  maxPerOrder: e.target.value,
+                }))
               }
               helperText="0 means no per-order limit."
               fullWidth
@@ -1308,7 +1461,9 @@ export default function ComboManagementPage() {
               <Select
                 multiple
                 value={formData.segments}
-                onChange={(e) => setFormData((prev) => ({ ...prev, segments: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, segments: e.target.value }))
+                }
               >
                 {SEGMENT_OPTIONS.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
@@ -1326,7 +1481,10 @@ export default function ComboManagementPage() {
               InputLabelProps={{ shrink: true }}
               value={formData.segmentCategories}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, segmentCategories: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  segmentCategories: e.target.value,
+                }))
               }
               helperText="Restrict combo visibility to category IDs."
               fullWidth
@@ -1346,7 +1504,12 @@ export default function ComboManagementPage() {
               <label className="text-xs text-gray-500">Demand Status</label>
               <Select
                 value={formData.demandStatus}
-                onChange={(e) => setFormData((prev) => ({ ...prev, demandStatus: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    demandStatus: e.target.value,
+                  }))
+                }
               >
                 <MenuItem value="NORMAL">Normal</MenuItem>
                 <MenuItem value="HIGH">High Demand</MenuItem>
@@ -1359,7 +1522,10 @@ export default function ComboManagementPage() {
               InputLabelProps={{ shrink: true }}
               value={formData.adminStarRating}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, adminStarRating: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  adminStarRating: e.target.value,
+                }))
               }
               inputProps={{ min: 0, max: 5, step: 0.1 }}
               helperText="0 to 5"
@@ -1369,7 +1535,10 @@ export default function ComboManagementPage() {
 
           <div className="flex flex-col gap-2 mt-2">
             <h3 className="text-sm font-semibold text-gray-700">
-              Combo Images <span className="text-xs font-normal text-gray-500">(Max 10, first image = thumbnail)</span>
+              Combo Images{" "}
+              <span className="text-xs font-normal text-gray-500">
+                (Max 10, first image = thumbnail)
+              </span>
             </h3>
             <div className="flex items-center gap-3 flex-wrap">
               {comboImages.map((img, index) => (
@@ -1409,7 +1578,10 @@ export default function ComboManagementPage() {
                   <Switch
                     checked={formData.isActive}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, isActive: e.target.checked }))
+                      setFormData((prev) => ({
+                        ...prev,
+                        isActive: e.target.checked,
+                      }))
                     }
                   />
                 }
@@ -1425,7 +1597,10 @@ export default function ComboManagementPage() {
                   <Switch
                     checked={formData.isVisible}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, isVisible: e.target.checked }))
+                      setFormData((prev) => ({
+                        ...prev,
+                        isVisible: e.target.checked,
+                      }))
                     }
                   />
                 }
@@ -1440,7 +1615,10 @@ export default function ComboManagementPage() {
                 <Switch
                   checked={formData.isFeatured}
                   onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, isFeatured: e.target.checked }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      isFeatured: e.target.checked,
+                    }))
                   }
                 />
               }
@@ -1451,7 +1629,10 @@ export default function ComboManagementPage() {
                 <Switch
                   checked={formData.isBestSeller}
                   onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, isBestSeller: e.target.checked }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      isBestSeller: e.target.checked,
+                    }))
                   }
                 />
               }
@@ -1462,7 +1643,10 @@ export default function ComboManagementPage() {
                 <Switch
                   checked={formData.isExclusive}
                   onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, isExclusive: e.target.checked }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      isExclusive: e.target.checked,
+                    }))
                   }
                 />
               }
@@ -1477,18 +1661,28 @@ export default function ComboManagementPage() {
             </p>
             {comboItems.map((item, index) => {
               const product = productMap.get(String(item.productId || ""));
-              const variants = Array.isArray(product?.variants) ? product.variants : [];
+              const variants = Array.isArray(product?.variants)
+                ? product.variants
+                : [];
               return (
-                <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div
+                  key={index}
+                  className="grid grid-cols-1 md:grid-cols-4 gap-3"
+                >
                   <div className="flex flex-col gap-1">
                     <Select
                       value={item.productId}
-                      onChange={(e) => handleItemChange(index, "productId", e.target.value)}
+                      onChange={(e) =>
+                        handleItemChange(index, "productId", e.target.value)
+                      }
                       displayEmpty
                     >
                       <MenuItem value="">Select Product</MenuItem>
                       {products.map((productItem) => (
-                        <MenuItem key={productItem._id || productItem.id} value={productItem._id || productItem.id}>
+                        <MenuItem
+                          key={productItem._id || productItem.id}
+                          value={productItem._id || productItem.id}
+                        >
                           {productItem.name}
                         </MenuItem>
                       ))}
@@ -1500,7 +1694,9 @@ export default function ComboManagementPage() {
                   <div className="flex flex-col gap-1">
                     <Select
                       value={item.variantId || ""}
-                      onChange={(e) => handleItemChange(index, "variantId", e.target.value)}
+                      onChange={(e) =>
+                        handleItemChange(index, "variantId", e.target.value)
+                      }
                       displayEmpty
                       disabled={!variants.length}
                     >
@@ -1519,7 +1715,9 @@ export default function ComboManagementPage() {
                     label="Quantity"
                     type="number"
                     value={item.quantity}
-                    onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
+                    onChange={(e) =>
+                      handleItemChange(index, "quantity", e.target.value)
+                    }
                     helperText="Quantity per combo."
                   />
                   <Tooltip title="Remove this product from the combo">
@@ -1557,7 +1755,11 @@ export default function ComboManagementPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button onClick={handleSaveCombo} variant="contained" className="!bg-blue-600">
+          <Button
+            onClick={handleSaveCombo}
+            variant="contained"
+            className="!bg-blue-600"
+          >
             {editingCombo ? "Update Combo" : "Create Combo"}
           </Button>
         </DialogActions>
@@ -1601,7 +1803,7 @@ export default function ComboManagementPage() {
               <p className="text-lg font-semibold text-gray-900">
                 {drafts.length > 0
                   ? drafts.length
-                  : suggestionsMeta?.generated ?? (suggestions.length || 0)}
+                  : (suggestionsMeta?.generated ?? (suggestions.length || 0))}
               </p>
             </div>
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
@@ -1609,7 +1811,9 @@ export default function ComboManagementPage() {
                 Avg AI Score
               </p>
               <p className="text-lg font-semibold text-gray-900">
-                {drafts.length > 0 ? draftStats.avgScore : suggestionStats.avgScore}
+                {drafts.length > 0
+                  ? draftStats.avgScore
+                  : suggestionStats.avgScore}
               </p>
             </div>
           </div>
@@ -1629,29 +1833,42 @@ export default function ComboManagementPage() {
               {suggestionsError}
             </div>
           )}
-          {!suggestionsLoading && !suggestionsError && suggestions.length === 0 && (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-              No AI suggestions yet. Place a few paid orders to build pairings.
-            </div>
-          )}
+          {!suggestionsLoading &&
+            !suggestionsError &&
+            suggestions.length === 0 && (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                No AI suggestions yet. Place a few paid orders to build
+                pairings.
+              </div>
+            )}
           {!suggestionsLoading && suggestions.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {suggestions.map((suggestion) => {
-                const originalTotal = round2(Number(suggestion.originalTotal || 0));
+                const originalTotal = round2(
+                  Number(suggestion.originalTotal || 0),
+                );
                 const comboPrice = round2(Number(suggestion.comboPrice || 0));
                 const savings = round2(
-                  Number(suggestion.totalSavings || originalTotal - comboPrice || 0),
+                  Number(
+                    suggestion.totalSavings || originalTotal - comboPrice || 0,
+                  ),
                 );
                 const discountPercent =
                   originalTotal > 0
-                    ? round2(((originalTotal - comboPrice) / originalTotal) * 100)
+                    ? round2(
+                        ((originalTotal - comboPrice) / originalTotal) * 100,
+                      )
                     : round2(Number(suggestion.discountPercentage || 0));
-                const tags = Array.isArray(suggestion.tags) ? suggestion.tags : [];
+                const tags = Array.isArray(suggestion.tags)
+                  ? suggestion.tags
+                  : [];
                 const itemsPreview = buildItemsPreview(
                   suggestion.items || suggestion.itemsSnapshot || [],
                 );
                 const aiScore = round2(Number(suggestion.aiScore || 0));
-                const comboTypeLabel = resolveComboTypeLabel(suggestion.comboType);
+                const comboTypeLabel = resolveComboTypeLabel(
+                  suggestion.comboType,
+                );
                 return (
                   <div
                     key={suggestion.slug || suggestion.name}
@@ -1763,7 +1980,9 @@ export default function ComboManagementPage() {
             {!draftsLoading && drafts.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 {drafts.map((draft) => {
-                  const originalTotal = round2(Number(draft.originalTotal || 0));
+                  const originalTotal = round2(
+                    Number(draft.originalTotal || 0),
+                  );
                   const comboPrice = round2(Number(draft.suggestedPrice || 0));
                   const savings = round2(
                     Number(
@@ -1776,9 +1995,14 @@ export default function ComboManagementPage() {
                     draft.items || draft.itemsSnapshot || [],
                   );
                   const aiScore = round2(Number(draft.aiScore || 0));
-                  const statusLabel = String(draft.status || "draft").toUpperCase();
+                  const statusLabel = String(
+                    draft.status || "draft",
+                  ).toUpperCase();
                   const comboId =
-                    draft?.comboId?._id || draft?.comboId || draft?.combo?._id || null;
+                    draft?.comboId?._id ||
+                    draft?.comboId ||
+                    draft?.combo?._id ||
+                    null;
                   return (
                     <div
                       key={draft._id}
@@ -1882,7 +2106,10 @@ export default function ComboManagementPage() {
           </div>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleGenerateSuggestions} disabled={suggestionsLoading}>
+          <Button
+            onClick={handleGenerateSuggestions}
+            disabled={suggestionsLoading}
+          >
             Refresh Preview
           </Button>
           <Button
@@ -1905,11 +2132,17 @@ export default function ComboManagementPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={helpOpen} onClose={() => setHelpOpen(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>Combo Management Help</DialogTitle>
         <DialogContent className="space-y-4">
           <p className="text-sm text-gray-600">
-            Use this guide to understand each control and section while creating combos.
+            Use this guide to understand each control and section while creating
+            combos.
           </p>
           {HELP_SECTIONS.map((section) => (
             <div key={section.title} className="space-y-2">

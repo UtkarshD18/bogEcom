@@ -60,8 +60,11 @@ export default function AdminDashboard() {
     lastUserType: "Guest",
   });
   const pulseBucketsRef = useRef([]);
-  const { intervalMs, setIntervalMs, options: refreshOptions } =
-    useLiveRefreshSetting();
+  const {
+    intervalMs,
+    setIntervalMs,
+    options: refreshOptions,
+  } = useLiveRefreshSetting();
 
   const refreshConfig = useMemo(
     () => ({
@@ -100,13 +103,10 @@ export default function AdminDashboard() {
     setLoadingStats(false);
   }, [token]);
 
-  const { trigger: triggerRefresh } = useLiveRefresh(
-    () => {
-      fetchStats();
-      setRefreshKey((prev) => prev + 1);
-    },
-    refreshConfig,
-  );
+  const { trigger: triggerRefresh } = useLiveRefresh(() => {
+    fetchStats();
+    setRefreshKey((prev) => prev + 1);
+  }, refreshConfig);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -488,6 +488,15 @@ export default function AdminDashboard() {
               </div>
             </div>
           </Link>
+        </div>
+
+        <div className="mb-8 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+          <p className="font-semibold">Status logic</p>
+          <p className="mt-1">
+            Pending = pending, pending_payment, in_warehouse. Successful =
+            accepted, confirmed, shipped, out_for_delivery, delivered,
+            completed. Failed = cancelled, rto, rto_completed.
+          </p>
         </div>
 
         {/* Production Dashboard with Charts & Real Data */}

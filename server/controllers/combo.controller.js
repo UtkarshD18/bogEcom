@@ -1,25 +1,20 @@
 ﻿import ComboModel from "../models/combo.model.js";
 import ComboDraftModel from "../models/comboDraft.model.js";
 import ComboOrderModel from "../models/comboOrder.model.js";
-import { AppError, asyncHandler, sendSuccess } from "../utils/errorHandler.js";
 import {
+  applyComboUpdates,
   attachComboAvailability,
   buildComboItemsSnapshot,
   buildComboPricing,
   buildComboSkuFromItems,
   computeComboAvailability,
+  isComboEligibleForSegment,
   normalizeComboItemsPayload,
   normalizeComboTags,
   resolveComboStatus,
   resolveUserSegment,
-  isComboEligibleForSegment,
-  applyComboUpdates,
   upsertComboItems,
 } from "../services/combos/combo.service.js";
-import {
-  getComboSectionsForProduct,
-  getCartUpsellCombos,
-} from "../services/combos/comboRecommendation.service.js";
 import {
   buildComboAnalyticsCharts,
   buildComboAnalyticsReport,
@@ -28,6 +23,12 @@ import {
   resolveRange,
 } from "../services/combos/comboAnalytics.service.js";
 import { generateComboDrafts } from "../services/combos/comboDraft.service.js";
+import {
+  getCartUpsellCombos,
+  getCartUpsellProductSuggestion,
+  getComboSectionsForProduct,
+} from "../services/combos/comboRecommendation.service.js";
+import { AppError, asyncHandler, sendSuccess } from "../utils/errorHandler.js";
 
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -49,7 +50,9 @@ const escapeRegex = (value) =>
   String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const normalizeComboType = (value) => {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!normalized) return "fixed_bundle";
   if (normalized === "mix_match_bundle") return "mix_match";
   if (normalized === "dynamic_bundle") return "dynamic";
@@ -84,10 +87,17 @@ const normalizeGeoTargets = (value) => {
       }
       return null;
     })
-    .filter((target) =>
-      target &&
-      (target.country || target.state || target.city || target.pincode),
+    .filter(
+      (target) =>
+        target &&
+        (target.country || target.state || target.city || target.pincode),
     );
+};
+
+const normalizeNonNegativeNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return parsed;
 };
 
 const buildActiveFilter = () => {
@@ -185,28 +195,73 @@ const parseComboPayload = async (body = {}, { existingCombo = null } = {}) => {
 
   const slugCandidate =
     slugify(String(body?.slug || "").trim()) || slugify(name);
-  const slug = await ensureUniqueSlug(slugCandidate, existingCombo?._id || null);
+  const slug = await ensureUniqueSlug(
+    slugCandidate,
+    existingCombo?._id || null,
+  );
 
-  const itemsPayload = normalizeComboItemsPayload(body?.items || body?.products || []);
+  const itemsPayload = normalizeComboItemsPayload(
+    body?.items || body?.products || [],
+  );
   if (itemsPayload.length === 0) {
     throw new AppError("EMPTY_PRODUCTS", { fieldName: "items" });
   }
 
-  const pricingType = String(body?.pricingType || body?.pricing?.type || "fixed_price").trim();
-  const pricingValue = Math.max(Number(body?.pricingValue ?? body?.pricing?.value ?? 0), 0);
+  const pricingType = String(
+    body?.pricingType || body?.pricing?.type || "fixed_price",
+  ).trim();
+  const pricingValue = Math.max(
+    Number(body?.pricingValue ?? body?.pricing?.value ?? 0),
+    0,
+  );
 
   const { snapshots } = await buildComboItemsSnapshot({ items: itemsPayload });
-  const pricing = buildComboPricing({
+  const calculatedPricing = buildComboPricing({
     items: snapshots,
     pricing: { type: pricingType, value: pricingValue },
   });
 
+  const manualOriginalPrice = normalizeNonNegativeNumber(
+    body?.originalPrice ?? body?.mrp,
+    0,
+  );
+  const manualComboPrice = normalizeNonNegativeNumber(
+    body?.comboPrice ?? body?.price,
+    0,
+  );
+
+  let originalTotal = round2(
+    manualOriginalPrice > 0
+      ? manualOriginalPrice
+      : calculatedPricing.originalTotal,
+  );
+  let comboPrice = round2(
+    manualComboPrice > 0 ? manualComboPrice : calculatedPricing.comboPrice,
+  );
+
+  if (originalTotal <= 0) {
+    originalTotal = round2(calculatedPricing.originalTotal);
+  }
+  if (originalTotal > 0 && comboPrice > originalTotal) {
+    comboPrice = originalTotal;
+  }
+  comboPrice = Math.max(comboPrice, 0);
+
+  const totalSavings = round2(Math.max(originalTotal - comboPrice, 0));
+  const discountPercentage =
+    originalTotal > 0 ? round2((totalSavings / originalTotal) * 100) : 0;
+
   const tags = normalizeComboTags(body?.tags || []);
-  const comboType = normalizeComboType(body?.comboType || body?.type || "fixed_bundle");
-  const stockMode = String(body?.stockMode || body?.stock_mode || "auto").trim();
+  const comboType = normalizeComboType(
+    body?.comboType || body?.type || "fixed_bundle",
+  );
+  const stockMode = String(
+    body?.stockMode || body?.stock_mode || "auto",
+  ).trim();
   const stockQuantity = Math.max(Number(body?.stockQuantity || 0), 0);
   const isActive = body?.isActive !== undefined ? Boolean(body.isActive) : true;
-  const isVisible = body?.isVisible !== undefined ? Boolean(body.isVisible) : true;
+  const isVisible =
+    body?.isVisible !== undefined ? Boolean(body.isVisible) : true;
 
   const startDate = body?.startDate ? new Date(body.startDate) : null;
   const endDate = body?.endDate ? new Date(body.endDate) : null;
@@ -251,21 +306,38 @@ const parseComboPayload = async (body = {}, { existingCombo = null } = {}) => {
   ).trim();
 
   const adminStarRating = Math.max(
-    Math.min(Number(body?.adminStarRating ?? body?.rating ?? existingCombo?.adminStarRating ?? 0), 5),
+    Math.min(
+      Number(
+        body?.adminStarRating ??
+          body?.rating ??
+          existingCombo?.adminStarRating ??
+          0,
+      ),
+      5,
+    ),
     0,
   );
 
-  const comboSkuInput = String(body?.sku || "").trim().toUpperCase();
+  const comboSkuInput = String(body?.sku || "")
+    .trim()
+    .toUpperCase();
   const comboSku = comboSkuInput || buildComboSkuFromItems(snapshots);
 
   const payload = {
     name,
     slug,
     description: String(body?.description || "").trim(),
-    shortDescription: String(body?.shortDescription || body?.short_description || "").trim(),
+    shortDescription: String(
+      body?.shortDescription || body?.short_description || "",
+    ).trim(),
     brand: String(body?.brand || existingCombo?.brand || "").trim(),
-    category: String(body?.category || body?.categoryName || existingCombo?.category || "").trim(),
-    reviewCount: Math.max(Number(body?.reviewCount ?? existingCombo?.reviewCount ?? 0), 0),
+    category: String(
+      body?.category || body?.categoryName || existingCombo?.category || "",
+    ).trim(),
+    reviewCount: Math.max(
+      Number(body?.reviewCount ?? existingCombo?.reviewCount ?? 0),
+      0,
+    ),
     image: comboImage,
     thumbnail: comboThumbnail,
     comboImages,
@@ -273,22 +345,34 @@ const parseComboPayload = async (body = {}, { existingCombo = null } = {}) => {
     sku: comboSku,
     items: snapshots,
     pricing: { type: pricingType, value: pricingValue },
-    originalTotal: pricing.originalTotal,
-    originalPrice: pricing.originalTotal,
-    comboPrice: pricing.comboPrice,
-    price: pricing.comboPrice,
-    totalSavings: pricing.totalSavings,
-    discountPercentage: pricing.discountPercentage,
+    originalTotal,
+    originalPrice: originalTotal,
+    comboPrice,
+    price: comboPrice,
+    totalSavings,
+    discountPercentage,
     comboType,
     tags,
     priority: Number(body?.priority || 0),
     isActive,
     isVisible,
     isFeatured: Boolean(body?.isFeatured ?? existingCombo?.isFeatured ?? false),
-    isBestSeller: Boolean(body?.isBestSeller ?? existingCombo?.isBestSeller ?? false),
-    isExclusive: Boolean(body?.isExclusive ?? body?.isMembersExclusive ?? existingCombo?.isExclusive ?? false),
+    isBestSeller: Boolean(
+      body?.isBestSeller ?? existingCombo?.isBestSeller ?? false,
+    ),
+    isExclusive: Boolean(
+      body?.isExclusive ??
+      body?.isMembersExclusive ??
+      existingCombo?.isExclusive ??
+      false,
+    ),
     demandStatus:
-      String(body?.demandStatus || body?.isHighDemand || existingCombo?.demandStatus || "NORMAL")
+      String(
+        body?.demandStatus ||
+          body?.isHighDemand ||
+          existingCombo?.demandStatus ||
+          "NORMAL",
+      )
         .trim()
         .toUpperCase() === "HIGH"
         ? "HIGH"
@@ -303,10 +387,17 @@ const parseComboPayload = async (body = {}, { existingCombo = null } = {}) => {
     minOrderQuantity: Math.max(Number(body?.minOrderQuantity || 1), 1),
     maxPerOrder: Math.max(Number(body?.maxPerOrder || 0), 0),
     source: body?.source || existingCombo?.source || "admin",
-    status: resolveComboStatus({ isActive, startDate, endDate, status: body?.status || existingCombo?.status }),
+    status: resolveComboStatus({
+      isActive,
+      startDate,
+      endDate,
+      status: body?.status || existingCombo?.status,
+    }),
     segmentTargets,
     aiScore: Number(body?.aiScore || existingCombo?.aiScore || 0),
-    generatedFrom: String(body?.generatedFrom || existingCombo?.generatedFrom || ""),
+    generatedFrom: String(
+      body?.generatedFrom || existingCombo?.generatedFrom || "",
+    ),
   };
 
   return { payload, items: snapshots };
@@ -336,13 +427,19 @@ export const getCombos = asyncHandler(async (req, res) => {
   };
   const sort = sortMap[sortKey] || sortMap.priority;
 
-  let combos = await ComboModel.find(filter).sort(sort).skip(skip).limit(limit).lean();
+  let combos = await ComboModel.find(filter)
+    .sort(sort)
+    .skip(skip)
+    .limit(limit)
+    .lean();
 
   if (req.query.segment || req.user) {
     const segmentInfo = await resolveUserSegment({ userId: req.user || null });
     const filtered = [];
     for (const combo of combos) {
-      const categoryIds = (combo.items || []).map((item) => item.categoryId).filter(Boolean);
+      const categoryIds = (combo.items || [])
+        .map((item) => item.categoryId)
+        .filter(Boolean);
       if (isComboEligibleForSegment(combo, segmentInfo, categoryIds)) {
         filtered.push(combo);
       }
@@ -408,8 +505,12 @@ export const getCartUpsells = asyncHandler(async (req, res) => {
     }))
     .filter((item) => item.productId);
 
-  const suggestions = await getCartUpsellCombos(normalizedItems, { limit: 6 });
-  return sendSuccess(res, { suggestions });
+  const [suggestions, productSuggestion] = await Promise.all([
+    getCartUpsellCombos(normalizedItems, { limit: 6 }),
+    getCartUpsellProductSuggestion(normalizedItems, { limit: 1 }),
+  ]);
+
+  return sendSuccess(res, { suggestions, productSuggestion });
 });
 
 export const createCombo = asyncHandler(async (req, res) => {
@@ -432,7 +533,9 @@ export const updateCombo = asyncHandler(async (req, res) => {
     throw new AppError("NOT_FOUND", { field: "comboId" });
   }
 
-  const { payload, items } = await parseComboPayload(req.body, { existingCombo: existing });
+  const { payload, items } = await parseComboPayload(req.body, {
+    existingCombo: existing,
+  });
 
   Object.assign(existing, payload);
   existing.updatedBy = req.user || null;
@@ -488,8 +591,14 @@ export const toggleCombo = asyncHandler(async (req, res) => {
     throw new AppError("NOT_FOUND", { field: "comboId" });
   }
 
-  combo.isActive = req.body?.isActive !== undefined ? Boolean(req.body.isActive) : !combo.isActive;
-  combo.isVisible = req.body?.isVisible !== undefined ? Boolean(req.body.isVisible) : combo.isVisible;
+  combo.isActive =
+    req.body?.isActive !== undefined
+      ? Boolean(req.body.isActive)
+      : !combo.isActive;
+  combo.isVisible =
+    req.body?.isVisible !== undefined
+      ? Boolean(req.body.isVisible)
+      : combo.isVisible;
   combo.status = resolveComboStatus({
     isActive: combo.isActive,
     startDate: combo.startDate,
@@ -523,7 +632,11 @@ export const getAdminCombos = asyncHandler(async (req, res) => {
 
   const [total, combos] = await Promise.all([
     ComboModel.countDocuments(filter),
-    ComboModel.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(limit).lean(),
+    ComboModel.find(filter)
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
   ]);
 
   return sendSuccess(res, {

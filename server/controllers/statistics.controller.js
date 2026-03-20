@@ -1,20 +1,32 @@
+import CategoryModel from "../models/category.model.js";
 import OrderModel from "../models/order.model.js";
 import ProductModel from "../models/product.model.js";
 import UserModel from "../models/user.model.js";
-import CategoryModel from "../models/category.model.js";
+import { ORDER_STATUS } from "../utils/orderStatus.js";
 
 const getEffectiveAmountExpression = {
   $cond: [{ $gt: ["$finalAmount", 0] }, "$finalAmount", "$totalAmt"],
 };
-const DELIVERED_ORDER_FILTER = { order_status: "delivered" };
-const SHIPMENT_TRANSFERRED_FILTER = {
-  shipping_provider: "XPRESSBEES",
-  $or: [
-    { awb_number: { $exists: true, $nin: [null, ""] } },
-    { awbNumber: { $exists: true, $nin: [null, ""] } },
-    { shipmentId: { $exists: true, $nin: [null, ""] } },
-  ],
-};
+const SUCCESS_ORDER_STATUSES = [
+  ORDER_STATUS.ACCEPTED,
+  ORDER_STATUS.CONFIRMED_LEGACY,
+  ORDER_STATUS.SHIPPED,
+  ORDER_STATUS.OUT_FOR_DELIVERY,
+  ORDER_STATUS.DELIVERED,
+  ORDER_STATUS.COMPLETED,
+];
+
+const PENDING_ORDER_STATUSES = [
+  ORDER_STATUS.PENDING,
+  ORDER_STATUS.PAYMENT_PENDING,
+  ORDER_STATUS.IN_WAREHOUSE,
+];
+
+const FAILED_ORDER_STATUSES = [
+  ORDER_STATUS.CANCELLED,
+  ORDER_STATUS.RTO,
+  ORDER_STATUS.RTO_COMPLETED,
+];
 
 /**
  * Statistics Controller
@@ -30,21 +42,22 @@ const SHIPMENT_TRANSFERRED_FILTER = {
 export const getDashboardStats = async (req, res) => {
   try {
     const { period = "month" } = req.query; // month, quarter, year, allTime
-    const orderBaseFilter = { order_status: { $ne: "cancelled" } };
+    const orderBaseFilter = { purchaseOrder: null };
     const successfulOrdersFilter = {
       ...orderBaseFilter,
-      ...SHIPMENT_TRANSFERRED_FILTER,
+      order_status: { $in: SUCCESS_ORDER_STATUSES },
     };
-    const revenueFilter = successfulOrdersFilter;
+    const revenueFilter = {
+      ...successfulOrdersFilter,
+      payment_status: "paid",
+    };
     const pendingOrdersFilter = {
       ...orderBaseFilter,
-      payment_status: { $ne: "failed" },
-      $nor: [SHIPMENT_TRANSFERRED_FILTER],
+      order_status: { $in: PENDING_ORDER_STATUSES },
     };
     const failedOrdersFilter = {
       ...orderBaseFilter,
-      payment_status: "failed",
-      $nor: [SHIPMENT_TRANSFERRED_FILTER],
+      order_status: { $in: FAILED_ORDER_STATUSES },
     };
 
     // Calculate date range based on period
@@ -124,10 +137,16 @@ export const getDashboardStats = async (req, res) => {
         {
           $addFields: {
             trackFlag: {
-              $ifNull: ["$track_inventory", { $ifNull: ["$trackInventory", true] }],
+              $ifNull: [
+                "$track_inventory",
+                { $ifNull: ["$trackInventory", true] },
+              ],
             },
             threshold: {
-              $ifNull: ["$low_stock_threshold", { $ifNull: ["$lowStockThreshold", 5] }],
+              $ifNull: [
+                "$low_stock_threshold",
+                { $ifNull: ["$lowStockThreshold", 5] },
+              ],
             },
           },
         },
@@ -385,7 +404,11 @@ export const getOrderStatus = async (req, res) => {
           count: { $sum: 1 },
           totalRevenue: {
             $sum: {
-              $cond: [{ $gt: ["$finalAmount", 0] }, "$finalAmount", "$totalAmt"],
+              $cond: [
+                { $gt: ["$finalAmount", 0] },
+                "$finalAmount",
+                "$totalAmt",
+              ],
             },
           },
         },
