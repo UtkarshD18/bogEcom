@@ -160,6 +160,11 @@ const resolveComboTypeLabel = (value) => {
   return String(value || "fixed_bundle").replace(/_/g, " ");
 };
 
+const resolvePrice = (source, fallback = 0) => {
+  const parsed = Number(source);
+  return Number.isFinite(parsed) ? round2(parsed) : fallback;
+};
+
 const HELP_SECTIONS = [
   {
     title: "Toolbar Buttons",
@@ -860,17 +865,19 @@ export default function ComboManagementPage() {
         token,
       );
       if (response?.success) {
+        const createdSuggestions = Array.isArray(response?.data?.suggestions)
+          ? response.data.suggestions
+          : [];
         const created = Array.isArray(response?.data?.suggestions)
           ? response.data.suggestions.length
           : Number(response?.data?.generated || 0);
         toast.success(
           `${created} AI combo suggestion${created === 1 ? "" : "s"} created`,
         );
-        setSuggestionsOpen(false);
-        setSuggestions([]);
-        setSuggestionsMeta(null);
+        setSuggestions(createdSuggestions);
+        setSuggestionsMeta(response?.data || null);
         fetchCombos();
-        fetchDrafts();
+        await fetchDrafts();
       } else {
         setSuggestionsError(response?.message || "Failed to create AI combos");
       }
@@ -1002,6 +1009,11 @@ export default function ComboManagementPage() {
               </Button>
             </span>
           </Tooltip>
+          {drafts.length > 0 && (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+              {drafts.length} AI draft{drafts.length === 1 ? "" : "s"} ready
+            </span>
+          )}
           <Tooltip title="Create a new combo bundle">
             <span>
               <Button
@@ -1768,7 +1780,7 @@ export default function ComboManagementPage() {
       <Dialog
         open={suggestionsOpen}
         onClose={() => setSuggestionsOpen(false)}
-        maxWidth="md"
+        maxWidth="lg"
         fullWidth
       >
         <DialogTitle>
@@ -1786,7 +1798,7 @@ export default function ComboManagementPage() {
             </span>
           </div>
         </DialogTitle>
-        <DialogContent className="space-y-5">
+        <DialogContent dividers className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
               <p className="text-[10px] uppercase tracking-wider text-gray-500">
@@ -1844,21 +1856,27 @@ export default function ComboManagementPage() {
           {!suggestionsLoading && suggestions.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {suggestions.map((suggestion) => {
-                const originalTotal = round2(
-                  Number(suggestion.originalTotal || 0),
+                const originalTotal = resolvePrice(
+                  suggestion.originalTotal ?? suggestion.originalPrice,
+                  0,
                 );
-                const comboPrice = round2(Number(suggestion.comboPrice || 0));
+                const comboPrice = resolvePrice(
+                  suggestion.suggestedPrice ??
+                    suggestion.comboPrice ??
+                    suggestion.price,
+                  0,
+                );
                 const savings = round2(
+                  Number(suggestion.totalSavings ?? originalTotal - comboPrice),
+                );
+                const discountPercent = round2(
                   Number(
-                    suggestion.totalSavings || originalTotal - comboPrice || 0,
+                    suggestion.discountPercentage ??
+                      (originalTotal > 0
+                        ? ((originalTotal - comboPrice) / originalTotal) * 100
+                        : 0),
                   ),
                 );
-                const discountPercent =
-                  originalTotal > 0
-                    ? round2(
-                        ((originalTotal - comboPrice) / originalTotal) * 100,
-                      )
-                    : round2(Number(suggestion.discountPercentage || 0));
                 const tags = Array.isArray(suggestion.tags)
                   ? suggestion.tags
                   : [];
@@ -1914,7 +1932,7 @@ export default function ComboManagementPage() {
                           </div>
                         )}
                         <div className="mt-2 flex items-center gap-2 text-xs">
-                          {originalTotal > comboPrice && (
+                          {originalTotal > 0 && originalTotal > comboPrice && (
                             <span className="text-gray-400 line-through">
                               ₹{originalTotal}
                             </span>
@@ -2036,15 +2054,15 @@ export default function ComboManagementPage() {
                           <div className="mt-2 flex items-center gap-2 text-xs">
                             {originalTotal > comboPrice && (
                               <span className="text-gray-400 line-through">
-                                â‚¹{originalTotal}
+                                ₹{originalTotal}
                               </span>
                             )}
                             <span className="text-gray-900 font-semibold">
-                              â‚¹{comboPrice}
+                              ₹{comboPrice}
                             </span>
                             {savings > 0 && (
                               <span className="text-emerald-600">
-                                Save â‚¹{savings}
+                                Save ₹{savings}
                               </span>
                             )}
                           </div>
@@ -2126,7 +2144,9 @@ export default function ComboManagementPage() {
             onClick={handleCreateSuggestions}
             disabled={suggestionsLoading || suggestions.length === 0}
           >
-            Create Draft Combos
+            {`Create ${suggestions.length || 0} Draft Combo${
+              suggestions.length === 1 ? "" : "s"
+            }`}
           </Button>
           <Button onClick={() => setSuggestionsOpen(false)}>Close</Button>
         </DialogActions>

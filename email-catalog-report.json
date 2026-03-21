@@ -1,0 +1,106 @@
+{
+  "sourceDocx": "D:\\BogEcom\\EMAILS.docx",
+  "parsed": {
+    "detected": [
+      "Email Verification OTP",
+      "Password Reset OTP",
+      "Order Confirmation",
+      "Payment Success",
+      "Payment Reminder",
+      "Order Cancelled",
+      "Feedback Request",
+      "Promotional Email",
+      "Newsletter Welcome",
+      "Support Ticket Update"
+    ],
+    "fieldsByType": {
+      "Order Confirmation": [
+        "template",
+        "trigger",
+        "audience",
+        "fields",
+        "format",
+        "pay_now_link"
+      ],
+      "Payment Success": [
+        "subject",
+        "template",
+        "trigger",
+        "audience",
+        "fields",
+        "format",
+        "note"
+      ],
+      "Payment Reminder": [
+        "template",
+        "trigger",
+        "audience",
+        "fields",
+        "format",
+        "pay_now_link"
+      ],
+      "Order Cancelled": [
+        "template",
+        "trigger",
+        "audience",
+        "fields"
+      ],
+      "Feedback Request": [
+        "subject",
+        "template",
+        "trigger",
+        "audience",
+        "fields",
+        "controls",
+        "content"
+      ],
+      "Email Verification OTP": [
+        "subject",
+        "template",
+        "trigger",
+        "audience",
+        "fields",
+        "format"
+      ],
+      "Password Reset OTP": [
+        "subject",
+        "template",
+        "trigger",
+        "audience",
+        "fields"
+      ],
+      "Promotional Email": [
+        "subject",
+        "trigger",
+        "fields",
+        "format"
+      ],
+      "Newsletter Welcome": [
+        "subject",
+        "template",
+        "trigger",
+        "audience",
+        "fields",
+        "format"
+      ],
+      "Support Ticket Update": [
+        "template",
+        "trigger",
+        "audience",
+        "fields",
+        "format",
+        "token_signing",
+        "token_format",
+        "ttl",
+        "order_create"
+      ]
+    },
+    "rawTextLength": 5773
+  },
+  "missingFromDocxDetection": [],
+  "generatedCount": 10,
+  "generatedAt": "2026-03-21T05:58:20.373Z",
+  "outputPdf": "D:\\BogEcom\\email_catalog.pdf",
+  "emailsDir": "D:\\BogEcom\\emails",
+  "screenshotsDir": "D:\\BogEcom\\screenshots"
+}

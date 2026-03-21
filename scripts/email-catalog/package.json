@@ -1,0 +1,14 @@
+{
+  "name": "email-catalog-generator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "mammoth": "^1.8.0",
+    "pdfkit": "^0.17.2",
+    "puppeteer": "^24.6.0"
+  }
+}
