@@ -1,16 +1,16 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Support Ticket Update</title>
+    <title>Order Cancelled</title>
   </head>
   <body
     style="
       margin: 0;
       padding: 0;
       background: #f6f1ea;
-      font-family: &quot;Segoe UI&quot;, Arial, sans-serif;
+      font-family: 'Segoe UI', Arial, sans-serif;
       color: #1c1c1c;
     "
   >
@@ -35,7 +35,7 @@
               <td
                 style="
                   padding: 24px 28px;
-                  background: linear-gradient(135deg, #c1591c 0%, #7c3f15 100%);
+                  background: linear-gradient(135deg, #6b3f2a 0%, #3f2a20 100%);
                   color: #ffffff;
                 "
               >
@@ -50,54 +50,67 @@
                   HealthyOneGram
                 </div>
                 <h1 style="margin: 8px 0 0; font-size: 26px; line-height: 1.2">
-                  Support Ticket Update
+                  Order Cancelled
                 </h1>
                 <p style="margin: 8px 0 0; font-size: 14px; opacity: 0.95">
-                  Your ticket has a new update from our team.
+                  Your order has been cancelled.
                 </p>
               </td>
             </tr>
             <tr>
               <td style="padding: 26px 28px">
-                <p style="margin: 0 0 12px">
-                  Hello <strong>{{customer_name}}</strong>,
+                <p style="margin: 0 0 6px">
+                  Hello <strong>Piyush</strong>,
                 </p>
                 <p style="margin: 0 0 12px">
-                  Ticket <strong>{{ticket_id}}</strong> is now
-                  <strong>{{status}}</strong>.
-                </p>
-                <p style="margin: 0 0 14px">
-                  Updated at: <strong>{{updated_at}}</strong>
+                  Order No. <strong>H1G2526/0004</strong> has been cancelled.
                 </p>
 
                 <div
                   style="
                     background: #f9f5f0;
-                    border-left: 4px solid #c1591c;
+                    border-left: 4px solid #6b3f2a;
                     padding: 12px 14px;
                     border-radius: 12px;
                     margin: 12px 0 16px;
                   "
                 >
-                  <p style="margin: 0 0 8px; font-weight: 700">Admin Reply</p>
-                  <pre
-                    style="
-                      white-space: pre-wrap;
-                      background: #fff;
-                      padding: 12px;
-                      border-radius: 8px;
-                      margin: 0;
-                      font-family: &quot;Segoe UI&quot;, Arial, sans-serif;
-                    "
-                  >
-{{admin_reply}}</pre
-                  >
+                  <p style="margin: 0 0 6px; font-weight: 700">Order Summary</p>
+                  <p style="margin: 0; font-size: 13px; color: #51443a">
+                    Reference Order ID: <strong>H1G2526/0004</strong><br />
+                    Order date: <strong>21 March 2026</strong><br />
+                    Status: <strong>Cancelled</strong>
+                  </p>
                 </div>
 
-                <p style="margin: 0; font-size: 13px; color: #6b5b4d">
-                  You can continue on
-                  <a href="{{support_url}}" style="color: #7c3f15"
-                    >{{support_url}}</a
+                <h3 style="margin: 18px 0 10px; font-size: 16px">
+                  Items in your order
+                </h3>
+                <div
+                  style="
+                    background: #ffffff;
+                    border: 1px solid #ece3d8;
+                    border-radius: 12px;
+                    padding: 12px;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    white-space: pre-line;
+                  "
+                >
+                  Crunchy Peanut Butter
+                </div>
+
+                <p style="margin: 16px 0 0; font-size: 13px; color: #6b5b4d">
+                  Need help or want to place a new order?
+                  <a href="https://healthyonegram.com" style="color: #6b3f2a"
+                    >Visit our store</a
+                  >
+                  or contact support.
+                </p>
+                <p style="margin: 6px 0 0; font-size: 13px; color: #6b5b4d">
+                  Support:
+                  <a href="https://healthyonegram.com/support" style="color: #6b3f2a"
+                    >support@healthyonegram.com</a
                   >
                 </p>
               </td>
@@ -112,7 +125,7 @@
                 "
               >
                 <p style="margin: 0">
-                  &copy; {{year}} HealthyOneGram customer support.
+                  &copy; 2026 HealthyOneGram. All rights reserved.
                 </p>
               </td>
             </tr>
