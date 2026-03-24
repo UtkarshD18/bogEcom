@@ -7,6 +7,7 @@ import Category from "../models/category.model.js";
 import Partner from "../models/partner.model.js";
 import PartnerApiKey from "../models/partnerApiKey.model.js";
 import Product from "../models/product.model.js";
+import { getPartnerRateLimitSnapshot } from "../middlewares/partnerApiAuth.js";
 
 const SITE_URL =
   String(process.env.NEXT_PUBLIC_SITE_URL || process.env.CLIENT_URL || "https://healthyonegram.com")
@@ -345,6 +346,125 @@ const buildPartnerGuidePdfBuffer = ({ baseUrl, endpoints, sampleCurl }) =>
       doc.y,
       { width: tableWidth },
     );
+
+    doc.end();
+  });
+
+const buildPartnerCredentialPdfBuffer = ({
+  baseUrl,
+  guideUrl,
+  guidePdfUrl,
+  partnerName,
+  contactEmail,
+  apiKey,
+  sampleCurl,
+}) =>
+  new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 42 });
+    const chunks = [];
+    const logoPath = resolvePartnerGuideLogoPath();
+
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+    doc.rect(42, 42, pageWidth, 68).fill("#0f172a");
+    if (logoPath) {
+      try {
+        doc.image(logoPath, 52, 54, { fit: [34, 34], align: "left" });
+      } catch {
+      }
+    }
+
+    doc
+      .fillColor("#ffffff")
+      .font("Helvetica-Bold")
+      .fontSize(18)
+      .text("HealthyOneGram Partner Credentials", logoPath ? 94 : 56, 58);
+    doc
+      .font("Helvetica")
+      .fontSize(10)
+      .text("Share this only with the intended receiver over a secure channel", logoPath ? 94 : 56, 82);
+
+    doc.moveDown(4.4);
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(12).text("Partner");
+    doc
+      .moveDown(0.3)
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor("#334155")
+      .text(`Name: ${String(partnerName || "").trim() || "-"}`)
+      .text(`Email: ${String(contactEmail || "").trim() || "-"}`)
+      .text(`Generated: ${new Date().toLocaleString("en-IN")}`);
+
+    doc.moveDown(0.8);
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(12).text("API Base");
+    doc
+      .moveDown(0.25)
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor("#334155")
+      .text(baseUrl, { width: pageWidth });
+
+    doc.moveDown(0.8);
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(12).text("API Key");
+    doc.moveDown(0.2);
+    doc.rect(doc.page.margins.left, doc.y, pageWidth, 44).fill("#f8fafc");
+    doc
+      .fillColor("#0f172a")
+      .font("Helvetica")
+      .fontSize(10)
+      .text(String(apiKey || "").trim() || "-", doc.page.margins.left + 8, doc.y + 13, {
+        width: pageWidth - 16,
+      });
+
+    doc.moveDown(2.9);
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(12).text("How receiver uses this");
+    doc
+      .moveDown(0.3)
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor("#334155")
+      .text("1) Save API key securely (password manager or backend secret store).")
+      .text("2) Use header: x-api-key: YOUR_PARTNER_API_KEY")
+      .text("3) Test: GET /health")
+      .text("4) Start with GET /products?limit=20");
+
+    doc.moveDown(0.8);
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(12).text("Links");
+    doc
+      .moveDown(0.3)
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor("#334155")
+      .text(`Guide: ${guideUrl}`)
+      .text(`Guide PDF: ${guidePdfUrl}`);
+
+    doc.moveDown(0.8);
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(12).text("Sample cURL");
+    doc.moveDown(0.2);
+    doc.rect(doc.page.margins.left, doc.y, pageWidth, 52).fill("#0f172a");
+    doc
+      .fillColor("#e2e8f0")
+      .font("Helvetica")
+      .fontSize(9)
+      .text(sampleCurl, doc.page.margins.left + 8, doc.y + 16, {
+        width: pageWidth - 16,
+      });
+
+    doc.moveDown(3.2);
+    doc
+      .fillColor("#64748b")
+      .font("Helvetica")
+      .fontSize(8.5)
+      .text(
+        `Security: API key is shown once. Rotate key immediately if leaked. Support: ${SUPPORT_EMAIL} • ${SUPPORT_PHONE}`,
+        doc.page.margins.left,
+        doc.y,
+        { width: pageWidth },
+      );
 
     doc.end();
   });
@@ -884,6 +1004,11 @@ export const adminListPartners = async (_req, res) => {
       success: true,
       data: partners.map((partner) => {
         const key = keyByPartner.get(String(partner._id));
+        const rateLimit = getPartnerRateLimitSnapshot({
+          partnerId: String(partner._id),
+          keyPrefix: key?.keyPrefix || "",
+          configuredRateLimitPerMinute: partner.rateLimitPerMinute,
+        });
         return {
           id: String(partner._id),
           name: partner.name,
@@ -891,6 +1016,7 @@ export const adminListPartners = async (_req, res) => {
           status: partner.status,
           scopes: partner.scopes,
           rateLimitPerMinute: partner.rateLimitPerMinute,
+          rateLimit,
           keyPrefix: key?.keyPrefix || null,
           keyCreatedAt: key?.createdAt || null,
           keyLastUsedAt: key?.lastUsedAt || null,
@@ -1097,6 +1223,61 @@ export const adminDeletePartner = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to delete partner",
+    });
+  }
+};
+
+export const adminGeneratePartnerCredentialPdf = async (req, res) => {
+  try {
+    const partnerId = String(req.params?.partnerId || "").trim();
+    const partner = await Partner.findById(partnerId).lean();
+    if (!partner) {
+      return res.status(404).json({
+        success: false,
+        message: "Partner not found",
+      });
+    }
+
+    const apiKey = String(req.body?.apiKey || "").trim();
+    if (!apiKey || !apiKey.startsWith("hogp_")) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid API key is required to generate credential PDF",
+      });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get("host")}/api/v1/partner`;
+    const guideUrl = `${baseUrl}/guide`;
+    const guidePdfUrl = `${baseUrl}/guide.pdf`;
+    const sampleCurl = `curl -X GET "${baseUrl}/products?limit=20" -H "x-api-key: ${apiKey}"`;
+
+    const pdfBuffer = await buildPartnerCredentialPdfBuffer({
+      baseUrl,
+      guideUrl,
+      guidePdfUrl,
+      partnerName: partner.name,
+      contactEmail: partner.contactEmail,
+      apiKey,
+      sampleCurl,
+    });
+
+    const safeName = String(partner.name || "partner")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "partner";
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="healthyonegram-partner-credentials-${safeName}.pdf"`,
+    );
+    return res.status(200).send(pdfBuffer);
+  } catch (error) {
+    console.error("adminGeneratePartnerCredentialPdf error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate partner credential PDF",
     });
   }
 };

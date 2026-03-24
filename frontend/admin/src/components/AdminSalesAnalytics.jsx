@@ -49,7 +49,7 @@ export default function AdminSalesAnalytics({ token }) {
   const [chartInterval, setChartInterval] = useState("daily");
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [includeRtoExport, setIncludeRtoExport] = useState(false);
+  const [includeRto, setIncludeRto] = useState(false);
   const [error, setError] = useState("");
 
   const queryString = useMemo(() => {
@@ -58,9 +58,10 @@ export default function AdminSalesAnalytics({ token }) {
     if (endDate) params.set("endDate", endDate);
     params.set("page", String(page));
     params.set("limit", String(limit));
+    if (includeRto) params.set("includeRto", "true");
     if (search) params.set("search", search);
     return params.toString();
-  }, [startDate, endDate, page, limit, search]);
+  }, [startDate, endDate, page, limit, includeRto, search]);
 
   const fetchReport = useCallback(async () => {
     if (!token || !startDate || !endDate) return;
@@ -116,7 +117,7 @@ export default function AdminSalesAnalytics({ token }) {
       params.set("startDate", startDate);
       params.set("endDate", endDate);
       if (search) params.set("search", search);
-      if (includeRtoExport) params.set("includeRto", "true");
+      if (includeRto) params.set("includeRto", "true");
       const url = buildApiUrl(`/api/admin/orders/export?${params.toString()}`);
       const response = await fetch(url, {
         method: "GET",
@@ -154,18 +155,29 @@ export default function AdminSalesAnalytics({ token }) {
     return <LoadingSpinner label="Loading sales analytics..." />;
   }
 
+  const chartSummary = chartData.reduce(
+    (acc, point) => {
+      acc.confirmed += Number(point?.confirmed || 0);
+      acc.rto += Number(point?.rto || 0);
+      return acc;
+    },
+    { confirmed: 0, rto: 0 },
+  );
+
+  const reportRows = Number(pagination.total || 0);
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Sales Analytics</h1>
             <p className="text-sm text-gray-600">
               Monitor confirmed vs RTO orders and export detailed reports.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <div className="flex flex-col">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex min-w-42.5 flex-col">
               <label className="text-xs font-medium text-gray-600 mb-1">
                 Start Date
               </label>
@@ -176,10 +188,10 @@ export default function AdminSalesAnalytics({ token }) {
                   setStartDate(event.target.value);
                   setPage(1);
                 }}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
               />
             </div>
-            <div className="flex flex-col">
+            <div className="flex min-w-42.5 flex-col">
               <label className="text-xs font-medium text-gray-600 mb-1">
                 End Date
               </label>
@@ -190,10 +202,10 @@ export default function AdminSalesAnalytics({ token }) {
                   setEndDate(event.target.value);
                   setPage(1);
                 }}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
               />
             </div>
-            <div className="flex flex-col">
+            <div className="flex min-w-60 flex-col">
               <label className="text-xs font-medium text-gray-600 mb-1">
                 Search
               </label>
@@ -206,7 +218,7 @@ export default function AdminSalesAnalytics({ token }) {
                     if (event.key === "Enter") handleSearch();
                   }}
                   placeholder="Order ID or Product ID"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[220px]"
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-55 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
                 />
                 <button
                   type="button"
@@ -221,8 +233,11 @@ export default function AdminSalesAnalytics({ token }) {
               <label className="flex items-center gap-2 text-xs text-gray-600 mb-2">
                 <input
                   type="checkbox"
-                  checked={includeRtoExport}
-                  onChange={(event) => setIncludeRtoExport(event.target.checked)}
+                  checked={includeRto}
+                  onChange={(event) => {
+                    setIncludeRto(event.target.checked);
+                    setPage(1);
+                  }}
                   className="h-4 w-4 rounded border-gray-300"
                 />
                 Include RTO orders
@@ -248,6 +263,21 @@ export default function AdminSalesAnalytics({ token }) {
             {error}
           </div>
         ) : null}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+            <p className="text-xs font-medium text-blue-700">Confirmed (range)</p>
+            <p className="mt-1 text-2xl font-semibold text-blue-900">{chartSummary.confirmed}</p>
+          </div>
+          <div className="rounded-xl border border-orange-100 bg-orange-50/60 p-4">
+            <p className="text-xs font-medium text-orange-700">RTO (range)</p>
+            <p className="mt-1 text-2xl font-semibold text-orange-900">{chartSummary.rto}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-xs font-medium text-gray-600">Report rows</p>
+            <p className="mt-1 text-2xl font-semibold text-gray-900">{reportRows}</p>
+          </div>
+        </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <SalesChart data={chartData} interval={chartInterval} />

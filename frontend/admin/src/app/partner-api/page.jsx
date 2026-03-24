@@ -60,8 +60,10 @@ const PartnerApiPage = () => {
   const [rateLimitPerMinute, setRateLimitPerMinute] = useState("120");
   const [createLoading, setCreateLoading] = useState(false);
   const [newlyIssuedKey, setNewlyIssuedKey] = useState("");
+  const [newlyIssuedPartnerId, setNewlyIssuedPartnerId] = useState("");
   const [testApiKey, setTestApiKey] = useState("");
   const [isTestingApiKey, setIsTestingApiKey] = useState(false);
+  const [isDownloadingCredentialPdf, setIsDownloadingCredentialPdf] = useState(false);
   const [apiTestResult, setApiTestResult] = useState(null);
 
   const partnerApiBase = useMemo(() => {
@@ -152,7 +154,9 @@ const PartnerApiPage = () => {
       setScopesInput(defaultScopes.join(", "));
       setRateLimitPerMinute("120");
       const createdApiKey = String(response?.data?.apiKey || "");
+      const createdPartnerId = String(response?.data?.partner?.id || "");
       setNewlyIssuedKey(createdApiKey);
+      setNewlyIssuedPartnerId(createdPartnerId);
       setTestApiKey(createdApiKey);
       setApiTestResult(null);
       await loadPartners();
@@ -176,6 +180,7 @@ const PartnerApiPage = () => {
       toast.success("Partner key rotated");
       const rotatedApiKey = String(response?.data?.apiKey || "");
       setNewlyIssuedKey(rotatedApiKey);
+      setNewlyIssuedPartnerId(String(partnerId || ""));
       setTestApiKey(rotatedApiKey);
       setApiTestResult(null);
       await loadPartners();
@@ -303,6 +308,52 @@ const PartnerApiPage = () => {
     setIsTestingApiKey(false);
   };
 
+  const handleDownloadCredentialPdf = async () => {
+    const partnerId = String(newlyIssuedPartnerId || "").trim();
+    const apiKey = String(newlyIssuedKey || "").trim();
+
+    if (!partnerId || !apiKey) {
+      toast.error("Create or rotate a key first to download credential PDF");
+      return;
+    }
+
+    setIsDownloadingCredentialPdf(true);
+    try {
+      const response = await fetch(`${partnerApiBase}/admin/partners/${partnerId}/credential-pdf`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ apiKey }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.message || "Failed to generate credential PDF");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const fileName = match?.[1] || `partner-credential-${partnerId}.pdf`;
+
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(href);
+      toast.success("Credential PDF downloaded");
+    } catch (error) {
+      toast.error(error?.message || "Failed to download credential PDF");
+    } finally {
+      setIsDownloadingCredentialPdf(false);
+    }
+  };
+
   const sampleCurl = `curl -X GET "${partnerApiBase}/products?limit=20" -H "x-api-key: YOUR_PARTNER_API_KEY"`;
   const isUsingLocalLinks = useMemo(() => isLocalUrl(partnerApiBase), [partnerApiBase]);
 
@@ -331,6 +382,9 @@ const PartnerApiPage = () => {
         <h2 className="text-lg font-semibold text-gray-800">API Base</h2>
         <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
           API Key is plain text (one line) and not a PDF. PDF files are optional docs only.
+        </div>
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+          Partner list shows only <strong>Key Prefix</strong> (for security). Full API key is visible only immediately after create/rotate.
         </div>
         {isUsingLocalLinks ? (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -487,6 +541,14 @@ const PartnerApiPage = () => {
               >
                 Copy PDF + Key
               </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={handleDownloadCredentialPdf}
+                disabled={isDownloadingCredentialPdf || !newlyIssuedPartnerId}
+              >
+                {isDownloadingCredentialPdf ? "Preparing PDF..." : "Download Credential PDF"}
+              </Button>
             </div>
           </div>
         ) : null}
@@ -513,6 +575,20 @@ const PartnerApiPage = () => {
                   <p className="text-xs text-gray-500 mt-1">Scopes: {(partner.scopes || []).join(", ") || "none"}</p>
                   <p className="text-xs text-gray-500 mt-1">Key Prefix: {partner.keyPrefix || "none"}</p>
                   <p className="text-xs text-gray-500 mt-1">Status: {partner.status} • RPM: {partner.rateLimitPerMinute}</p>
+                  {partner?.rateLimit ? (
+                    <p
+                      className={`text-xs mt-1 inline-flex items-center rounded-full border px-2 py-0.5 ${
+                        partner.rateLimit.isLimited
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      }`}
+                    >
+                      Rate usage: {partner.rateLimit.used}/{partner.rateLimit.limit}
+                      {partner.rateLimit.resetInSeconds > 0
+                        ? ` • resets in ${partner.rateLimit.resetInSeconds}s`
+                        : " • idle"}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap gap-2">

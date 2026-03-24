@@ -180,24 +180,19 @@ const resolveInvoiceLogoPath = (preferredPath = "") => {
 };
 
 const buildInvoiceNumber = (order) => {
-  if (order?.invoiceNumber) return order.invoiceNumber;
+  const normalizeOrderLikeId = (value) => {
+    const raw = String(value || "").trim().toUpperCase();
+    if (!raw) return "";
 
-  const normalizedOrderNumber = String(
-    order?.orderNumber || order?.displayOrderId || "",
-  )
-    .trim()
-    .toUpperCase();
-
-  if (normalizedOrderNumber) {
-    const directMatch = normalizedOrderNumber.match(/^([A-Z0-9]+?)-?(\d{4})\/(\d+)$/i);
+    const directMatch = raw.match(/^([A-Z0-9]+?)-?(\d{4})\/(\d+)$/i);
     if (directMatch) {
       return `${directMatch[1]}-${directMatch[2]}/${directMatch[3]}`;
     }
 
-    const slashIndex = normalizedOrderNumber.indexOf("/");
+    const slashIndex = raw.indexOf("/");
     if (slashIndex > 0) {
-      const left = normalizedOrderNumber.slice(0, slashIndex).replace(/-/g, "");
-      const right = normalizedOrderNumber.slice(slashIndex + 1);
+      const left = raw.slice(0, slashIndex).replace(/-/g, "");
+      const right = raw.slice(slashIndex + 1);
       if (/^\d+$/.test(right) && left.length > 4) {
         const fy = left.slice(-4);
         const prefix = left.slice(0, -4);
@@ -206,6 +201,20 @@ const buildInvoiceNumber = (order) => {
         }
       }
     }
+
+    return "";
+  };
+
+  const orderLikeInvoiceNumber = normalizeOrderLikeId(
+    order?.orderNumber || order?.displayOrderId || "",
+  );
+  if (orderLikeInvoiceNumber) {
+    return orderLikeInvoiceNumber;
+  }
+
+  const normalizedInvoiceNumber = normalizeOrderLikeId(order?.invoiceNumber || "");
+  if (normalizedInvoiceNumber) {
+    return normalizedInvoiceNumber;
   }
 
   const date = new Date();

@@ -167,7 +167,7 @@ export default function SalesChart({ data = [], interval = "daily" }) {
             Confirmed vs RTO Orders
           </h2>
           <p className="text-sm text-gray-500">
-            Interval: {interval.charAt(0).toUpperCase() + interval.slice(1)}
+            Interval: {interval.charAt(0).toUpperCase() + interval.slice(1)} · counts per bucket
           </p>
         </div>
         <button
@@ -180,11 +180,11 @@ export default function SalesChart({ data = [], interval = "daily" }) {
       </div>
 
       {data.length === 0 ? (
-        <div className="h-[320px] flex items-center justify-center text-gray-500">
+        <div className="h-80 flex items-center justify-center text-gray-500">
           No chart data for this range.
         </div>
       ) : (
-        <div className="h-[320px]">
+        <div className="h-80">
           <Line ref={chartRef} data={chartData} options={options} />
         </div>
       )}

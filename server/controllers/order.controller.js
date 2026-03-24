@@ -321,11 +321,19 @@ const resolveOrderSeriesSettings = async () => {
 };
 
 const parseOrderSequenceNumber = (value, scopePrefix) => {
-  const raw = String(value || "")
-    .trim()
-    .toUpperCase();
-  if (!raw.startsWith(scopePrefix)) return null;
-  const sequenceText = raw.slice(scopePrefix.length);
+  const raw = String(value || "").trim().toUpperCase();
+  if (!raw) return null;
+  const normalizedScope = String(scopePrefix || "").toUpperCase();
+  const legacyScope = normalizedScope.replace("-", "");
+
+  let sequenceText = "";
+  if (raw.startsWith(normalizedScope)) {
+    sequenceText = raw.slice(normalizedScope.length);
+  } else if (raw.startsWith(legacyScope)) {
+    sequenceText = raw.slice(legacyScope.length);
+  } else {
+    return null;
+  }
   const sequence = Number(sequenceText);
   return Number.isFinite(sequence) && sequence > 0 ? sequence : null;
 };
@@ -333,8 +341,12 @@ const parseOrderSequenceNumber = (value, scopePrefix) => {
 const generateOrderSeriesNumber = async (referenceDate = new Date()) => {
   const settings = await resolveOrderSeriesSettings();
   const fyCode = resolveFinancialYearCode(referenceDate);
-  const scopePrefix = `${settings.prefix}${fyCode}/`;
-  const regex = new RegExp(`^${escapeRegExp(scopePrefix)}\\d+$`, "i");
+  const scopePrefix = `${settings.prefix}-${fyCode}/`;
+  const legacyScopePrefix = `${settings.prefix}${fyCode}/`;
+  const regex = new RegExp(
+    `^(?:${escapeRegExp(scopePrefix)}|${escapeRegExp(legacyScopePrefix)})\\d+$`,
+    "i",
+  );
 
   const latest = await OrderModel.findOne({ orderNumber: { $regex: regex } })
     .select("orderNumber")
@@ -2296,12 +2308,34 @@ const normalizeOrderProducts = ({ products, dbProductMap }) => {
     const subTotal = round2(price * quantity);
     const variantId = item.variantId || item.variant || null;
     const variantName = item.variantName || item.variantTitle || "";
+    const variants = Array.isArray(dbProduct?.variants) ? dbProduct.variants : [];
+    const selectedVariant =
+      variants.find((variant) => String(variant?._id || "") === String(variantId || "")) ||
+      variants.find(
+        (variant) =>
+          String(variant?.name || "").trim().toLowerCase() ===
+          String(variantName || "").trim().toLowerCase(),
+      ) ||
+      variants.find((variant) => variant?.isDefault) ||
+      variants[0] ||
+      null;
+
+    const resolvedSku = String(
+      selectedVariant?.sku || dbProduct?.sku || item?.sku || "",
+    )
+      .trim()
+      .toUpperCase();
+    const resolvedHsn = String(
+      selectedVariant?.hsnCode || dbProduct?.hsnCode || item?.hsnCode || "",
+    ).trim();
 
     return {
       productId,
       productTitle: item.productTitle || dbProduct.name || "Product",
       variantId: variantId ? String(variantId) : null,
       variantName: variantName ? String(variantName) : "",
+      sku: resolvedSku,
+      hsnCode: resolvedHsn,
       quantity,
       price,
       image: item.image || dbProduct.images?.[0] || dbProduct.thumbnail || "",
@@ -2493,7 +2527,7 @@ const fetchAndNormalizeOrderProducts = async (
   const dbProducts = await ProductModel.find({
     _id: { $in: productIds },
   })
-    .select("_id name price images thumbnail isExclusive")
+    .select("_id name price images thumbnail isExclusive sku hsnCode variants")
     .lean();
   const dbProductMap = new Map(dbProducts.map((p) => [String(p._id), p]));
   const missingIds = productIds.filter((id) => !dbProductMap.has(String(id)));
@@ -6919,6 +6953,8 @@ export const createTestOrder = asyncHandler(async (req, res) => {
           productTitle: product.name,
           variantId: null,
           variantName: "",
+          sku: String(product.sku || "").trim().toUpperCase(),
+          hsnCode: String(product.hsnCode || "").trim(),
           quantity,
           price,
           image: product.images?.[0] || product.thumbnail || "",

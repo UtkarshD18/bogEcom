@@ -92,7 +92,7 @@ const buildOrderNumber = ({ prefix, fiscalYearCode, seq }) => {
   const safeSeq = Math.max(Number(seq || 0), 0);
   const padded = String(safeSeq).padStart(4, "0");
   const safePrefix = normalizeSeriesPrefix(prefix);
-  return `${safePrefix}${String(fiscalYearCode || "").trim()}/${padded}`.toUpperCase();
+  return `${safePrefix}-${String(fiscalYearCode || "").trim()}/${padded}`.toUpperCase();
 };
 
 const nextOrderSequence = async ({ prefix, fiscalYearCode }) => {
@@ -167,6 +167,14 @@ const orderSchema = new mongoose.Schema(
           default: null,
         },
         variantName: {
+          type: String,
+          default: "",
+        },
+        sku: {
+          type: String,
+          default: "",
+        },
+        hsnCode: {
           type: String,
           default: "",
         },

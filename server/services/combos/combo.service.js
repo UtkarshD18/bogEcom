@@ -430,6 +430,8 @@ export const expandComboToOrderProducts = (combo, quantity = 1) => {
       productTitle: item.productTitle || "Product",
       variantId: item.variantId ? String(item.variantId) : null,
       variantName: item.variantName || "",
+      sku: String(item.variantSku || "").trim().toUpperCase(),
+      hsnCode: String(item.hsnCode || "").trim(),
       quantity: lineQty,
       price: unitPrice,
       image: item.image || "",

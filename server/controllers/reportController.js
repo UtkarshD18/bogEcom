@@ -317,7 +317,7 @@ export const getOrdersReport = asyncHandler(async (req, res) => {
       String(req.query.includeRto || "")
         .trim()
         .toLowerCase() === "true";
-    const statusFilter = includeRto
+    const reportStatusFilter = includeRto
       ? { $in: [...CONFIRMED_STATUSES, ...RTO_STATUSES] }
       : { $in: CONFIRMED_STATUSES };
     const searchTerm = sanitizeSearch(req.query.search);
@@ -325,13 +325,20 @@ export const getOrdersReport = asyncHandler(async (req, res) => {
     const baseMatch = {
       purchaseOrder: null,
       createdAt: { $gte: startDate, $lte: endDate },
-      order_status: statusFilter,
       payment_status: { $in: ["paid", "confirmed", "PAID", "CONFIRMED"] },
+    };
+    const reportMatch = {
+      ...baseMatch,
+      order_status: reportStatusFilter,
+    };
+    const chartMatch = {
+      ...baseMatch,
+      order_status: { $in: [...CONFIRMED_STATUSES, ...RTO_STATUSES] },
     };
     const searchMatch = buildSearchMatch(searchTerm);
 
     const reportPipeline = [
-      { $match: baseMatch },
+      { $match: reportMatch },
       { $unwind: "$products" },
       ...(searchMatch ? [{ $match: searchMatch }] : []),
       {
@@ -386,7 +393,7 @@ export const getOrdersReport = asyncHandler(async (req, res) => {
     const chartPipeline = [
       {
         $match: {
-          ...baseMatch,
+          ...chartMatch,
         },
       },
       {
@@ -462,15 +469,8 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
         .trim()
         .toLowerCase() === "true";
     const statusFilter = includeRto
-      ? {
-          $in: [
-            ORDER_STATUS.DELIVERED,
-            ORDER_STATUS.COMPLETED,
-            ORDER_STATUS.RTO,
-            ORDER_STATUS.RTO_COMPLETED,
-          ],
-        }
-      : { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED] };
+      ? { $in: [...CONFIRMED_STATUSES, ...RTO_STATUSES] }
+      : { $in: CONFIRMED_STATUSES };
     const searchTerm = sanitizeSearch(req.query.search);
     const baseMatch = {
       purchaseOrder: null,
@@ -495,6 +495,11 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
               onNull: null,
             },
           },
+          productIdText: {
+            $trim: {
+              input: { $toString: { $ifNull: ["$products.productId", ""] } },
+            },
+          },
         },
       },
       {
@@ -502,11 +507,31 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           from: "products",
           let: {
             pid: "$productObjectId",
+            pidText: "$productIdText",
             vid: "$products.variantId",
             vname: "$products.variantName",
           },
           pipeline: [
-            { $match: { $expr: { $eq: ["$_id", "$$pid"] } } },
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    {
+                      $and: [
+                        { $ne: ["$$pid", null] },
+                        { $eq: ["$_id", "$$pid"] },
+                      ],
+                    },
+                    {
+                      $and: [
+                        { $ne: ["$$pidText", ""] },
+                        { $eq: ["$slug", "$$pidText"] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
             {
               $project: {
                 name: 1,
@@ -624,6 +649,8 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
           productName: "$products.productTitle",
           variantId: "$products.variantId",
           variantName: "$products.variantName",
+          skuSnapshot: "$products.sku",
+          hsnSnapshot: "$products.hsnCode",
           quantity: "$products.quantity",
           price: "$products.price",
           subTotal: "$products.subTotal",
@@ -698,8 +725,13 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
 
       const productDoc = row?.productDoc || null;
       const variantDoc = productDoc?.variant || null;
-      const sku = String(variantDoc?.sku || productDoc?.sku || "").trim();
+      const sku = String(
+        row?.skuSnapshot || variantDoc?.sku || productDoc?.sku || "",
+      )
+        .trim()
+        .toUpperCase();
       const hsn =
+        String(row?.hsnSnapshot || "").trim() ||
         String(variantDoc?.hsnCode || "").trim() ||
         String(productDoc?.hsnCode || "").trim() ||
         extractHsnFromSpecifications(variantDoc?.attributes) ||
@@ -712,8 +744,8 @@ export const exportOrdersReport = asyncHandler(async (req, res) => {
         .addRow({
           orderId: orderDisplayId || orderId,
           productId: String(row?.productId || "").trim(),
-          sku,
-          hsnCode: hsn ? String(hsn).trim() : "",
+          sku: sku || "N/A",
+          hsnCode: hsn ? String(hsn).trim() : "N/A",
           productName: String(row?.productName || "").trim(),
           variantName: String(row?.variantName || "").trim(),
           quantity: Number(row?.quantity || 0),

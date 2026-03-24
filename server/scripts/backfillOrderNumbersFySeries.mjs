@@ -1,5 +1,5 @@
 /**
- * Backfill Script: Assign FY-based order numbers (e.g. H1G2526/0001) to existing orders.
+ * Backfill Script: Assign FY-based order numbers (e.g. H1G-2526/0001) to existing orders.
  *
  * Why:
  * - Older orders may only have legacy display IDs (e.g. BOG-XXXXXXXX).
@@ -62,7 +62,7 @@ const normalizePrefix = (value) =>
 const buildOrderNumber = ({ prefix, fiscalYearCode, seq }) => {
   const safeSeq = Math.max(Number(seq || 0), 0);
   const padded = String(safeSeq).padStart(4, "0");
-  return `${prefix}${String(fiscalYearCode || "").trim()}/${padded}`.toUpperCase();
+  return `${prefix}-${String(fiscalYearCode || "").trim()}/${padded}`.toUpperCase();
 };
 
 const redactedMongo = MONGO_URI.replace(/\/\/.*@/, "//***@");
@@ -116,7 +116,7 @@ async function main() {
   }
 
   // Compute current max sequence in DB for this FY (if any).
-  const pattern = new RegExp(`^${prefix}${fy}\\/([0-9]{4})$`, "i");
+  const pattern = new RegExp(`^${prefix}-?${fy}\\/([0-9]{4})$`, "i");
   const existing = await OrderModel.find({
     createdAt: { $gte: fyStart, $lte: fyEnd },
     orderNumber: { $regex: pattern },

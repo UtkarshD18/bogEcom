@@ -28,12 +28,16 @@ const buildPartnerApiKey = () => {
   return { apiKey, keyPrefix, keyHash };
 };
 
-const seedPartner = async ({ scopes = ["catalog.read", "inventory.read", "price.read"] } = {}) => {
+const seedPartner = async ({
+  scopes = ["catalog.read", "inventory.read", "price.read"],
+  rateLimitPerMinute,
+} = {}) => {
   const partner = await Partner.create({
     name: `Partner ${Date.now()}`,
     contactEmail: `partner-${Date.now()}@example.com`,
     status: "active",
     scopes,
+    ...(rateLimitPerMinute !== undefined ? { rateLimitPerMinute } : {}),
   });
 
   const key = buildPartnerApiKey();
@@ -232,4 +236,30 @@ test("GET /api/v1/partner/products/:productId returns 404 for unknown product", 
   assert.equal(response.status, 404);
   assert.equal(payload.success, false);
   assert.equal(payload.error.code, "NOT_FOUND");
+});
+
+test("GET /api/v1/partner/health enforces per-partner runtime rate limit", async () => {
+  const { apiKey } = await seedPartner({ rateLimitPerMinute: 10 });
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const pass = await requestJson("/api/v1/partner/health", {
+      headers: {
+        "x-api-key": apiKey,
+      },
+    });
+    assert.equal(pass.response.status, 200);
+  }
+
+  const blocked = await requestJson("/api/v1/partner/health", {
+    headers: {
+      "x-api-key": apiKey,
+    },
+  });
+
+  assert.equal(blocked.response.status, 429);
+  assert.equal(blocked.payload.success, false);
+  assert.equal(blocked.payload.error.code, "RATE_LIMIT_EXCEEDED");
+  assert.ok(blocked.response.headers.get("ratelimit-limit"));
+  assert.ok(blocked.response.headers.get("ratelimit-remaining"));
+  assert.ok(blocked.response.headers.get("retry-after"));
 });
