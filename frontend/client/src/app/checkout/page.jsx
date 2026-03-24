@@ -317,9 +317,7 @@ const Checkout = () => {
   const checkoutStateForPreview = isGuestCheckout
     ? guestDetails.state
     : addresses.find((a) => a._id === selectedAddress)?.state || "";
-  const hasCheckoutStateInput = Boolean(
-    String(checkoutStateForPreview || "").trim(),
-  );
+  const hasCheckoutStateInput = Boolean(String(checkoutStateForPreview || "").trim());
   const normalizedCheckoutState = normalizeStateValue(checkoutStateForPreview);
   const isRajasthanDelivery = normalizedCheckoutState === "Rajasthan";
   const { displayShippingCharge } = useShippingDisplayCharge({
@@ -1237,10 +1235,7 @@ const Checkout = () => {
         TEST_INVOICE_STORAGE_KEY,
         JSON.stringify(nextInvoices),
       );
-      localStorage.setItem(
-        "bog_last_test_invoice",
-        JSON.stringify(invoiceRecord),
-      );
+      localStorage.setItem("bog_last_test_invoice", JSON.stringify(invoiceRecord));
 
       const token = getStoredAccessToken();
       fetch(`${API_URL}/api/orders/test/save-invoice`, {
@@ -1270,10 +1265,7 @@ const Checkout = () => {
             TEST_INVOICE_STORAGE_KEY,
             JSON.stringify(updatedInvoices),
           );
-          localStorage.setItem(
-            "bog_last_test_invoice",
-            JSON.stringify(updatedInvoice),
-          );
+          localStorage.setItem("bog_last_test_invoice", JSON.stringify(updatedInvoice));
         })
         .catch(() => {
           // Disk-sync is best-effort.
