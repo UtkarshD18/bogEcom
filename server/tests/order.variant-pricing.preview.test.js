@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import express from "express";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
+import ComboModel from "../models/combo.model.js";
 import ProductModel from "../models/product.model.js";
 import { previewOrderPricing } from "../controllers/order.controller.js";
 
@@ -44,6 +45,7 @@ test.after(async () => {
 });
 
 test.afterEach(async () => {
+  await ComboModel.deleteMany({});
   await ProductModel.deleteMany({});
 });
 
@@ -105,6 +107,89 @@ test("preview pricing uses selected variant price (not client payload price)", a
   assert.equal(payload?.success, true);
   assert.equal(payload?.data?.originalAmount, 799);
   assert.equal(payload?.data?.finalAmount, 799);
+});
+
+test("preview pricing charges comboPrice (does not double-discount against MRP)", async () => {
+  const categoryId = new mongoose.Types.ObjectId();
+
+  const [productA, productB] = await ProductModel.create([
+    {
+      name: "Combo Item A",
+      slug: `combo-item-a-${Date.now()}`,
+      category: categoryId,
+      price: 399,
+      originalPrice: 499,
+      stock_quantity: 50,
+      reserved_quantity: 0,
+      stock: 50,
+      hasVariants: false,
+      variants: [],
+    },
+    {
+      name: "Combo Item B",
+      slug: `combo-item-b-${Date.now()}`,
+      category: categoryId,
+      price: 349,
+      originalPrice: 499,
+      stock_quantity: 50,
+      reserved_quantity: 0,
+      stock: 50,
+      hasVariants: false,
+      variants: [],
+    },
+  ]);
+
+  const combo = await ComboModel.create({
+    name: "Test Combo",
+    slug: `test-combo-${Date.now()}`,
+    isActive: true,
+    isVisible: true,
+    stockMode: "auto",
+    items: [
+      {
+        productId: productA._id,
+        productTitle: productA.name,
+        quantity: 1,
+        quantityRequired: 1,
+        price: 399,
+        originalPrice: 499,
+        image: "",
+        categoryId,
+      },
+      {
+        productId: productB._id,
+        productTitle: productB.name,
+        quantity: 1,
+        quantityRequired: 1,
+        price: 349,
+        originalPrice: 499,
+        image: "",
+        categoryId,
+      },
+    ],
+    pricing: { type: "fixed_price", value: 643 },
+    originalTotal: 998,
+    comboPrice: 643,
+    totalSavings: 355,
+    discountPercentage: 35.57,
+  });
+
+  const { response, payload } = await requestJson("/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      products: [],
+      combos: [{ comboId: combo._id.toString(), quantity: 1 }],
+      guestDetails: {},
+      paymentType: "prepaid",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(payload?.success, true);
+  assert.equal(payload?.data?.originalAmount, 998);
+  assert.equal(payload?.data?.finalAmount, 643);
+  assert.equal(payload?.data?.discountBreakdown?.combo, 355);
 });
 
 test("preview pricing rejects unknown variantId", async () => {
