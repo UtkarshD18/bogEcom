@@ -187,9 +187,8 @@ const resolveShippingPaise = ({
 
 const buildItemBreakdown = ({ items, gstRatePercent, pricesIncludeTax }) => {
   const safeItems = Array.isArray(items) ? items : [];
-  let subtotalPaise = 0;
   let originalSubtotalPaise = 0;
-  let baseSubtotalPaise = 0;
+  let baseSubtotalFromLinesPaise = 0;
 
   const itemBreakdown = safeItems
     .map((item) => {
@@ -220,9 +219,8 @@ const buildItemBreakdown = ({ items, gstRatePercent, pricesIncludeTax }) => {
       const lineTaxPaise = Math.round(unitTaxPaise * quantity);
       const lineGrossPaise = Math.round(unitGrossPaise * quantity);
 
-      baseSubtotalPaise += lineBasePaise;
+      baseSubtotalFromLinesPaise += lineBasePaise;
       originalSubtotalPaise += lineGrossPaise;
-      subtotalPaise += lineBasePaise;
 
       return {
         quantity,
@@ -234,9 +232,14 @@ const buildItemBreakdown = ({ items, gstRatePercent, pricesIncludeTax }) => {
     })
     .filter(Boolean);
 
+  // Match backend behavior: for GST-inclusive catalogs, derive the GST-exclusive base
+  // from the overall gross total (not per-line splits) to avoid paise-level drift.
+  const baseSubtotalPaise = pricesIncludeTax
+    ? extractBaseFromInclusivePaise(originalSubtotalPaise, gstRatePercent).basePaise
+    : baseSubtotalFromLinesPaise;
+
   return {
     itemBreakdown,
-    subtotalPaise,
     baseSubtotalPaise,
     originalSubtotalPaise,
   };
