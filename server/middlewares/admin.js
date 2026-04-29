@@ -35,9 +35,12 @@ const MANAGER_ROUTE_PERMISSION_RULES = [
     patterns: [
       /^\/api\/shipping(?:\/|$)/i,
       /^\/api\/orders\/admin\/(?:all|repair-paid|backfill-payment-ids|pending|demo-orders)(?:\/|$)/i,
-      /^\/api\/orders\/[^/]+\/status(?:\/|$)/i,
       /^\/api\/purchase-orders\/admin(?:\/|$)/i,
     ],
+  },
+  {
+    permission: "manage_orders",
+    patterns: [/^\/api\/orders\/[^/]+\/status(?:\/|$)/i],
   },
   {
     permission: "manage_membership",

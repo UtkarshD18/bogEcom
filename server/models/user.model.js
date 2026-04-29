@@ -97,6 +97,7 @@ const userSchema = mongoose.Schema(
         "manage_crm",
         "manage_membership",
         "manage_shipping",
+        "manage_orders",
         "manage_settings",
       ],
       default: [],

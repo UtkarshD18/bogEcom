@@ -25,6 +25,11 @@ export const MANAGER_PERMISSION_OPTIONS = [
     description: "Run shipment booking and tracking operations",
   },
   {
+    key: "manage_orders",
+    label: "Order status updates",
+    description: "Update order statuses from the admin orders table",
+  },
+  {
     key: "manage_settings",
     label: "Platform settings",
     description: "Manage platform configuration and settings",
@@ -37,7 +42,10 @@ export const MANAGER_PERMISSION_KEYS = MANAGER_PERMISSION_OPTIONS.map(
 
 const MANAGER_PERMISSION_KEY_SET = new Set(MANAGER_PERMISSION_KEYS);
 
-const normalizeRole = (role) => String(role || "").trim().toLowerCase();
+const normalizeRole = (role) =>
+  String(role || "")
+    .trim()
+    .toLowerCase();
 
 export const normalizeManagerPermissions = (permissions) => {
   if (!Array.isArray(permissions)) return [];

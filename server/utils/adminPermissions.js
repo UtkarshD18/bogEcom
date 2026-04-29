@@ -4,6 +4,7 @@ const MANAGER_PERMISSION_KEYS = Object.freeze([
   "manage_crm",
   "manage_membership",
   "manage_shipping",
+  "manage_orders",
   "manage_settings",
 ]);
 
@@ -13,6 +14,7 @@ const MANAGER_PERMISSION_LABELS = Object.freeze({
   manage_crm: "CRM and campaigns",
   manage_membership: "Membership operations",
   manage_shipping: "Shipping operations",
+  manage_orders: "Order status updates",
   manage_settings: "Platform settings",
 });
 
@@ -42,9 +44,9 @@ const hasManagerPermission = (user, permission) => {
 };
 
 export {
+  hasManagerPermission,
+  isValidManagerPermission,
   MANAGER_PERMISSION_KEYS,
   MANAGER_PERMISSION_LABELS,
   normalizeManagerPermissions,
-  isValidManagerPermission,
-  hasManagerPermission,
 };

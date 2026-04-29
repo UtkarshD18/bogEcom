@@ -145,12 +145,6 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       requiredPermission: "manage_crm",
     },
     {
-      name: "CRM",
-      icon: <MdOutlineHub size={22} />,
-      href: "/crm",
-      requiredPermission: "manage_crm",
-    },
-    {
       name: "Coupons",
       icon: <RiCoupon2Line size={22} />,
       href: "/coupons",

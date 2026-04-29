@@ -12,9 +12,19 @@ import {
   sendCrmWhatsappMessage,
   updateCrmContact,
 } from "@/services/crmApi";
-import { Button, MenuItem, Pagination, TextField } from "@mui/material";
+import { uploadFile, uploadVideoFile } from "@/utils/api";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  MenuItem,
+  Pagination,
+  TextField,
+} from "@mui/material";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 
 const CHANNEL_OPTIONS = [
@@ -57,6 +67,23 @@ const WHATSAPP_SEGMENT_OPTIONS = [
   { value: "inactive", label: "Inactive Contacts" },
   { value: "vip", label: "VIP Tagged Contacts" },
 ];
+
+const CONSENT_OPTIONS = [
+  { value: "unknown", label: "Unknown" },
+  { value: "true", label: "Allowed" },
+  { value: "false", label: "Blocked" },
+];
+
+const DEFAULT_CONFIRMATION_DIALOG = {
+  open: false,
+  action: "personal",
+  title: "",
+  description: "",
+  confirmLabel: "Confirm",
+  warning: "",
+  highlights: [],
+  payload: null,
+};
 
 const prettifyValue = (value = "") =>
   String(value || "")
@@ -170,6 +197,69 @@ const getConfigTone = (ready) =>
     ? "bg-emerald-100 text-emerald-700"
     : "bg-amber-100 text-amber-700";
 
+const getWhatsappHealthTone = (state = "unknown") => {
+  if (state === "ready") return "bg-emerald-100 text-emerald-700";
+  if (state === "sender_warning") return "bg-amber-100 text-amber-700";
+  if (["token_expired", "invalid_token", "auth_failed", "permission_denied"].includes(state)) {
+    return "bg-rose-100 text-rose-700";
+  }
+  return "bg-amber-100 text-amber-700";
+};
+
+const getWhatsappHealthPanelTone = (state = "unknown") => {
+  if (state === "ready") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (state === "sender_warning") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (["token_expired", "invalid_token", "auth_failed", "permission_denied"].includes(state)) {
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+  return "border-amber-200 bg-amber-50 text-amber-700";
+};
+
+const getWhatsappHealthLabel = (state = "unknown") => {
+  if (state === "ready") return "Connected";
+  if (state === "sender_warning") return "Sender Warning";
+  if (state === "token_expired") return "Token Expired";
+  if (state === "invalid_token") return "Auth Invalid";
+  if (state === "permission_denied") return "Permission Denied";
+  if (state === "auth_failed") return "Auth Failed";
+  if (state === "not_configured") return "Needs Config";
+  return "Check Needed";
+};
+
+const formatWhatsappHealthField = (value, fallback = "Unknown") =>
+  value ? prettifyValue(value) : fallback;
+
+const normalizeConsentDraftValue = (value) => {
+  if (value === true || value === "true") return "true";
+  if (value === false || value === "false") return "false";
+  return "unknown";
+};
+
+const parseConsentDraftValue = (value) => {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+};
+
+const findTemplateByName = (templates = [], templateName = "") =>
+  (Array.isArray(templates) ? templates : []).find(
+    (template) => template.name === templateName,
+  ) || null;
+
+const resolveTemplateLanguageCode = (
+  templates = [],
+  templateName = "",
+  fallback = "en",
+) => findTemplateByName(templates, templateName)?.language || fallback;
+
+const truncateForPreview = (value = "", maxLength = 140) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "-";
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength - 3)}...`
+    : normalized;
+};
+
 const CrmPage = () => {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
@@ -192,6 +282,7 @@ const CrmPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [sendingPersonalWhatsapp, setSendingPersonalWhatsapp] = useState(false);
   const [sendingCampaignWhatsapp, setSendingCampaignWhatsapp] = useState(false);
+  const [uploadingWhatsappMedia, setUploadingWhatsappMedia] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [filters, setFilters] = useState({
@@ -205,6 +296,9 @@ const CrmPage = () => {
     status: "open",
     sourceChannel: "website",
     tags: "",
+    consentWhatsapp: "unknown",
+    consentEmail: "unknown",
+    consentPush: "unknown",
   });
   const [personalWhatsappForm, setPersonalWhatsappForm] = useState({
     mode: "text",
@@ -213,6 +307,9 @@ const CrmPage = () => {
     languageCode: "en",
     bodyVariables: "",
     headerVariables: "",
+    mediaUrl: "",
+    mediaCaption: "",
+    mediaFilename: "",
     campaignName: "",
   });
   const [campaignForm, setCampaignForm] = useState({
@@ -224,8 +321,14 @@ const CrmPage = () => {
     headerVariables: "",
     campaignName: "WhatsApp promotional campaign",
   });
+  const [confirmationDialog, setConfirmationDialog] = useState(
+    DEFAULT_CONFIRMATION_DIALOG,
+  );
+  const [lastWhatsappSubmission, setLastWhatsappSubmission] = useState(null);
+  const selectedContactIdRef = useRef("");
 
   const applySelectedContact = useCallback((contact) => {
+    selectedContactIdRef.current = String(contact?.id || "");
     setSelectedContact(contact || null);
     setSelectedContactId(String(contact?.id || ""));
     setRecentOrders([]);
@@ -234,8 +337,45 @@ const CrmPage = () => {
       status: contact?.status || "open",
       sourceChannel: contact?.sourceChannel || "website",
       tags: Array.isArray(contact?.tags) ? contact.tags.join(", ") : "",
+      consentWhatsapp: normalizeConsentDraftValue(contact?.consent?.whatsapp),
+      consentEmail: normalizeConsentDraftValue(contact?.consent?.email),
+      consentPush: normalizeConsentDraftValue(contact?.consent?.push),
     });
   }, []);
+
+  const closeConfirmationDialog = useCallback(() => {
+    setConfirmationDialog(DEFAULT_CONFIRMATION_DIALOG);
+  }, []);
+
+  const setPersonalTemplateSelection = useCallback(
+    (templateName) => {
+      setPersonalWhatsappForm((prev) => ({
+        ...prev,
+        templateName,
+        languageCode: resolveTemplateLanguageCode(
+          whatsappTemplates,
+          templateName,
+          prev.languageCode || "en",
+        ),
+      }));
+    },
+    [whatsappTemplates],
+  );
+
+  const setCampaignTemplateSelection = useCallback(
+    (templateName) => {
+      setCampaignForm((prev) => ({
+        ...prev,
+        templateName,
+        languageCode: resolveTemplateLanguageCode(
+          whatsappTemplates,
+          templateName,
+          prev.languageCode || "en",
+        ),
+      }));
+    },
+    [whatsappTemplates],
+  );
 
   const loadOverview = useCallback(async () => {
     const response = await fetchCrmOverview(token);
@@ -245,12 +385,12 @@ const CrmPage = () => {
     setOverview(response.data || null);
   }, [token]);
 
-  const loadContacts = useCallback(async () => {
+  const loadContacts = useCallback(async ({ overridePage } = {}) => {
     setIsLoading(true);
     try {
       const response = await fetchCrmContacts(
         {
-          page,
+          page: overridePage || page,
           limit: 20,
           filters,
         },
@@ -264,9 +404,19 @@ const CrmPage = () => {
       const nextContacts = Array.isArray(response.data?.contacts)
         ? response.data.contacts
         : [];
+      const nextPagination = response.data?.pagination || {};
 
       setContacts(nextContacts);
-      setTotalPages(Math.max(Number(response.data?.pagination?.totalPages || 1), 1));
+      const totalPagesValue = Math.max(Number(nextPagination.totalPages || 1), 1);
+      setTotalPages(totalPagesValue);
+
+      if (
+        totalPagesValue > 0 &&
+        Number(nextPagination.page || overridePage || page || 1) > totalPagesValue
+      ) {
+        setPage(totalPagesValue);
+        return;
+      }
 
       if (nextContacts.length === 0) {
         applySelectedContact(null);
@@ -274,7 +424,7 @@ const CrmPage = () => {
       }
 
       const matchingSelected = nextContacts.find(
-        (entry) => String(entry.id) === String(selectedContactId || ""),
+        (entry) => String(entry.id) === String(selectedContactIdRef.current || ""),
       );
       applySelectedContact(matchingSelected || nextContacts[0]);
     } catch (error) {
@@ -285,7 +435,7 @@ const CrmPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [applySelectedContact, filters, page, selectedContactId, token]);
+  }, [applySelectedContact, filters, page, token]);
 
   const loadTimeline = useCallback(async () => {
     if (!selectedContactId || !token) {
@@ -352,14 +502,26 @@ const CrmPage = () => {
         setWhatsappTemplates(templates);
 
         if (templates.length > 0) {
-          setPersonalWhatsappForm((prev) => ({
-            ...prev,
-            templateName: prev.templateName || templates[0].name,
-          }));
-          setCampaignForm((prev) => ({
-            ...prev,
-            templateName: prev.templateName || templates[0].name,
-          }));
+          setPersonalWhatsappForm((prev) => {
+            const defaultPersonalTemplate =
+              findTemplateByName(templates, prev.templateName) || templates[0];
+            return {
+              ...prev,
+              templateName: defaultPersonalTemplate?.name || prev.templateName || "",
+              languageCode:
+                defaultPersonalTemplate?.language || prev.languageCode || "en",
+            };
+          });
+          setCampaignForm((prev) => {
+            const defaultCampaignTemplate =
+              findTemplateByName(templates, prev.templateName) || templates[0];
+            return {
+              ...prev,
+              templateName: defaultCampaignTemplate?.name || prev.templateName || "",
+              languageCode:
+                defaultCampaignTemplate?.language || prev.languageCode || "en",
+            };
+          });
         }
       } else {
         setWhatsappTemplates([]);
@@ -420,6 +582,10 @@ const CrmPage = () => {
     }
   }, [isAuthenticated, token, selectedContactId, loadTimeline]);
 
+  useEffect(() => {
+    selectedContactIdRef.current = String(selectedContactId || "");
+  }, [selectedContactId]);
+
   const handleFilterChange = (event) => {
     const { name, value } = event.target;
     setPage(1);
@@ -437,6 +603,12 @@ const CrmPage = () => {
       lifecycleStage: "",
       status: "",
     });
+  };
+
+  const handleRefreshContacts = async () => {
+    if (!token) return;
+    setPage(1);
+    await loadContacts({ overridePage: 1 });
   };
 
   const refreshAdminCrmData = async () => {
@@ -461,6 +633,11 @@ const CrmPage = () => {
           status: draft.status,
           sourceChannel: draft.sourceChannel,
           tags: draft.tags,
+          consent: {
+            whatsapp: parseConsentDraftValue(draft.consentWhatsapp),
+            email: parseConsentDraftValue(draft.consentEmail),
+            push: parseConsentDraftValue(draft.consentPush),
+          },
         },
         token,
       );
@@ -478,107 +655,363 @@ const CrmPage = () => {
     }
   };
 
-  const handleSendPersonalWhatsapp = async () => {
-    if (!selectedContactId || !token) return;
+  const handleWhatsappMediaUpload = async (event) => {
+    const file = event?.target?.files?.[0];
+    if (!file || !token) return;
 
+    const isGifMode = personalWhatsappForm.mode === "gif";
+    const isImageMode = personalWhatsappForm.mode === "image";
+
+    if (!isGifMode && !isImageMode) {
+      toast.error("Switch send mode to Image or GIF before uploading media.");
+      event.target.value = "";
+      return;
+    }
+
+    const fileType = String(file.type || "").toLowerCase();
+    const fileName = String(file.name || "").toLowerCase();
+    const isGifFile = fileType === "image/gif" || fileName.endsWith(".gif");
+    const isVideoFile = fileType.startsWith("video/");
+
+    if (isImageMode && !fileType.startsWith("image/")) {
+      toast.error("Image mode accepts image files only.");
+      event.target.value = "";
+      return;
+    }
+
+    if (isGifMode && !isGifFile && !isVideoFile) {
+      toast.error("GIF mode accepts GIF, MP4, or WebM files.");
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingWhatsappMedia(true);
+    try {
+      const response = isVideoFile
+        ? await uploadVideoFile(file, token)
+        : await uploadFile(file, token);
+
+      if (!response?.success) {
+        throw new Error(response?.message || "Media upload failed.");
+      }
+
+      const uploadedUrl =
+        response?.data?.url ||
+        (Array.isArray(response?.data) ? response.data[0]?.url : "") ||
+        "";
+
+      if (!uploadedUrl) {
+        throw new Error("Upload succeeded but no media URL was returned.");
+      }
+
+      setPersonalWhatsappForm((prev) => ({
+        ...prev,
+        mediaUrl: uploadedUrl,
+        mediaFilename: file.name || prev.mediaFilename,
+      }));
+
+      toast.success("Media uploaded. Ready to send on WhatsApp.");
+    } catch (error) {
+      toast.error(error?.message || "Failed to upload media.");
+    } finally {
+      setUploadingWhatsappMedia(false);
+      event.target.value = "";
+    }
+  };
+
+  const buildPersonalWhatsappPayload = () => {
+    const isTextMode = personalWhatsappForm.mode === "text";
+    const isTemplateMode = personalWhatsappForm.mode === "template";
+    const isMediaMode =
+      personalWhatsappForm.mode === "image" || personalWhatsappForm.mode === "gif";
     const bodyVariables = parseVariableInput(personalWhatsappForm.bodyVariables);
     const headerVariables = parseVariableInput(personalWhatsappForm.headerVariables);
+    const resolvedLanguageCode = isTemplateMode
+      ? resolveTemplateLanguageCode(
+          whatsappTemplates,
+          personalWhatsappForm.templateName,
+          personalWhatsappForm.languageCode || "en",
+        )
+      : personalWhatsappForm.languageCode;
 
-    if (personalWhatsappForm.mode === "text" && !String(personalWhatsappForm.body).trim()) {
-      toast.error("Write a message before sending a personal WhatsApp reply.");
-      return;
+    if (!selectedContactId || !token) {
+      throw new Error("Select a CRM contact before sending WhatsApp.");
     }
 
-    if (
-      personalWhatsappForm.mode === "template" &&
-      !String(personalWhatsappForm.templateName).trim()
-    ) {
-      toast.error("Choose an approved WhatsApp template first.");
-      return;
+    if (!selectedContact?.phone) {
+      throw new Error("Selected CRM contact does not have a WhatsApp-ready phone number.");
     }
 
+    if (selectedContact?.consent?.whatsapp === false) {
+      throw new Error(
+        "This CRM contact has WhatsApp consent disabled. Re-enable consent before sending.",
+      );
+    }
+
+    if (isTextMode && !String(personalWhatsappForm.body).trim()) {
+      throw new Error("Write a message before sending a personal WhatsApp reply.");
+    }
+
+    if (isTemplateMode && !String(personalWhatsappForm.templateName).trim()) {
+      throw new Error("Choose an approved WhatsApp template first.");
+    }
+
+    if (isMediaMode && !String(personalWhatsappForm.mediaUrl).trim()) {
+      throw new Error("Upload media before sending.");
+    }
+
+    return {
+      mode: personalWhatsappForm.mode,
+      body: isTextMode ? personalWhatsappForm.body : "",
+      templateName: isTemplateMode ? personalWhatsappForm.templateName : "",
+      languageCode: resolvedLanguageCode,
+      bodyVariables,
+      headerVariables,
+      mediaType: isMediaMode ? personalWhatsappForm.mode : "",
+      mediaUrl: isMediaMode ? personalWhatsappForm.mediaUrl : "",
+      mediaCaption: isMediaMode ? personalWhatsappForm.mediaCaption : "",
+      mediaFilename: isMediaMode ? personalWhatsappForm.mediaFilename : "",
+      campaignName: personalWhatsappForm.campaignName,
+    };
+  };
+
+  const executePersonalWhatsappSend = async (payload) => {
     setSendingPersonalWhatsapp(true);
     try {
-      const response = await sendCrmWhatsappMessage(
-        selectedContactId,
-        {
-          body:
-            personalWhatsappForm.mode === "text"
-              ? personalWhatsappForm.body
-              : "",
-          templateName:
-            personalWhatsappForm.mode === "template"
-              ? personalWhatsappForm.templateName
-              : "",
-          languageCode: personalWhatsappForm.languageCode,
-          bodyVariables,
-          headerVariables,
-          campaignName: personalWhatsappForm.campaignName,
-        },
-        token,
-      );
+      const response = await sendCrmWhatsappMessage(selectedContactId, payload, token);
 
       if (!response?.success) {
         throw new Error(response?.message || "Failed to send WhatsApp message.");
       }
 
-      toast.success("WhatsApp message queued through the business API.");
+      const result = response.data || {};
+      setLastWhatsappSubmission({
+        scope: "personal",
+        submittedAt: new Date().toISOString(),
+        mode: result.mode || payload.mode,
+        phone: result.to || selectedContact?.phone || "",
+        messageId: result.messageId || "",
+        templateName: result.templateName || payload.templateName || "",
+        languageCode: result.languageCode || payload.languageCode || "",
+      });
+      toast.success(
+        `WhatsApp ${prettifyValue(result.mode || payload.mode)} submitted to ${
+          result.to || selectedContact?.phone || "the selected contact"
+        }.`,
+      );
       setPersonalWhatsappForm((prev) => ({
         ...prev,
         body: "",
         bodyVariables: "",
         headerVariables: "",
+        mediaUrl: "",
+        mediaCaption: "",
+        mediaFilename: "",
       }));
       await refreshAdminCrmData();
+      return true;
     } catch (error) {
       toast.error(error?.message || "Failed to send WhatsApp message.");
+      return false;
     } finally {
       setSendingPersonalWhatsapp(false);
     }
   };
 
-  const handleSendWhatsappCampaign = async () => {
-    if (!token) return;
+  const handleSendPersonalWhatsapp = () => {
+    try {
+      const payload = buildPersonalWhatsappPayload();
+      const highlights = [
+        {
+          label: "Recipient",
+          value: selectedContact?.phone || "No phone",
+        },
+        {
+          label: "Mode",
+          value: prettifyValue(payload.mode),
+        },
+      ];
+
+      if (payload.mode === "template") {
+        highlights.push(
+          {
+            label: "Template",
+            value: payload.templateName,
+          },
+          {
+            label: "Language",
+            value: payload.languageCode,
+          },
+          {
+            label: "Variables",
+            value: `${payload.headerVariables.length} header / ${payload.bodyVariables.length} body`,
+          },
+        );
+      } else if (payload.mode === "text") {
+        highlights.push({
+          label: "Message Preview",
+          value: truncateForPreview(payload.body),
+        });
+      } else {
+        highlights.push(
+          {
+            label: "Media",
+            value: truncateForPreview(payload.mediaFilename || "Uploaded media"),
+          },
+          {
+            label: "Caption",
+            value: truncateForPreview(payload.mediaCaption),
+          },
+        );
+      }
+
+      if (payload.campaignName) {
+        highlights.push({
+          label: "Label",
+          value: payload.campaignName,
+        });
+      }
+
+      setConfirmationDialog({
+        open: true,
+        action: "personal",
+        title: "Confirm WhatsApp Message",
+        description:
+          "Review the outbound WhatsApp payload before it is submitted through Meta.",
+        confirmLabel: "Send Message",
+        warning: whatsappDeliveryReady
+          ? ""
+          : "Meta still reports sender verification or display-name warnings. The API can accept this send while delivery still fails later.",
+        highlights,
+        payload,
+      });
+    } catch (error) {
+      toast.error(error?.message || "Failed to prepare WhatsApp message.");
+    }
+  };
+
+  const buildCampaignWhatsappPayload = () => {
+    const audienceCount = Number(audiencePreview?.count || 0);
+    const resolvedLanguageCode = resolveTemplateLanguageCode(
+      whatsappTemplates,
+      campaignForm.templateName,
+      campaignForm.languageCode || "en",
+    );
+
+    if (!token) {
+      throw new Error("Admin session expired. Log in again before sending campaigns.");
+    }
 
     if (!String(campaignForm.templateName).trim()) {
-      toast.error("Select an approved template for the WhatsApp campaign.");
-      return;
+      throw new Error("Select an approved template for the WhatsApp campaign.");
     }
 
-    if (!confirm("Send this WhatsApp template campaign to the previewed audience?")) {
-      return;
+    if (audienceCount <= 0) {
+      throw new Error("Campaign audience preview is empty. Refresh the preview first.");
     }
 
+    return {
+      segment: campaignForm.segment,
+      inactiveDays: campaignForm.inactiveDays,
+      templateName: campaignForm.templateName,
+      languageCode: resolvedLanguageCode,
+      bodyVariables: parseVariableInput(campaignForm.bodyVariables),
+      headerVariables: parseVariableInput(campaignForm.headerVariables),
+      campaignName: campaignForm.campaignName,
+    };
+  };
+
+  const executeWhatsappCampaign = async (payload) => {
     setSendingCampaignWhatsapp(true);
     try {
-      const response = await sendCrmWhatsappCampaign(
-        {
-          segment: campaignForm.segment,
-          inactiveDays: campaignForm.inactiveDays,
-          templateName: campaignForm.templateName,
-          languageCode: campaignForm.languageCode,
-          bodyVariables: parseVariableInput(campaignForm.bodyVariables),
-          headerVariables: parseVariableInput(campaignForm.headerVariables),
-          campaignName: campaignForm.campaignName,
-        },
-        token,
-      );
+      const response = await sendCrmWhatsappCampaign(payload, token);
 
       if (!response?.success) {
         throw new Error(response?.message || "Failed to send WhatsApp campaign.");
       }
 
       const campaignResult = response.data || {};
+      setLastWhatsappSubmission({
+        scope: "campaign",
+        submittedAt: new Date().toISOString(),
+        templateName: payload.templateName,
+        languageCode: payload.languageCode,
+        segment: payload.segment,
+        attempted: Number(campaignResult.attempted || 0),
+        sent: Number(campaignResult.sent || 0),
+        failed: Number(campaignResult.failed || 0),
+      });
       toast.success(
         `WhatsApp campaign processed. Sent ${campaignResult.sent || 0} / ${
           campaignResult.attempted || 0
         }.`,
       );
       await refreshAdminCrmData();
+      return true;
     } catch (error) {
       toast.error(error?.message || "Failed to send WhatsApp campaign.");
+      return false;
     } finally {
       setSendingCampaignWhatsapp(false);
+    }
+  };
+
+  const handleSendWhatsappCampaign = () => {
+    try {
+      const payload = buildCampaignWhatsappPayload();
+      setConfirmationDialog({
+        open: true,
+        action: "campaign",
+        title: "Confirm WhatsApp Campaign",
+        description:
+          "This will submit a template campaign to the previewed consented CRM audience.",
+        confirmLabel: "Send Campaign",
+        warning: whatsappDeliveryReady
+          ? ""
+          : "Meta still reports sender verification or display-name warnings. Campaign API calls can succeed while delivery later fails for some recipients.",
+        highlights: [
+          {
+            label: "Audience",
+            value: `${Number(audiencePreview?.count || 0)} contacts`,
+          },
+          {
+            label: "Segment",
+            value: prettifyValue(payload.segment),
+          },
+          {
+            label: "Template",
+            value: payload.templateName,
+          },
+          {
+            label: "Language",
+            value: payload.languageCode,
+          },
+          {
+            label: "Variables",
+            value: `${payload.headerVariables.length} header / ${payload.bodyVariables.length} body`,
+          },
+          {
+            label: "Label",
+            value: payload.campaignName || "No campaign label",
+          },
+        ],
+        payload,
+      });
+    } catch (error) {
+      toast.error(error?.message || "Failed to prepare WhatsApp campaign.");
+    }
+  };
+
+  const handleConfirmWhatsappAction = async () => {
+    if (!confirmationDialog?.payload) return;
+
+    const wasSuccessful =
+      confirmationDialog.action === "personal"
+        ? await executePersonalWhatsappSend(confirmationDialog.payload)
+        : await executeWhatsappCampaign(confirmationDialog.payload);
+
+    if (wasSuccessful) {
+      closeConfirmationDialog();
     }
   };
 
@@ -619,6 +1052,18 @@ const CrmPage = () => {
   const hasSelectedWhatsappConversation = timeline.some(
     (item) => item.channel === "whatsapp",
   );
+  const whatsappHealth = whatsappOverview?.configuration?.health || null;
+  const whatsappHealthState =
+    whatsappHealth?.state ||
+    (whatsappOverview?.configuration?.messagingReady ? "ready" : "not_configured");
+  const whatsappApiReady = Boolean(
+    whatsappOverview?.configuration?.messagingReady &&
+      (whatsappHealth ? whatsappHealth.ok : true),
+  );
+  const whatsappDeliveryReady =
+    whatsappHealth?.deliveryReady !== undefined
+      ? Boolean(whatsappHealth.deliveryReady)
+      : whatsappHealthState === "ready";
 
   return (
     <section className="w-full p-5 space-y-5">
@@ -680,6 +1125,14 @@ const CrmPage = () => {
                 controls you want to inspect.
               </p>
             </div>
+            <Button
+              variant="outlined"
+              size="small"
+              sx={{ textTransform: "none" }}
+              onClick={handleRefreshContacts}
+            >
+              Refresh Contacts
+            </Button>
             <Button
               variant="outlined"
               size="small"
@@ -931,7 +1384,7 @@ const CrmPage = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                   <TextField
                     select
                     size="small"
@@ -1001,6 +1454,63 @@ const CrmPage = () => {
                     }
                     placeholder="vip, repeat, priority"
                   />
+
+                  <TextField
+                    select
+                    size="small"
+                    label="WhatsApp Consent"
+                    value={draft.consentWhatsapp}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        consentWhatsapp: event.target.value,
+                      }))
+                    }
+                  >
+                    {CONSENT_OPTIONS.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+
+                  <TextField
+                    select
+                    size="small"
+                    label="Email Consent"
+                    value={draft.consentEmail}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        consentEmail: event.target.value,
+                      }))
+                    }
+                  >
+                    {CONSENT_OPTIONS.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+
+                  <TextField
+                    select
+                    size="small"
+                    label="Push Consent"
+                    value={draft.consentPush}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        consentPush: event.target.value,
+                      }))
+                    }
+                  >
+                    {CONSENT_OPTIONS.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -1031,14 +1541,11 @@ const CrmPage = () => {
               </div>
               <div className="flex flex-wrap gap-2">
                 <span
-                  className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getConfigTone(
-                    whatsappOverview?.configuration?.messagingReady,
+                  className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getWhatsappHealthTone(
+                    whatsappHealthState,
                   )}`}
                 >
-                  API{" "}
-                  {whatsappOverview?.configuration?.messagingReady
-                    ? "Connected"
-                    : "Needs Config"}
+                  API {getWhatsappHealthLabel(whatsappHealthState)}
                 </span>
                 <span
                   className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getConfigTone(
@@ -1050,6 +1557,48 @@ const CrmPage = () => {
                 </span>
               </div>
             </div>
+
+            {whatsappHealth?.message ? (
+              <div
+                className={`mb-4 rounded-xl border px-3 py-2 text-xs ${getWhatsappHealthPanelTone(
+                  whatsappHealthState,
+                )}`}
+              >
+                <p>{whatsappHealth.message}</p>
+                {whatsappHealth ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-3">
+                    <div className="rounded-lg bg-white/60 px-2 py-1 text-slate-700">
+                      <span className="font-semibold">Display</span>:{" "}
+                      {whatsappHealth.displayPhoneNumber || "-"}
+                    </div>
+                    <div className="rounded-lg bg-white/60 px-2 py-1 text-slate-700">
+                      <span className="font-semibold">Name</span>:{" "}
+                      {whatsappHealth.verifiedName || "-"}
+                    </div>
+                    <div className="rounded-lg bg-white/60 px-2 py-1 text-slate-700">
+                      <span className="font-semibold">Delivery</span>:{" "}
+                      {whatsappDeliveryReady ? "Ready" : "Blocked / Risky"}
+                    </div>
+                    <div className="rounded-lg bg-white/60 px-2 py-1 text-slate-700">
+                      <span className="font-semibold">Sender Status</span>:{" "}
+                      {formatWhatsappHealthField(whatsappHealth.senderStatus)}
+                    </div>
+                    <div className="rounded-lg bg-white/60 px-2 py-1 text-slate-700">
+                      <span className="font-semibold">Code Verify</span>:{" "}
+                      {formatWhatsappHealthField(whatsappHealth.codeVerificationStatus)}
+                    </div>
+                    <div className="rounded-lg bg-white/60 px-2 py-1 text-slate-700">
+                      <span className="font-semibold">Name Review</span>:{" "}
+                      {formatWhatsappHealthField(whatsappHealth.nameStatus)}
+                    </div>
+                    <div className="rounded-lg bg-white/60 px-2 py-1 text-slate-700">
+                      <span className="font-semibold">Quality</span>:{" "}
+                      {formatWhatsappHealthField(whatsappHealth.qualityRating)}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {selectedContact ? (
               <div className="space-y-4">
@@ -1072,6 +1621,13 @@ const CrmPage = () => {
                   </div>
                 </div>
 
+                {selectedContact?.consent?.whatsapp === false ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    WhatsApp consent is blocked for this contact. Update the contact card
+                    above before sending.
+                  </div>
+                ) : null}
+
                 <TextField
                   select
                   size="small"
@@ -1086,6 +1642,8 @@ const CrmPage = () => {
                 >
                   <MenuItem value="text">Personal Text Reply</MenuItem>
                   <MenuItem value="template">Template Message</MenuItem>
+                  <MenuItem value="image">Image Message</MenuItem>
+                  <MenuItem value="gif">GIF Message</MenuItem>
                 </TextField>
 
                 {personalWhatsappForm.mode === "text" ? (
@@ -1104,7 +1662,7 @@ const CrmPage = () => {
                     fullWidth
                     placeholder="Write a direct reply for the customer..."
                   />
-                ) : (
+                ) : personalWhatsappForm.mode === "template" ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {whatsappTemplates.length > 0 ? (
                       <TextField
@@ -1113,15 +1671,13 @@ const CrmPage = () => {
                         label="Approved Template"
                         value={personalWhatsappForm.templateName}
                         onChange={(event) =>
-                          setPersonalWhatsappForm((prev) => ({
-                            ...prev,
-                            templateName: event.target.value,
-                          }))
+                          setPersonalTemplateSelection(event.target.value)
                         }
                       >
                         {whatsappTemplates.map((template) => (
                           <MenuItem key={template.name} value={template.name}>
-                            {template.name} ({prettifyValue(template.category)})
+                            {template.name} ({prettifyValue(template.category)} /{" "}
+                            {template.language || "en"})
                           </MenuItem>
                         ))}
                       </TextField>
@@ -1150,6 +1706,7 @@ const CrmPage = () => {
                           languageCode: event.target.value,
                         }))
                       }
+                      helperText="Use the exact approved Meta language code, like en_US."
                     />
                     <TextField
                       size="small"
@@ -1176,6 +1733,78 @@ const CrmPage = () => {
                       placeholder="Customer name, offer text"
                     />
                   </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        variant="outlined"
+                        component="label"
+                        size="small"
+                        sx={{ textTransform: "none" }}
+                        disabled={uploadingWhatsappMedia}
+                      >
+                        {uploadingWhatsappMedia ? "Uploading..." : "Upload Media"}
+                        <input
+                          hidden
+                          type="file"
+                          accept={
+                            personalWhatsappForm.mode === "gif"
+                              ? "image/gif,video/mp4,video/webm"
+                              : "image/jpeg,image/png,image/webp,image/gif"
+                          }
+                          onChange={handleWhatsappMediaUpload}
+                        />
+                      </Button>
+                      <span className="text-xs text-slate-500">
+                        Uploads to Cloudinary and attaches the media to this send.
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <TextField
+                        size="small"
+                        label="Selected File"
+                        value={
+                          personalWhatsappForm.mediaFilename ||
+                          (personalWhatsappForm.mediaUrl ? "Uploaded media" : "")
+                        }
+                        InputProps={{ readOnly: true }}
+                        placeholder="No file uploaded yet"
+                      />
+
+                      <TextField
+                        size="small"
+                        label="Caption (optional)"
+                        value={personalWhatsappForm.mediaCaption}
+                        onChange={(event) =>
+                          setPersonalWhatsappForm((prev) => ({
+                            ...prev,
+                            mediaCaption: event.target.value,
+                          }))
+                        }
+                        multiline
+                        minRows={3}
+                        fullWidth
+                        placeholder="Message caption shown with the media"
+                      />
+
+                      <Button
+                        variant="text"
+                        size="small"
+                        sx={{ textTransform: "none", justifyContent: "flex-start" }}
+                        disabled={!personalWhatsappForm.mediaUrl}
+                        onClick={() =>
+                          setPersonalWhatsappForm((prev) => ({
+                            ...prev,
+                            mediaUrl: "",
+                            mediaFilename: "",
+                          }))
+                        }
+                      >
+                        Clear uploaded media
+                      </Button>
+                    </div>
+                  </div>
                 )}
 
                 <TextField
@@ -1194,20 +1823,37 @@ const CrmPage = () => {
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                   Text mode is best for active customer conversations already visible in the
                   timeline. Template mode is the safer path for first outreach, reactivation,
-                  or promotional sends through the official WhatsApp business API.
+                  or promotional sends through the official WhatsApp business API. Image/GIF
+                  mode requires uploading a file from your device.
                 </div>
 
+                {lastWhatsappSubmission?.scope === "personal" ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    Last submit: {prettifyValue(lastWhatsappSubmission.mode)} to{" "}
+                    {lastWhatsappSubmission.phone || "the selected contact"} on{" "}
+                    {formatDateTime(lastWhatsappSubmission.submittedAt)}
+                    {lastWhatsappSubmission.messageId
+                      ? ` | Message ID: ${truncateForPreview(
+                          lastWhatsappSubmission.messageId,
+                          42,
+                        )}`
+                      : ""}
+                  </div>
+                ) : null}
+
                 <div className="flex items-center justify-between gap-3">
-                  <Button
-                    variant="contained"
-                    sx={{ textTransform: "none" }}
-                    disabled={
-                      sendingPersonalWhatsapp ||
-                      !selectedContact.phone ||
-                      !whatsappOverview?.configuration?.messagingReady
-                    }
-                    onClick={handleSendPersonalWhatsapp}
-                  >
+                <Button
+                  variant="contained"
+                  sx={{ textTransform: "none" }}
+                  disabled={
+                    sendingPersonalWhatsapp ||
+                    uploadingWhatsappMedia ||
+                    !selectedContact.phone ||
+                    selectedContact?.consent?.whatsapp === false ||
+                    !whatsappApiReady
+                  }
+                  onClick={handleSendPersonalWhatsapp}
+                >
                     {sendingPersonalWhatsapp ? "Sending..." : "Send WhatsApp Message"}
                   </Button>
                   <span className="text-xs text-slate-500">
@@ -1284,15 +1930,13 @@ const CrmPage = () => {
                   label="Approved Template"
                   value={campaignForm.templateName}
                   onChange={(event) =>
-                    setCampaignForm((prev) => ({
-                      ...prev,
-                      templateName: event.target.value,
-                    }))
+                    setCampaignTemplateSelection(event.target.value)
                   }
                 >
                   {whatsappTemplates.map((template) => (
                     <MenuItem key={template.name} value={template.name}>
-                      {template.name} ({prettifyValue(template.category)})
+                      {template.name} ({prettifyValue(template.category)} /{" "}
+                      {template.language || "en"})
                     </MenuItem>
                   ))}
                 </TextField>
@@ -1321,6 +1965,7 @@ const CrmPage = () => {
                     languageCode: event.target.value,
                   }))
                 }
+                helperText="Use the exact approved Meta language code, like en_US."
               />
 
               <TextField
@@ -1405,7 +2050,7 @@ const CrmPage = () => {
                       {contact.phone || contact.email || "No identity"}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
-                      {prettifyValue(contact.lifecycleStage)} •{" "}
+                      {prettifyValue(contact.lifecycleStage)} /{" "}
                       {prettifyValue(contact.status)}
                     </p>
                   </div>
@@ -1418,13 +2063,23 @@ const CrmPage = () => {
               </div>
             </div>
 
+            {lastWhatsappSubmission?.scope === "campaign" ? (
+              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                Last campaign: {lastWhatsappSubmission.sent || 0} sent /{" "}
+                {lastWhatsappSubmission.attempted || 0} attempted for{" "}
+                {prettifyValue(lastWhatsappSubmission.segment || "all")} on{" "}
+                {formatDateTime(lastWhatsappSubmission.submittedAt)}
+              </div>
+            ) : null}
+
             <div className="mt-4 flex items-center justify-between gap-3">
               <Button
                 variant="contained"
                 sx={{ textTransform: "none" }}
                 disabled={
                   sendingCampaignWhatsapp ||
-                  !whatsappOverview?.configuration?.messagingReady
+                  Number(audiencePreview?.count || 0) === 0 ||
+                  !whatsappApiReady
                 }
                 onClick={handleSendWhatsappCampaign}
               >
@@ -1662,6 +2317,63 @@ const CrmPage = () => {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={confirmationDialog.open}
+        onClose={() => {
+          if (!sendingPersonalWhatsapp && !sendingCampaignWhatsapp) {
+            closeConfirmationDialog();
+          }
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>{confirmationDialog.title || "Confirm WhatsApp Action"}</DialogTitle>
+        <DialogContent dividers className="space-y-4">
+          <p className="text-sm text-slate-600">
+            {confirmationDialog.description || "Review this action before continuing."}
+          </p>
+
+          {confirmationDialog.warning ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {confirmationDialog.warning}
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(confirmationDialog.highlights || []).map((item) => (
+              <div
+                key={`${confirmationDialog.action}-${item.label}`}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {item.label}
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {item.value || "-"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={closeConfirmationDialog}
+            disabled={sendingPersonalWhatsapp || sendingCampaignWhatsapp}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmWhatsappAction}
+            disabled={sendingPersonalWhatsapp || sendingCampaignWhatsapp}
+          >
+            {sendingPersonalWhatsapp || sendingCampaignWhatsapp
+              ? "Submitting..."
+              : confirmationDialog.confirmLabel || "Confirm"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </section>
   );
 };

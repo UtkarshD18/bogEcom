@@ -10,6 +10,7 @@ import {
   postData,
   putData,
 } from "@/utils/api";
+import { hasAdminPermission } from "@/utils/adminPermissions";
 import { withAdminBasePath } from "@/utils/basePath";
 import { Button } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
@@ -484,7 +485,7 @@ const resolveTrackingUrl = (order = {}) => {
   }
 };
 
-const OrderRow = ({ order, index, token, onStatusUpdate }) => {
+const OrderRow = ({ order, index, token, onStatusUpdate, canManageStatus }) => {
   const [expandIndex, setExpandIndex] = useState(false);
   const [orderStatus, setOrderStatus] = useState(
     normalizeOrderStatus(order?.order_status) || "pending",
@@ -682,6 +683,10 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   };
 
   const handleChange = async (event) => {
+    if (!canManageStatus) {
+      toast.error("You do not have permission to update order status.");
+      return;
+    }
     const newStatus = event.target.value;
     setUpdating(true);
     try {
@@ -852,7 +857,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
             displayEmpty
             inputProps={{ "aria-label": "Without label" }}
             size="small"
-            disabled={updating}
+            disabled={updating || !canManageStatus}
             fullWidth
             sx={{
               "& .MuiSelect-select": {
@@ -1171,7 +1176,7 @@ const OrderRow = ({ order, index, token, onStatusUpdate }) => {
   );
 };
 
-const OrdersTable = ({ orders, token, onStatusUpdate }) => (
+const OrdersTable = ({ orders, token, onStatusUpdate, canManageStatus }) => (
   <div className="w-full mt-5 border border-gray-200 rounded-xl overflow-x-auto">
     <table className="min-w-[980px] w-full table-fixed">
       <colgroup>
@@ -1222,6 +1227,7 @@ const OrdersTable = ({ orders, token, onStatusUpdate }) => (
             index={index}
             token={token}
             onStatusUpdate={onStatusUpdate}
+            canManageStatus={canManageStatus}
           />
         ))}
       </tbody>
@@ -1230,7 +1236,7 @@ const OrdersTable = ({ orders, token, onStatusUpdate }) => (
 );
 
 const Orders = () => {
-  const { token, isAuthenticated, loading } = useAdmin();
+  const { token, isAuthenticated, loading, admin } = useAdmin();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1243,7 +1249,8 @@ const Orders = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [backfillingPaymentIds, setBackfillingPaymentIds] = useState(false);
   const [repairingPaidOrders, setRepairingPaidOrders] = useState(false);
-  const [removingPendingOrders, setRemovingPendingOrders] = useState(false);
+  const canManageStatus = hasAdminPermission(admin, "manage_orders");
+  const canRunOrderMaintenanceActions = hasAdminPermission(admin, "manage_shipping");
   const { intervalMs } = useLiveRefreshSetting();
   const refreshConfig = useMemo(
     () => ({
@@ -1301,9 +1308,11 @@ const Orders = () => {
           const nextOrders = Array.isArray(payload?.orders)
             ? payload.orders
             : [];
-          const visibleOrders = nextOrders.filter(
-            (order) => !isDemoOrTestOrder(order),
-          );
+          const visibleOrders = nextOrders.filter((order) => {
+            if (isDemoOrTestOrder(order)) return false;
+            if (statusFilter === "all" && isPendingQueueOrder(order)) return false;
+            return true;
+          });
           const nextTotalPages = Number(payload?.pagination?.totalPages || 1);
           setOrders(visibleOrders);
           setTotalPages(nextTotalPages > 0 ? nextTotalPages : 1);
@@ -1347,7 +1356,7 @@ const Orders = () => {
     const rawStatus = String(
       searchParams?.get("status") || "all",
     ).toLowerCase();
-    const allowed = new Set(["all", "pending", "successful", "failed"]);
+    const allowed = new Set(["all", "successful", "failed"]);
     const nextStatus = allowed.has(rawStatus) ? rawStatus : "all";
     setStatusFilter(nextStatus);
     setPage(1);
@@ -1358,28 +1367,7 @@ const Orders = () => {
     refreshConfig,
   );
 
-  const pendingOrders = useMemo(
-    () => orders.filter((order) => isPendingQueueOrder(order)),
-    [orders],
-  );
-  const nonPendingOrders = useMemo(
-    () => orders.filter((order) => !isPendingQueueOrder(order)),
-    [orders],
-  );
-  const showPendingQueueSection =
-    statusFilter === "all" && pendingOrders.length > 0;
-  const primaryOrders =
-    statusFilter === "pending"
-      ? pendingOrders
-      : statusFilter === "all"
-        ? nonPendingOrders
-        : orders;
-  const showEmptyPrimaryState =
-    !isLoading &&
-    orders.length > 0 &&
-    statusFilter === "all" &&
-    nonPendingOrders.length === 0 &&
-    pendingOrders.length > 0;
+  const primaryOrders = orders;
 
   const handleOrderUpdate = useCallback(() => {
     triggerOrdersRefresh();
@@ -1484,62 +1472,6 @@ const Orders = () => {
     }
   };
 
-  const handleRemovePendingOrders = async () => {
-    if (!token) {
-      toast.error("Admin session missing");
-      return;
-    }
-
-    const confirmed =
-      typeof window === "undefined"
-        ? true
-        : window.confirm(
-            "Remove all pending orders? This permanently deletes pending, pending payment, and in warehouse orders.",
-          );
-    if (!confirmed) return;
-
-    setRemovingPendingOrders(true);
-    try {
-      const response = await deleteData("/api/orders/admin/pending", token);
-      if (response?.success) {
-        const deletedCount = Number(response?.data?.deletedCount || 0);
-        const skippedCount = Number(response?.data?.skippedCount || 0);
-
-        if (deletedCount > 0) {
-          toast.success(
-            `Removed ${deletedCount} pending order${deletedCount === 1 ? "" : "s"}`,
-          );
-        } else {
-          toast.success("No pending orders found");
-        }
-
-        if (skippedCount > 0) {
-          toast.error(
-            `${skippedCount} pending order${skippedCount === 1 ? " was" : "s were"} skipped. Check server logs.`,
-          );
-        }
-
-        const params = new URLSearchParams(searchParams?.toString() || "");
-        params.delete("status");
-        const query = params.toString();
-
-        setStatusFilter("all");
-        setPage(1);
-        router.replace(query ? `/orders?${query}` : "/orders");
-
-        if (statusFilter === "all") {
-          fetchOrders();
-        }
-      } else {
-        toast.error(response?.message || "Failed to remove pending orders");
-      }
-    } catch {
-      toast.error("Failed to remove pending orders");
-    } finally {
-      setRemovingPendingOrders(false);
-    }
-  };
-
   if (loading || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1561,75 +1493,47 @@ const Orders = () => {
               <span className="text-primary font-bold">{orders.length}</span>{" "}
               {orders.length === 1 ? "order" : "orders"}
             </p>
-            {statusFilter === "all" ? (
-              <p className="mt-1 text-xs text-gray-500">
-                Pending and payment-hold rows are kept in a separate queue
-                below.
-              </p>
-            ) : null}
+            <p className="mt-1 text-xs text-gray-500">
+              Pending and payment-hold orders are hidden from this view.
+            </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleBackfillSuccessfulPaymentIds}
-              disabled={
-                backfillingPaymentIds ||
-                repairingPaidOrders ||
-                removingPendingOrders
-              }
-              sx={{
-                textTransform: "none",
-                borderRadius: "10px",
-                px: 2,
-                py: 0.8,
-              }}
-            >
-              {backfillingPaymentIds
-                ? "Backfilling Txn IDs..."
-                : "Backfill Successful Txn IDs"}
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleRepairPaidOrders}
-              disabled={
-                backfillingPaymentIds ||
-                repairingPaidOrders ||
-                removingPendingOrders
-              }
-              sx={{
-                textTransform: "none",
-                borderRadius: "10px",
-                px: 2,
-                py: 0.8,
-              }}
-            >
-              {repairingPaidOrders
-                ? "Repairing Paid Orders..."
-                : "Repair Paid Orders"}
-            </Button>
-            <Button
-              variant="contained"
-              color="error"
-              size="small"
-              onClick={handleRemovePendingOrders}
-              disabled={
-                removingPendingOrders ||
-                backfillingPaymentIds ||
-                repairingPaidOrders
-              }
-              sx={{
-                textTransform: "none",
-                borderRadius: "10px",
-                px: 2,
-                py: 0.8,
-              }}
-            >
-              {removingPendingOrders
-                ? "Removing Pending Orders..."
-                : "Remove Pending Orders"}
-            </Button>
+            {canRunOrderMaintenanceActions ? (
+              <>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={handleBackfillSuccessfulPaymentIds}
+                  disabled={backfillingPaymentIds || repairingPaidOrders}
+                  sx={{
+                    textTransform: "none",
+                    borderRadius: "10px",
+                    px: 2,
+                    py: 0.8,
+                  }}
+                >
+                  {backfillingPaymentIds
+                    ? "Backfilling Txn IDs..."
+                    : "Backfill Successful Txn IDs"}
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={handleRepairPaidOrders}
+                  disabled={backfillingPaymentIds || repairingPaidOrders}
+                  sx={{
+                    textTransform: "none",
+                    borderRadius: "10px",
+                    px: 2,
+                    py: 0.8,
+                  }}
+                >
+                  {repairingPaidOrders
+                    ? "Repairing Paid Orders..."
+                    : "Repair Paid Orders"}
+                </Button>
+              </>
+            ) : null}
             <Button
               variant="outlined"
               size="small"
@@ -1655,7 +1559,6 @@ const Orders = () => {
               }}
             >
               <MenuItem value="all">All Orders</MenuItem>
-              <MenuItem value="pending">Pending Orders</MenuItem>
               <MenuItem value="successful">Successful Orders</MenuItem>
               <MenuItem value="failed">Failed Orders</MenuItem>
             </Select>
@@ -1702,58 +1605,18 @@ const Orders = () => {
           </div>
         ) : (
           <>
-            {showEmptyPrimaryState ? (
-              <div className="mt-5 rounded-xl border border-dashed border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-800">
-                All rows on this page are still in the pending queue. Review
-                them below so payment-hold and not-yet-confirmed orders stay
-                separate from the main order list.
-              </div>
-            ) : primaryOrders.length > 0 ? (
+            {primaryOrders.length > 0 ? (
               <OrdersTable
                 orders={primaryOrders}
                 token={token}
                 onStatusUpdate={fetchOrders}
+                canManageStatus={canManageStatus}
               />
             ) : (
               <div className="mt-5 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
                 No orders matched this view.
               </div>
             )}
-
-            {showPendingQueueSection ? (
-              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold text-amber-950">
-                      Pending Queue
-                    </h2>
-                    <p className="mt-1 text-sm text-amber-800">
-                      These rows are waiting on payment confirmation or internal
-                      processing, so they sit apart from the main order list.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {pendingOrders.slice(0, 3).map((order, index) => (
-                      <span
-                        key={String(order?._id || order?.id || index)}
-                        className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-900 shadow-sm"
-                      >
-                        {getPendingQueueReason(order)}
-                      </span>
-                    ))}
-                    <span className="inline-flex rounded-full bg-amber-900 px-3 py-1 text-xs font-semibold text-white">
-                      {pendingOrders.length} queued
-                    </span>
-                  </div>
-                </div>
-
-                <OrdersTable
-                  orders={pendingOrders}
-                  token={token}
-                  onStatusUpdate={fetchOrders}
-                />
-              </div>
-            ) : null}
 
             <div className="flex items-center justify-center py-10">
               <Pagination

@@ -34,6 +34,7 @@ import {
   applyRedemptionToUser,
   awardCoinsToUser,
 } from "../services/coin.service.js";
+import { syncOrderContactToCrmSafely } from "../services/crm/crmAutoSync.service.js";
 import {
   buildComboOrderSnapshot,
   computeComboAvailability,
@@ -121,7 +122,6 @@ import {
   updateInfluencerStats,
 } from "./influencer.controller.js";
 import { sendOrderUpdateNotification } from "./notification.controller.js";
-import isPrivilegedAdminRole from "../utils/isPrivilegedAdminRole.js";
 
 // ==================== PAYMENT PROVIDER CONFIGURATION ====================
 
@@ -383,48 +383,39 @@ const captureOrderEmailInNewsletter = async ({
   const normalizedEmail = String(email || "")
     .trim()
     .toLowerCase();
-  if (!normalizedEmail || !isValidNewsletterEmail(normalizedEmail)) return;
 
-  const source = userId ? "signin_order" : "guest_order";
-  await NewsletterModel.findOneAndUpdate(
-    { email: normalizedEmail },
-    {
-      $setOnInsert: {
-        email: normalizedEmail,
+  if (normalizedEmail && isValidNewsletterEmail(normalizedEmail)) {
+    const source = userId ? "signin_order" : "guest_order";
+    await NewsletterModel.findOneAndUpdate(
+      { email: normalizedEmail },
+      {
+        $setOnInsert: {
+          email: normalizedEmail,
+        },
+        $set: {
+          isActive: true,
+          source,
+        },
       },
-      $set: {
-        isActive: true,
-        source,
+      {
+        upsert: true,
+        setDefaultsOnInsert: true,
       },
-    },
-    {
-      upsert: true,
-      setDefaultsOnInsert: true,
-    },
-  );
+    );
+  }
 
-  if (!orderId) return;
-
-  await captureCrmTouchpointSafely({
-    channel: "website",
-    eventType: "order_created",
-    userId,
+  await syncOrderContactToCrmSafely({
+    req,
     email: normalizedEmail,
-    phone,
+    userId,
     name,
+    phone,
     orderId,
     orderAmount,
     sessionId,
-    pageUrl: "/checkout",
-    referrer: req?.headers?.referer || "",
-    happenedAt: new Date(),
-    idempotencyKey: `crm:order:${orderId}:created`,
-    metadata: {
-      source: "order_create",
-      affiliateSource: affiliateSource || null,
-      influencerCode: influencerCode || null,
-      isSavedOrder: Boolean(isSavedOrder),
-    },
+    affiliateSource,
+    influencerCode,
+    isSavedOrder,
   });
 };
 
@@ -4098,6 +4089,11 @@ export const getAllOrders = asyncHandler(async (req, res) => {
           filter.order_status = normalizedOrderStatus;
         }
       }
+    } else {
+      andFilters.push({
+        order_status: { $nin: pendingStatuses },
+        payment_status: { $nin: pendingPaymentStatuses },
+      });
     }
 
     // Search by payment identifiers or user email
