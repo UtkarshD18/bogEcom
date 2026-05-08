@@ -4,7 +4,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import CrmContact from "../models/crmContact.model.js";
 import CrmInteraction from "../models/crmInteraction.model.js";
+import SettingsModel from "../models/settings.model.js";
 import { recordCrmTouchpoint } from "../services/crm/crmTracking.service.js";
+import {
+  clearWhatsappRuntimeConfigCache,
+  getWhatsappRuntimeConfigSnapshot,
+  saveWhatsappRuntimeConfig,
+} from "../services/whatsapp/whatsappConfig.service.js";
 import {
   getWhatsappAudiencePreview,
   sendWhatsappCampaign,
@@ -51,7 +57,12 @@ test.after(async () => {
 
 test.afterEach(async () => {
   restoreWhatsappEnv();
-  await Promise.all([CrmContact.deleteMany({}), CrmInteraction.deleteMany({})]);
+  clearWhatsappRuntimeConfigCache();
+  await Promise.all([
+    CrmContact.deleteMany({}),
+    CrmInteraction.deleteMany({}),
+    SettingsModel.deleteMany({}),
+  ]);
 });
 
 test("getWhatsappAudiencePreview includes default-approved customers and dedupes phone variants", async () => {
@@ -189,6 +200,101 @@ test("getWhatsappMessagingHealth reports token_expired for Meta OAuthException 1
   assert.equal(health.httpStatus, 401);
   assert.equal(health.providerCode, 190);
   assert.equal(health.providerSubcode, 463);
+});
+
+test("getWhatsappMessagingHealth keeps the saved admin token as first priority when it is expired", async () => {
+  process.env.WHATSAPP_ACCESS_TOKEN = "env-token";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "123456789";
+  process.env.WHATSAPP_GRAPH_API_VERSION = "v22.0";
+
+  await saveWhatsappRuntimeConfig({
+    accessToken: "expired-db-token",
+    phoneNumberId: "123456789",
+    graphApiVersion: "v22.0",
+  });
+
+  const seenAuthHeaders = [];
+  const health = await getWhatsappMessagingHealth({
+    fetchImpl: async (_url, options = {}) => {
+      seenAuthHeaders.push(options?.headers?.Authorization || "");
+
+      if (options?.headers?.Authorization === "Bearer expired-db-token") {
+        return {
+          ok: false,
+          status: 401,
+          statusText: "Unauthorized",
+          async json() {
+            return {
+              error: {
+                message: "Error validating access token: Session has expired.",
+                type: "OAuthException",
+                code: 190,
+                error_subcode: 463,
+              },
+            };
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            id: "123456789",
+            display_phone_number: "+91 87690 27048",
+            verified_name: "Healthy One Gram",
+            quality_rating: "GREEN",
+            code_verification_status: "VERIFIED",
+            name_status: "APPROVED",
+            status: "CONNECTED",
+            platform_type: "CLOUD_API",
+            throughput: { level: "STANDARD" },
+          };
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(seenAuthHeaders, ["Bearer expired-db-token"]);
+  assert.equal(health.ok, false);
+  assert.equal(health.state, "token_expired");
+  assert.equal(health.accessTokenSource, "database");
+  assert.equal(health.providerCode, 190);
+  assert.equal(health.providerSubcode, 463);
+});
+
+test("getWhatsappRuntimeConfigSnapshot keeps stored overrides separate from environment fallback", async () => {
+  process.env.WHATSAPP_ACCESS_TOKEN = "env-token";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "env-phone-id";
+  process.env.WHATSAPP_GRAPH_API_VERSION = "v22.0";
+
+  await saveWhatsappRuntimeConfig({
+    accessToken: "db-token",
+    phoneNumberId: "db-phone-id",
+    graphApiVersion: "v22.0",
+  });
+
+  await saveWhatsappRuntimeConfig({
+    accessToken: "",
+    phoneNumberId: "db-phone-id",
+    graphApiVersion: "v22.0",
+  });
+
+  const snapshot = await getWhatsappRuntimeConfigSnapshot({ forceFresh: true });
+  const storedSetting = await SettingsModel.findOne({
+    key: "whatsappRuntimeConfig",
+  })
+    .select("value")
+    .lean();
+
+  assert.equal(snapshot.accessToken, "env-token");
+  assert.equal(snapshot.effective.accessToken, "env-token");
+  assert.equal(snapshot.stored.accessToken, "");
+  assert.equal(snapshot.sources.accessToken, "environment");
+  assert.equal(snapshot.environmentAvailable.accessToken, true);
+  assert.equal(snapshot.phoneNumberId, "db-phone-id");
+  assert.equal(snapshot.stored.phoneNumberId, "db-phone-id");
+  assert.equal(storedSetting?.value?.accessToken, "");
 });
 
 test("getWhatsappMessagingHealth reports ready when provider auth probe succeeds", async () => {

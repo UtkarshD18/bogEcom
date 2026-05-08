@@ -54,6 +54,32 @@ const prettifyKey = (value = "") =>
     .replaceAll("_", " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
+const formatMetaErrorCode = (providerCode, providerSubcode) => {
+  const code = Number.isFinite(Number(providerCode))
+    ? String(providerCode)
+    : "";
+  const subcode = Number.isFinite(Number(providerSubcode))
+    ? String(providerSubcode)
+    : "";
+
+  if (code && subcode) return `${code} / ${subcode}`;
+  if (code) return code;
+  return "";
+};
+
+const getStoredFormValues = (config = {}) => {
+  const stored = config?.stored || {};
+
+  return {
+    accessToken: stored.accessToken || "",
+    phoneNumberId: stored.phoneNumberId || "",
+    businessAccountId: stored.businessAccountId || "",
+    graphApiVersion: stored.graphApiVersion || "v25.0",
+    webhookVerifyToken: stored.webhookVerifyToken || "",
+    appSecret: stored.appSecret || "",
+  };
+};
+
 export default function WhatsappConfigPage() {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
@@ -105,6 +131,47 @@ export default function WhatsappConfigPage() {
     ];
   }, [configMeta, isLoading, loadError]);
 
+  const accessTokenSource = configMeta?.sources?.accessToken || "missing";
+  const hasEnvironmentAccessToken = Boolean(
+    configMeta?.environmentAvailable?.accessToken,
+  );
+  const healthAccessTokenSource = health?.accessTokenSource || accessTokenSource;
+  const metaErrorCode = formatMetaErrorCode(
+    health?.providerCode,
+    health?.providerSubcode,
+  );
+  const shouldOfferEnvFallback =
+    hasEnvironmentAccessToken &&
+    accessTokenSource === "database" &&
+    health?.state === "token_expired";
+  const tokenGuidance = useMemo(() => {
+    if (accessTokenSource === "database" && health?.state === "token_expired") {
+      return hasEnvironmentAccessToken
+        ? "The saved admin token is the active token and Meta is rejecting it as expired. Replace it with a fresh permanent system-user token, or intentionally clear it only if you want to switch to the deployed environment token."
+        : "The saved admin token is the active token and Meta is rejecting it as expired. Replace it with a fresh permanent system-user token.";
+    }
+
+    if (health?.state === "token_expired") {
+      return "Meta is rejecting the active token as expired. If this token was entered from admin, replace it with a fresh permanent system-user token tied to the same app, business account, and phone number.";
+    }
+
+    if (health?.state === "invalid_token") {
+      return "Meta is rejecting the active token as invalid. This usually means wrong app/business linkage, revoked token, or a token copied incompletely.";
+    }
+
+    if (health?.state === "permission_denied") {
+      return "The token is present, but Meta denied access to this WhatsApp asset. Recheck system-user permissions, app assignment, and business asset access.";
+    }
+
+    return "";
+  }, [accessTokenSource, hasEnvironmentAccessToken, health]);
+  const accessTokenHelperText =
+    accessTokenSource === "environment"
+      ? "Stored override is blank. Backend is currently using the deployed environment token because no admin access token is saved."
+      : hasEnvironmentAccessToken
+        ? "Admin-saved token overrides env token. Use a permanent system-user token here, or clear and save only if you intentionally want to fall back to the deployed environment token."
+        : "Admin-saved token overrides env token. Use a permanent system-user token here.";
+
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.push("/login");
@@ -146,14 +213,7 @@ export default function WhatsappConfigPage() {
         }
 
         const nextConfig = response.data?.config || {};
-        setForm({
-          accessToken: nextConfig.accessToken || "",
-          phoneNumberId: nextConfig.phoneNumberId || "",
-          businessAccountId: nextConfig.businessAccountId || "",
-          graphApiVersion: nextConfig.graphApiVersion || "v25.0",
-          webhookVerifyToken: nextConfig.webhookVerifyToken || "",
-          appSecret: nextConfig.appSecret || "",
-        });
+        setForm(getStoredFormValues(nextConfig));
         setConfigMeta(nextConfig);
         setSummary(response.data?.summary || null);
         setHealth(response.data?.health || null);
@@ -173,15 +233,18 @@ export default function WhatsappConfigPage() {
     loadConfig();
   }, [isAuthenticated, token]);
 
-  const handleSave = async () => {
+  const persistConfig = async (
+    nextForm,
+    successMessage = "WhatsApp runtime configuration updated.",
+  ) => {
     if (!token) {
       toast.error("Admin session missing");
-      return;
+      return false;
     }
 
     setIsSaving(true);
     try {
-      const response = await saveCrmWhatsappConfig(form, token);
+      const response = await saveCrmWhatsappConfig(nextForm, token);
       if (!response?.success) {
         throw new Error(
           response?.message || "Failed to save WhatsApp runtime config.",
@@ -189,24 +252,37 @@ export default function WhatsappConfigPage() {
       }
 
       const nextConfig = response.data?.config || {};
-      setForm({
-        accessToken: nextConfig.accessToken || "",
-        phoneNumberId: nextConfig.phoneNumberId || "",
-        businessAccountId: nextConfig.businessAccountId || "",
-        graphApiVersion: nextConfig.graphApiVersion || "v25.0",
-        webhookVerifyToken: nextConfig.webhookVerifyToken || "",
-        appSecret: nextConfig.appSecret || "",
-      });
+      setForm(getStoredFormValues(nextConfig));
       setConfigMeta(nextConfig);
       setSummary(response.data?.summary || null);
       setHealth(response.data?.health || null);
-      toast.success(
-        response?.message || "WhatsApp runtime configuration updated.",
-      );
+      toast.success(response?.message || successMessage);
+      return true;
     } catch (error) {
       toast.error(error?.message || "Failed to save WhatsApp config.");
+      return false;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    await persistConfig(form);
+  };
+
+  const handleUseEnvironmentToken = async () => {
+    const nextForm = {
+      ...form,
+      accessToken: "",
+    };
+
+    const saved = await persistConfig(
+      nextForm,
+      "Saved access token cleared. Backend will now use the deployed environment token when available.",
+    );
+
+    if (saved) {
+      setForm(nextForm);
     }
   };
 
@@ -260,6 +336,21 @@ export default function WhatsappConfigPage() {
             <p className="mt-1">
               {health.message || "Health check unavailable."}
             </p>
+            {tokenGuidance ? (
+              <p className="mt-3 text-xs font-medium leading-5">
+                What to do: {tokenGuidance}
+              </p>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full bg-white/70 px-3 py-1 font-semibold">
+                Active token source: {prettifyKey(healthAccessTokenSource)}
+              </span>
+              {metaErrorCode ? (
+                <span className="rounded-full bg-white/70 px-3 py-1 font-semibold">
+                  Meta error: {metaErrorCode}
+                </span>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
@@ -328,7 +419,7 @@ export default function WhatsappConfigPage() {
                   multiline
                   minRows={4}
                   className="md:col-span-2"
-                  helperText="Permanent system-user token recommended."
+                  helperText={accessTokenHelperText}
                 />
                 <TextField
                   label="Webhook Verify Token"
@@ -364,19 +455,37 @@ export default function WhatsappConfigPage() {
                 Leave a field blank only if you want the backend to fall back to
                 the deployed environment value for that field.
               </p>
-              <Button
-                variant="contained"
-                onClick={handleSave}
-                disabled={isLoading || isSaving}
-                sx={{
-                  textTransform: "none",
-                  borderRadius: "14px",
-                  px: 3,
-                  py: 1,
-                }}
-              >
-                {isSaving ? "Saving..." : "Save Runtime Config"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                {shouldOfferEnvFallback ? (
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    onClick={handleUseEnvironmentToken}
+                    disabled={isLoading || isSaving}
+                    sx={{
+                      textTransform: "none",
+                      borderRadius: "14px",
+                      px: 3,
+                      py: 1,
+                    }}
+                  >
+                    Use Deployed Env Token
+                  </Button>
+                ) : null}
+                <Button
+                  variant="contained"
+                  onClick={handleSave}
+                  disabled={isLoading || isSaving}
+                  sx={{
+                    textTransform: "none",
+                    borderRadius: "14px",
+                    px: 3,
+                    py: 1,
+                  }}
+                >
+                  {isSaving ? "Saving..." : "Save Runtime Config"}
+                </Button>
+              </div>
             </div>
           </div>
 

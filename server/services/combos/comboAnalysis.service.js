@@ -1,4 +1,5 @@
 import { logger } from "../../utils/errorHandler.js";
+import { runWithBackgroundJobLease } from "../../utils/backgroundJobLease.js";
 import { generateFrequentlyBoughtTogether } from "./frequentlyBoughtTogether.service.js";
 import { generateComboDrafts } from "./comboDraft.service.js";
 
@@ -51,8 +52,19 @@ export const startComboAnalysisJob = () => {
     }
   };
 
-  run();
-  comboJobTimer = setInterval(run, intervalMs);
+  const runScheduledJob = () =>
+    runWithBackgroundJobLease({
+      jobKey: "combo-analysis",
+      intervalMs,
+      task: run,
+    }).catch((error) => {
+      logger.error("comboAnalysisJob", "Lease coordination failed", {
+        error: error?.message || String(error),
+      });
+    });
+
+  void runScheduledJob();
+  comboJobTimer = setInterval(runScheduledJob, intervalMs);
   logger.info("comboAnalysisJob", "AI combo analysis job started", {
     intervalMs,
   });

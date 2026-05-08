@@ -9,7 +9,10 @@ import {
   sanitizeText,
 } from "../crm/channelResolver.service.js";
 import { captureCrmTouchpointSafely } from "../crm/crmTracking.service.js";
-import { getWhatsappRuntimeConfig } from "./whatsappConfig.service.js";
+import {
+  getWhatsappRuntimeConfig,
+  getWhatsappRuntimeConfigLayers,
+} from "./whatsappConfig.service.js";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = Math.max(
@@ -52,6 +55,8 @@ const buildWhatsAppServiceError = (
 
 const resolveWhatsappConfig = async ({ forceFresh = false } = {}) =>
   getWhatsappRuntimeConfig({ forceFresh });
+const resolveWhatsappConfigLayers = async ({ forceFresh = false } = {}) =>
+  getWhatsappRuntimeConfigLayers({ forceFresh });
 
 const ensureWhatsappMessagingConfig = async () => {
   const config = await resolveWhatsappConfig();
@@ -113,6 +118,18 @@ const toFriendlyProviderMessage = (providerMessage = "", details = {}) => {
   }
 
   return providerMessage;
+};
+
+const attachWhatsappRequestRuntime = (data, runtime = {}) => {
+  if (!data || typeof data !== "object") return data;
+
+  Object.defineProperty(data, "__runtime", {
+    value: runtime,
+    enumerable: false,
+    configurable: true,
+  });
+
+  return data;
 };
 
 const buildTextPayload = ({
@@ -378,36 +395,14 @@ const buildGifPayload = ({
   };
 };
 
-const executeWhatsappRequest = async ({
+const performWhatsappRequest = async ({
+  config,
   endpoint,
   method = "GET",
   payload,
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-  requirePhoneNumberId = true,
 }) => {
-  if (typeof fetchImpl !== "function") {
-    throw buildWhatsAppServiceError(
-      "Fetch implementation is not available.",
-      500,
-    );
-  }
-
-  const config = await resolveWhatsappConfig();
-  const missing = [];
-  if (!config.accessToken) missing.push("WHATSAPP_ACCESS_TOKEN");
-  if (requirePhoneNumberId && !config.phoneNumberId) {
-    missing.push("WHATSAPP_PHONE_NUMBER_ID");
-  }
-
-  if (missing.length > 0) {
-    throw buildWhatsAppServiceError(
-      `WhatsApp messaging is not configured. Missing: ${missing.join(", ")}`,
-      503,
-      { missing },
-    );
-  }
-
   const url = `https://graph.facebook.com/${config.graphApiVersion}/${endpoint}`;
 
   const response = await fetchImpl(url, {
@@ -441,6 +436,61 @@ const executeWhatsappRequest = async ({
   }
 
   return data;
+};
+
+const executeWhatsappRequest = async ({
+  endpoint,
+  method = "GET",
+  payload,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  requirePhoneNumberId = true,
+}) => {
+  if (typeof fetchImpl !== "function") {
+    throw buildWhatsAppServiceError(
+      "Fetch implementation is not available.",
+      500,
+    );
+  }
+
+  const configLayers = await resolveWhatsappConfigLayers();
+  const config = configLayers.mergedConfig;
+  const missing = [];
+  if (!config.accessToken) missing.push("WHATSAPP_ACCESS_TOKEN");
+  if (requirePhoneNumberId && !config.phoneNumberId) {
+    missing.push("WHATSAPP_PHONE_NUMBER_ID");
+  }
+
+  if (missing.length > 0) {
+    throw buildWhatsAppServiceError(
+      `WhatsApp messaging is not configured. Missing: ${missing.join(", ")}`,
+      503,
+      { missing },
+    );
+  }
+
+  try {
+    const data = await performWhatsappRequest({
+      config,
+      endpoint,
+      method,
+      payload,
+      fetchImpl,
+      timeoutMs,
+    });
+
+    return attachWhatsappRequestRuntime(data, {
+      accessTokenSource: configLayers?.sources?.accessToken || "unknown",
+    });
+  } catch (error) {
+    const accessTokenSource = configLayers?.sources?.accessToken || "unknown";
+    error.accessTokenSource = accessTokenSource;
+    error.details = {
+      ...(error?.details || {}),
+      accessTokenSource,
+    };
+    throw error;
+  }
 };
 
 const countTemplatePlaceholders = (text = "") => {
@@ -607,6 +657,7 @@ export const getWhatsappMessagingHealth = async ({
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) => {
   const configSummary = await getWhatsappMessagingConfigSummary();
+  const configLayers = await resolveWhatsappConfigLayers();
   const requiredMessagingKeys = [
     "WHATSAPP_ACCESS_TOKEN",
     "WHATSAPP_PHONE_NUMBER_ID",
@@ -626,7 +677,7 @@ export const getWhatsappMessagingHealth = async ({
     };
   }
 
-  const config = await resolveWhatsappConfig();
+  const config = configLayers.mergedConfig;
 
   try {
     const data = await executeWhatsappRequest({
@@ -636,6 +687,7 @@ export const getWhatsappMessagingHealth = async ({
       fetchImpl,
       timeoutMs,
     });
+    const requestRuntime = data?.__runtime || {};
 
     const phoneNumberId = sanitizeText(data?.id || config.phoneNumberId || "", {
       maxLength: 80,
@@ -681,11 +733,20 @@ export const getWhatsappMessagingHealth = async ({
       senderStatus,
       platformType,
       throughputLevel,
+      accessTokenSource: requestRuntime.accessTokenSource || "unknown",
     };
   } catch (error) {
     const providerCode = toOptionalNumber(error?.details?.providerCode);
     const providerSubcode = toOptionalNumber(error?.details?.providerSubcode);
     const statusCode = toOptionalNumber(error?.statusCode);
+    const accessTokenSource =
+      sanitizeText(
+        error?.accessTokenSource ||
+          error?.details?.accessTokenSource ||
+          configLayers?.sources?.accessToken ||
+          "",
+        { maxLength: 40 },
+      ) || "unknown";
 
     let state = "auth_failed";
     if (providerCode === 190 && providerSubcode === 463) {
@@ -710,6 +771,7 @@ export const getWhatsappMessagingHealth = async ({
       httpStatus: statusCode,
       providerCode,
       providerSubcode,
+      accessTokenSource,
     };
   }
 };

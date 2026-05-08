@@ -3,6 +3,7 @@ import EmailLogModel from "../models/emailLog.model.js";
 import OrderModel from "../models/order.model.js";
 import SettingsModel from "../models/settings.model.js";
 import UserModel from "../models/user.model.js";
+import { runWithBackgroundJobLease } from "../utils/backgroundJobLease.js";
 import { logger } from "../utils/errorHandler.js";
 
 const EMAIL_AUTOMATION_SETTINGS_KEY = "emailAutomationSettings";
@@ -593,16 +594,20 @@ export const startEmailAutomationJob = async () => {
   if (automationTimer) return;
   const settingsRecord = await getEmailAutomationSettings();
   const intervalMs = settingsRecord.value.pollIntervalMinutes * 60 * 1000;
-
-  automationTimer = setInterval(() => {
-    processEmailAutomationQueue().catch((error) => {
-      logger.error("emailAutomation", "Queue execution failed", {
+  const runScheduledJob = () =>
+    runWithBackgroundJobLease({
+      jobKey: "email-automation",
+      intervalMs,
+      task: processEmailAutomationQueue,
+    }).catch((error) => {
+      logger.error("emailAutomation", "Lease coordination failed", {
         error: error?.message || String(error),
       });
     });
-  }, intervalMs);
 
-  processEmailAutomationQueue().catch((error) => {
+  automationTimer = setInterval(runScheduledJob, intervalMs);
+
+  runScheduledJob().catch((error) => {
     logger.error("emailAutomation", "Initial queue execution failed", {
       error: error?.message || String(error),
     });

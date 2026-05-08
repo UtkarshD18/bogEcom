@@ -15,12 +15,151 @@ import { normalizeOrderStatus } from "./orderStatus.js";
 
 const ORDERS_COLLECTION = "orders";
 const isProduction = process.env.NODE_ENV === "production";
+const ORDER_SYNC_CACHE_TTL_MS = Math.max(
+  Number.parseInt(
+    String(process.env.ORDER_FIRESTORE_SYNC_CACHE_TTL_MS || "300000").trim(),
+    10,
+  ) || 300000,
+  30000,
+);
+const recentOrderSyncFingerprints = new Map();
 // Debug-only logging to keep production output clean
 const debugLog = (...args) => {
   if (!isProduction) {
     console.log(...args);
   }
 };
+
+const isTruthy = (value) =>
+  ["true", "1", "yes", "on"].includes(
+    String(value || "")
+      .trim()
+      .toLowerCase(),
+  );
+
+const isOrderFirestoreSyncEnabled = () => {
+  if (process.env.ORDER_FIRESTORE_SYNC_ENABLED === undefined) {
+    return true;
+  }
+
+  return isTruthy(process.env.ORDER_FIRESTORE_SYNC_ENABLED);
+};
+
+const toIdString = (value) => {
+  if (!value) return null;
+  if (value && typeof value === "object" && value._id) {
+    return String(value._id);
+  }
+  if (value && typeof value === "object" && value.id) {
+    return String(value.id);
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+};
+
+const toDateOrNull = (value) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const toIsoOrNull = (value) => {
+  const date = toDateOrNull(value);
+  return date ? date.toISOString() : null;
+};
+
+const cleanupExpiredOrderSyncCache = () => {
+  if (recentOrderSyncFingerprints.size === 0) return;
+
+  const now = Date.now();
+  for (const [orderId, entry] of recentOrderSyncFingerprints.entries()) {
+    if (!entry || now - Number(entry.syncedAt || 0) > ORDER_SYNC_CACHE_TTL_MS) {
+      recentOrderSyncFingerprints.delete(orderId);
+    }
+  }
+};
+
+const rememberOrderSyncFingerprint = (orderId, fingerprint) => {
+  cleanupExpiredOrderSyncCache();
+  recentOrderSyncFingerprints.set(orderId, {
+    fingerprint,
+    syncedAt: Date.now(),
+  });
+};
+
+const clearOrderSyncFingerprint = (orderId) => {
+  if (!orderId) return;
+  recentOrderSyncFingerprints.delete(orderId);
+};
+
+const shouldSkipCachedOrderSync = (orderId, fingerprint) => {
+  cleanupExpiredOrderSyncCache();
+  const cached = recentOrderSyncFingerprints.get(orderId);
+  if (!cached) return false;
+
+  return (
+    String(cached.fingerprint || "") === String(fingerprint || "") &&
+    Date.now() - Number(cached.syncedAt || 0) <= ORDER_SYNC_CACHE_TTL_MS
+  );
+};
+
+const buildComparableStatusHistory = (order) =>
+  (
+    order.statusTimeline?.map((entry) => ({
+      status: normalizeOrderStatus(entry?.status),
+      timestamp: toIsoOrNull(entry?.timestamp),
+      note: String(entry?.source || "").trim() || null,
+    })) ||
+    order.status_history?.map((entry) => ({
+      status: normalizeOrderStatus(entry?.status),
+      timestamp: toIsoOrNull(entry?.timestamp),
+      note: String(entry?.note || "").trim() || null,
+    })) ||
+    []
+  ).filter(
+    (entry) =>
+      entry.status || entry.timestamp || entry.note,
+  );
+
+const buildComparableDelivery = (order) => ({
+  estimatedDate: toIsoOrNull(order.estimatedDeliveryDate),
+  trackingNumber:
+    String(order.awb_number || order.trackingNumber || "")
+      .trim() || null,
+  carrier:
+    String(order.shipping_provider || order.shippingCarrier || "")
+      .trim() || null,
+  labelUrl: String(order.shipping_label || "").trim() || null,
+  manifestUrl: String(order.shipping_manifest || "").trim() || null,
+  shipmentStatus:
+    String(order.shipment_status || order.shipmentStatus || "").trim() || null,
+});
+
+export const buildComparableOrderFirestorePayload = (order = {}) => ({
+  orderId:
+    String(order.orderId || order._id || order.id || "")
+      .trim() || null,
+  userId: toIdString(order.userId || order.user),
+  status: normalizeOrderStatus(order.order_status || order.status || "pending"),
+  paymentStatus:
+    String(order.payment_status || order.paymentStatus || "pending").trim() ||
+    "pending",
+  totalAmount: Number(order.totalAmt || order.totalAmount || 0) || 0,
+  itemCount: Array.isArray(order.products) ? order.products.length : 0,
+  statusHistory: buildComparableStatusHistory(order),
+  delivery: buildComparableDelivery(order),
+});
+
+export const buildOrderFirestoreFingerprint = (payload = {}) =>
+  JSON.stringify(payload);
+
+const buildOrderFirestoreWritePayload = (order, comparablePayload) => ({
+  ...comparablePayload,
+  createdAt: toDateOrNull(order.createdAt) || new Date(),
+  updatedAt: new Date(),
+  lastSyncedAt: new Date(),
+});
 
 /**
  * Sync order to Firestore
@@ -29,6 +168,10 @@ const debugLog = (...args) => {
  */
 export const syncOrderToFirestore = async (order, action = "update") => {
   try {
+    if (!isOrderFirestoreSyncEnabled()) {
+      return { success: false, reason: "order_firestore_sync_disabled" };
+    }
+
     // Check if Firebase is configured
     if (!isFirebaseReady()) {
       // Firebase not configured, skip sync silently
@@ -45,52 +188,23 @@ export const syncOrderToFirestore = async (order, action = "update") => {
 
     if (action === "delete") {
       await docRef.delete();
+      clearOrderSyncFingerprint(orderId);
       debugLog(`[Firestore] Order ${orderId} deleted`);
       return { success: true, action: "deleted" };
     }
 
-    // Prepare order data for Firestore (minimal data for real-time updates)
-    const firestoreData = {
-      orderId: order.orderId || orderId,
-      userId: order.userId?.toString() || order.user?.toString() || null,
-      status: normalizeOrderStatus(order.order_status || order.status || "pending"),
-      paymentStatus: order.payment_status || order.paymentStatus || "pending",
+    const comparablePayload = buildComparableOrderFirestorePayload(order);
+    const fingerprint = buildOrderFirestoreFingerprint(comparablePayload);
 
-      // Order amounts
-      totalAmount: order.totalAmt || order.totalAmount || 0,
-      itemCount: order.products?.length || 0,
+    if (shouldSkipCachedOrderSync(orderId, fingerprint)) {
+      debugLog(`[Firestore] Order ${orderId} unchanged, skipped`);
+      return { success: true, action: "skipped", reason: "unchanged" };
+    }
 
-      // Timestamps
-      createdAt: order.createdAt || new Date(),
-      updatedAt: new Date(),
-
-      // Status history for tracking
-      statusHistory:
-        order.statusTimeline?.map((h) => ({
-          status: normalizeOrderStatus(h.status),
-          timestamp: h.timestamp,
-          note: h.source || null,
-        })) ||
-        order.status_history?.map((h) => ({
-          status: normalizeOrderStatus(h.status),
-          timestamp: h.timestamp,
-          note: h.note || null,
-        })) ||
-        [],
-
-      // Delivery info
-      delivery: {
-        estimatedDate: order.estimatedDeliveryDate || null,
-        trackingNumber: order.awb_number || order.trackingNumber || null,
-        carrier: order.shipping_provider || order.shippingCarrier || null,
-        labelUrl: order.shipping_label || null,
-        manifestUrl: order.shipping_manifest || null,
-        shipmentStatus: order.shipment_status || null,
-      },
-
-      // Metadata
-      lastSyncedAt: new Date(),
-    };
+    const firestoreData = buildOrderFirestoreWritePayload(
+      order,
+      comparablePayload,
+    );
 
     if (action === "create") {
       await docRef.set(firestoreData);
@@ -100,6 +214,7 @@ export const syncOrderToFirestore = async (order, action = "update") => {
       debugLog(`[Firestore] Order ${orderId} updated`);
     }
 
+    rememberOrderSyncFingerprint(orderId, fingerprint);
     return { success: true, action };
   } catch (error) {
     console.error(`[Firestore] Sync error for order:`, error.message);
@@ -117,6 +232,10 @@ export const syncOrderStatus = async (
   paymentStatus = null,
 ) => {
   try {
+    if (!isOrderFirestoreSyncEnabled()) {
+      return { success: false, reason: "order_firestore_sync_disabled" };
+    }
+
     if (!isFirebaseReady()) {
       return { success: false, reason: "firebase_not_configured" };
     }
@@ -139,6 +258,7 @@ export const syncOrderStatus = async (
     }
 
     await docRef.update(updateData);
+    clearOrderSyncFingerprint(orderId.toString());
     debugLog(`[Firestore] Order ${orderId} status updated to ${status}`);
 
     return { success: true };
@@ -158,6 +278,10 @@ export const syncOrderStatus = async (
  */
 export const batchSyncOrders = async (orders) => {
   try {
+    if (!isOrderFirestoreSyncEnabled()) {
+      return { success: false, reason: "order_firestore_sync_disabled" };
+    }
+
     if (!isFirebaseReady()) {
       return { success: false, reason: "firebase_not_configured" };
     }
@@ -169,31 +293,30 @@ export const batchSyncOrders = async (orders) => {
 
     const batch = db.batch();
     let count = 0;
+    const syncedFingerprints = [];
 
     for (const order of orders) {
       const orderId = order._id?.toString() || order.id;
       const docRef = db.collection(ORDERS_COLLECTION).doc(orderId);
+      const comparablePayload = buildComparableOrderFirestorePayload(order);
+      const fingerprint = buildOrderFirestoreFingerprint(comparablePayload);
 
       batch.set(
         docRef,
         {
-          orderId: order.orderId || orderId,
-          userId: order.userId?.toString() || null,
-          status: order.order_status || order.status || "pending",
-          paymentStatus: order.payment_status || order.paymentStatus || "pending",
-          totalAmount: order.totalAmt || order.totalAmount || 0,
-          itemCount: order.products?.length || 0,
-          createdAt: order.createdAt || new Date(),
-          updatedAt: new Date(),
-          lastSyncedAt: new Date(),
+          ...buildOrderFirestoreWritePayload(order, comparablePayload),
         },
         { merge: true },
       );
 
+      syncedFingerprints.push({ orderId, fingerprint });
       count++;
     }
 
     await batch.commit();
+    syncedFingerprints.forEach(({ orderId, fingerprint }) => {
+      rememberOrderSyncFingerprint(orderId, fingerprint);
+    });
     debugLog(`[Firestore] Batch synced ${count} orders`);
 
     return { success: true, count };
@@ -207,4 +330,13 @@ export default {
   syncOrderToFirestore,
   syncOrderStatus,
   batchSyncOrders,
+};
+
+export const __orderFirestoreSyncTestUtils = {
+  buildComparableOrderFirestorePayload,
+  buildOrderFirestoreFingerprint,
+  clearOrderSyncFingerprint,
+  rememberOrderSyncFingerprint,
+  shouldSkipCachedOrderSync,
+  cleanupExpiredOrderSyncCache,
 };

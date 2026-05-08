@@ -6,6 +6,7 @@ import {
   mapExpressbeesToOrderStatus,
   ORDER_STATUS,
 } from "../utils/orderStatus.js";
+import { runWithBackgroundJobLease } from "../utils/backgroundJobLease.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
 import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
 import { ensureOrderInvoice } from "../controllers/order.controller.js";
@@ -155,7 +156,19 @@ export const startExpressbeesPolling = () => {
   }
 
   const { intervalMs } = getPollingConfig();
-  pollingTimer = setInterval(pollExpressbeesTracking, intervalMs);
+  const runScheduledJob = () =>
+    runWithBackgroundJobLease({
+      jobKey: "expressbees-polling",
+      intervalMs,
+      task: pollExpressbeesTracking,
+    }).catch((error) => {
+      logger.error("expressbeesPoll", "Polling lease coordination failed", {
+        error: error?.message || String(error),
+      });
+    });
+
+  pollingTimer = setInterval(runScheduledJob, intervalMs);
+  void runScheduledJob();
   logger.info("expressbeesPoll", "Polling started", { intervalMs });
   return pollingTimer;
 };

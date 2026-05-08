@@ -31,6 +31,9 @@ const normalizeStoredWhatsappRuntimeConfig = (value = {}) => {
   };
 };
 
+const buildEmptyStoredWhatsappRuntimeConfig = () =>
+  normalizeStoredWhatsappRuntimeConfig();
+
 const buildEnvWhatsappRuntimeConfig = () => ({
   accessToken: trimToLength(process.env.WHATSAPP_ACCESS_TOKEN, 4000),
   phoneNumberId: trimToLength(process.env.WHATSAPP_PHONE_NUMBER_ID, 120),
@@ -132,13 +135,7 @@ export const clearWhatsappRuntimeConfigCache = () => {
   cacheExpiresAt = 0;
 };
 
-export const getWhatsappRuntimeConfig = async ({ forceFresh = false } = {}) => {
-  const envConfig = buildEnvWhatsappRuntimeConfig();
-  const storedConfig = await readStoredWhatsappRuntimeConfig({ forceFresh });
-  return mergeWhatsappRuntimeConfig({ envConfig, storedConfig });
-};
-
-export const getWhatsappRuntimeConfigSnapshot = async ({
+export const getWhatsappRuntimeConfigLayers = async ({
   forceFresh = false,
 } = {}) => {
   const envConfig = buildEnvWhatsappRuntimeConfig();
@@ -146,9 +143,44 @@ export const getWhatsappRuntimeConfigSnapshot = async ({
   const mergedConfig = mergeWhatsappRuntimeConfig({ envConfig, storedConfig });
 
   return {
+    envConfig,
+    storedConfig,
+    mergedConfig,
+    sources: buildConfigSources({ envConfig, storedConfig }),
+  };
+};
+
+export const getWhatsappRuntimeConfig = async ({ forceFresh = false } = {}) => {
+  const { mergedConfig } = await getWhatsappRuntimeConfigLayers({
+    forceFresh,
+  });
+  return mergedConfig;
+};
+
+export const getWhatsappRuntimeConfigSnapshot = async ({
+  forceFresh = false,
+} = {}) => {
+  const { envConfig, storedConfig, mergedConfig, sources } =
+    await getWhatsappRuntimeConfigLayers({
+      forceFresh,
+    });
+  const storedOverrides = normalizeStoredWhatsappRuntimeConfig(storedConfig);
+
+  return {
     key: WHATSAPP_RUNTIME_CONFIG_KEY,
     ...mergedConfig,
-    sources: buildConfigSources({ envConfig, storedConfig }),
+    stored: storedConfig
+      ? storedOverrides
+      : buildEmptyStoredWhatsappRuntimeConfig(),
+    effective: mergedConfig,
+    environmentAvailable: {
+      accessToken: Boolean(envConfig.accessToken),
+      phoneNumberId: Boolean(envConfig.phoneNumberId),
+      businessAccountId: Boolean(envConfig.businessAccountId),
+      webhookVerifyToken: Boolean(envConfig.webhookVerifyToken),
+      appSecret: Boolean(envConfig.appSecret),
+    },
+    sources,
     updatedAt: storedConfig?.updatedAt || null,
     updatedBy: storedConfig?.updatedBy || null,
   };

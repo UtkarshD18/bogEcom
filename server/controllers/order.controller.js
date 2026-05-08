@@ -118,6 +118,7 @@ import {
   resolveOrderAwb,
   resolveOrderTrackingUrl,
 } from "../utils/orderTracking.js";
+import { runWithBackgroundJobLease } from "../utils/backgroundJobLease.js";
 import { formatDateTimeIST } from "../utils/pricingEngine.js";
 import {
   calculateInfluencerCommission,
@@ -2352,7 +2353,11 @@ export const startOrderPaymentReminderJob = () => {
   if (orderPaymentReminderJob) return;
 
   const run = () =>
-    processDueOrderPaymentReminderEmails().catch((error) => {
+    runWithBackgroundJobLease({
+      jobKey: "order-payment-reminder",
+      intervalMs: PAYMENT_REMINDER_POLL_INTERVAL_MS,
+      task: processDueOrderPaymentReminderEmails,
+    }).catch((error) => {
       logger.error(
         "orderPaymentReminderJob",
         "Reminder queue execution failed",
@@ -2362,7 +2367,7 @@ export const startOrderPaymentReminderJob = () => {
       );
     });
 
-  run();
+  void run();
   orderPaymentReminderJob = setInterval(run, PAYMENT_REMINDER_POLL_INTERVAL_MS);
 
   if (typeof orderPaymentReminderJob?.unref === "function") {

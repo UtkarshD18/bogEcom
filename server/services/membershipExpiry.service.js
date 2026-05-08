@@ -2,6 +2,7 @@ import {
   backfillLegacyMembershipUsers,
   expireMembershipUsers,
 } from "./membershipUser.service.js";
+import { runWithBackgroundJobLease } from "../utils/backgroundJobLease.js";
 
 let membershipExpiryTimer = null;
 let membershipExpiryInFlight = false;
@@ -46,8 +47,20 @@ export const startMembershipExpiryJob = () => {
   }
 
   const { intervalMs } = getConfig();
-  processMembershipExpiry();
-  membershipExpiryTimer = setInterval(processMembershipExpiry, intervalMs);
+  const runScheduledJob = () =>
+    runWithBackgroundJobLease({
+      jobKey: "membership-expiry",
+      intervalMs,
+      task: processMembershipExpiry,
+    }).catch((error) => {
+      console.error(
+        "[membership-expiry] Scheduled run skipped due to lease error:",
+        error?.message || error,
+      );
+    });
+
+  void runScheduledJob();
+  membershipExpiryTimer = setInterval(runScheduledJob, intervalMs);
   console.log("[membership-expiry] Job started", { intervalMs });
   return membershipExpiryTimer;
 };

@@ -3,6 +3,7 @@ import PartnerApiKey from "../models/partnerApiKey.model.js";
 import PartnerApiRequestLog from "../models/partnerApiRequestLog.model.js";
 import { getRedisClient, isRedisConfigured } from "../config/redisClient.js";
 import { getPartnerLiveSnapshot } from "../middlewares/partnerApiActivity.js";
+import { runWithBackgroundJobLease } from "../utils/backgroundJobLease.js";
 
 const DEFAULT_BASE_RPM = 120;
 const DEFAULT_BURST_MULTIPLIER = 1.8;
@@ -616,12 +617,17 @@ const runScalingCycle = async () => {
 export const startPartnerDynamicScalingEngine = () => {
   if (scalingTimer) return;
 
-  scalingTimer = setInterval(() => {
-    runScalingCycle().catch(() => null);
-  }, SCALING_INTERVAL_MS);
+  const runScheduledJob = () =>
+    runWithBackgroundJobLease({
+      jobKey: "partner-dynamic-scaling",
+      intervalMs: SCALING_INTERVAL_MS,
+      task: runScalingCycle,
+    }).catch(() => null);
+
+  scalingTimer = setInterval(runScheduledJob, SCALING_INTERVAL_MS);
   scalingTimer.unref?.();
 
-  runScalingCycle().catch(() => null);
+  void runScheduledJob();
   console.log(`[partner-dynamic-scaling] started with ${SCALING_INTERVAL_MS}ms interval`);
 };
 

@@ -1,4 +1,4 @@
-﻿runtime: nodejs22
+runtime: nodejs22
 service: default
 
 automatic_scaling:

@@ -1,4 +1,5 @@
 import UserLocationLogModel from "../models/userLocationLog.model.js";
+import { runWithBackgroundJobLease } from "../utils/backgroundJobLease.js";
 
 const RETENTION_DAYS = 90;
 
@@ -96,7 +97,20 @@ export const startLocationLogRetentionJob = () => {
   };
 
   // Run once on startup, then every 6 hours.
-  run();
-  retentionInterval = setInterval(run, 6 * 60 * 60 * 1000);
+  const intervalMs = 6 * 60 * 60 * 1000;
+  const runScheduledJob = () =>
+    runWithBackgroundJobLease({
+      jobKey: "location-log-retention",
+      intervalMs,
+      task: run,
+    }).catch((error) => {
+      console.error(
+        "[locationLogs] Retention lease coordination failed:",
+        error?.message || error,
+      );
+    });
+
+  void runScheduledJob();
+  retentionInterval = setInterval(runScheduledJob, intervalMs);
 };
 

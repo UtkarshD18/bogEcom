@@ -2,6 +2,7 @@ import OrderModel from "../models/order.model.js";
 import { releaseInventory } from "./inventory.service.js";
 import { releaseComboStock } from "./combos/combo.service.js";
 import { logger } from "../utils/errorHandler.js";
+import { runWithBackgroundJobLease } from "../utils/backgroundJobLease.js";
 
 let reservationTimer = null;
 let reservationInFlight = false;
@@ -203,8 +204,22 @@ export const startInventoryReservationExpiryJob = () => {
   }
 
   const { intervalMs } = getConfig();
+  const runScheduledJob = () =>
+    runWithBackgroundJobLease({
+      jobKey: "inventory-reservation-expiry",
+      intervalMs,
+      task: releaseExpiredReservations,
+    }).catch((error) => {
+      logger.error(
+        "reservationExpiry",
+        "Failed reservation expiry lease coordination",
+        {
+          error: error?.message,
+        },
+      );
+    });
 
-  releaseExpiredReservations().catch((error) => {
+  runScheduledJob().catch((error) => {
     logger.error(
       "reservationExpiry",
       "Failed initial reservation expiry cleanup",
@@ -214,7 +229,7 @@ export const startInventoryReservationExpiryJob = () => {
     );
   });
 
-  reservationTimer = setInterval(releaseExpiredReservations, intervalMs);
+  reservationTimer = setInterval(runScheduledJob, intervalMs);
   logger.info("reservationExpiry", "Reservation expiry job started", {
     intervalMs,
   });

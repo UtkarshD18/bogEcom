@@ -1,6 +1,7 @@
 ﻿import OrderModel from "../../models/order.model.js";
 import ProductPairingModel from "../../models/productPairing.model.js";
 import { logger } from "../../utils/errorHandler.js";
+import { runWithBackgroundJobLease } from "../../utils/backgroundJobLease.js";
 
 let jobTimer = null;
 let jobInFlight = false;
@@ -204,8 +205,19 @@ export const startFrequentlyBoughtTogetherJob = () => {
     }
   };
 
-  run();
-  jobTimer = setInterval(run, intervalMs);
+  const runScheduledJob = () =>
+    runWithBackgroundJobLease({
+      jobKey: "frequently-bought-together",
+      intervalMs,
+      task: run,
+    }).catch((error) => {
+      logger.error("fbtJob", "Lease coordination failed", {
+        error: error?.message || String(error),
+      });
+    });
+
+  void runScheduledJob();
+  jobTimer = setInterval(runScheduledJob, intervalMs);
   logger.info("fbtJob", "FBT job started", { intervalMs });
   return jobTimer;
 };
