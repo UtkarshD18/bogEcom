@@ -19,6 +19,8 @@ const EMPTY_FORM = {
   appSecret: "",
 };
 
+const WHATSAPP_BUSINESS_ACCOUNT_LABEL = "WhatsApp Business Account ID (WABA ID)";
+
 const formatDateTime = (value) => {
   if (!value) return "Not saved yet";
 
@@ -67,6 +69,16 @@ const formatMetaErrorCode = (providerCode, providerSubcode) => {
   return "";
 };
 
+const buildStatusBadge = (label, value) => {
+  const normalizedValue = String(value || "").trim();
+  if (!normalizedValue) return null;
+
+  return {
+    label,
+    value: prettifyKey(normalizedValue),
+  };
+};
+
 const getStoredFormValues = (config = {}) => {
   const stored = config?.stored || {};
 
@@ -98,7 +110,7 @@ export default function WhatsappConfigPage() {
       return [
         { label: "Access Token", value: "loading" },
         { label: "Phone Number ID", value: "loading" },
-        { label: "Business Account ID", value: "loading" },
+        { label: WHATSAPP_BUSINESS_ACCOUNT_LABEL, value: "loading" },
         { label: "Webhook Verify Token", value: "loading" },
         { label: "App Secret", value: "loading" },
       ];
@@ -108,7 +120,7 @@ export default function WhatsappConfigPage() {
       return [
         { label: "Access Token", value: "unavailable" },
         { label: "Phone Number ID", value: "unavailable" },
-        { label: "Business Account ID", value: "unavailable" },
+        { label: WHATSAPP_BUSINESS_ACCOUNT_LABEL, value: "unavailable" },
         { label: "Webhook Verify Token", value: "unavailable" },
         { label: "App Secret", value: "unavailable" },
       ];
@@ -120,7 +132,7 @@ export default function WhatsappConfigPage() {
       { label: "Access Token", value: sources.accessToken || "missing" },
       { label: "Phone Number ID", value: sources.phoneNumberId || "missing" },
       {
-        label: "Business Account ID",
+        label: WHATSAPP_BUSINESS_ACCOUNT_LABEL,
         value: sources.businessAccountId || "missing",
       },
       {
@@ -140,6 +152,14 @@ export default function WhatsappConfigPage() {
     health?.providerCode,
     health?.providerSubcode,
   );
+  const senderHealthBadges = [
+    buildStatusBadge("Verified Name", health?.verifiedName),
+    buildStatusBadge("Name Status", health?.nameStatus),
+    buildStatusBadge("Code Verification", health?.codeVerificationStatus),
+    buildStatusBadge("Quality Rating", health?.qualityRating),
+    buildStatusBadge("Sender Status", health?.senderStatus),
+    buildStatusBadge("Throughput", health?.throughputLevel),
+  ].filter(Boolean);
   const shouldOfferEnvFallback =
     hasEnvironmentAccessToken &&
     accessTokenSource === "database" &&
@@ -171,6 +191,8 @@ export default function WhatsappConfigPage() {
       : hasEnvironmentAccessToken
         ? "Admin-saved token overrides env token. Use a permanent system-user token here, or clear and save only if you intentionally want to fall back to the deployed environment token."
         : "Admin-saved token overrides env token. Use a permanent system-user token here.";
+  const businessAccountIdHelperText =
+    "Use the WhatsApp Account ID / WABA ID from Meta. Do not paste the Meta App ID here. This field is used for template sync, not webhook verification.";
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -351,6 +373,18 @@ export default function WhatsappConfigPage() {
                 </span>
               ) : null}
             </div>
+            {senderHealthBadges.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {senderHealthBadges.map((badge) => (
+                  <span
+                    key={`${badge.label}-${badge.value}`}
+                    className="rounded-full bg-white/70 px-3 py-1 font-semibold"
+                  >
+                    {badge.label}: {badge.value}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -380,7 +414,7 @@ export default function WhatsappConfigPage() {
                   fullWidth
                 />
                 <TextField
-                  label="Business Account ID"
+                  label={WHATSAPP_BUSINESS_ACCOUNT_LABEL}
                   value={form.businessAccountId}
                   onChange={(event) =>
                     setForm((prev) => ({
@@ -390,6 +424,7 @@ export default function WhatsappConfigPage() {
                   }
                   size="small"
                   fullWidth
+                  helperText={businessAccountIdHelperText}
                 />
                 <TextField
                   label="Graph API Version"
