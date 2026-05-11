@@ -3,6 +3,7 @@
 import { useAdmin } from "@/context/AdminContext";
 import {
   fetchCrmWhatsappConfig,
+  generateCrmWhatsappVerifyToken,
   saveCrmWhatsappConfig,
 } from "@/services/crmApi";
 import { Alert, Button, CircularProgress, TextField } from "@mui/material";
@@ -102,6 +103,7 @@ export default function WhatsappConfigPage() {
   const [health, setHealth] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingToken, setIsGeneratingToken] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [loadTimeout, setLoadTimeout] = useState(false);
 
@@ -288,8 +290,65 @@ export default function WhatsappConfigPage() {
     }
   };
 
+  const handleCopyToClipboard = async (value, successMessage) => {
+    const normalizedValue = String(value || "").trim();
+    if (!normalizedValue) {
+      toast.error("Nothing to copy yet.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(normalizedValue);
+      toast.success(successMessage);
+    } catch {
+      toast.error("Unable to copy right now.");
+    }
+  };
+
   const handleSave = async () => {
     await persistConfig(form);
+  };
+
+  const handleGenerateVerifyToken = async () => {
+    if (!token) {
+      toast.error("Admin session missing");
+      return;
+    }
+
+    setIsGeneratingToken(true);
+    try {
+      const response = await generateCrmWhatsappVerifyToken(token);
+      if (!response?.success) {
+        throw new Error(
+          response?.message || "Failed to generate WhatsApp verify token.",
+        );
+      }
+
+      const nextConfig = response.data?.config || {};
+      const generatedToken =
+        response.data?.generatedToken || nextConfig?.stored?.webhookVerifyToken;
+
+      setForm(getStoredFormValues(nextConfig));
+      setConfigMeta(nextConfig);
+      setSummary(response.data?.summary || null);
+      setHealth(response.data?.health || null);
+
+      toast.success(
+        response?.message ||
+          "WhatsApp webhook verify token generated successfully.",
+      );
+
+      if (generatedToken) {
+        await handleCopyToClipboard(
+          generatedToken,
+          "New verify token copied to clipboard.",
+        );
+      }
+    } catch (error) {
+      toast.error(error?.message || "Failed to generate verify token.");
+    } finally {
+      setIsGeneratingToken(false);
+    }
   };
 
   const handleUseEnvironmentToken = async () => {
@@ -468,6 +527,7 @@ export default function WhatsappConfigPage() {
                   }
                   size="small"
                   fullWidth
+                  helperText="Generate a fresh token here, then paste the exact same value into Meta before clicking Verify and save there."
                 />
                 <TextField
                   label="App Secret"
@@ -482,6 +542,51 @@ export default function WhatsappConfigPage() {
                   size="small"
                   fullWidth
                 />
+                <div className="md:col-span-2 flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3">
+                  <Button
+                    variant="outlined"
+                    onClick={handleGenerateVerifyToken}
+                    disabled={isLoading || isSaving || isGeneratingToken}
+                    sx={{
+                      textTransform: "none",
+                      borderRadius: "14px",
+                      px: 3,
+                      py: 1,
+                    }}
+                  >
+                    {isGeneratingToken
+                      ? "Generating..."
+                      : "Generate New Verify Token"}
+                  </Button>
+                  <Button
+                    variant="text"
+                    onClick={() =>
+                      handleCopyToClipboard(
+                        form.webhookVerifyToken,
+                        "Verify token copied to clipboard.",
+                      )
+                    }
+                    disabled={
+                      isLoading ||
+                      isSaving ||
+                      isGeneratingToken ||
+                      !String(form.webhookVerifyToken || "").trim()
+                    }
+                    sx={{
+                      textTransform: "none",
+                      borderRadius: "14px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    Copy Verify Token
+                  </Button>
+                  <p className="text-xs leading-5 text-slate-500">
+                    Generating will save the new webhook verify token to the
+                    backend immediately and replace the previous admin-saved
+                    value.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -510,7 +615,7 @@ export default function WhatsappConfigPage() {
                 <Button
                   variant="contained"
                   onClick={handleSave}
-                  disabled={isLoading || isSaving}
+                  disabled={isLoading || isSaving || isGeneratingToken}
                   sx={{
                     textTransform: "none",
                     borderRadius: "14px",

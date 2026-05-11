@@ -56,6 +56,9 @@ export const fetchCrmWhatsappConfig = async (token) =>
 export const saveCrmWhatsappConfig = async (payload, token) =>
   putData("/api/admin/crm/whatsapp/config", payload, token);
 
+export const generateCrmWhatsappVerifyToken = async (token) =>
+  postData("/api/admin/crm/whatsapp/config/generate-verify-token", {}, token);
+
 export const fetchCrmWhatsappAudiencePreview = async (
   { segment = "all", inactiveDays = 45 } = {},
   token,

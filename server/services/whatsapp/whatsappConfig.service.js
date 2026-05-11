@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import mongoose from "mongoose";
 import SettingsModel from "../../models/settings.model.js";
 
@@ -8,6 +9,7 @@ const CACHE_TTL_MS = Math.max(
     5000,
   0,
 );
+const DEFAULT_VERIFY_TOKEN_PREFIX = "bog_whatsapp_verify";
 
 let cachedStoredRecord = null;
 let cacheExpiresAt = 0;
@@ -33,6 +35,24 @@ const normalizeStoredWhatsappRuntimeConfig = (value = {}) => {
 
 const buildEmptyStoredWhatsappRuntimeConfig = () =>
   normalizeStoredWhatsappRuntimeConfig();
+
+export const generateWhatsappWebhookVerifyToken = ({
+  prefix = DEFAULT_VERIFY_TOKEN_PREFIX,
+  year = new Date().getFullYear(),
+} = {}) => {
+  const normalizedPrefix =
+    trimToLength(prefix, 80).replace(/[^a-zA-Z0-9_-]+/g, "_") ||
+    DEFAULT_VERIFY_TOKEN_PREFIX;
+  const normalizedYear = Number.isInteger(Number(year))
+    ? String(year)
+    : String(new Date().getFullYear());
+  const randomSuffix = randomBytes(20).toString("hex");
+
+  return trimToLength(
+    `${normalizedPrefix}_${normalizedYear}_${randomSuffix}`,
+    500,
+  );
+};
 
 const buildEnvWhatsappRuntimeConfig = () => ({
   accessToken: trimToLength(process.env.WHATSAPP_ACCESS_TOKEN, 4000),
@@ -247,4 +267,17 @@ export const saveWhatsappRuntimeConfig = async (payload = {}, adminId = null) =>
   cacheExpiresAt = Date.now() + CACHE_TTL_MS;
 
   return getWhatsappRuntimeConfigSnapshot({ forceFresh: true });
+};
+
+export const rotateWhatsappWebhookVerifyToken = async (adminId = null) => {
+  const webhookVerifyToken = generateWhatsappWebhookVerifyToken();
+  const config = await saveWhatsappRuntimeConfig(
+    { webhookVerifyToken },
+    adminId,
+  );
+
+  return {
+    webhookVerifyToken,
+    config,
+  };
 };

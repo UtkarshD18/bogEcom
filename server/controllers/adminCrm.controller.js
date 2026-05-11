@@ -17,6 +17,7 @@ import {
 } from "../services/whatsapp/whatsappMessaging.service.js";
 import {
   getWhatsappRuntimeConfigSnapshot,
+  rotateWhatsappWebhookVerifyToken,
   saveWhatsappRuntimeConfig,
 } from "../services/whatsapp/whatsappConfig.service.js";
 
@@ -185,6 +186,32 @@ export const putAdminCrmWhatsappConfig = async (req, res) => {
       message: "WhatsApp runtime configuration updated successfully.",
       data: {
         config,
+        summary,
+        health,
+      },
+    });
+  } catch (error) {
+    return buildErrorResponse(res, error);
+  }
+};
+
+export const postAdminCrmWhatsappVerifyTokenGeneration = async (req, res) => {
+  try {
+    const result = await rotateWhatsappWebhookVerifyToken(
+      req.user?.id || req.user?._id || req.user || null,
+    );
+    const [summary, health] = await Promise.all([
+      getWhatsappMessagingConfigSummary(),
+      getWhatsappMessagingHealthSnapshot(),
+    ]);
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "WhatsApp webhook verify token generated successfully.",
+      data: {
+        generatedToken: result.webhookVerifyToken,
+        config: result.config,
         summary,
         health,
       },
