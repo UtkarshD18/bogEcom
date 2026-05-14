@@ -25,6 +25,7 @@ let mongoServer;
 
 const ORIGINAL_ENV = {
   WHATSAPP_ACCESS_TOKEN: process.env.WHATSAPP_ACCESS_TOKEN,
+  WHATSAPP_DISPLAY_PHONE_NUMBER: process.env.WHATSAPP_DISPLAY_PHONE_NUMBER,
   WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID,
   WHATSAPP_BUSINESS_ACCOUNT_ID: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
   WHATSAPP_GRAPH_API_VERSION: process.env.WHATSAPP_GRAPH_API_VERSION,
@@ -292,9 +293,42 @@ test("getWhatsappRuntimeConfigSnapshot keeps stored overrides separate from envi
   assert.equal(snapshot.stored.accessToken, "");
   assert.equal(snapshot.sources.accessToken, "environment");
   assert.equal(snapshot.environmentAvailable.accessToken, true);
+  assert.equal(snapshot.displayPhoneNumber, "919828204443");
+  assert.equal(snapshot.effective.displayPhoneNumber, "919828204443");
+  assert.equal(snapshot.stored.displayPhoneNumber, "");
+  assert.equal(snapshot.sources.displayPhoneNumber, "default");
+  assert.equal(snapshot.environmentAvailable.displayPhoneNumber, false);
   assert.equal(snapshot.phoneNumberId, "db-phone-id");
   assert.equal(snapshot.stored.phoneNumberId, "db-phone-id");
   assert.equal(storedSetting?.value?.accessToken, "");
+});
+
+test("saveWhatsappRuntimeConfig stores admin-managed WhatsApp phone number", async () => {
+  await saveWhatsappRuntimeConfig({
+    displayPhoneNumber: "919828204443",
+    phoneNumberId: "db-phone-id",
+  });
+
+  const snapshot = await getWhatsappRuntimeConfigSnapshot({ forceFresh: true });
+
+  assert.equal(snapshot.displayPhoneNumber, "919828204443");
+  assert.equal(snapshot.effective.displayPhoneNumber, "919828204443");
+  assert.equal(snapshot.stored.displayPhoneNumber, "919828204443");
+  assert.equal(snapshot.sources.displayPhoneNumber, "database");
+});
+
+test("saveWhatsappRuntimeConfig rejects invalid WhatsApp phone number", async () => {
+  await assert.rejects(
+    () =>
+      saveWhatsappRuntimeConfig({
+        displayPhoneNumber: "invalid-phone",
+      }),
+    (error) => {
+      assert.equal(error?.statusCode, 400);
+      assert.match(String(error?.message || ""), /valid phone number/i);
+      return true;
+    },
+  );
 });
 
 test("getWhatsappMessagingHealth reports ready when provider auth probe succeeds", async () => {

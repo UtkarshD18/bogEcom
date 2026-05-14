@@ -13,6 +13,7 @@ import { toast } from "react-hot-toast";
 
 const EMPTY_FORM = {
   accessToken: "",
+  displayPhoneNumber: "919828204443",
   phoneNumberId: "",
   businessAccountId: "",
   graphApiVersion: "v25.0",
@@ -21,6 +22,18 @@ const EMPTY_FORM = {
 };
 
 const WHATSAPP_BUSINESS_ACCOUNT_LABEL = "WhatsApp Business Account ID (WABA ID)";
+const WHATSAPP_PHONE_LABEL = "WhatsApp Phone Number";
+const WHATSAPP_PHONE_PATTERN = /^\+?[0-9][0-9\s-]{7,19}$/;
+
+const isValidWhatsappPhoneNumber = (value) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed || !WHATSAPP_PHONE_PATTERN.test(trimmed)) {
+    return false;
+  }
+
+  const digits = trimmed.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+};
 
 const formatDateTime = (value) => {
   if (!value) return "Not saved yet";
@@ -85,6 +98,10 @@ const getStoredFormValues = (config = {}) => {
 
   return {
     accessToken: stored.accessToken || "",
+    displayPhoneNumber:
+      stored.displayPhoneNumber ||
+      config?.effective?.displayPhoneNumber ||
+      EMPTY_FORM.displayPhoneNumber,
     phoneNumberId: stored.phoneNumberId || "",
     businessAccountId: stored.businessAccountId || "",
     graphApiVersion: stored.graphApiVersion || "v25.0",
@@ -106,11 +123,15 @@ export default function WhatsappConfigPage() {
   const [isGeneratingToken, setIsGeneratingToken] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [loadTimeout, setLoadTimeout] = useState(false);
+  const displayPhoneNumberInvalid =
+    String(form.displayPhoneNumber || "").trim().length > 0 &&
+    !isValidWhatsappPhoneNumber(form.displayPhoneNumber);
 
   const sourceEntries = useMemo(() => {
     if (isLoading && !configMeta) {
       return [
         { label: "Access Token", value: "loading" },
+        { label: WHATSAPP_PHONE_LABEL, value: "loading" },
         { label: "Phone Number ID", value: "loading" },
         { label: WHATSAPP_BUSINESS_ACCOUNT_LABEL, value: "loading" },
         { label: "Webhook Verify Token", value: "loading" },
@@ -121,6 +142,7 @@ export default function WhatsappConfigPage() {
     if (loadError && !configMeta) {
       return [
         { label: "Access Token", value: "unavailable" },
+        { label: WHATSAPP_PHONE_LABEL, value: "unavailable" },
         { label: "Phone Number ID", value: "unavailable" },
         { label: WHATSAPP_BUSINESS_ACCOUNT_LABEL, value: "unavailable" },
         { label: "Webhook Verify Token", value: "unavailable" },
@@ -132,6 +154,10 @@ export default function WhatsappConfigPage() {
 
     return [
       { label: "Access Token", value: sources.accessToken || "missing" },
+      {
+        label: WHATSAPP_PHONE_LABEL,
+        value: sources.displayPhoneNumber || "default",
+      },
       { label: "Phone Number ID", value: sources.phoneNumberId || "missing" },
       {
         label: WHATSAPP_BUSINESS_ACCOUNT_LABEL,
@@ -195,6 +221,8 @@ export default function WhatsappConfigPage() {
         : "Admin-saved token overrides env token. Use a permanent system-user token here.";
   const businessAccountIdHelperText =
     "Use the WhatsApp Account ID / WABA ID from Meta. Do not paste the Meta App ID here. This field is used for template sync, not webhook verification.";
+  const displayPhoneNumberHelperText =
+    "Use the customer-facing WhatsApp number here, for example 919828204443 or +91 9828204443. Keep this separate from Phone Number ID.";
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -306,6 +334,13 @@ export default function WhatsappConfigPage() {
   };
 
   const handleSave = async () => {
+    if (displayPhoneNumberInvalid) {
+      toast.error(
+        "WhatsApp phone number must be a valid number with country code.",
+      );
+      return;
+    }
+
     await persistConfig(form);
   };
 
@@ -460,6 +495,24 @@ export default function WhatsappConfigPage() {
               </Alert>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
+                <TextField
+                  label={WHATSAPP_PHONE_LABEL}
+                  value={form.displayPhoneNumber}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      displayPhoneNumber: event.target.value,
+                    }))
+                  }
+                  size="small"
+                  fullWidth
+                  error={displayPhoneNumberInvalid}
+                  helperText={
+                    displayPhoneNumberInvalid
+                      ? "Enter a valid WhatsApp number like 919828204443 or +91 9828204443."
+                      : displayPhoneNumberHelperText
+                  }
+                />
                 <TextField
                   label="Phone Number ID"
                   value={form.phoneNumberId}
@@ -671,6 +724,15 @@ export default function WhatsappConfigPage() {
                 </div>
               ) : (
                 <div className="mt-4 space-y-3 text-sm text-slate-600">
+                  <Alert severity="info">
+                    Configured WhatsApp number:{" "}
+                    {String(
+                      health?.displayPhoneNumber ||
+                        configMeta?.effective?.displayPhoneNumber ||
+                        form.displayPhoneNumber ||
+                        "-",
+                    ).trim() || "-"}
+                  </Alert>
                   <Alert
                     severity={summary?.messagingReady ? "success" : "warning"}
                   >

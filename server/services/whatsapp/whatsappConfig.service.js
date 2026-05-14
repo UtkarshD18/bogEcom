@@ -4,6 +4,7 @@ import SettingsModel from "../../models/settings.model.js";
 
 const WHATSAPP_RUNTIME_CONFIG_KEY = "whatsappRuntimeConfig";
 const DEFAULT_GRAPH_API_VERSION = "v25.0";
+const DEFAULT_DISPLAY_PHONE_NUMBER = "919828204443";
 const CACHE_TTL_MS = Math.max(
   Number.parseInt(process.env.WHATSAPP_CONFIG_CACHE_TTL_MS || "5000", 10) ||
     5000,
@@ -19,11 +20,24 @@ const trimToLength = (value, maxLength) =>
     .trim()
     .slice(0, maxLength);
 
+const normalizeWhatsappPhoneNumber = (value) =>
+  trimToLength(value, 40).replace(/\s+/g, " ");
+
+const isValidWhatsappPhoneNumber = (value) => {
+  const trimmed = normalizeWhatsappPhoneNumber(value);
+  if (!trimmed) return true;
+  if (!/^\+?[0-9][0-9\s-]{7,19}$/.test(trimmed)) return false;
+
+  const digits = trimmed.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+};
+
 const normalizeStoredWhatsappRuntimeConfig = (value = {}) => {
   const source = value && typeof value === "object" ? value : {};
 
   return {
     accessToken: trimToLength(source.accessToken, 4000),
+    displayPhoneNumber: normalizeWhatsappPhoneNumber(source.displayPhoneNumber),
     phoneNumberId: trimToLength(source.phoneNumberId, 120),
     businessAccountId: trimToLength(source.businessAccountId, 120),
     graphApiVersion:
@@ -56,6 +70,9 @@ export const generateWhatsappWebhookVerifyToken = ({
 
 const buildEnvWhatsappRuntimeConfig = () => ({
   accessToken: trimToLength(process.env.WHATSAPP_ACCESS_TOKEN, 4000),
+  displayPhoneNumber: normalizeWhatsappPhoneNumber(
+    process.env.WHATSAPP_DISPLAY_PHONE_NUMBER,
+  ),
   phoneNumberId: trimToLength(process.env.WHATSAPP_PHONE_NUMBER_ID, 120),
   businessAccountId: trimToLength(
     process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
@@ -73,6 +90,10 @@ const buildEnvWhatsappRuntimeConfig = () => ({
 
 const mergeWhatsappRuntimeConfig = ({ envConfig, storedConfig }) => ({
   accessToken: storedConfig?.accessToken || envConfig.accessToken,
+  displayPhoneNumber:
+    storedConfig?.displayPhoneNumber ||
+    envConfig.displayPhoneNumber ||
+    DEFAULT_DISPLAY_PHONE_NUMBER,
   phoneNumberId: storedConfig?.phoneNumberId || envConfig.phoneNumberId,
   businessAccountId:
     storedConfig?.businessAccountId || envConfig.businessAccountId,
@@ -89,6 +110,11 @@ const buildConfigSources = ({ envConfig, storedConfig }) => ({
     : envConfig.accessToken
       ? "environment"
       : "missing",
+  displayPhoneNumber: storedConfig?.displayPhoneNumber
+    ? "database"
+    : envConfig.displayPhoneNumber
+      ? "environment"
+      : "default",
   phoneNumberId: storedConfig?.phoneNumberId
     ? "database"
     : envConfig.phoneNumberId
@@ -195,6 +221,7 @@ export const getWhatsappRuntimeConfigSnapshot = async ({
     effective: mergedConfig,
     environmentAvailable: {
       accessToken: Boolean(envConfig.accessToken),
+      displayPhoneNumber: Boolean(envConfig.displayPhoneNumber),
       phoneNumberId: Boolean(envConfig.phoneNumberId),
       businessAccountId: Boolean(envConfig.businessAccountId),
       webhookVerifyToken: Boolean(envConfig.webhookVerifyToken),
@@ -210,11 +237,25 @@ export const saveWhatsappRuntimeConfig = async (payload = {}, adminId = null) =>
   const existingStoredConfig =
     (await readStoredWhatsappRuntimeConfig({ forceFresh: true })) || {};
 
+  const nextDisplayPhoneNumber =
+    payload?.displayPhoneNumber !== undefined
+      ? payload.displayPhoneNumber
+      : existingStoredConfig.displayPhoneNumber;
+
+  if (!isValidWhatsappPhoneNumber(nextDisplayPhoneNumber)) {
+    const error = new Error(
+      "WhatsApp phone number must be a valid phone number with country code.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
   const value = normalizeStoredWhatsappRuntimeConfig({
     accessToken:
       payload?.accessToken !== undefined
         ? payload.accessToken
         : existingStoredConfig.accessToken,
+    displayPhoneNumber: nextDisplayPhoneNumber,
     phoneNumberId:
       payload?.phoneNumberId !== undefined
         ? payload.phoneNumberId

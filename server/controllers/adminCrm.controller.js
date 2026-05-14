@@ -127,6 +127,7 @@ export const getAdminCrmWhatsappConfig = async (_req, res) => {
         ? configResult.value
         : {
             accessToken: "",
+            displayPhoneNumber: "919828204443",
             phoneNumberId: "",
             businessAccountId: "",
             graphApiVersion: "v25.0",
@@ -154,6 +155,14 @@ export const getAdminCrmWhatsappConfig = async (_req, res) => {
             message:
               "Live WhatsApp verification is unavailable right now. Saved config can still be edited.",
           };
+
+    const fallbackDisplayPhoneNumber =
+      config?.effective?.displayPhoneNumber ||
+      config?.stored?.displayPhoneNumber ||
+      "919828204443";
+    if (!health.displayPhoneNumber) {
+      health.displayPhoneNumber = fallbackDisplayPhoneNumber;
+    }
 
     return res.status(200).json({
       error: false,
