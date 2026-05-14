@@ -126,13 +126,13 @@ const EditBlog = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          title: title?.trim() || undefined,
-          content: content?.trim() || undefined,
-          excerpt: excerpt?.trim() || undefined,
-          category: category || undefined,
-          image: imageUrlFinal || undefined,
-          videoUrl: videoUrlFinal || undefined,
-          referenceLink: referenceLink?.trim() || undefined,
+          title: title?.trim() || "",
+          content: content?.trim() || "",
+          excerpt: excerpt?.trim() || "",
+          category: category?.trim() || "",
+          image: imageUrlFinal || "",
+          videoUrl: videoUrlFinal || "",
+          referenceLink: referenceLink?.trim() || "",
           isPublished,
         }),
       });
@@ -202,7 +202,6 @@ const EditBlog = () => {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-400 outline-none"
-              required
             />
           </div>
 
@@ -241,7 +240,6 @@ const EditBlog = () => {
               value={content}
               onChange={(e) => setContent(e.target.value)}
               className="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-400 outline-none"
-              required
             />
           </div>
 

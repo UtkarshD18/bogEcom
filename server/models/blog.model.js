@@ -12,7 +12,7 @@ const blogSchema = new mongoose.Schema(
   {
     title: {
       type: String,
-      required: true,
+      default: "Untitled Blog",
       trim: true,
     },
     slug: {
@@ -23,7 +23,7 @@ const blogSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: true,
+      default: "",
     },
     excerpt: {
       type: String,

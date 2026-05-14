@@ -30,31 +30,30 @@ export default function BlogDetailPage() {
   const [blog, setBlog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [directFetchAttempted, setDirectFetchAttempted] = useState(false);
 
   useEffect(() => {
-    if (blogs && blogs.length > 0) {
-      const foundBlog = blogs.find(
-        (b) => b.slug === slug || String(b._id) === String(slug),
-      );
+    if (!slug) {
+      setError("Blog not found");
+      setLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadBlog = async () => {
+      setLoading(true);
+      setError(null);
+
+      const foundBlog = Array.isArray(blogs)
+        ? blogs.find((b) => b.slug === slug || String(b._id) === String(slug))
+        : null;
+
       if (foundBlog) {
         setBlog(foundBlog);
-        setError(null);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-    }
-  }, [blogs, slug]);
 
-  useEffect(() => {
-    if (!blogs || blogs.length === 0) {
-      fetchBlogs();
-    }
-  }, [blogs, fetchBlogs]);
-
-  useEffect(() => {
-    const fetchBySlug = async () => {
-      if (!slug || directFetchAttempted) return;
-      setDirectFetchAttempted(true);
       try {
         const response = await fetch(
           `${resolveBlogApiBaseUrl()}/api/blogs/${encodeURIComponent(slug)}`,
@@ -62,6 +61,9 @@ export default function BlogDetailPage() {
             credentials: "include",
           },
         );
+
+        if (isCancelled) return;
+
         if (!response.ok) {
           setError("Blog not found");
           setLoading(false);
@@ -77,23 +79,26 @@ export default function BlogDetailPage() {
         setBlog(data.data);
         setError(null);
       } catch (err) {
+        if (isCancelled) return;
         console.error("Error fetching blog by slug:", err);
         setError("Blog not found");
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    if (!blog && (!blogs || blogs.length === 0)) {
-      fetchBySlug();
-      return;
-    }
+    loadBlog();
 
-    if (!blog && blogs && blogs.length > 0) {
-      setError("Blog not found");
-      setLoading(false);
-    }
-  }, [blog, blogs, directFetchAttempted, slug]);
+    return () => {
+      isCancelled = true;
+    };
+  }, [blogs, slug]);
+
+  useEffect(() => {
+    fetchBlogs();
+  }, [fetchBlogs]);
 
   // Listen for blog updates from admin
   useEffect(() => {
@@ -138,7 +143,7 @@ export default function BlogDetailPage() {
     );
   }
 
-  const relatedBlogs = blogs.filter(
+  const relatedBlogs = (Array.isArray(blogs) ? blogs : []).filter(
     (b) => b.category === blog.category && b._id !== blog._id,
   );
 

@@ -111,13 +111,13 @@ const AddBlog = () => {
 
       // Create blog data
       const blogData = {
-        title: title.trim() || undefined,
-        content: content.trim() || undefined,
-        excerpt: excerpt.trim() || undefined,
-        referenceLink: referenceLink.trim() || undefined,
-        image: imageUrlFinal || undefined,
+        title: title.trim(),
+        content: content.trim(),
+        excerpt: excerpt.trim(),
+        referenceLink: referenceLink.trim(),
+        image: imageUrlFinal,
         mediaType: mediaType,
-        videoUrl: videoUrlFinal || undefined,
+        videoUrl: videoUrlFinal,
         isPublished,
       };
 

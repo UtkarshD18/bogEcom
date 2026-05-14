@@ -127,6 +127,8 @@ export default function BlogPage() {
   const otherBlogs = blogs.slice(1);
 
   const resolveBlogHref = (blog) => `/blogs/${blog.slug || blog._id}`;
+  const hasBlogMedia = (blog) =>
+    Boolean((blog?.mediaType === "video" && blog?.videoUrl) || blog?.image);
   const renderBlogMedia = (blog, className = "") => {
     if (blog.mediaType === "video" && blog.videoUrl) {
       return (
@@ -144,7 +146,7 @@ export default function BlogPage() {
       return <img src={blog.image} alt={blog.title} className={className} />;
     }
 
-    return <div className={`${className} bg-linear-to-br from-gray-100 to-gray-200`} />;
+    return null;
   };
 
   const resolveBlogApiBaseUrl = () => {
@@ -353,12 +355,14 @@ export default function BlogPage() {
                         whileHover={{ y: -5 }}
                         className="group h-full flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-lg transition-all duration-300"
                       >
-                        <div className="relative h-48 overflow-hidden bg-gray-50">
-                          {renderBlogMedia(
-                            blog,
-                            "w-full h-full object-cover group-hover:scale-105 transition-transform duration-700",
-                          )}
-                        </div>
+                        {hasBlogMedia(blog) && (
+                          <div className="relative h-48 overflow-hidden bg-gray-50">
+                            {renderBlogMedia(
+                              blog,
+                              "w-full h-full object-cover group-hover:scale-105 transition-transform duration-700",
+                            )}
+                          </div>
+                        )}
                         <div className="p-6 flex-1 flex flex-col">
                           <div className="text-xs text-gray-400 font-medium mb-2">
                             {formatDate(blog.createdAt)}
@@ -533,20 +537,22 @@ export default function BlogPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-50px" }}
               transition={{ duration: 0.7 }}
-              className="grid grid-cols-1 lg:grid-cols-2 gap-0 items-stretch bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/5"
+              className={`grid grid-cols-1 ${hasBlogMedia(featuredBlog) ? "lg:grid-cols-2" : ""} gap-0 items-stretch bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/5`}
             >
-              <div className="relative h-96 lg:h-auto overflow-hidden group">
-                {renderBlogMedia(
-                  featuredBlog,
-                  "w-full h-full object-cover transition-transform duration-700 group-hover:scale-105",
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                <div
-                  className={`absolute top-6 left-6 bg-gradient-to-r ${theme.accentStrong} text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg`}
-                >
-                  Featured
+              {hasBlogMedia(featuredBlog) && (
+                <div className="relative h-96 lg:h-auto overflow-hidden group">
+                  {renderBlogMedia(
+                    featuredBlog,
+                    "w-full h-full object-cover transition-transform duration-700 group-hover:scale-105",
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                  <div
+                    className={`absolute top-6 left-6 bg-gradient-to-r ${theme.accentStrong} text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg`}
+                  >
+                    Featured
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="p-8 lg:p-14 flex flex-col justify-center bg-white">
                 <div className="flex items-center gap-4 mb-6">
@@ -619,18 +625,20 @@ export default function BlogPage() {
                       whileHover={{ y: -8 }}
                       className="h-full flex flex-col bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border border-gray-100"
                     >
-                      <div className="relative h-60 overflow-hidden">
-                        {renderBlogMedia(
-                          blog,
-                          "w-full h-full object-cover group-hover:scale-110 transition-transform duration-700",
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
-                        <div className="absolute top-4 left-4">
-                          <span className="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-bold text-gray-900 shadow-sm">
-                            {blog.category || "General"}
-                          </span>
+                      {hasBlogMedia(blog) && (
+                        <div className="relative h-60 overflow-hidden">
+                          {renderBlogMedia(
+                            blog,
+                            "w-full h-full object-cover group-hover:scale-110 transition-transform duration-700",
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+                          <div className="absolute top-4 left-4">
+                            <span className="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-bold text-gray-900 shadow-sm">
+                              {blog.category || "General"}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       <div className="p-7 flex-1 flex flex-col">
                         <div className="flex items-center justify-between mb-4">

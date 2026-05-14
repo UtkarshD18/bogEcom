@@ -136,13 +136,13 @@ const BlogsPage = () => {
                   controls
                   className="w-full h-40 object-cover bg-black"
                 />
-              ) : (
+              ) : blog.image ? (
                 <img
-                  src={blog.image || "https://picsum.photos/600/400"}
+                  src={blog.image}
                   alt={blog.title}
                   className="w-full h-40 object-cover"
                 />
-              )}
+              ) : null}
 
               <div className="p-5">
                 <div className="flex justify-between items-start">

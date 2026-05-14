@@ -23,6 +23,13 @@ const normalizeTags = (value) => {
   return [];
 };
 
+const resolveBlogTitle = (title, content, excerpt, referenceLink) =>
+  normalizeText(
+    title,
+    normalizeText(content, normalizeText(excerpt, normalizeText(referenceLink, "Untitled Blog"))).slice(0, 120) ||
+      "Untitled Blog",
+  );
+
 const normalizePublishFlag = (value, fallback = true) => {
   if (value === undefined || value === null || value === "") {
     return fallback;
@@ -225,17 +232,11 @@ export const createBlog = async (req, res) => {
       isPublished,
     } = req.body;
 
-    const normalizedTitle = normalizeText(
-      title,
-      normalizeText(content, "Untitled Blog").slice(0, 120) || "Untitled Blog",
-    );
-    const normalizedContent = normalizeText(
-      content,
-      normalizeText(excerpt, normalizeText(referenceLink, "Blog content coming soon.")),
-    );
+    const normalizedTitle = resolveBlogTitle(title, content, excerpt, referenceLink);
+    const normalizedContent = normalizeText(content, "");
     const normalizedExcerpt = normalizeText(
       excerpt,
-      normalizedContent.slice(0, 500),
+      normalizedContent ? normalizedContent.slice(0, 500) : "",
     );
     const normalizedMediaType = mediaType === "video" ? "video" : "image";
 
@@ -313,9 +314,11 @@ export const updateBlog = async (req, res) => {
     }
 
     // Update fields
-    if (title !== undefined) blog.title = normalizeText(title, blog.title);
-    if (content !== undefined) blog.content = normalizeText(content, blog.content);
-    if (excerpt !== undefined) blog.excerpt = normalizeText(excerpt, blog.excerpt);
+    if (title !== undefined) {
+      blog.title = resolveBlogTitle(title, content ?? blog.content, excerpt ?? blog.excerpt, referenceLink ?? blog.referenceLink);
+    }
+    if (content !== undefined) blog.content = normalizeText(content, "");
+    if (excerpt !== undefined) blog.excerpt = normalizeText(excerpt, "");
     if (image !== undefined) blog.image = normalizeText(image, "") || null;
     if (referenceLink !== undefined) {
       blog.referenceLink = normalizeText(referenceLink, "") || null;
