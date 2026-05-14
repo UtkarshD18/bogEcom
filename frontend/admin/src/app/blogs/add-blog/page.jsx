@@ -31,28 +31,20 @@ const AddBlog = () => {
     }
   }, [isAuthenticated, loading, router]);
 
-  // Auto compress image
-  const compressImage = (file) => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 1200;
-        const scale = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scale;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob(
-          (blob) => {
-            resolve(new File([blob], file.name, { type: "image/jpeg" }));
-          },
-          "image/jpeg",
-          0.7,
-        );
-      };
-    });
+  const handleImageSelection = (file) => {
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleVideoSelection = (file) => {
+    if (!file) return;
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error("Video must be under 100MB");
+      return;
+    }
+    setVideoFile(file);
+    setVideoPreview(URL.createObjectURL(file));
   };
 
   const handleSubmit = async (e) => {
@@ -65,33 +57,17 @@ const AddBlog = () => {
       return;
     }
 
-    if (!title.trim()) {
-      toast.error("Please enter a blog title");
-      return;
-    }
-    if (!content.trim()) {
-      toast.error("Please enter blog content");
-      return;
-    }
-
-    // Validate media based on type
-    if (mediaType === "image" && !imageFile && !imageUrl) {
-      toast.error("Please upload or provide an image URL");
-      return;
-    }
-    if (mediaType === "video" && !videoFile && !videoUrl) {
-      toast.error("Please upload or provide a video URL");
-      return;
-    }
-
     setIsSubmitting(true);
     try {
-      let imageUrl_final = imageUrl;
-      let videoUrl_final = videoUrl;
+      let imageUrlFinal = imageUrl.trim();
+      let videoUrlFinal = videoUrl.trim();
 
       // Upload image to Cloudinary if file is selected
       if (imageFile) {
-        const uploadResponse = await uploadFile(imageFile, token);
+        const uploadResponse = await uploadFile(imageFile, token, {
+          folder: "blogs",
+          preserveQuality: true,
+        });
 
         if (uploadResponse.error === true || !uploadResponse.success) {
           toast.error(uploadResponse.message || "Failed to upload image");
@@ -100,7 +76,7 @@ const AddBlog = () => {
         }
 
         if (uploadResponse.data && uploadResponse.data.url) {
-          imageUrl_final = uploadResponse.data.url;
+          imageUrlFinal = uploadResponse.data.url;
         } else {
           toast.error("Upload successful but image URL not found");
           setIsSubmitting(false);
@@ -113,7 +89,9 @@ const AddBlog = () => {
         toast.loading("Uploading video... This may take a moment", {
           id: "video-upload",
         });
-        const uploadResponse = await uploadVideoFile(videoFile, token);
+        const uploadResponse = await uploadVideoFile(videoFile, token, {
+          folder: "blogs",
+        });
         toast.dismiss("video-upload");
 
         if (uploadResponse.error === true || !uploadResponse.success) {
@@ -123,7 +101,7 @@ const AddBlog = () => {
         }
 
         if (uploadResponse.data && uploadResponse.data.url) {
-          videoUrl_final = uploadResponse.data.url;
+          videoUrlFinal = uploadResponse.data.url;
         } else {
           toast.error("Upload successful but video URL not found");
           setIsSubmitting(false);
@@ -133,12 +111,13 @@ const AddBlog = () => {
 
       // Create blog data
       const blogData = {
-        title: title.trim(),
-        content: content.trim(),
-        excerpt: excerpt.trim() || content.substring(0, 150),
-        image: imageUrl_final || null,
+        title: title.trim() || undefined,
+        content: content.trim() || undefined,
+        excerpt: excerpt.trim() || undefined,
+        referenceLink: referenceLink.trim() || undefined,
+        image: imageUrlFinal || undefined,
         mediaType: mediaType,
-        videoUrl: mediaType === "video" ? videoUrl_final : null,
+        videoUrl: videoUrlFinal || undefined,
         isPublished,
       };
 
@@ -261,13 +240,7 @@ const AddBlog = () => {
                   accept="image/*,.gif"
                   className="hidden"
                   id="imageUpload"
-                  onChange={async (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    const compressed = await compressImage(file);
-                    setImageFile(compressed);
-                    setImagePreview(URL.createObjectURL(compressed));
-                  }}
+                  onChange={(e) => handleImageSelection(e.target.files[0])}
                 />
                 <label htmlFor="imageUpload" className="cursor-pointer">
                   <MdCloudUpload
@@ -276,7 +249,7 @@ const AddBlog = () => {
                   />
                   <p>Click to upload image or gif</p>
                   <p className="text-xs text-gray-400 mt-1">
-                    Supports JPG, PNG, WEBP, GIF (auto compressed)
+                    Supports JPG, PNG, WEBP, GIF. Original quality is preserved.
                   </p>
                 </label>
               </div>
@@ -340,13 +313,7 @@ const AddBlog = () => {
                   accept="image/*"
                   className="hidden"
                   id="thumbnailUpload"
-                  onChange={async (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    const compressed = await compressImage(file);
-                    setImageFile(compressed);
-                    setImagePreview(URL.createObjectURL(compressed));
-                  }}
+                  onChange={(e) => handleImageSelection(e.target.files[0])}
                 />
                 <label htmlFor="thumbnailUpload" className="cursor-pointer">
                   <MdCloudUpload
@@ -391,16 +358,7 @@ const AddBlog = () => {
                   accept="video/mp4,video/webm,video/ogg"
                   className="hidden"
                   id="videoUpload"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    if (file.size > 100 * 1024 * 1024) {
-                      toast.error("Video must be under 100MB");
-                      return;
-                    }
-                    setVideoFile(file);
-                    setVideoPreview(URL.createObjectURL(file));
-                  }}
+                  onChange={(e) => handleVideoSelection(e.target.files[0])}
                 />
                 <label htmlFor="videoUpload" className="cursor-pointer">
                   <MdVideoLibrary size={40} className="mx-auto text-blue-500" />
@@ -482,6 +440,9 @@ const AddBlog = () => {
             placeholder="Write full blog content here..."
             className="w-full border rounded-xl px-4 py-3 mt-2 outline-none focus:border-blue-500"
           />
+          <p className="text-sm text-gray-500 mt-1">
+            Content is optional, but the post can still publish with the other details you enter.
+          </p>
         </div>
 
         {/* PUBLISH STATUS */}

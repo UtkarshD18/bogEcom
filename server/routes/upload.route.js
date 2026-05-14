@@ -111,6 +111,11 @@ router.post(
       // Determine folder based on request
       let folder = "buyonegram/general";
       const referer = req.get("referer") || "";
+      const preserveQuality =
+        req.body.preserveQuality === true ||
+        req.body.preserveQuality === "true" ||
+        req.body.folder === "blogs" ||
+        referer.includes("blogs");
 
       if (referer.includes("products") || req.body.folder === "products") {
         folder = "buyonegram/products";
@@ -134,6 +139,7 @@ router.post(
       // Upload to Cloudinary
       const result = await uploadToCloudinary(req.file.buffer, folder, {
         mimeType: req.file.mimetype,
+        preserveQuality,
       });
 
       if (!result.success) {

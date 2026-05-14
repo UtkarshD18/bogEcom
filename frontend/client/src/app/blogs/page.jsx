@@ -127,6 +127,27 @@ export default function BlogPage() {
   const featuredBlog = blogs.length > 0 ? blogs[0] : null;
   const otherBlogs = blogs.slice(1);
 
+  const resolveBlogHref = (blog) => `/blogs/${blog.slug || blog._id}`;
+  const renderBlogMedia = (blog, className = "") => {
+    if (blog.mediaType === "video" && blog.videoUrl) {
+      return (
+        <video
+          src={blog.videoUrl}
+          controls
+          playsInline
+          poster={blog.image || undefined}
+          className={className}
+        />
+      );
+    }
+
+    if (blog.image) {
+      return <img src={blog.image} alt={blog.title} className={className} />;
+    }
+
+    return <div className={`${className} bg-linear-to-br from-gray-100 to-gray-200`} />;
+  };
+
   // Email validation helper - matches server-side validation
   const isValidEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -291,7 +312,7 @@ export default function BlogPage() {
                   {blogs.map((blog) => (
                     <Link
                       key={blog._id}
-                      href={`/blogs/${blog.slug || blog._id}`}
+                      href={resolveBlogHref(blog)}
                     >
                       <motion.article
                         variants={fadeInUp}
@@ -299,11 +320,10 @@ export default function BlogPage() {
                         className="group h-full flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-lg transition-all duration-300"
                       >
                         <div className="relative h-48 overflow-hidden bg-gray-50">
-                          <img
-                            src={blog.image}
-                            alt={blog.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                          />
+                          {renderBlogMedia(
+                            blog,
+                            "w-full h-full object-cover group-hover:scale-105 transition-transform duration-700",
+                          )}
                         </div>
                         <div className="p-6 flex-1 flex flex-col">
                           <div className="text-xs text-gray-400 font-medium mb-2">
@@ -482,11 +502,10 @@ export default function BlogPage() {
               className="grid grid-cols-1 lg:grid-cols-2 gap-0 items-stretch bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/5"
             >
               <div className="relative h-96 lg:h-auto overflow-hidden group">
-                <img
-                  src={featuredBlog.image}
-                  alt={featuredBlog.title}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                />
+                {renderBlogMedia(
+                  featuredBlog,
+                  "w-full h-full object-cover transition-transform duration-700 group-hover:scale-105",
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                 <div
                   className={`absolute top-6 left-6 bg-gradient-to-r ${theme.accentStrong} text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg`}
@@ -509,7 +528,7 @@ export default function BlogPage() {
 
                 <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-6 leading-tight">
                   <Link
-                    href={`/blogs/${featuredBlog.slug || featuredBlog._id}`}
+                    href={resolveBlogHref(featuredBlog)}
                     className="hover:text-gray-600 transition-colors"
                   >
                     {featuredBlog.title}
@@ -523,7 +542,7 @@ export default function BlogPage() {
                 </p>
 
                 <Link
-                  href={`/blogs/${featuredBlog.slug || featuredBlog._id}`}
+                  href={resolveBlogHref(featuredBlog)}
                   className={`inline-flex items-center gap-2 font-bold text-lg ${theme.accentText} group`}
                 >
                   Read Full Article{" "}
@@ -558,7 +577,7 @@ export default function BlogPage() {
                 {otherBlogs.map((blog) => (
                   <Link
                     key={blog._id}
-                    href={`/blogs/${blog.slug || blog._id}`}
+                    href={resolveBlogHref(blog)}
                     className="block h-full"
                   >
                     <motion.article
@@ -567,11 +586,10 @@ export default function BlogPage() {
                       className="h-full flex flex-col bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border border-gray-100"
                     >
                       <div className="relative h-60 overflow-hidden">
-                        <img
-                          src={blog.image}
-                          alt={blog.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                        />
+                        {renderBlogMedia(
+                          blog,
+                          "w-full h-full object-cover group-hover:scale-110 transition-transform duration-700",
+                        )}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
                         <div className="absolute top-4 left-4">
                           <span className="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-bold text-gray-900 shadow-sm">

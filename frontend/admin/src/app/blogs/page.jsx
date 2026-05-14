@@ -129,11 +129,20 @@ const BlogsPage = () => {
               className="bg-white rounded-2xl shadow hover:shadow-xl transition overflow-hidden"
             >
               {/* Image */}
-              <img
-                src={blog.image || "https://picsum.photos/600/400"}
-                alt={blog.title}
-                className="w-full h-40 object-cover"
-              />
+              {blog.mediaType === "video" && blog.videoUrl ? (
+                <video
+                  src={blog.videoUrl}
+                  poster={blog.image || undefined}
+                  controls
+                  className="w-full h-40 object-cover bg-black"
+                />
+              ) : (
+                <img
+                  src={blog.image || "https://picsum.photos/600/400"}
+                  alt={blog.title}
+                  className="w-full h-40 object-cover"
+                />
+              )}
 
               <div className="p-5">
                 <div className="flex justify-between items-start">
@@ -142,7 +151,7 @@ const BlogsPage = () => {
                       {blog.title}
                     </h3>
                     <p className="text-gray-500 mt-1 text-sm line-clamp-2">
-                      {blog.description}
+                      {blog.excerpt || blog.description || blog.content?.substring(0, 120)}
                     </p>
                   </div>
 

@@ -440,9 +440,11 @@ export const postMultipartData = async (url, formData, token = null) =>
     fallbackMessage: "Failed to submit request",
   });
 
-export const uploadFile = async (file, token) => {
+export const uploadFile = async (file, token, options = {}) => {
   const formData = new FormData();
   formData.append("image", file);
+  if (options.folder) formData.append("folder", options.folder);
+  if (options.preserveQuality) formData.append("preserveQuality", "true");
   return requestWithRetry({
     method: "post",
     url: "/api/upload/single",
@@ -453,9 +455,10 @@ export const uploadFile = async (file, token) => {
   });
 };
 
-export const uploadVideoFile = async (file, token) => {
+export const uploadVideoFile = async (file, token, options = {}) => {
   const formData = new FormData();
   formData.append("video", file);
+  if (options.folder) formData.append("folder", options.folder);
   return requestWithRetry({
     method: "post",
     url: "/api/upload/video",

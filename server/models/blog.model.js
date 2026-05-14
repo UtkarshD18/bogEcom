@@ -1,5 +1,13 @@
 import mongoose from "mongoose";
 
+const slugifyText = (value = "") =>
+  String(value)
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
 const blogSchema = new mongoose.Schema(
   {
     title: {
@@ -23,6 +31,10 @@ const blogSchema = new mongoose.Schema(
     },
     image: {
       type: String,
+    },
+    referenceLink: {
+      type: String,
+      trim: true,
     },
     mediaType: {
       type: String,
@@ -61,12 +73,29 @@ const blogSchema = new mongoose.Schema(
 
 // Auto-generate slug from title before saving
 blogSchema.pre("save", async function () {
-  if (!this.slug || this.isModified("title")) {
-    this.slug = this.title
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
+  if (!this.slug || this.isModified("title") || this.isModified("content")) {
+    const titleSource = this.title?.trim();
+    const contentSource = this.content?.trim();
+    const baseSource = titleSource || contentSource || `blog-${this._id}`;
+    const fallbackBase = slugifyText(baseSource) || `blog-${this._id}`;
+    const needsUniqueSuffix = !titleSource;
+
+    let candidateSlug = needsUniqueSuffix
+      ? `${fallbackBase}-${String(this._id).slice(-6)}`
+      : fallbackBase;
+    let suffix = 2;
+
+    while (
+      await mongoose.models.Blog.findOne({
+        slug: candidateSlug,
+        _id: { $ne: this._id },
+      }).select("_id")
+    ) {
+      candidateSlug = `${fallbackBase}-${suffix}`;
+      suffix += 1;
+    }
+
+    this.slug = candidateSlug;
   }
 });
 

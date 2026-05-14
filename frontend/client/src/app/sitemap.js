@@ -93,7 +93,9 @@ export default async function sitemap() {
     }
   } catch (error) {
     // Fail gracefully to static pages only
-    console.error("Error fetching seoSettings for sitemap:", error);
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error fetching seoSettings for sitemap:", error);
+    }
   }
 
   return staticPages;

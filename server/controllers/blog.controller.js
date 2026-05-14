@@ -2,6 +2,57 @@ import { deleteFromCloudinary } from "../config/cloudinary.js";
 import BlogModel from "../models/blog.model.js";
 import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
 
+const normalizeText = (value, fallback = "") => {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed || fallback;
+};
+
+const normalizeTags = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((tag) => normalizeText(tag)).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((tag) => normalizeText(tag))
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+const normalizePublishFlag = (value, fallback = true) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+
+  return fallback;
+};
+
+const resolvePublicBlogQuery = (identifier) => {
+  const publicFilter = {
+    $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
+  };
+
+  const identifierFilters = [{ slug: identifier }];
+  if (identifier && /^[a-fA-F0-9]{24}$/.test(identifier)) {
+    identifierFilters.push({ _id: identifier });
+  }
+
+  return {
+    $and: [publicFilter, { $or: identifierFilters }],
+  };
+};
+
 /**
  * Get all published blogs (public)
  */
@@ -10,22 +61,25 @@ export const getAllBlogs = async (req, res) => {
     const { page = 1, limit = 10, category, search } = req.query;
     const skip = (page - 1) * limit;
 
-    const publishFilter = {
-      $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
-    };
-    let query = publishFilter;
+    const filters = [
+      { $or: [{ isPublished: true }, { isPublished: { $exists: false } }] },
+    ];
 
     if (category) {
-      query.category = category;
+      filters.push({ category });
     }
 
     if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { excerpt: { $regex: search, $options: "i" } },
-        { content: { $regex: search, $options: "i" } },
-      ];
+      filters.push({
+        $or: [
+          { title: { $regex: search, $options: "i" } },
+          { excerpt: { $regex: search, $options: "i" } },
+          { content: { $regex: search, $options: "i" } },
+        ],
+      });
     }
+
+    const query = filters.length > 1 ? { $and: filters } : filters[0];
 
     const blogs = await BlogModel.find(query)
       .sort({ createdAt: -1 })
@@ -59,10 +113,7 @@ export const getBlogBySlug = async (req, res) => {
   try {
     const { slug } = req.params;
 
-    const blog = await BlogModel.findOne({
-      slug,
-      $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
-    });
+    const blog = await BlogModel.findOne(resolvePublicBlogQuery(slug));
 
     if (!blog) {
       return res.status(404).json({
@@ -165,6 +216,7 @@ export const createBlog = async (req, res) => {
       content,
       excerpt,
       image,
+      referenceLink,
       mediaType,
       videoUrl,
       author,
@@ -173,43 +225,32 @@ export const createBlog = async (req, res) => {
       isPublished,
     } = req.body;
 
-    // Validate required fields based on media type
-    if (!title || !content) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Title and content are required",
-      });
-    }
-
-    // Validate media based on type
-    if (mediaType === "video" && !videoUrl) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Video URL is required for video blogs",
-      });
-    }
-
-    if (mediaType !== "video" && !image) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Image is required for image blogs",
-      });
-    }
+    const normalizedTitle = normalizeText(
+      title,
+      normalizeText(content, "Untitled Blog").slice(0, 120) || "Untitled Blog",
+    );
+    const normalizedContent = normalizeText(
+      content,
+      normalizeText(excerpt, normalizeText(referenceLink, "Blog content coming soon.")),
+    );
+    const normalizedExcerpt = normalizeText(
+      excerpt,
+      normalizedContent.slice(0, 500),
+    );
+    const normalizedMediaType = mediaType === "video" ? "video" : "image";
 
     const blog = new BlogModel({
-      title,
-      content,
-      excerpt: excerpt || content.substring(0, 500),
-      image: image || null,
-      mediaType: mediaType || "image",
-      videoUrl: videoUrl || null,
-      author: author || "Admin",
-      category: category || "General",
-      tags: tags || [],
-      isPublished: isPublished !== false,
+      title: normalizedTitle,
+      content: normalizedContent,
+      excerpt: normalizedExcerpt,
+      image: normalizeText(image, "") || null,
+      referenceLink: normalizeText(referenceLink, "") || null,
+      mediaType: normalizedMediaType,
+      videoUrl: normalizeText(videoUrl, "") || null,
+      author: normalizeText(author, "Admin"),
+      category: normalizeText(category, "General"),
+      tags: normalizeTags(tags),
+      isPublished: normalizePublishFlag(isPublished, true),
     });
 
     await blog.save();
@@ -242,6 +283,7 @@ export const updateBlog = async (req, res) => {
       content,
       excerpt,
       image,
+      referenceLink,
       mediaType,
       videoUrl,
       author,
@@ -271,16 +313,19 @@ export const updateBlog = async (req, res) => {
     }
 
     // Update fields
-    if (title) blog.title = title;
-    if (content) blog.content = content;
-    if (excerpt) blog.excerpt = excerpt;
-    if (image !== undefined) blog.image = image;
-    if (mediaType) blog.mediaType = mediaType;
-    if (videoUrl !== undefined) blog.videoUrl = videoUrl;
-    if (author) blog.author = author;
-    if (category) blog.category = category;
-    if (tags) blog.tags = tags;
-    if (isPublished !== undefined) blog.isPublished = isPublished;
+    if (title !== undefined) blog.title = normalizeText(title, blog.title);
+    if (content !== undefined) blog.content = normalizeText(content, blog.content);
+    if (excerpt !== undefined) blog.excerpt = normalizeText(excerpt, blog.excerpt);
+    if (image !== undefined) blog.image = normalizeText(image, "") || null;
+    if (referenceLink !== undefined) {
+      blog.referenceLink = normalizeText(referenceLink, "") || null;
+    }
+    if (mediaType) blog.mediaType = mediaType === "video" ? "video" : "image";
+    if (videoUrl !== undefined) blog.videoUrl = normalizeText(videoUrl, "") || null;
+    if (author !== undefined) blog.author = normalizeText(author, blog.author);
+    if (category !== undefined) blog.category = normalizeText(category, blog.category);
+    if (tags !== undefined) blog.tags = normalizeTags(tags);
+    if (isPublished !== undefined) blog.isPublished = normalizePublishFlag(isPublished, blog.isPublished);
 
     await blog.save();
 
