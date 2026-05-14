@@ -130,8 +130,8 @@ const resolveApiBaseUrl = () => {
       // When the client is running on localhost, honor an explicit API URL
       // from env first. Falling back to the Next.js origin only works when
       // dev rewrites are intentionally configured for that backend.
-      if (envBaseUrl && envBaseUrl.includes(":8000")) {
-        return preferredLocalFallback || origin || envBaseUrl;
+      if (envBaseUrl) {
+        return envBaseUrl || origin || preferredLocalFallback || "";
       }
       return envBaseUrl || origin || preferredLocalFallback || "";
     }

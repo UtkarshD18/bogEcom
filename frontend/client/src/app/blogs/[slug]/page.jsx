@@ -1,9 +1,27 @@
 "use client";
 import { useProducts } from "@/context/ProductContext";
-import { API_BASE_URL } from "@/utils/api";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+
+const resolveBlogApiBaseUrl = () => {
+  const configuredBase = String(
+    process.env.NEXT_PUBLIC_APP_API_URL || process.env.NEXT_PUBLIC_API_URL || "",
+  )
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/\/+$/, "");
+
+  if (configuredBase) {
+    return configuredBase;
+  }
+
+  if (typeof window !== "undefined") {
+    return String(window.location.origin || "").replace(/\/+$/, "");
+  }
+
+  return "http://127.0.0.1:8000";
+};
 
 export default function BlogDetailPage() {
   const params = useParams();
@@ -38,21 +56,26 @@ export default function BlogDetailPage() {
       if (!slug || directFetchAttempted) return;
       setDirectFetchAttempted(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/blogs/${slug}`, {
-          cache: "no-store",
-        });
+        const response = await fetch(
+          `${resolveBlogApiBaseUrl()}/api/blogs/${encodeURIComponent(slug)}`,
+          {
+            credentials: "include",
+          },
+        );
         if (!response.ok) {
           setError("Blog not found");
           setLoading(false);
           return;
         }
         const data = await response.json();
-        if (data?.success && data?.data) {
-          setBlog(data.data);
-          setError(null);
-        } else {
+        if (data?.error || !data?.data) {
           setError("Blog not found");
+          setLoading(false);
+          return;
         }
+
+        setBlog(data.data);
+        setError(null);
       } catch (err) {
         console.error("Error fetching blog by slug:", err);
         setError("Blog not found");
@@ -70,7 +93,7 @@ export default function BlogDetailPage() {
       setError("Blog not found");
       setLoading(false);
     }
-  }, [API_BASE_URL, blog, blogs, directFetchAttempted, slug]);
+  }, [blog, blogs, directFetchAttempted, slug]);
 
   // Listen for blog updates from admin
   useEffect(() => {

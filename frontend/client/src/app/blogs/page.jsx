@@ -1,7 +1,6 @@
 "use client";
 
-import { useProducts } from "@/context/ProductContext";
-import { API_BASE_URL, postData } from "@/utils/api";
+import { fetchDataFromApi, postData } from "@/utils/api";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -105,7 +104,7 @@ const staggerContainer = {
 };
 
 export default function BlogPage() {
-  const { blogs = [], fetchBlogs } = useProducts();
+  const [blogs, setBlogs] = useState([]);
   const [pageConfig, setPageConfig] = useState(DEFAULT_PAGE);
   const [newsletterEmail, setNewsletterEmail] = useState("");
   const [newsletterStatus, setNewsletterStatus] = useState(null);
@@ -146,6 +145,25 @@ export default function BlogPage() {
     }
 
     return <div className={`${className} bg-linear-to-br from-gray-100 to-gray-200`} />;
+  };
+
+  const resolveBlogApiBaseUrl = () => {
+    const configuredBase = String(
+      process.env.NEXT_PUBLIC_APP_API_URL || process.env.NEXT_PUBLIC_API_URL || "",
+    )
+      .trim()
+      .replace(/^["']|["']$/g, "")
+      .replace(/\/+$/, "");
+
+    if (configuredBase) {
+      return configuredBase;
+    }
+
+    if (typeof window !== "undefined") {
+      return String(window.location.origin || "").replace(/\/+$/, "");
+    }
+
+    return "http://127.0.0.1:8000";
   };
 
   // Email validation helper - matches server-side validation
@@ -218,50 +236,66 @@ export default function BlogPage() {
 
   useEffect(() => {
     const fetchPage = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/blogs/page/public`, {
-          cache: "no-store",
-        });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (data?.success && data?.data) {
-          setPageConfig({
-            ...DEFAULT_PAGE,
-            ...data.data,
-            theme: { ...DEFAULT_PAGE.theme, ...(data.data.theme || {}) },
-            sections: {
-              ...DEFAULT_PAGE.sections,
-              ...(data.data.sections || {}),
-            },
-            hero: { ...DEFAULT_PAGE.hero, ...(data.data.hero || {}) },
-            newsletter: {
-              ...DEFAULT_PAGE.newsletter,
-              ...(data.data.newsletter || {}),
-            },
-          });
-        }
-      } catch (error) {
-        console.error("BlogPage config fetch error:", error);
+      const response = await fetchDataFromApi("/api/blogs/page/public", {
+        skipCache: true,
+      });
+
+      if (response?.error || !response?.data) {
+        return;
       }
+
+      setPageConfig({
+        ...DEFAULT_PAGE,
+        ...response.data,
+        theme: { ...DEFAULT_PAGE.theme, ...(response.data.theme || {}) },
+        sections: {
+          ...DEFAULT_PAGE.sections,
+          ...(response.data.sections || {}),
+        },
+        hero: { ...DEFAULT_PAGE.hero, ...(response.data.hero || {}) },
+        newsletter: {
+          ...DEFAULT_PAGE.newsletter,
+          ...(response.data.newsletter || {}),
+        },
+      });
     };
 
-    fetchPage();
+    fetchPage().catch((error) => {
+      console.error("BlogPage config fetch error:", error);
+    });
   }, []);
 
   useEffect(() => {
-    fetchBlogs();
-  }, [fetchBlogs]);
+    const loadBlogs = async () => {
+      try {
+        const response = await fetch(
+          `${resolveBlogApiBaseUrl()}/api/blogs`,
+          {
+            credentials: "include",
+          },
+        );
+        if (!response.ok) {
+          return;
+        }
 
-  // Listen for blog updates from admin
-  useEffect(() => {
-    const handleBlogUpdate = (event) => {
-      console.log("Blog updated event received:", event.detail);
-      fetchBlogs();
+        const data = await response.json();
+        if (data?.success && Array.isArray(data?.data)) {
+          setBlogs(data.data);
+        }
+      } catch (error) {
+        console.error("Blog list fetch error:", error);
+      }
+    };
+
+    loadBlogs();
+
+    const handleBlogUpdate = () => {
+      loadBlogs();
     };
 
     window.addEventListener("blogUpdated", handleBlogUpdate);
     return () => window.removeEventListener("blogUpdated", handleBlogUpdate);
-  }, [fetchBlogs]);
+  }, []);
 
   if (layout === "minimal") {
     return (
