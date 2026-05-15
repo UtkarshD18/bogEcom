@@ -17,11 +17,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 
 const statusBadgeClass = (status) => {
-  if (status === "OPEN") return "bg-red-100 text-red-700";
-  if (status === "PENDING" || status === "IN_PROGRESS")
-    return "bg-amber-100 text-amber-700";
-  if (status === "RESOLVED") return "bg-emerald-100 text-emerald-700";
-  return "bg-gray-100 text-gray-700";
+  if (status === "OPEN") return "bg-red-50 text-red-700 border-red-100";
+  if (status === "PENDING" || status === "IN_PROGRESS") {
+    return "bg-amber-50 text-amber-700 border-amber-100";
+  }
+  if (status === "RESOLVED") {
+    return "bg-emerald-50 text-emerald-700 border-emerald-100";
+  }
+  return "bg-gray-50 text-gray-700 border-gray-100";
 };
 
 const formatIstDateTime = (value) => {
@@ -40,6 +43,103 @@ const formatIstDateTime = (value) => {
   }).format(parsedDate);
 
   return formatted.replace(/\s(AM|PM)$/i, (meridiem) => meridiem.toLowerCase());
+};
+
+const DetailRow = ({ label, value }) => (
+  <div className="rounded-lg bg-gray-50 px-3 py-2">
+    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+      {label}
+    </p>
+    <p className="mt-1 break-words text-sm font-medium text-gray-900">
+      {value || "N/A"}
+    </p>
+  </div>
+);
+
+const MessageBubble = ({ message, onPreviewImage }) => {
+  const isAdmin = message?.authorType === "admin";
+  const isSystem = message?.authorType === "system";
+
+  if (isSystem) {
+    return (
+      <div className="flex justify-center">
+        <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
+          {message.message}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+          isAdmin
+            ? "bg-blue-600 text-white"
+            : "border border-gray-200 bg-white text-gray-900"
+        }`}
+      >
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <p className="text-[11px] font-bold uppercase tracking-wide opacity-75">
+            {isAdmin ? "Admin" : message?.authorName || "Customer"}
+          </p>
+          <p className="text-[10px] opacity-65">{message.created_at || ""}</p>
+        </div>
+        <p className="whitespace-pre-wrap leading-6">{message.message}</p>
+
+        {Array.isArray(message.images) && message.images.length > 0 ? (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {message.images.map((imageUrl) => (
+              <button
+                key={imageUrl}
+                type="button"
+                onClick={() => onPreviewImage(imageUrl)}
+                className="overflow-hidden rounded-xl border border-black/10 bg-white/20"
+              >
+                <img
+                  src={imageUrl}
+                  alt="Support attachment"
+                  className="h-28 w-full object-cover"
+                  loading="lazy"
+                />
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {Array.isArray(message.videos) && message.videos.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {message.videos.map((videoUrl) => (
+              <video
+                key={videoUrl}
+                src={videoUrl}
+                controls
+                preload="metadata"
+                className="max-h-56 w-full rounded-xl bg-black"
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {Array.isArray(message.attachments) &&
+        message.attachments.length > 0 ? (
+          <div className="mt-3 space-y-1">
+            {message.attachments.map((attachmentUrl) => (
+              <a
+                key={attachmentUrl}
+                href={attachmentUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block break-all text-xs font-semibold underline"
+              >
+                Attachment
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 };
 
 const CustomerCareDetailPage = () => {
@@ -69,8 +169,8 @@ const CustomerCareDetailPage = () => {
       const nextTicket = response.data.ticket;
       setTicket(nextTicket);
       setStatus(nextTicket.status || "OPEN");
-      setAdminReply(nextTicket.adminReply || "");
-    } catch (error) {
+      setAdminReply("");
+    } catch {
       toast.error("Failed to load ticket details.");
       router.push("/customer-care");
     } finally {
@@ -94,9 +194,18 @@ const CustomerCareDetailPage = () => {
     if (!ticket?.orderId || typeof ticket.orderId !== "object") return null;
     return ticket.orderId;
   }, [ticket]);
+
   const ticketMessages = useMemo(
     () => (Array.isArray(ticket?.messages) ? ticket.messages : []),
     [ticket],
+  );
+
+  const latestCustomerMessage = useMemo(
+    () =>
+      [...ticketMessages]
+        .reverse()
+        .find((message) => message?.authorType === "customer") || null,
+    [ticketMessages],
   );
 
   const handleSave = async () => {
@@ -104,12 +213,12 @@ const CustomerCareDetailPage = () => {
 
     const payload = {};
     if (status !== ticket.status) payload.status = status;
-    if (adminReply.trim() !== String(ticket.adminReply || "").trim()) {
+    if (adminReply.trim()) {
       payload.adminReply = adminReply.trim();
     }
 
     if (!Object.keys(payload).length) {
-      toast.error("No changes to save.");
+      toast.error("Write a reply or change status before saving.");
       return;
     }
 
@@ -123,7 +232,7 @@ const CustomerCareDetailPage = () => {
 
       toast.success(response?.message || "Ticket updated.");
       await loadTicket();
-    } catch (error) {
+    } catch {
       toast.error("Failed to update ticket.");
     } finally {
       setIsSaving(false);
@@ -133,359 +242,217 @@ const CustomerCareDetailPage = () => {
   if (loading || !isAuthenticated || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600" />
       </div>
     );
   }
 
-  if (!ticket) {
-    return null;
-  }
+  if (!ticket) return null;
 
   return (
-    <section className="w-full p-5">
-      <div className="bg-white rounded-lg shadow-md p-5 space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-[22px] font-[600] text-gray-800">Ticket Detail</h1>
-            <p className="text-sm text-gray-500">{ticket.ticketId}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${statusBadgeClass(ticket.status)}`}
-            >
-              {ticket.status}
-            </span>
-            <Button
-              variant="outlined"
-              size="small"
-              sx={{ textTransform: "none" }}
-              onClick={() => router.push("/customer-care")}
-            >
-              Back to List
-            </Button>
+    <section className="w-full bg-gray-50 p-5">
+      <div className="mx-auto max-w-[1600px] space-y-5">
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+                Customer Care
+              </p>
+              <h1 className="mt-1 text-2xl font-bold text-gray-900">
+                {ticket.subject || "Support Ticket"}
+              </h1>
+              <p className="mt-1 text-sm text-gray-500">{ticket.ticketId}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${statusBadgeClass(ticket.status)}`}
+              >
+                {ticket.status}
+              </span>
+              <Button
+                variant="outlined"
+                size="small"
+                sx={{ textTransform: "none" }}
+                onClick={() => router.push("/customer-care")}
+              >
+                Back to List
+              </Button>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="border border-gray-100 rounded-lg p-4">
-            <h2 className="text-[16px] font-semibold text-gray-800 mb-3">User Details</h2>
-            <div className="space-y-2 text-sm text-gray-700">
-              <p>
-                <span className="font-semibold">Name:</span> {ticket.name || "N/A"}
-              </p>
-              <p>
-                <span className="font-semibold">Email:</span> {ticket.email || "N/A"}
-              </p>
-              <p>
-                <span className="font-semibold">Phone:</span> {ticket.phone || "N/A"}
-              </p>
-              <p>
-                <span className="font-semibold">User ID:</span>{" "}
-                {ticket.userId?._id || ticket.userId || "Guest"}
-              </p>
-              <p>
-                <span className="font-semibold">Created:</span>{" "}
-                {ticket.created_at || ticket.createdAt || "N/A"}
-              </p>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 px-5 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">
+                    Conversation
+                  </h2>
+                  <p className="text-sm text-gray-500">
+                    Customer messages, admin replies, screenshots, and videos.
+                  </p>
+                </div>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+                  {ticketMessages.length} message
+                  {ticketMessages.length === 1 ? "" : "s"}
+                </span>
+              </div>
+            </div>
+
+            <div className="min-h-[560px] space-y-4 bg-[#f8fafc] p-5">
+              {ticketMessages.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
+                  No conversation messages yet.
+                </div>
+              ) : (
+                ticketMessages.map((message, index) => (
+                  <MessageBubble
+                    key={`${message?.created_at_ts || index}-${index}`}
+                    message={message}
+                    onPreviewImage={setSelectedImage}
+                  />
+                ))
+              )}
             </div>
           </div>
 
-          <div className="border border-gray-100 rounded-lg p-4">
-            <h2 className="text-[16px] font-semibold text-gray-800 mb-3">Order Details</h2>
-            {normalizedOrder ? (
-              <div className="space-y-2 text-sm text-gray-700">
-                <p>
-                  <span className="font-semibold">Order ID:</span>{" "}
-                  {normalizedOrder.displayOrderId
-                    ? `#${normalizedOrder.displayOrderId}`
-                    : String(normalizedOrder._id || "")}
+          <aside className="space-y-5">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900">Reply</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Send a clear customer-facing response and update ticket status.
+              </p>
+              <div className="mt-4 space-y-4">
+                <TextField
+                  select
+                  fullWidth
+                  label="Status"
+                  size="small"
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value)}
+                >
+                  <MenuItem value="OPEN">OPEN</MenuItem>
+                  <MenuItem value="PENDING">PENDING</MenuItem>
+                  <MenuItem value="RESOLVED">RESOLVED</MenuItem>
+                </TextField>
+
+                <TextField
+                  label="Reply to Customer"
+                  value={adminReply}
+                  onChange={(event) => setAdminReply(event.target.value)}
+                  fullWidth
+                  multiline
+                  rows={6}
+                  placeholder="Write the next reply. The customer will see it in My Support."
+                />
+
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  sx={{ textTransform: "none", fontWeight: 700 }}
+                >
+                  {isSaving ? "Saving..." : "Send Reply / Save Status"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900">
+                Customer Snapshot
+              </h2>
+              <div className="mt-4 grid gap-3">
+                <DetailRow label="Name" value={ticket.name} />
+                <DetailRow label="Email" value={ticket.email} />
+                <DetailRow label="Phone" value={ticket.phone} />
+                <DetailRow
+                  label="User ID"
+                  value={ticket.userId?._id || ticket.userId || "Guest"}
+                />
+                <DetailRow label="Created" value={ticket.created_at} />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900">
+                Order Snapshot
+              </h2>
+              {normalizedOrder ? (
+                <div className="mt-4 grid gap-3">
+                  <DetailRow
+                    label="Order ID"
+                    value={
+                      normalizedOrder.displayOrderId
+                        ? `#${normalizedOrder.displayOrderId}`
+                        : String(normalizedOrder._id || "")
+                    }
+                  />
+                  <DetailRow
+                    label="Order Status"
+                    value={normalizedOrder.order_status}
+                  />
+                  <DetailRow
+                    label="Payment Status"
+                    value={normalizedOrder.payment_status}
+                  />
+                  <DetailRow
+                    label="Total"
+                    value={`Rs ${Number(
+                      normalizedOrder.displayTotal ??
+                        normalizedOrder.finalAmount ??
+                        normalizedOrder.totalAmt ??
+                        0,
+                    ).toFixed(2)}`}
+                  />
+                  <DetailRow
+                    label="Order Date"
+                    value={formatIstDateTime(normalizedOrder.createdAt)}
+                  />
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-gray-500">
+                  No order linked to this ticket.
                 </p>
-                <p>
-                  <span className="font-semibold">Order Status:</span>{" "}
-                  {normalizedOrder.order_status || "N/A"}
-                </p>
-                <p>
-                  <span className="font-semibold">Payment Status:</span>{" "}
-                  {normalizedOrder.payment_status || "N/A"}
-                </p>
-                <p>
-                  <span className="font-semibold">Total:</span> ₹
-                  {Number(
-                    normalizedOrder.displayTotal ??
-                      normalizedOrder.finalAmount ??
-                      normalizedOrder.totalAmt ??
-                      0,
-                  ).toFixed(2)}
-                </p>
-                <p>
-                  <span className="font-semibold">Order Date:</span>{" "}
-                  {formatIstDateTime(normalizedOrder.createdAt)}
+              )}
+            </div>
+
+            {normalizedOrder?.products?.length > 0 ? (
+              <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                <h2 className="text-base font-bold text-gray-900">
+                  Order Items
+                </h2>
+                <div className="mt-3 space-y-2">
+                  {normalizedOrder.products.map((item, index) => (
+                    <div
+                      key={`${item.productId || "item"}-${index}`}
+                      className="rounded-lg border border-gray-100 bg-gray-50 p-3"
+                    >
+                      <p className="text-sm font-semibold text-gray-900">
+                        {item.productTitle || "Product"}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Qty {item.quantity || 0} x Rs{" "}
+                        {Number(item.price || 0).toFixed(2)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {latestCustomerMessage ? (
+              <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                <h2 className="text-base font-bold text-gray-900">
+                  Latest Customer Note
+                </h2>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-700">
+                  {latestCustomerMessage.message}
                 </p>
               </div>
-            ) : (
-              <p className="text-sm text-gray-500">No order linked to this ticket.</p>
-            )}
-          </div>
-        </div>
-
-        {normalizedOrder?.products?.length > 0 && (
-          <div className="border border-gray-100 rounded-lg p-4">
-            <h2 className="text-[16px] font-semibold text-gray-800 mb-3">Order Items</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px]">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left px-3 py-2 text-sm font-semibold text-gray-700">
-                      Product
-                    </th>
-                    <th className="text-left px-3 py-2 text-sm font-semibold text-gray-700">
-                      Qty
-                    </th>
-                    <th className="text-left px-3 py-2 text-sm font-semibold text-gray-700">
-                      Price
-                    </th>
-                    <th className="text-left px-3 py-2 text-sm font-semibold text-gray-700">
-                      Subtotal
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {normalizedOrder.products.map((item, index) => (
-                    <tr key={`${item.productId}-${index}`} className="border-b border-gray-100">
-                      <td className="px-3 py-2 text-sm text-gray-700">
-                        {item.productTitle || "Product"}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-gray-700">
-                        {item.quantity || 0}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-gray-700">
-                        ₹{Number(item.price || 0).toFixed(2)}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-gray-700">
-                        ₹{Number(item.subTotal || 0).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        <div className="border border-gray-100 rounded-lg p-4">
-          <h2 className="text-[16px] font-semibold text-gray-800 mb-2">Customer Message</h2>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">
-            {ticket.message || "No message provided."}
-          </p>
-        </div>
-
-        <div className="border border-gray-100 rounded-lg p-4 bg-[#f8fafc]">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <h2 className="text-[16px] font-semibold text-gray-800">
-              Conversation
-            </h2>
-            <span className="text-xs font-semibold text-gray-500">
-              {ticketMessages.length} message{ticketMessages.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          {ticketMessages.length === 0 ? (
-            <p className="text-sm text-gray-500">No conversation messages yet.</p>
-          ) : (
-            <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
-              {ticketMessages.map((message, index) => {
-                const isAdmin = message?.authorType === "admin";
-                const isSystem = message?.authorType === "system";
-                if (isSystem) {
-                  return (
-                    <div
-                      key={`${message?.created_at_ts || index}-${index}`}
-                      className="text-center text-xs font-medium text-gray-500"
-                    >
-                      {message.message}
-                    </div>
-                  );
-                }
-                return (
-                  <div
-                    key={`${message?.created_at_ts || index}-${index}`}
-                    className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
-                        isAdmin
-                          ? "bg-blue-600 text-white"
-                          : "bg-white border border-gray-200 text-gray-800"
-                      }`}
-                    >
-                      <p className="mb-1 text-[11px] font-semibold opacity-75">
-                        {isAdmin ? "Admin" : message?.authorName || "Customer"}
-                      </p>
-                      <p className="whitespace-pre-wrap leading-6">
-                        {message.message}
-                      </p>
-                      {Array.isArray(message.images) && message.images.length > 0 ? (
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          {message.images.map((imageUrl) => (
-                            <button
-                              key={imageUrl}
-                              type="button"
-                              onClick={() => setSelectedImage(imageUrl)}
-                              className="overflow-hidden rounded-lg border border-white/30 bg-white/20"
-                            >
-                              <img
-                                src={imageUrl}
-                                alt="Support attachment"
-                                className="h-24 w-full object-cover"
-                                loading="lazy"
-                              />
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                      {Array.isArray(message.videos) && message.videos.length > 0 ? (
-                        <div className="mt-3 space-y-2">
-                          {message.videos.map((videoUrl) => (
-                            <video
-                              key={videoUrl}
-                              src={videoUrl}
-                              controls
-                              preload="metadata"
-                              className="max-h-48 w-full rounded-lg bg-black"
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                      {Array.isArray(message.attachments) &&
-                      message.attachments.length > 0 ? (
-                        <div className="mt-3 space-y-1">
-                          {message.attachments.map((attachmentUrl) => (
-                            <a
-                              key={attachmentUrl}
-                              href={attachmentUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="block break-all text-xs font-semibold underline"
-                            >
-                              Attachment
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                      <p className="mt-2 text-[10px] opacity-70">
-                        {message.created_at || ""}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="border border-gray-100 rounded-lg p-4">
-          <h2 className="text-[16px] font-semibold text-gray-800 mb-3">Images</h2>
-          {!ticket.images?.length ? (
-            <p className="text-sm text-gray-500">No images uploaded.</p>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {ticket.images.map((imageUrl) => (
-                <button
-                  key={imageUrl}
-                  type="button"
-                  className="rounded-md overflow-hidden border border-gray-200 bg-gray-100"
-                  onClick={() => setSelectedImage(imageUrl)}
-                >
-                  <img
-                    src={imageUrl}
-                    alt="Ticket attachment"
-                    className="w-full h-28 object-cover"
-                    loading="lazy"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="border border-gray-100 rounded-lg p-4">
-          <h2 className="text-[16px] font-semibold text-gray-800 mb-3">Videos</h2>
-          {!ticket.videos?.length ? (
-            <p className="text-sm text-gray-500">No videos uploaded.</p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {ticket.videos.map((videoUrl) => (
-                <video
-                  key={videoUrl}
-                  src={videoUrl}
-                  controls
-                  preload="metadata"
-                  className="w-full rounded-md border border-gray-200 bg-black"
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="border border-gray-100 rounded-lg p-4">
-          <h2 className="text-[16px] font-semibold text-gray-800 mb-3">
-            Linked Attachments
-          </h2>
-          {!ticket.attachments?.length ? (
-            <p className="text-sm text-gray-500">No linked attachments.</p>
-          ) : (
-            <div className="space-y-2">
-              {ticket.attachments.map((attachmentUrl) => (
-                <a
-                  key={attachmentUrl}
-                  href={attachmentUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block text-sm font-medium text-blue-600 hover:underline break-all"
-                >
-                  {attachmentUrl}
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="border border-gray-100 rounded-lg p-4">
-          <h2 className="text-[16px] font-semibold text-gray-800 mb-3">
-            Reply / Resolution
-          </h2>
-          <div className="space-y-4">
-            <TextField
-              select
-              fullWidth
-              label="Status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-            >
-              <MenuItem value="OPEN">OPEN</MenuItem>
-              <MenuItem value="PENDING">PENDING</MenuItem>
-              <MenuItem value="RESOLVED">RESOLVED</MenuItem>
-            </TextField>
-
-            <TextField
-              label="Reply to Customer"
-              value={adminReply}
-              onChange={(event) => setAdminReply(event.target.value)}
-              fullWidth
-              multiline
-              rows={5}
-              placeholder="Write a reply the customer can read and respond to..."
-            />
-
-            <Button
-              variant="contained"
-              onClick={handleSave}
-              disabled={isSaving}
-              sx={{ textTransform: "none" }}
-            >
-              {isSaving ? "Saving..." : "Save"}
-            </Button>
-          </div>
+            ) : null}
+          </aside>
         </div>
       </div>
 
