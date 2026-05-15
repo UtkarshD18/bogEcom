@@ -41,7 +41,7 @@ import {
 } from "@/utils/weightDisplay";
 import { Alert, CircularProgress, Rating, Snackbar } from "@mui/material";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   startTransition,
   useCallback,
@@ -438,7 +438,9 @@ const ReviewCard = ({ review, compact = false }) => (
 const ProductDetailPage = () => {
   const { id } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const routeId = String(id || "").trim();
+  const requestedVariantId = String(searchParams.get("variantId") || "").trim();
   const isDemoPreview = routeId.toLowerCase() === DEMO_PRODUCT_ID;
   const { addToCart, removeFromCart, isInCart, cartItems, isComboCartItem } =
     useCart();
@@ -1013,6 +1015,18 @@ const ProductDetailPage = () => {
               return null;
             }
 
+            if (requestedVariantId) {
+              const requestedVariant =
+                resolvedProduct.variants.find(
+                  (variant) =>
+                    String(variant?._id || variant?.id || "") ===
+                    String(requestedVariantId),
+                ) || null;
+              if (requestedVariant) {
+                return requestedVariant;
+              }
+            }
+
             const previousVariantId = previous?._id || previous?.id;
             if (previousVariantId) {
               const matchedVariant =
@@ -1081,7 +1095,12 @@ const ProductDetailPage = () => {
         }
       }
     },
-    [fetchFrequentlyBought, fetchRecommendedCombos, routeId],
+    [
+      fetchFrequentlyBought,
+      fetchRecommendedCombos,
+      requestedVariantId,
+      routeId,
+    ],
   );
 
   const stopFallbackPolling = useCallback(() => {

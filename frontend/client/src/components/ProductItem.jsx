@@ -319,6 +319,14 @@ const ProductItem = (props) => {
     displayReviewCount > 0
       ? Number(reviewStatsSource?.avgRating ?? reviewStatsSource?.rating ?? 0)
       : 0;
+  const productHref =
+    isComboItem
+      ? `/combo/${productCardId}`
+      : productVariantId
+        ? `/product/${productCardId}?variantId=${encodeURIComponent(
+            String(productVariantId),
+          )}`
+        : `/product/${productCardId}`;
 
   const renderStars = () => {
     const stars = [];
@@ -340,9 +348,7 @@ const ProductItem = (props) => {
 
   return (
     <Link
-      href={
-        isComboItem ? `/combo/${productCardId}` : `/product/${productCardId}`
-      }
+      href={productHref}
       className={`group relative flex h-full w-full min-w-0 flex-col rounded-[22px] border bg-white p-3 shadow-[0_6px_16px_rgba(0,0,0,0.08)] transition-all ${
         isOutOfStock
           ? "border-gray-100"
