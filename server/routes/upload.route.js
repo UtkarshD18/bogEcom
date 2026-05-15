@@ -55,7 +55,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fileSize: 100 * 1024 * 1024, // 100MB limit
     files: 10,
   },
 });
@@ -67,7 +67,7 @@ const handleUploadError = (err, req, res, next) => {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "File too large. Maximum size is 50MB.",
+        message: "File too large. Maximum size is 100MB.",
       });
     }
     if (err.code === "LIMIT_FILE_COUNT") {
@@ -111,6 +111,11 @@ router.post(
       // Determine folder based on request
       let folder = "buyonegram/general";
       const referer = req.get("referer") || "";
+      const preserveQuality =
+        req.body.preserveQuality === true ||
+        req.body.preserveQuality === "true" ||
+        req.body.folder === "blogs" ||
+        referer.includes("blogs");
 
       if (referer.includes("products") || req.body.folder === "products") {
         folder = "buyonegram/products";
@@ -134,6 +139,7 @@ router.post(
       // Upload to Cloudinary
       const result = await uploadToCloudinary(req.file.buffer, folder, {
         mimeType: req.file.mimetype,
+        preserveQuality,
       });
 
       if (!result.success) {

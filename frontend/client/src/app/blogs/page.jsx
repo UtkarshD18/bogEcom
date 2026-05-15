@@ -1,7 +1,6 @@
 "use client";
 
-import { useProducts } from "@/context/ProductContext";
-import { API_BASE_URL, postData } from "@/utils/api";
+import { fetchDataFromApi, postData } from "@/utils/api";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -105,7 +104,7 @@ const staggerContainer = {
 };
 
 export default function BlogPage() {
-  const { blogs = [], fetchBlogs } = useProducts();
+  const [blogs, setBlogs] = useState([]);
   const [pageConfig, setPageConfig] = useState(DEFAULT_PAGE);
   const [newsletterEmail, setNewsletterEmail] = useState("");
   const [newsletterStatus, setNewsletterStatus] = useState(null);
@@ -126,6 +125,48 @@ export default function BlogPage() {
 
   const featuredBlog = blogs.length > 0 ? blogs[0] : null;
   const otherBlogs = blogs.slice(1);
+
+  const resolveBlogHref = (blog) => `/blogs/${blog.slug || blog._id}`;
+  const hasBlogMedia = (blog) =>
+    Boolean(blog?.videoUrl || blog?.image);
+  const renderBlogMedia = (blog, className = "") => {
+    if (blog.videoUrl) {
+      return (
+        <video
+          src={blog.videoUrl}
+          controls
+          playsInline
+          poster={blog.image || undefined}
+          className={className}
+        />
+      );
+    }
+
+    if (blog.image) {
+      return <img src={blog.image} alt={blog.title} className={className} />;
+    }
+
+    return null;
+  };
+
+  const resolveBlogApiBaseUrl = () => {
+    const configuredBase = String(
+      process.env.NEXT_PUBLIC_APP_API_URL || process.env.NEXT_PUBLIC_API_URL || "",
+    )
+      .trim()
+      .replace(/^["']|["']$/g, "")
+      .replace(/\/+$/, "");
+
+    if (configuredBase) {
+      return configuredBase;
+    }
+
+    if (typeof window !== "undefined") {
+      return String(window.location.origin || "").replace(/\/+$/, "");
+    }
+
+    return "http://127.0.0.1:8000";
+  };
 
   // Email validation helper - matches server-side validation
   const isValidEmail = (email) => {
@@ -197,50 +238,66 @@ export default function BlogPage() {
 
   useEffect(() => {
     const fetchPage = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/blogs/page/public`, {
-          cache: "no-store",
-        });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (data?.success && data?.data) {
-          setPageConfig({
-            ...DEFAULT_PAGE,
-            ...data.data,
-            theme: { ...DEFAULT_PAGE.theme, ...(data.data.theme || {}) },
-            sections: {
-              ...DEFAULT_PAGE.sections,
-              ...(data.data.sections || {}),
-            },
-            hero: { ...DEFAULT_PAGE.hero, ...(data.data.hero || {}) },
-            newsletter: {
-              ...DEFAULT_PAGE.newsletter,
-              ...(data.data.newsletter || {}),
-            },
-          });
-        }
-      } catch (error) {
-        console.error("BlogPage config fetch error:", error);
+      const response = await fetchDataFromApi("/api/blogs/page/public", {
+        skipCache: true,
+      });
+
+      if (response?.error || !response?.data) {
+        return;
       }
+
+      setPageConfig({
+        ...DEFAULT_PAGE,
+        ...response.data,
+        theme: { ...DEFAULT_PAGE.theme, ...(response.data.theme || {}) },
+        sections: {
+          ...DEFAULT_PAGE.sections,
+          ...(response.data.sections || {}),
+        },
+        hero: { ...DEFAULT_PAGE.hero, ...(response.data.hero || {}) },
+        newsletter: {
+          ...DEFAULT_PAGE.newsletter,
+          ...(response.data.newsletter || {}),
+        },
+      });
     };
 
-    fetchPage();
+    fetchPage().catch((error) => {
+      console.error("BlogPage config fetch error:", error);
+    });
   }, []);
 
   useEffect(() => {
-    fetchBlogs();
-  }, [fetchBlogs]);
+    const loadBlogs = async () => {
+      try {
+        const response = await fetch(
+          `${resolveBlogApiBaseUrl()}/api/blogs`,
+          {
+            credentials: "include",
+          },
+        );
+        if (!response.ok) {
+          return;
+        }
 
-  // Listen for blog updates from admin
-  useEffect(() => {
-    const handleBlogUpdate = (event) => {
-      console.log("Blog updated event received:", event.detail);
-      fetchBlogs();
+        const data = await response.json();
+        if (data?.success && Array.isArray(data?.data)) {
+          setBlogs(data.data);
+        }
+      } catch (error) {
+        console.error("Blog list fetch error:", error);
+      }
+    };
+
+    loadBlogs();
+
+    const handleBlogUpdate = () => {
+      loadBlogs();
     };
 
     window.addEventListener("blogUpdated", handleBlogUpdate);
     return () => window.removeEventListener("blogUpdated", handleBlogUpdate);
-  }, [fetchBlogs]);
+  }, []);
 
   if (layout === "minimal") {
     return (
@@ -291,20 +348,21 @@ export default function BlogPage() {
                   {blogs.map((blog) => (
                     <Link
                       key={blog._id}
-                      href={`/blogs/${blog.slug || blog._id}`}
+                      href={resolveBlogHref(blog)}
                     >
                       <motion.article
                         variants={fadeInUp}
                         whileHover={{ y: -5 }}
                         className="group h-full flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-lg transition-all duration-300"
                       >
-                        <div className="relative h-48 overflow-hidden bg-gray-50">
-                          <img
-                            src={blog.image}
-                            alt={blog.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                          />
-                        </div>
+                        {hasBlogMedia(blog) && (
+                          <div className="relative h-48 overflow-hidden bg-gray-50">
+                            {renderBlogMedia(
+                              blog,
+                              "w-full h-full object-cover group-hover:scale-105 transition-transform duration-700",
+                            )}
+                          </div>
+                        )}
                         <div className="p-6 flex-1 flex flex-col">
                           <div className="text-xs text-gray-400 font-medium mb-2">
                             {formatDate(blog.createdAt)}
@@ -479,21 +537,22 @@ export default function BlogPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-50px" }}
               transition={{ duration: 0.7 }}
-              className="grid grid-cols-1 lg:grid-cols-2 gap-0 items-stretch bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/5"
+              className={`grid grid-cols-1 ${hasBlogMedia(featuredBlog) ? "lg:grid-cols-2" : ""} gap-0 items-stretch bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/5`}
             >
-              <div className="relative h-96 lg:h-auto overflow-hidden group">
-                <img
-                  src={featuredBlog.image}
-                  alt={featuredBlog.title}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                <div
-                  className={`absolute top-6 left-6 bg-gradient-to-r ${theme.accentStrong} text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg`}
-                >
-                  Featured
+              {hasBlogMedia(featuredBlog) && (
+                <div className="relative h-96 lg:h-auto overflow-hidden group">
+                  {renderBlogMedia(
+                    featuredBlog,
+                    "w-full h-full object-cover transition-transform duration-700 group-hover:scale-105",
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                  <div
+                    className={`absolute top-6 left-6 bg-gradient-to-r ${theme.accentStrong} text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg`}
+                  >
+                    Featured
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="p-8 lg:p-14 flex flex-col justify-center bg-white">
                 <div className="flex items-center gap-4 mb-6">
@@ -509,7 +568,7 @@ export default function BlogPage() {
 
                 <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-6 leading-tight">
                   <Link
-                    href={`/blogs/${featuredBlog.slug || featuredBlog._id}`}
+                    href={resolveBlogHref(featuredBlog)}
                     className="hover:text-gray-600 transition-colors"
                   >
                     {featuredBlog.title}
@@ -523,7 +582,7 @@ export default function BlogPage() {
                 </p>
 
                 <Link
-                  href={`/blogs/${featuredBlog.slug || featuredBlog._id}`}
+                  href={resolveBlogHref(featuredBlog)}
                   className={`inline-flex items-center gap-2 font-bold text-lg ${theme.accentText} group`}
                 >
                   Read Full Article{" "}
@@ -558,7 +617,7 @@ export default function BlogPage() {
                 {otherBlogs.map((blog) => (
                   <Link
                     key={blog._id}
-                    href={`/blogs/${blog.slug || blog._id}`}
+                    href={resolveBlogHref(blog)}
                     className="block h-full"
                   >
                     <motion.article
@@ -566,19 +625,20 @@ export default function BlogPage() {
                       whileHover={{ y: -8 }}
                       className="h-full flex flex-col bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border border-gray-100"
                     >
-                      <div className="relative h-60 overflow-hidden">
-                        <img
-                          src={blog.image}
-                          alt={blog.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
-                        <div className="absolute top-4 left-4">
-                          <span className="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-bold text-gray-900 shadow-sm">
-                            {blog.category || "General"}
-                          </span>
+                      {hasBlogMedia(blog) && (
+                        <div className="relative h-60 overflow-hidden">
+                          {renderBlogMedia(
+                            blog,
+                            "w-full h-full object-cover group-hover:scale-110 transition-transform duration-700",
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+                          <div className="absolute top-4 left-4">
+                            <span className="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-bold text-gray-900 shadow-sm">
+                              {blog.category || "General"}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       <div className="p-7 flex-1 flex flex-col">
                         <div className="flex items-center justify-between mb-4">

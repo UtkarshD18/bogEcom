@@ -50,7 +50,7 @@ cloudinary.config({
 export const uploadToCloudinary = async (
   file,
   folder = "buyonegram",
-  { mimeType = "image/jpeg", resourceType = "" } = {},
+  { mimeType = "image/jpeg", resourceType = "", preserveQuality = false } = {},
 ) => {
   try {
     // Verify Cloudinary is configured
@@ -77,7 +77,7 @@ export const uploadToCloudinary = async (
     const options = {
       folder: folder,
       resource_type: normalizedResourceType,
-      ...(normalizedResourceType === "image"
+      ...(!preserveQuality && normalizedResourceType === "image"
         ? {
             transformation: [
               { quality: "auto:best" }, // Auto optimize quality
