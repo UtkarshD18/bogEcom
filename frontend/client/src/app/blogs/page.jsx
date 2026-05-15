@@ -128,9 +128,9 @@ export default function BlogPage() {
 
   const resolveBlogHref = (blog) => `/blogs/${blog.slug || blog._id}`;
   const hasBlogMedia = (blog) =>
-    Boolean((blog?.mediaType === "video" && blog?.videoUrl) || blog?.image);
+    Boolean(blog?.videoUrl || blog?.image);
   const renderBlogMedia = (blog, className = "") => {
-    if (blog.mediaType === "video" && blog.videoUrl) {
+    if (blog.videoUrl) {
       return (
         <video
           src={blog.videoUrl}

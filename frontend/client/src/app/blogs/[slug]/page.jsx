@@ -146,6 +146,8 @@ export default function BlogDetailPage() {
   const relatedBlogs = (Array.isArray(blogs) ? blogs : []).filter(
     (b) => b.category === blog.category && b._id !== blog._id,
   );
+  const shouldRenderVideo = (item) => Boolean(item?.videoUrl);
+  const shouldRenderImage = (item) => Boolean(item?.image);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -189,22 +191,23 @@ export default function BlogDetailPage() {
           {/* Blog Content */}
           <div className="lg:col-span-2">
             {/* Featured Image */}
-            {blog.mediaType === "video" && blog.videoUrl ? (
+            {shouldRenderVideo(blog) ? (
               <div className="mb-8 rounded-lg overflow-hidden bg-black">
                 <video
                   src={blog.videoUrl}
                   controls
                   playsInline
                   poster={blog.image || undefined}
-                  className="w-full h-96 object-cover"
+                  preload="metadata"
+                  className="w-full max-h-[70vh] bg-black object-contain"
                 />
               </div>
-            ) : blog.image ? (
-              <div className="mb-8 rounded-lg overflow-hidden">
+            ) : shouldRenderImage(blog) ? (
+              <div className="mb-8 rounded-lg overflow-hidden bg-white">
                 <img
                   src={blog.image}
                   alt={blog.title}
-                  className="w-full h-96 object-cover"
+                  className="w-full max-h-[70vh] object-contain"
                 />
               </div>
             ) : null}
@@ -274,20 +277,21 @@ export default function BlogDetailPage() {
                       href={`/blogs/${relatedBlog.slug || relatedBlog._id}`}
                       className="block group"
                     >
-                      {relatedBlog.mediaType === "video" && relatedBlog.videoUrl ? (
+                      {shouldRenderVideo(relatedBlog) ? (
                         <div className="mb-2 rounded overflow-hidden h-32 bg-black">
                           <video
                             src={relatedBlog.videoUrl}
                             poster={relatedBlog.image || undefined}
-                            className="w-full h-full object-cover"
+                            preload="metadata"
+                            className="w-full h-full object-contain"
                           />
                         </div>
-                      ) : relatedBlog.image ? (
+                      ) : shouldRenderImage(relatedBlog) ? (
                         <div className="mb-2 rounded overflow-hidden h-32">
                           <img
                             src={relatedBlog.image}
                             alt={relatedBlog.title}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                            className="w-full h-full object-contain bg-white group-hover:scale-105 transition-transform"
                           />
                         </div>
                       ) : null}

@@ -23,6 +23,7 @@ const EditBlog = () => {
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFile, setVideoFile] = useState(null);
   const [videoPreview, setVideoPreview] = useState("");
+  const [mediaType, setMediaType] = useState("image");
   const [referenceLink, setReferenceLink] = useState("");
   const [isPublished, setIsPublished] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,6 +51,7 @@ const EditBlog = () => {
         setCategory(data.blog.category || "");
         setImage(data.blog.image || "");
         setVideoUrl(data.blog.videoUrl || "");
+        setMediaType(data.blog.mediaType === "video" || data.blog.videoUrl ? "video" : "image");
         setReferenceLink(data.blog.referenceLink || "");
         setIsPublished(data.blog.isPublished !== false);
       } else {
@@ -132,6 +134,7 @@ const EditBlog = () => {
           category: category?.trim() || "",
           image: imageUrlFinal || "",
           videoUrl: videoUrlFinal || "",
+          mediaType: videoUrlFinal || mediaType === "video" ? "video" : "image",
           referenceLink: referenceLink?.trim() || "",
           isPublished,
         }),
@@ -256,6 +259,20 @@ const EditBlog = () => {
           </div>
 
           {/* Image & Video Uploads */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              Media Type
+            </label>
+            <select
+              value={mediaType}
+              onChange={(e) => setMediaType(e.target.value)}
+              className="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+            >
+              <option value="image">Image / GIF</option>
+              <option value="video">Video</option>
+            </select>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Cover Image (optional)</label>

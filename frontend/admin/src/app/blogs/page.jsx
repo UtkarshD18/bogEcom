@@ -129,7 +129,7 @@ const BlogsPage = () => {
               className="bg-white rounded-2xl shadow hover:shadow-xl transition overflow-hidden"
             >
               {/* Image */}
-              {blog.mediaType === "video" && blog.videoUrl ? (
+              {blog.videoUrl ? (
                 <video
                   src={blog.videoUrl}
                   poster={blog.image || undefined}

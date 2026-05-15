@@ -238,7 +238,9 @@ export const createBlog = async (req, res) => {
       excerpt,
       normalizedContent ? normalizedContent.slice(0, 500) : "",
     );
-    const normalizedMediaType = mediaType === "video" ? "video" : "image";
+    const normalizedVideoUrl = normalizeText(videoUrl, "");
+    const normalizedMediaType =
+      mediaType === "video" || normalizedVideoUrl ? "video" : "image";
 
     const blog = new BlogModel({
       title: normalizedTitle,
@@ -247,7 +249,7 @@ export const createBlog = async (req, res) => {
       image: normalizeText(image, "") || null,
       referenceLink: normalizeText(referenceLink, "") || null,
       mediaType: normalizedMediaType,
-      videoUrl: normalizeText(videoUrl, "") || null,
+      videoUrl: normalizedVideoUrl || null,
       author: normalizeText(author, "Admin"),
       category: normalizeText(category, "General"),
       tags: normalizeTags(tags),
@@ -323,8 +325,10 @@ export const updateBlog = async (req, res) => {
     if (referenceLink !== undefined) {
       blog.referenceLink = normalizeText(referenceLink, "") || null;
     }
-    if (mediaType) blog.mediaType = mediaType === "video" ? "video" : "image";
     if (videoUrl !== undefined) blog.videoUrl = normalizeText(videoUrl, "") || null;
+    if (mediaType || videoUrl !== undefined) {
+      blog.mediaType = mediaType === "video" || blog.videoUrl ? "video" : "image";
+    }
     if (author !== undefined) blog.author = normalizeText(author, blog.author);
     if (category !== undefined) blog.category = normalizeText(category, blog.category);
     if (tags !== undefined) blog.tags = normalizeTags(tags);
