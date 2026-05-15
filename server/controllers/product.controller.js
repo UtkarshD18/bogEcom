@@ -378,11 +378,11 @@ const attachVariantReviewStatsToProducts = async (products = []) => {
       avgRating: 0,
       totalReviews: 0,
     };
-    const avgRating = variantStats
-      ? Number(variantStats.rating || 0)
+    const avgRating = selectedVariantId
+      ? Number(variantStats?.rating || 0)
       : Number(productStats.avgRating || 0);
-    const totalReviews = variantStats
-      ? Number(variantStats.reviewCount || 0)
+    const totalReviews = selectedVariantId
+      ? Number(variantStats?.reviewCount || 0)
       : Number(productStats.totalReviews || 0);
     return {
       ...productWithVariantStats,
