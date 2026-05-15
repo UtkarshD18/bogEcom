@@ -631,12 +631,22 @@ const Contact = () => {
           {/* Contact Form */}
           <div className="lg:col-span-2">
             <div id="support-form" className="bg-white rounded-xl p-8 shadow-md">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">
-                Send us a Message
-              </h2>
-              <p className="text-gray-500 mb-8">
-                Fill out the form below and we&apos;ll get back to you shortly.
-              </p>
+              <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                    Send us a Message
+                  </h2>
+                  <p className="text-gray-500">
+                    Fill out the form below and we&apos;ll get back to you shortly.
+                  </p>
+                </div>
+                <Link
+                  href="/my-support"
+                  className="inline-flex w-fit items-center justify-center rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary hover:bg-[var(--flavor-card-bg)]"
+                >
+                  View My Support Tickets
+                </Link>
+              </div>
 
               {success && (
                 <div className="mb-6 p-4 bg-[var(--flavor-card-bg)] border border-primary rounded-lg text-primary">
