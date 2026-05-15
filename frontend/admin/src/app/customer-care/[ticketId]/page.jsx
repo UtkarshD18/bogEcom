@@ -324,6 +324,54 @@ const CustomerCareDetailPage = () => {
                       <p className="whitespace-pre-wrap leading-6">
                         {message.message}
                       </p>
+                      {Array.isArray(message.images) && message.images.length > 0 ? (
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {message.images.map((imageUrl) => (
+                            <button
+                              key={imageUrl}
+                              type="button"
+                              onClick={() => setSelectedImage(imageUrl)}
+                              className="overflow-hidden rounded-lg border border-white/30 bg-white/20"
+                            >
+                              <img
+                                src={imageUrl}
+                                alt="Support attachment"
+                                className="h-24 w-full object-cover"
+                                loading="lazy"
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {Array.isArray(message.videos) && message.videos.length > 0 ? (
+                        <div className="mt-3 space-y-2">
+                          {message.videos.map((videoUrl) => (
+                            <video
+                              key={videoUrl}
+                              src={videoUrl}
+                              controls
+                              preload="metadata"
+                              className="max-h-48 w-full rounded-lg bg-black"
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                      {Array.isArray(message.attachments) &&
+                      message.attachments.length > 0 ? (
+                        <div className="mt-3 space-y-1">
+                          {message.attachments.map((attachmentUrl) => (
+                            <a
+                              key={attachmentUrl}
+                              href={attachmentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block break-all text-xs font-semibold underline"
+                            >
+                              Attachment
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
                       <p className="mt-2 text-[10px] opacity-70">
                         {message.created_at || ""}
                       </p>

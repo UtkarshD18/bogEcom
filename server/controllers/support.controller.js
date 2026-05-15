@@ -366,6 +366,9 @@ const buildSupportMessage = ({
   authorId = null,
   authorModel = null,
   message,
+  images = [],
+  videos = [],
+  attachments = [],
   createdAt = null,
 }) => {
   const timestamp = buildIstTicketTimestampPayload(createdAt || new Date());
@@ -378,6 +381,9 @@ const buildSupportMessage = ({
       maxLength: 5000,
       allowNewLines: true,
     }),
+    images: Array.isArray(images) ? images.filter(Boolean) : [],
+    videos: Array.isArray(videos) ? videos.filter(Boolean) : [],
+    attachments: Array.isArray(attachments) ? attachments.filter(Boolean) : [],
     created_at: timestamp.formatted,
     created_at_ts: timestamp.unixMs,
   };
@@ -395,6 +401,11 @@ const normalizeTicketMessages = (ticket) => {
         maxLength: 5000,
         allowNewLines: true,
       }),
+      images: Array.isArray(entry?.images) ? entry.images.filter(Boolean) : [],
+      videos: Array.isArray(entry?.videos) ? entry.videos.filter(Boolean) : [],
+      attachments: Array.isArray(entry?.attachments)
+        ? entry.attachments.filter(Boolean)
+        : [],
       created_at:
         String(entry?.created_at || "").trim() ||
         formatIstTicketTimestamp(entry?.createdAt || ticket?.createdAt),
@@ -413,6 +424,9 @@ const normalizeTicketMessages = (ticket) => {
         authorId: ticket.userId || null,
         authorModel: ticket.userId ? "User" : null,
         message: ticket.message,
+        images: Array.isArray(ticket.images) ? ticket.images : [],
+        videos: Array.isArray(ticket.videos) ? ticket.videos : [],
+        attachments: Array.isArray(ticket.attachments) ? ticket.attachments : [],
         createdAt: ticket.created_at_ts
           ? new Date(Number(ticket.created_at_ts))
           : null,
@@ -908,10 +922,13 @@ export const createSupportTicket = async (req, res) => {
         buildSupportMessage({
           authorType: "customer",
           authorName: name,
-          authorId: userId || null,
-          authorModel: userId ? "User" : null,
-          message,
-        }),
+        authorId: userId || null,
+        authorModel: userId ? "User" : null,
+        message,
+        images,
+        videos,
+        attachments,
+      }),
       ],
     });
 
@@ -1095,6 +1112,10 @@ export const getMySupportTicketById = async (req, res) => {
 };
 
 export const replyToMySupportTicket = async (req, res) => {
+  const imageFiles = normalizeFiles(req, "images");
+  const videoFiles = normalizeFiles(req, "videos");
+  const allFiles = [...imageFiles, ...videoFiles];
+
   try {
     const userId = req.user;
     if (!userId) {
@@ -1106,18 +1127,43 @@ export const replyToMySupportTicket = async (req, res) => {
       maxLength: 5000,
       allowNewLines: true,
     });
+    const externalAttachments = normalizeAttachmentInputs(req);
 
     if (!ticketId) {
       return sendError(res, "ticketId is required.", 400);
     }
     if (!message || message.length < 2) {
+      await cleanupUploadedFiles(allFiles);
       return sendError(res, "Write a reply before sending.", 400);
+    }
+
+    if (imageFiles.length > supportUploadConfig.MAX_IMAGE_COUNT) {
+      await cleanupUploadedFiles(allFiles);
+      return sendError(
+        res,
+        `You can upload up to ${supportUploadConfig.MAX_IMAGE_COUNT} images.`,
+        400,
+      );
+    }
+
+    if (videoFiles.length > supportUploadConfig.MAX_VIDEO_COUNT) {
+      await cleanupUploadedFiles(allFiles);
+      return sendError(
+        res,
+        `You can upload up to ${supportUploadConfig.MAX_VIDEO_COUNT} videos.`,
+        400,
+      );
     }
 
     const ticket = await SupportTicketModel.findOne({ ticketId, userId });
     if (!ticket) {
+      await cleanupUploadedFiles(allFiles);
       return sendError(res, "Support ticket not found.", 404);
     }
+
+    const images = imageFiles.map((file) => toPublicFileUrl(req, file.path));
+    const videos = videoFiles.map((file) => toPublicFileUrl(req, file.path));
+    const attachments = Array.from(new Set(externalAttachments.filter(Boolean)));
 
     ticket.messages = normalizeTicketMessages(ticket);
     ticket.messages.push(
@@ -1127,6 +1173,9 @@ export const replyToMySupportTicket = async (req, res) => {
         authorId: userId,
         authorModel: "User",
         message,
+        images,
+        videos,
+        attachments,
       }),
     );
     ticket.status = "OPEN";
@@ -1159,6 +1208,7 @@ export const replyToMySupportTicket = async (req, res) => {
       ticket: sanitizeTicketForResponse(ticket),
     });
   } catch (error) {
+    await cleanupUploadedFiles(allFiles);
     console.error(
       "replyToMySupportTicket error:",
       error?.message || "Unexpected error",

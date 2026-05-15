@@ -116,6 +116,18 @@ const supportTicketSchema = new mongoose.Schema(
             trim: true,
             maxlength: 5000,
           },
+          images: {
+            type: [String],
+            default: [],
+          },
+          videos: {
+            type: [String],
+            default: [],
+          },
+          attachments: {
+            type: [String],
+            default: [],
+          },
           created_at: {
             type: String,
             required: true,

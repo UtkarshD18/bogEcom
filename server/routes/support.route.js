@@ -44,7 +44,15 @@ router.post(
 
 router.get("/my-tickets", auth, getMySupportTickets);
 router.get("/my-tickets/:ticketId", auth, getMySupportTicketById);
-router.post("/my-tickets/:ticketId/reply", auth, supportLimiter, replyToMySupportTicket);
+router.post(
+  "/my-tickets/:ticketId/reply",
+  auth,
+  supportLimiter,
+  supportUploadFields,
+  handleSupportUploadError,
+  validateSupportUploadedFileSizes,
+  replyToMySupportTicket,
+);
 router.post("/my-tickets/:ticketId/close", auth, closeMySupportTicket);
 
 router.get("/admin/all", auth, admin, getAllSupportTicketsAdmin);
