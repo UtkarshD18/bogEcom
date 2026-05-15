@@ -226,6 +226,128 @@ const buildVisitorKeyExpression = ({
   ],
 });
 
+const RAW_SESSION_PAGE_VIEW_EVENT_TYPES = ["page_view_started", "page_view"];
+
+const buildRawSessionEventBaseFields = () => ({
+  timestampDate: toDateExpression("$timestamp"),
+  sessionIdText: toTrimmedStringExpression("$sessionId"),
+  userIdText: toTrimmedStringExpression("$userId"),
+  visitorIdText: toTrimmedStringExpression("$visitorId"),
+  scrollDepthValue: toNumberExpression(
+    {
+      $ifNull: ["$metadata.maxScrollDepth", "$metadata.depthPercent"],
+    },
+    0,
+  ),
+  activeTimeValue: {
+    $max: [
+      toNumberExpression("$metadata.sessionActiveMs", 0),
+      toNumberExpression("$metadata.totalActiveTime", 0),
+      toNumberExpression("$metadata.pageActiveMs", 0),
+      toNumberExpression("$metadata.activeTimeMs", 0),
+      toNumberExpression("$metadata.durationMs", 0),
+    ],
+  },
+  pageViewIncrement: {
+    $cond: [
+      { $in: ["$eventType", RAW_SESSION_PAGE_VIEW_EVENT_TYPES] },
+      1,
+      0,
+    ],
+  },
+  sessionEndedAtValue: {
+    $cond: [
+      { $eq: ["$eventType", "session_end"] },
+      toDateExpression("$timestamp"),
+      null,
+    ],
+  },
+});
+
+const buildRawSessionQualityMatch = () => ({
+  $or: [
+    { pageViews: { $gt: 0 } },
+    { totalActiveTime: { $gt: 0 } },
+    { eventCount: { $gt: 1 } },
+  ],
+});
+
+const buildRawSessionTypeFilter = (type) => {
+  if (type === "guest") {
+    return { userId: "" };
+  }
+  if (type === "logged_in") {
+    return { userId: { $ne: "" } };
+  }
+  return {};
+};
+
+const buildRawSessionAggregationStages = ({
+  from,
+  to,
+  activeThreshold = new Date(
+    Date.now() - ACTIVE_WINDOW_MINUTES * 60 * 1000,
+  ),
+} = {}) => [
+  {
+    $addFields: buildRawSessionEventBaseFields(),
+  },
+  {
+    $match: {
+      timestampDate: {
+        $gte: from,
+        $lte: to,
+      },
+      sessionIdText: { $ne: "" },
+    },
+  },
+  {
+    $sort: { timestampDate: 1 },
+  },
+  {
+    $group: {
+      _id: "$sessionIdText",
+      sessionId: { $first: "$sessionIdText" },
+      userId: { $max: "$userIdText" },
+      visitorId: { $max: "$visitorIdText" },
+      startedAt: { $min: "$timestampDate" },
+      lastSeenAt: { $max: "$timestampDate" },
+      endedAtSignal: { $max: "$sessionEndedAtValue" },
+      eventCount: { $sum: 1 },
+      pageViews: { $sum: "$pageViewIncrement" },
+      totalActiveTimeValue: { $max: "$activeTimeValue" },
+      maxScrollDepth: { $max: "$scrollDepthValue" },
+      deviceType: { $last: "$deviceType" },
+      browser: { $last: "$browser" },
+      ipAddress: { $last: "$ipAddress" },
+      location: { $last: "$location" },
+    },
+  },
+  {
+    $addFields: {
+      endedAt: "$endedAtSignal",
+      totalActiveTime: {
+        $cond: [
+          { $gt: ["$totalActiveTimeValue", 0] },
+          "$totalActiveTimeValue",
+          {
+            $max: [{ $subtract: ["$lastSeenAt", "$startedAt"] }, 0],
+          },
+        ],
+      },
+      isActive: {
+        $and: [
+          { $eq: ["$endedAtSignal", null] },
+          { $gte: ["$lastSeenAt", activeThreshold] },
+        ],
+      },
+      userType: {
+        $cond: [{ $ne: ["$userId", ""] }, "logged_in", "guest"],
+      },
+    },
+  },
+];
+
 const toBucketFormat = (interval = "day") => {
   const normalized = String(interval || "day").toLowerCase();
   if (normalized === "hour") return "%Y-%m-%d %H:00";
@@ -509,13 +631,15 @@ const resolveCollections = async (db) => {
 };
 
 const getOverviewData = async (db, from, to) => {
-  const { sessions, purchases, pageViews } = await resolveCollections(db);
+  const { sessions, purchases, pageViews, events } =
+    await resolveCollections(db);
 
   const activeThreshold = new Date(
     Date.now() - ACTIVE_WINDOW_MINUTES * 60 * 1000,
   );
   const [
     sessionOverviewRows,
+    rawSessionOverviewRows,
     purchasesDistinctSessions,
     revenueAggregation,
     totalPageViewRows,
@@ -637,6 +761,73 @@ const getOverviewData = async (db, from, to) => {
                         $in: ["$$uid", [null, ""]],
                       },
                     ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      ])
+      .toArray(),
+    events
+      .aggregate([
+        ...buildRawSessionAggregationStages({ from, to, activeThreshold }),
+        {
+          $match: buildRawSessionQualityMatch(),
+        },
+        {
+          $project: {
+            userId: 1,
+            isActive: 1,
+            lastSeenAt: 1,
+            pageViews: 1,
+            eventCount: 1,
+            activeTimeMs: "$totalActiveTime",
+            isBounce: {
+              $or: [{ $lte: ["$pageViews", 1] }, { $lte: ["$eventCount", 1] }],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalSessions: { $sum: 1 },
+            bounceSessions: {
+              $sum: {
+                $cond: ["$isBounce", 1, 0],
+              },
+            },
+            avgActiveTimeMs: { $avg: "$activeTimeMs" },
+            activeUsersSet: {
+              $addToSet: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$isActive", true] },
+                      { $gte: ["$lastSeenAt", activeThreshold] },
+                      { $not: [{ $in: ["$userId", [null, ""]] }] },
+                    ],
+                  },
+                  "$userId",
+                  null,
+                ],
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalSessions: 1,
+            bounceSessions: 1,
+            avgActiveTimeMs: { $ifNull: ["$avgActiveTimeMs", 0] },
+            activeUsers: {
+              $size: {
+                $filter: {
+                  input: "$activeUsersSet",
+                  as: "uid",
+                  cond: {
+                    $not: [{ $in: ["$$uid", [null, ""]] }],
                   },
                 },
               },
@@ -818,22 +1009,167 @@ const getOverviewData = async (db, from, to) => {
   ]);
 
   const overviewRow = sessionOverviewRows?.[0] || {};
-  const totalSessions = Number(overviewRow.totalSessions || 0);
-  const activeUsers = Number(overviewRow.activeUsers || 0);
-  const bounceSessions = Number(overviewRow.bounceSessions || 0);
-  const avgActiveTimeMs = Number(overviewRow.avgActiveTimeMs || 0);
+  const rawOverviewRow = rawSessionOverviewRows?.[0] || {};
+  let totalSessions = Number(overviewRow.totalSessions || 0);
+  let activeUsers = Number(overviewRow.activeUsers || 0);
+  let bounceSessions = Number(overviewRow.bounceSessions || 0);
+  let avgActiveTimeMs = Number(overviewRow.avgActiveTimeMs || 0);
+  const rawTotalSessions = Number(rawOverviewRow.totalSessions || 0);
+  const rawActiveUsers = Number(rawOverviewRow.activeUsers || 0);
+  const rawBounceSessions = Number(rawOverviewRow.bounceSessions || 0);
+  const rawAvgActiveTimeMs = Number(rawOverviewRow.avgActiveTimeMs || 0);
   const sessionsWithPurchase = Number(
     purchasesDistinctSessions?.[0]?.count || 0,
   );
   const revenue = Number(revenueAggregation?.[0]?.revenue || 0);
-  const totalPageViews = Number(totalPageViewRows?.[0]?.count || 0);
-  const newVisitors = Number(visitorSegmentRows?.[0]?.newVisitors || 0);
-  const returningVisitors = Number(
+  let totalPageViews = Number(totalPageViewRows?.[0]?.count || 0);
+  let newVisitors = Number(visitorSegmentRows?.[0]?.newVisitors || 0);
+  let returningVisitors = Number(
     visitorSegmentRows?.[0]?.returningVisitors || 0,
   );
-  const totalVisitorIdentities = Number(
+  let totalVisitorIdentities = Number(
     visitorSegmentRows?.[0]?.totalVisitorIdentities || 0,
   );
+  const shouldPreferRawSessionOverview = rawTotalSessions > totalSessions;
+  if (shouldPreferRawSessionOverview) {
+    totalSessions = rawTotalSessions;
+    activeUsers = rawActiveUsers;
+    bounceSessions = rawBounceSessions;
+    avgActiveTimeMs = rawAvgActiveTimeMs;
+  } else {
+    if (activeUsers <= 0 && rawActiveUsers > 0) {
+      activeUsers = rawActiveUsers;
+    }
+    if (bounceSessions <= 0 && rawBounceSessions > 0) {
+      bounceSessions = rawBounceSessions;
+    }
+    if (avgActiveTimeMs <= 0 && rawAvgActiveTimeMs > 0) {
+      avgActiveTimeMs = rawAvgActiveTimeMs;
+    }
+  }
+
+  if (totalPageViews === 0) {
+    const fallbackPageViewRows = await events
+      .aggregate([
+        {
+          $addFields: {
+            timestampDate: toDateExpression("$timestamp"),
+          },
+        },
+        {
+          $match: {
+            timestampDate: {
+              $gte: from,
+              $lte: to,
+            },
+            eventType: {
+              $in: ["page_view_started", "page_view_ended", "page_view"],
+            },
+          },
+        },
+        { $count: "count" },
+      ])
+      .toArray();
+
+    totalPageViews = Number(fallbackPageViewRows?.[0]?.count || 0);
+  }
+
+  if (totalVisitorIdentities === 0) {
+    const fallbackVisitorRows = await events
+      .aggregate([
+        {
+          $addFields: {
+            timestampDate: toDateExpression("$timestamp"),
+            userIdText: toTrimmedStringExpression("$userId"),
+            visitorIdText: toTrimmedStringExpression("$visitorId"),
+            sessionIdText: toTrimmedStringExpression("$sessionId"),
+          },
+        },
+        {
+          $match: {
+            timestampDate: { $ne: null },
+          },
+        },
+        {
+          $addFields: {
+            visitorKey: buildVisitorKeyExpression(),
+          },
+        },
+        {
+          $match: {
+            visitorKey: { $ne: "" },
+          },
+        },
+        {
+          $group: {
+            _id: "$visitorKey",
+            firstSeenAt: { $min: "$timestampDate" },
+            hasInRangeEvent: {
+              $max: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gte: ["$timestampDate", from] },
+                      { $lte: ["$timestampDate", to] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+        {
+          $match: {
+            hasInRangeEvent: 1,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            newVisitors: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gte: ["$firstSeenAt", from] },
+                      { $lte: ["$firstSeenAt", to] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            returningVisitors: {
+              $sum: {
+                $cond: [{ $lt: ["$firstSeenAt", from] }, 1, 0],
+              },
+            },
+            totalVisitorIdentities: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            newVisitors: 1,
+            returningVisitors: 1,
+            totalVisitorIdentities: 1,
+          },
+        },
+      ])
+      .toArray();
+
+    newVisitors = Number(fallbackVisitorRows?.[0]?.newVisitors || 0);
+    returningVisitors = Number(
+      fallbackVisitorRows?.[0]?.returningVisitors || 0,
+    );
+    totalVisitorIdentities = Number(
+      fallbackVisitorRows?.[0]?.totalVisitorIdentities || 0,
+    );
+  }
+
   const conversionRate = toPercent(sessionsWithPurchase, totalSessions);
   const bounceRate = toPercent(bounceSessions, totalSessions);
 
@@ -853,35 +1189,44 @@ const getOverviewData = async (db, from, to) => {
 };
 
 const getChartData = async (db, from, to, interval = "day") => {
-  const { sessions, purchases, productEvents, searchEvents, events } =
+  const { purchases, productEvents, searchEvents, events } =
     await resolveCollections(db);
   const bucketFormat = toBucketFormat(interval);
   const productCollectionName = productEvents.collectionName;
 
-  const visitorsOverTime = await sessions
+  const visitorsOverTime = await events
     .aggregate([
       {
         $addFields: {
-          ...buildBehaviorSessionBaseFields(),
+          timestampDate: toDateExpression("$timestamp"),
+          sessionIdText: toTrimmedStringExpression("$sessionId"),
         },
       },
       {
         $match: {
-          startedAtDate: {
+          timestampDate: {
             $gte: from,
             $lte: to,
           },
-          ...buildBehaviorSessionQualityMatch(),
+          sessionIdText: { $ne: "" },
         },
       },
       {
         $group: {
           _id: {
-            $dateToString: {
-              format: bucketFormat,
-              date: "$startedAtDate",
+            bucket: {
+              $dateToString: {
+                format: bucketFormat,
+                date: "$timestampDate",
+              },
             },
+            sessionId: "$sessionIdText",
           },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.bucket",
           visitors: { $sum: 1 },
         },
       },
@@ -1012,22 +1357,180 @@ const getChartData = async (db, from, to, interval = "day") => {
     ])
     .toArray();
 
+  let visitorsOverTimeRows = visitorsOverTime;
+  let revenueOverTimeRows = revenueOverTime;
+  let topProductsViewedRows = topProductsViewed;
+  let topSearchedKeywordsRows = topSearchedKeywords;
+
+  if (revenueOverTimeRows.length === 0) {
+    revenueOverTimeRows = await events
+      .aggregate([
+        {
+          $addFields: {
+            timestampDate: toDateExpression("$timestamp"),
+            amountValue: toNumberExpression(
+              {
+                $ifNull: [
+                  "$metadata.revenue",
+                  {
+                    $ifNull: [
+                      "$metadata.total",
+                      { $ifNull: ["$metadata.amount", 0] },
+                    ],
+                  },
+                ],
+              },
+              0,
+            ),
+          },
+        },
+        {
+          $match: {
+            timestampDate: {
+              $gte: from,
+              $lte: to,
+            },
+            eventType: "purchase_completed",
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: bucketFormat,
+                date: "$timestampDate",
+              },
+            },
+            revenue: { $sum: "$amountValue" },
+            orders: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ])
+      .toArray();
+  }
+
+  if (topProductsViewedRows.length === 0) {
+    topProductsViewedRows = await events
+      .aggregate([
+        {
+          $addFields: {
+            timestampDate: toDateExpression("$timestamp"),
+            productId: {
+              $ifNull: [
+                "$metadata.productId",
+                {
+                  $ifNull: [
+                    "$metadata.product_id",
+                    {
+                      $ifNull: [
+                        "$metadata.product._id",
+                        { $ifNull: ["$metadata.product.id", "$metadata.id"] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            productName: {
+              $ifNull: [
+                "$metadata.productName",
+                {
+                  $ifNull: [
+                    "$metadata.name",
+                    { $ifNull: ["$metadata.product.name", "Unknown Product"] },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        {
+          $match: {
+            timestampDate: {
+              $gte: from,
+              $lte: to,
+            },
+            eventType: "product_view",
+          },
+        },
+        {
+          $group: {
+            _id: {
+              productId: "$productId",
+              productName: "$productName",
+            },
+            views: { $sum: 1 },
+          },
+        },
+        { $sort: { views: -1 } },
+        { $limit: 10 },
+      ])
+      .toArray();
+  }
+
+  if (topSearchedKeywordsRows.length === 0) {
+    topSearchedKeywordsRows = await events
+      .aggregate([
+        {
+          $addFields: {
+            timestampDate: toDateExpression("$timestamp"),
+            keyword: {
+              $ifNull: [
+                "$metadata.keyword",
+                {
+                  $ifNull: [
+                    "$metadata.query",
+                    {
+                      $ifNull: [
+                        "$metadata.searchTerm",
+                        { $ifNull: ["$metadata.term", ""] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        {
+          $match: {
+            timestampDate: {
+              $gte: from,
+              $lte: to,
+            },
+            eventType: { $in: ["search", "search_query"] },
+          },
+        },
+        {
+          $group: {
+            _id: "$keyword",
+            searches: { $sum: 1 },
+          },
+        },
+        { $match: { _id: { $nin: [null, ""] } } },
+        { $sort: { searches: -1 } },
+        { $limit: 15 },
+      ])
+      .toArray();
+  }
+
   return {
-    visitorsOverTime: visitorsOverTime.map((item) => ({
+    visitorsOverTime: visitorsOverTimeRows.map((item) => ({
       bucket: item._id,
       visitors: item.visitors,
     })),
-    revenueOverTime: revenueOverTime.map((item) => ({
+    revenueOverTime: revenueOverTimeRows.map((item) => ({
       bucket: item._id,
       revenue: Number(item.revenue || 0),
       orders: Number(item.orders || 0),
     })),
-    topProductsViewed: topProductsViewed.map((item) => ({
+    topProductsViewed: topProductsViewedRows.map((item) => ({
       productId: item._id?.productId || "unknown",
       productName: item._id?.productName || "Unknown Product",
       views: item.views,
     })),
-    topSearchedKeywords: topSearchedKeywords.map((item) => ({
+    topSearchedKeywords: topSearchedKeywordsRows.map((item) => ({
       keyword: item._id,
       searches: item.searches,
     })),
@@ -1063,8 +1566,7 @@ const getUserActivityData = async (db, userId, limit = 1000) => {
 };
 
 const getEngagementData = async (db, from, to) => {
-  const { events, sectionViews, productEvents, sessions } =
-    await resolveCollections(db);
+  const { events, productEvents } = await resolveCollections(db);
 
   const isRedactedLikeTarget = (value = "") =>
     /\[\s*redacted\s*\]/i.test(String(value || ""));
@@ -1263,19 +1765,28 @@ const getEngagementData = async (db, from, to) => {
       ...withTimestampRange(from, to),
       eventType: "rage_click",
     }),
-    sectionViews
+    events
       .aggregate([
         {
           $addFields: {
-            startedAtDate: toDateExpression("$startedAt"),
+            timestampDate: toDateExpression("$timestamp"),
+            sectionName: {
+              $ifNull: [
+                "$metadata.sectionName",
+                { $ifNull: ["$metadata.section", "$metadata.sectionKey"] },
+              ],
+            },
+            durationMs: toNumberExpression("$metadata.durationMs", 0),
           },
         },
         {
           $match: {
-            startedAtDate: {
+            timestampDate: {
               $gte: from,
               $lte: to,
             },
+            eventType: "section_visible_duration",
+            sectionName: { $nin: [null, ""] },
           },
         },
         {
@@ -1524,50 +2035,17 @@ const getEngagementData = async (db, from, to) => {
         },
       ])
       .toArray(),
-    sessions
+    events
       .aggregate([
+        ...buildRawSessionAggregationStages({ from, to }),
         {
-          $addFields: {
-            ...buildBehaviorSessionBaseFields(),
-            userType: {
-              $cond: [
-                {
-                  $eq: [{ $ifNull: ["$userId", ""] }, ""],
-                },
-                "guest",
-                "logged_in",
-              ],
-            },
-            activeTimeMsValue: {
-              $let: {
-                vars: {
-                  totalActive: toNumberExpression("$totalActiveTime", 0),
-                  duration: toNumberExpression("$durationMs", 0),
-                },
-                in: {
-                  $cond: [
-                    { $gt: ["$$totalActive", 0] },
-                    "$$totalActive",
-                    "$$duration",
-                  ],
-                },
-              },
-            },
-            ...buildSessionOverlapFields(),
-          },
-        },
-        {
-          $match: buildSessionOverlapMatch(
-            from,
-            to,
-            buildBehaviorSessionQualityMatch(),
-          ),
+          $match: buildRawSessionQualityMatch(),
         },
         {
           $group: {
             _id: "$userType",
             sessions: { $sum: 1 },
-            avgActiveTimeMs: { $avg: "$activeTimeMsValue" },
+            avgActiveTimeMs: { $avg: "$totalActiveTime" },
           },
         },
       ])
@@ -2350,8 +2828,17 @@ const getPerformanceData = async (db) => {
   const { events, workerHealth } = await resolveCollections(db);
   const now = new Date();
   const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const liveButtonEventTypes = [
+    "click_event",
+    "product_click",
+    "banner_click",
+    "rage_click",
+    "button_hover_start",
+    "button_focus",
+    "button_blur",
+  ];
 
-  const [eventsPerMinute, workerDocs] = await Promise.all([
+  const [eventsPerMinute, workerDocs, recentButtonEvents] = await Promise.all([
     events
       .aggregate([
         {
@@ -2382,6 +2869,38 @@ const getPerformanceData = async (db) => {
       ])
       .toArray(),
     workerHealth.find({}).sort({ updatedAt: -1 }).limit(25).toArray(),
+    events
+      .aggregate([
+        {
+          $addFields: {
+            timestampDate: toDateExpression("$timestamp"),
+          },
+        },
+        {
+          $match: {
+            timestampDate: {
+              $gte: hourAgo,
+              $lte: now,
+            },
+            eventType: {
+              $in: liveButtonEventTypes,
+            },
+          },
+        },
+        { $sort: { timestampDate: -1 } },
+        { $limit: 40 },
+        {
+          $project: {
+            eventType: 1,
+            timestamp: 1,
+            sessionId: 1,
+            userId: 1,
+            pageUrl: 1,
+            metadata: 1,
+          },
+        },
+      ])
+      .toArray(),
   ]);
 
   const staleThresholdMs = toPositiveInt(
@@ -2419,6 +2938,20 @@ const getPerformanceData = async (db) => {
     eventsPerMinute: eventsPerMinute.map((point) => ({
       minute: point._id,
       events: point.events,
+    })),
+    recentButtonEvents: recentButtonEvents.map((event, index) => ({
+      id:
+        String(event?._id || "").trim() ||
+        `${String(event?.sessionId || "session").trim() || "session"}-${String(event?.timestamp || "").trim() || "timestamp"}-${index}`,
+      eventType: String(event?.eventType || "unknown").trim() || "unknown",
+      timestamp: event?.timestamp || null,
+      sessionId: String(event?.sessionId || "").trim(),
+      userId: String(event?.userId || "").trim(),
+      pageUrl: String(event?.pageUrl || "").trim(),
+      metadata:
+        event?.metadata && typeof event.metadata === "object"
+          ? event.metadata
+          : {},
     })),
     pubSubBacklog: {
       estimatedMessages: estimatedBacklog,
@@ -3454,6 +3987,9 @@ export const getBehaviorSessions = async (req, res) => {
     const sessionsCollection = await getAnalyticsCollection(db, "sessions", [
       "user_sessions",
     ]);
+    const eventsCollection = await getAnalyticsCollection(db, "events_raw", [
+      "events",
+    ]);
 
     const { from, to } = resolveDateRange(req.query);
     const type = normalizeSessionType(req.query.type);
@@ -3477,7 +4013,7 @@ export const getBehaviorSessions = async (req, res) => {
     const toSessionRangeMatch = (filter = {}) =>
       buildSessionOverlapMatch(from, to, filter);
 
-    const [items, totalRows, guestRows, loggedInRows] = await Promise.all([
+    let [items, totalRows, guestRows, loggedInRows] = await Promise.all([
       sessionsCollection
         .aggregate([
           {
@@ -3582,9 +4118,111 @@ export const getBehaviorSessions = async (req, res) => {
         .toArray(),
     ]);
 
-    const total = Number(totalRows?.[0]?.count || 0);
-    const guestCount = Number(guestRows?.[0]?.count || 0);
-    const loggedInCount = Number(loggedInRows?.[0]?.count || 0);
+    const rawSearchFilter = searchQuery
+      ? {
+          $or: [
+            { sessionId: new RegExp(escapeRegex(searchQuery), "i") },
+            { userId: new RegExp(escapeRegex(searchQuery), "i") },
+          ],
+        }
+      : {};
+
+    let total = Number(totalRows?.[0]?.count || 0);
+    let guestCount = Number(guestRows?.[0]?.count || 0);
+    let loggedInCount = Number(loggedInRows?.[0]?.count || 0);
+
+    if (total === 0) {
+      [items, totalRows, guestRows, loggedInRows] = await Promise.all([
+        eventsCollection
+          .aggregate([
+            ...buildRawSessionAggregationStages({ from, to }),
+            {
+              $match: {
+                ...buildRawSessionTypeFilter(type),
+                ...rawSearchFilter,
+              },
+            },
+            {
+              $match: buildRawSessionQualityMatch(),
+            },
+            { $sort: { lastSeenAt: -1, startedAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                _id: 0,
+                sessionId: 1,
+                userId: {
+                  $cond: [{ $eq: ["$userId", ""] }, null, "$userId"],
+                },
+                startedAt: 1,
+                endedAt: 1,
+                lastSeenAt: 1,
+                totalActiveTime: 1,
+                isActive: 1,
+                pageViews: 1,
+                eventCount: 1,
+                maxScrollDepth: 1,
+                deviceType: 1,
+                browser: 1,
+                ipAddress: 1,
+                location: 1,
+              },
+            },
+          ])
+          .toArray(),
+        eventsCollection
+          .aggregate([
+            ...buildRawSessionAggregationStages({ from, to }),
+            {
+              $match: {
+                ...buildRawSessionTypeFilter(type),
+                ...rawSearchFilter,
+              },
+            },
+            {
+              $match: buildRawSessionQualityMatch(),
+            },
+            {
+              $count: "count",
+            },
+          ])
+          .toArray(),
+        eventsCollection
+          .aggregate([
+            ...buildRawSessionAggregationStages({ from, to }),
+            {
+              $match: buildRawSessionTypeFilter("guest"),
+            },
+            {
+              $match: buildRawSessionQualityMatch(),
+            },
+            {
+              $count: "count",
+            },
+          ])
+          .toArray(),
+        eventsCollection
+          .aggregate([
+            ...buildRawSessionAggregationStages({ from, to }),
+            {
+              $match: buildRawSessionTypeFilter("logged_in"),
+            },
+            {
+              $match: buildRawSessionQualityMatch(),
+            },
+            {
+              $count: "count",
+            },
+          ])
+          .toArray(),
+      ]);
+
+      total = Number(totalRows?.[0]?.count || 0);
+      guestCount = Number(guestRows?.[0]?.count || 0);
+      loggedInCount = Number(loggedInRows?.[0]?.count || 0);
+    }
+
     const totalPages = Math.max(Math.ceil(total / limit), 1);
 
     return res.status(200).json({

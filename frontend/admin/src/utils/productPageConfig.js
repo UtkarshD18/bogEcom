@@ -1,13 +1,32 @@
+const LEGACY_STORY_COPY = new Set(
+  [
+    "Product Story",
+    "A cleaner product story with the important buying details kept close to the decision point.",
+    "A cleaner product story with the key buying details kept close to the decision point.",
+    "Keep the product story, pricing, trust cues, and delivery context in one calm layout without pushing the buying actions too far away.",
+    "The refreshed detail page keeps product story, trust cues, pricing, and delivery context in one calm layout without pushing the buying actions too far away.",
+  ].map((value) => String(value || "").trim().toLowerCase()),
+);
+
+const normalizeComparableText = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const sanitizeStoryField = (value) => {
+  const trimmed = String(value || "").trim();
+  return LEGACY_STORY_COPY.has(normalizeComparableText(trimmed)) ? "" : trimmed;
+};
+
 const DEFAULT_PRODUCT_PAGE_CONFIG = {
   hero: {
     showStoryCard: true,
     showInsightCards: true,
     showDeliveryPreview: true,
-    storyEyebrow: "Product Story",
-    storyTitle:
-      "A cleaner product story with the important buying details kept close to the decision point.",
-    storyDescription:
-      "Keep the product story, pricing, trust cues, and delivery context in one calm layout without pushing the buying actions too far away.",
+    showSupportCards: true,
+    storyEyebrow: "",
+    storyTitle: "",
+    storyDescription: "",
     priceCardEyebrow: "Price Focus",
     priceCardDescription:
       "Clean, high-contrast pricing with supporting variant context.",
@@ -17,6 +36,29 @@ const DEFAULT_PRODUCT_PAGE_CONFIG = {
     socialProofEyebrow: "Social Proof",
     socialProofDescription:
       "Reviews sit closer to the product story so buyers see trust signals earlier.",
+    deliveryEyebrow: "Delivery Preview",
+    deliveryOptionalLabel: "Optional",
+    deliveryReadyLabel: "Ready",
+    deliveryInputPlaceholder: "Enter pincode",
+    deliveryHelperText: "Enter a 6-digit pincode to preview delivery timing.",
+    supportCards: [
+      {
+        title: "Free Delivery",
+        description: "Stronger utility near the CTA block.",
+      },
+      {
+        title: "Secure Payment",
+        description: "Checkout trust signal stays visible.",
+      },
+      {
+        title: "Authentic Product",
+        description: "Premium surface with useful proof points.",
+      },
+      {
+        title: "Clear Inventory",
+        description: "Variant-aware stock display for better decisions.",
+      },
+    ],
   },
   tabs: {
     showDescription: true,
@@ -77,24 +119,36 @@ const DEFAULT_PRODUCT_PAGE_CONFIG = {
   },
   reviewsSection: {
     show: true,
+    eyebrow: "Review Section",
+    title: "Ratings and reviews",
   },
   frequentlyBoughtSection: {
     show: true,
+    eyebrow: "Frequently Bought Together",
+    title: "Helpful add-ons close to the primary product",
+    buttonText: "Add All To Cart",
   },
   recommendedCombosSection: {
     show: true,
+    eyebrow: "Recommended Combos",
+    title: "Bundle options that support the same buying flow",
+    linkText: "View all combos",
   },
 };
 
 const cloneConfig = (value) => JSON.parse(JSON.stringify(value));
 
-const mergeCards = (overrides = []) =>
-  DEFAULT_PRODUCT_PAGE_CONFIG.detailsSection.cards.map((card, index) => {
+const mergeCardArray = (defaults = [], overrides = [], fields = []) =>
+  defaults.map((card, index) => {
     const override = Array.isArray(overrides) ? overrides[index] || {} : {};
-    return {
-      label: String(override?.label || card.label || "").trim(),
-      helper: String(override?.helper || card.helper || "").trim(),
-    };
+    const merged = { ...card };
+
+    fields.forEach((field) => {
+      const overrideValue = String(override?.[field] || "").trim();
+      merged[field] = overrideValue || String(card?.[field] || "").trim();
+    });
+
+    return merged;
   });
 
 export const createDefaultProductPageConfig = () =>
@@ -109,6 +163,14 @@ export const mergeProductPageConfig = (value = {}) => {
     hero: {
       ...defaults.hero,
       ...(source.hero || {}),
+      storyEyebrow: sanitizeStoryField(source?.hero?.storyEyebrow),
+      storyTitle: sanitizeStoryField(source?.hero?.storyTitle),
+      storyDescription: sanitizeStoryField(source?.hero?.storyDescription),
+      supportCards: mergeCardArray(
+        defaults.hero.supportCards,
+        source?.hero?.supportCards,
+        ["title", "description"],
+      ),
     },
     tabs: {
       ...defaults.tabs,
@@ -126,7 +188,11 @@ export const mergeProductPageConfig = (value = {}) => {
     detailsSection: {
       ...defaults.detailsSection,
       ...(source.detailsSection || {}),
-      cards: defaults.detailsSection.cards,
+      cards: mergeCardArray(
+        defaults.detailsSection.cards,
+        source?.detailsSection?.cards,
+        ["label", "helper"],
+      ),
     },
     shippingSection: {
       ...defaults.shippingSection,

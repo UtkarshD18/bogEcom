@@ -1,12 +1,16 @@
+import { randomInt } from "node:crypto";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import sendEmailFun from "../config/sendEmail.js";
 import InfluencerModel from "../models/influencer.model.js";
 import OrderModel from "../models/order.model.js";
 import { getInfluencerRefreshTokenSecret } from "../config/authSecrets.js";
 import generateInfluencerToken from "../utils/generateInfluencerToken.js";
 import generateInfluencerRefreshToken from "../utils/generateInfluencerRefreshToken.js";
-import { matchesStoredToken, normalizeTokenString } from "../utils/tokenHash.js";
+import { matchesStoredToken, hashTokenValue, normalizeTokenString } from "../utils/tokenHash.js";
 import { withOrderPresentation } from "../utils/orderPresentation.js";
+import VerificationEmail from "../utils/verifyEmailTemplate.js";
 
 /**
  * Influencer Controller
@@ -36,6 +40,141 @@ const normalizePromotionPlatforms = (platforms) => {
       dedupe.add(key);
       return true;
     });
+};
+
+const PASSWORD_RESET_OTP_EXPIRY_MS = 15 * 60 * 1000;
+const PORTAL_PASSWORD_MIN_LENGTH = 8;
+
+const normalizeInfluencerCode = (code) =>
+  String(code || "").toUpperCase().trim();
+
+const normalizeEmail = (email) =>
+  String(email || "").toLowerCase().trim();
+
+const normalizePhone = (phone) => String(phone || "").trim();
+
+const isExpiredInfluencer = (influencer) =>
+  Boolean(influencer?.expiresAt && new Date() > influencer.expiresAt);
+
+const validatePortalPassword = (password) => {
+  const normalizedPassword = String(password || "");
+  const hasUpperCase = /[A-Z]/.test(normalizedPassword);
+  const hasLowerCase = /[a-z]/.test(normalizedPassword);
+  const hasNumber = /\d/.test(normalizedPassword);
+
+  if (normalizedPassword.length < PORTAL_PASSWORD_MIN_LENGTH) {
+    return {
+      isValid: false,
+      message: `Password must be at least ${PORTAL_PASSWORD_MIN_LENGTH} characters`,
+    };
+  }
+
+  if (!hasUpperCase || !hasLowerCase) {
+    return {
+      isValid: false,
+      message: "Password must contain both uppercase and lowercase letters",
+    };
+  }
+
+  if (!hasNumber) {
+    return {
+      isValid: false,
+      message: "Password must contain at least one number",
+    };
+  }
+
+  return { isValid: true, message: "" };
+};
+
+const sanitizeInfluencerForAdmin = (influencer) => {
+  const source =
+    typeof influencer?.toObject === "function"
+      ? influencer.toObject({ virtuals: true })
+      : { ...(influencer || {}) };
+
+  const portalAccessConfigured = Boolean(
+    source.portalPasswordHash || influencer?.portalPasswordHash,
+  );
+
+  delete source.refreshToken;
+  delete source.portalPasswordHash;
+  delete source.passwordResetOtpHash;
+  delete source.passwordResetOtpExpiresAt;
+
+  return {
+    ...source,
+    portalAccessConfigured,
+  };
+};
+
+const getActiveInfluencerByCode = async (code, selectSecrets = "") => {
+  const normalizedCode = normalizeInfluencerCode(code);
+  if (!normalizedCode) return null;
+
+  const query = InfluencerModel.findOne({
+    code: normalizedCode,
+    isActive: true,
+  });
+
+  if (selectSecrets) {
+    query.select(selectSecrets);
+  }
+
+  const influencer = await query;
+  if (!influencer || isExpiredInfluencer(influencer)) {
+    return null;
+  }
+
+  return influencer;
+};
+
+const getActiveInfluencerByCodeAndEmail = async ({
+  code,
+  email,
+  selectSecrets = "",
+}) => {
+  const normalizedCode = normalizeInfluencerCode(code);
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedCode || !normalizedEmail) {
+    return null;
+  }
+
+  const query = InfluencerModel.findOne({
+    code: normalizedCode,
+    email: normalizedEmail,
+    isActive: true,
+  });
+
+  if (selectSecrets) {
+    query.select(selectSecrets);
+  }
+
+  const influencer = await query;
+  if (!influencer || isExpiredInfluencer(influencer)) {
+    return null;
+  }
+
+  return influencer;
+};
+
+let influencerOtpEmailSender = async ({ email, name, otp }) =>
+  sendEmailFun({
+    sendTo: email,
+    subject: "HealthyOneGram collaborator portal OTP",
+    html: VerificationEmail(name || "Collaborator", otp),
+    context: "influencer-auth",
+  });
+
+let influencerOtpGenerator = () =>
+  String(randomInt(0, 1_000_000)).padStart(6, "0");
+
+export const __setInfluencerOtpEmailSenderForTests = (sender) => {
+  influencerOtpEmailSender = sender;
+};
+
+export const __setInfluencerOtpGeneratorForTests = (generator) => {
+  influencerOtpGenerator = generator;
 };
 
 // ==================== PUBLIC ENDPOINTS ====================
@@ -139,6 +278,7 @@ const buildInfluencerPortalPayload = async (influencer) => {
       email: influencer.email,
       code: influencer.code,
       referralUrl: influencer.referralUrl,
+      portalLoginUrl: influencer.portalLoginUrl,
       isActive: influencer.isActive,
       promotionPlatforms: influencer.promotionPlatforms || [],
     },
@@ -163,43 +303,48 @@ const buildInfluencerPortalPayload = async (influencer) => {
  */
 export const loginInfluencer = async (req, res) => {
   try {
-    const { code, email } = req.body || {};
+    const { code, password } = req.body || {};
 
-    if (!code || !email) {
+    if (!code || !password) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "Referral code and email are required",
+        message: "Referral code and password are required",
       });
     }
 
-    const normalizedCode = String(code).toUpperCase().trim();
-    const normalizedEmail = String(email).toLowerCase().trim();
-
-    const influencer = await InfluencerModel.findActiveByCode(normalizedCode);
+    const influencer = await getActiveInfluencerByCode(
+      code,
+      "+portalPasswordHash",
+    );
 
     if (!influencer) {
-      return res.status(404).json({
+      return res.status(401).json({
         error: true,
         success: false,
-        message: "Influencer not found or inactive",
+        message: "Invalid referral code or password",
       });
     }
 
-    if (!influencer.email) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message:
-          "No email is associated with this collaborator. Please contact admin.",
-      });
-    }
-
-    if (influencer.email.toLowerCase() !== normalizedEmail) {
+    if (!influencer.portalPasswordHash) {
       return res.status(403).json({
         error: true,
         success: false,
-        message: "Email does not match collaborator records",
+        message:
+          "Portal password is not set yet. Use the password reset flow or contact admin.",
+      });
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      String(password),
+      influencer.portalPasswordHash,
+    );
+
+    if (!passwordMatches) {
+      return res.status(403).json({
+        error: true,
+        success: false,
+        message: "Invalid referral code or password",
       });
     }
 
@@ -209,7 +354,7 @@ export const loginInfluencer = async (req, res) => {
     return res.status(200).json({
       error: false,
       success: true,
-      message: "Influencer login successful",
+      message: "Collaborator login successful",
       data: {
         accessToken,
         refreshToken,
@@ -235,66 +380,16 @@ export const loginInfluencer = async (req, res) => {
 
 /**
  * Influencer Portal Stats (Collaborator Dashboard)
- * @route GET /api/influencers/portal?code=CODE&email=EMAIL
- * @access Public (code + email verification)
+ * @route GET /api/influencers/portal
+ * @access Disabled legacy route
  */
 export const getInfluencerPortalStats = async (req, res) => {
-  try {
-    const { code, email } = req.query;
-
-    if (!code || !email) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message: "Referral code and email are required",
-      });
-    }
-
-    const normalizedCode = String(code).toUpperCase().trim();
-    const normalizedEmail = String(email).toLowerCase().trim();
-
-    const influencer = await InfluencerModel.findActiveByCode(normalizedCode);
-
-    if (!influencer) {
-      return res.status(404).json({
-        error: true,
-        success: false,
-        message: "Influencer not found or inactive",
-      });
-    }
-
-    if (!influencer.email) {
-      return res.status(400).json({
-        error: true,
-        success: false,
-        message:
-          "No email is associated with this collaborator. Please contact admin.",
-      });
-    }
-
-    if (influencer.email.toLowerCase() !== normalizedEmail) {
-      return res.status(403).json({
-        error: true,
-        success: false,
-        message: "Email does not match collaborator records",
-      });
-    }
-
-    const payload = await buildInfluencerPortalPayload(influencer);
-
-    res.status(200).json({
-      error: false,
-      success: true,
-      data: payload,
-    });
-  } catch (error) {
-    console.error("Error fetching influencer portal stats:", error);
-    res.status(500).json({
-      error: true,
-      success: false,
-      message: "Failed to fetch collaborator statistics",
-    });
-  }
+  return res.status(410).json({
+    error: true,
+    success: false,
+    message:
+      "Legacy portal access via referral code and email has been disabled. Please sign in with your collaborator password.",
+  });
 };
 
 /**
@@ -412,6 +507,156 @@ export const refreshInfluencerToken = async (req, res) => {
 };
 
 /**
+ * Request collaborator portal password reset OTP
+ * @route POST /api/influencers/forgot-password
+ * @access Public
+ */
+export const requestInfluencerPasswordReset = async (req, res) => {
+  try {
+    const { code, email } = req.body || {};
+
+    if (!code || !email) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Referral code and email are required",
+      });
+    }
+
+    const influencer = await getActiveInfluencerByCodeAndEmail({
+      code,
+      email,
+      selectSecrets: "+passwordResetOtpHash +passwordResetOtpExpiresAt",
+    });
+
+    if (influencer?.email) {
+      const otp = influencerOtpGenerator();
+      influencer.passwordResetOtpHash = hashTokenValue(otp);
+      influencer.passwordResetOtpExpiresAt = new Date(
+        Date.now() + PASSWORD_RESET_OTP_EXPIRY_MS,
+      );
+      await influencer.save();
+
+      const emailSent = await influencerOtpEmailSender({
+        email: influencer.email,
+        name: influencer.name,
+        otp,
+      });
+
+      if (!emailSent) {
+        return res.status(500).json({
+          error: true,
+          success: false,
+          message: "Failed to send password reset OTP",
+        });
+      }
+    }
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message:
+        "If the referral code and email match our records, an OTP has been sent.",
+    });
+  } catch (error) {
+    console.error("Error requesting influencer password reset:", error);
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to process password reset request",
+    });
+  }
+};
+
+/**
+ * Reset collaborator portal password using OTP
+ * @route POST /api/influencers/reset-password
+ * @access Public
+ */
+export const resetInfluencerPassword = async (req, res) => {
+  try {
+    const { code, email, otp, newPassword, confirmPassword } = req.body || {};
+
+    if (!code || !email || !otp || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message:
+          "Referral code, email, OTP, new password, and confirmation are required",
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Password and confirm password must match",
+      });
+    }
+
+    const passwordValidation = validatePortalPassword(newPassword);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: passwordValidation.message,
+      });
+    }
+
+    const influencer = await getActiveInfluencerByCodeAndEmail({
+      code,
+      email,
+      selectSecrets:
+        "+portalPasswordHash +passwordResetOtpHash +passwordResetOtpExpiresAt",
+    });
+
+    if (!influencer) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid password reset request",
+      });
+    }
+
+    const otpIsValid = matchesStoredToken(
+      influencer.passwordResetOtpHash,
+      String(otp).trim(),
+    );
+
+    if (
+      !otpIsValid ||
+      !influencer.passwordResetOtpExpiresAt ||
+      influencer.passwordResetOtpExpiresAt.getTime() < Date.now()
+    ) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "OTP is invalid or expired",
+      });
+    }
+
+    influencer.portalPasswordHash = await bcrypt.hash(String(newPassword), 10);
+    influencer.passwordResetOtpHash = "";
+    influencer.passwordResetOtpExpiresAt = null;
+    influencer.refreshToken = "";
+    await influencer.save();
+
+    return res.status(200).json({
+      error: false,
+      success: true,
+      message: "Portal password updated successfully. Please sign in.",
+    });
+  } catch (error) {
+    console.error("Error resetting influencer password:", error);
+    return res.status(500).json({
+      error: true,
+      success: false,
+      message: "Failed to reset portal password",
+    });
+  }
+};
+
+/**
  * Calculate referral discount for an order
  * Called internally from checkout flow
  */
@@ -509,6 +754,7 @@ export const getAllInfluencers = async (req, res) => {
 
     const [influencers, total] = await Promise.all([
       InfluencerModel.find(filter)
+        .select("+portalPasswordHash")
         .sort(sortOptions)
         .skip(skip)
         .limit(Number(limit))
@@ -519,7 +765,7 @@ export const getAllInfluencers = async (req, res) => {
     res.status(200).json({
       error: false,
       success: true,
-      data: influencers,
+      data: influencers.map((entry) => sanitizeInfluencerForAdmin(entry)),
       total,
       totalPages: Math.ceil(total / Number(limit)),
       currentPage: Number(page),
@@ -542,7 +788,9 @@ export const getInfluencerById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const influencer = await InfluencerModel.findById(id);
+    const influencer = await InfluencerModel.findById(id)
+      .select("+portalPasswordHash")
+      .lean({ virtuals: true });
 
     if (!influencer) {
       return res.status(404).json({
@@ -555,7 +803,7 @@ export const getInfluencerById = async (req, res) => {
     res.status(200).json({
       error: false,
       success: true,
-      data: influencer,
+      data: sanitizeInfluencerForAdmin(influencer),
     });
   } catch (error) {
     console.error("Error fetching influencer:", error);
@@ -588,6 +836,7 @@ export const createInfluencer = async (req, res) => {
       isActive,
       expiresAt,
       notes,
+      portalPassword,
     } = req.body;
 
     // Validate required fields
@@ -618,12 +867,25 @@ export const createInfluencer = async (req, res) => {
       });
     }
 
+    let portalPasswordHash = "";
+    if (String(portalPassword || "").trim()) {
+      const passwordValidation = validatePortalPassword(portalPassword);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: passwordValidation.message,
+        });
+      }
+      portalPasswordHash = await bcrypt.hash(String(portalPassword), 10);
+    }
+
     const influencer = new InfluencerModel({
       name,
-      email,
-      phone,
+      email: normalizeEmail(email) || null,
+      phone: normalizePhone(phone) || null,
       promotionPlatforms: normalizePromotionPlatforms(promotionPlatforms),
-      code: code.toUpperCase().trim(),
+      code: normalizeInfluencerCode(code),
       discountType: discountType || "PERCENT",
       discountValue,
       maxDiscountAmount: maxDiscountAmount || null,
@@ -633,6 +895,7 @@ export const createInfluencer = async (req, res) => {
       isActive: isActive !== false,
       expiresAt: expiresAt || null,
       notes: notes || "",
+      portalPasswordHash,
       createdBy: req.user?.id || null,
     });
 
@@ -642,7 +905,7 @@ export const createInfluencer = async (req, res) => {
       error: false,
       success: true,
       message: "Influencer created successfully",
-      data: influencer,
+      data: sanitizeInfluencerForAdmin(influencer),
     });
   } catch (error) {
     console.error("Error creating influencer:", error);
@@ -671,7 +934,8 @@ export const createInfluencer = async (req, res) => {
 export const updateInfluencer = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = { ...(req.body || {}) };
+    const portalPassword = String(updateData.portalPassword || "").trim();
 
     // Don't allow changing the code
     delete updateData.code;
@@ -680,13 +944,29 @@ export const updateInfluencer = async (req, res) => {
     delete updateData.totalOrders;
     delete updateData.totalRevenue;
     delete updateData.totalCommissionEarned;
+    delete updateData.totalCommissionPaid;
+    delete updateData.refreshToken;
+    delete updateData.portalPasswordHash;
+    delete updateData.passwordResetOtpHash;
+    delete updateData.passwordResetOtpExpiresAt;
+    delete updateData.portalAccessConfigured;
+    delete updateData.portalPassword;
+    delete updateData.confirmPortalPassword;
     if ("promotionPlatforms" in updateData) {
       updateData.promotionPlatforms = normalizePromotionPlatforms(
         updateData.promotionPlatforms,
       );
     }
+    if ("email" in updateData) {
+      updateData.email = normalizeEmail(updateData.email) || null;
+    }
+    if ("phone" in updateData) {
+      updateData.phone = normalizePhone(updateData.phone) || null;
+    }
 
-    const influencer = await InfluencerModel.findById(id);
+    const influencer = await InfluencerModel.findById(id).select(
+      "+portalPasswordHash",
+    );
 
     if (!influencer) {
       return res.status(404).json({
@@ -697,13 +977,27 @@ export const updateInfluencer = async (req, res) => {
     }
 
     Object.assign(influencer, updateData);
+    if (portalPassword) {
+      const passwordValidation = validatePortalPassword(portalPassword);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message: passwordValidation.message,
+        });
+      }
+      influencer.portalPasswordHash = await bcrypt.hash(portalPassword, 10);
+      influencer.passwordResetOtpHash = "";
+      influencer.passwordResetOtpExpiresAt = null;
+      influencer.refreshToken = "";
+    }
     await influencer.save();
 
     res.status(200).json({
       error: false,
       success: true,
       message: "Influencer updated successfully",
-      data: influencer,
+      data: sanitizeInfluencerForAdmin(influencer),
     });
   } catch (error) {
     console.error("Error updating influencer:", error);

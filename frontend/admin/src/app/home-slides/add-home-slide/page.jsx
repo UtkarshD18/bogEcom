@@ -1,13 +1,17 @@
 "use client";
-import UploadBox from "@/components/UploadBox";
+import HomeSlideImageField from "@/components/HomeSlideImageField";
 import { useAdmin } from "@/context/AdminContext";
 import { postData, uploadFile } from "@/utils/api";
+import {
+  buildHomeSlideImageAsset,
+  HOME_SLIDE_DESKTOP_SPEC,
+  HOME_SLIDE_MOBILE_SPEC,
+} from "@/utils/homeSlideImage";
 import { Button } from "@mui/material";
 import Switch from "@mui/material/Switch";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
-import { IoMdClose } from "react-icons/io";
 
 const AddHomeSlide = () => {
   const { token, isAuthenticated, loading } = useAdmin();
@@ -17,7 +21,8 @@ const AddHomeSlide = () => {
   const [link, setLink] = useState("");
   const [order, setOrder] = useState(0);
   const [isActive, setIsActive] = useState(true);
-  const [images, setImages] = useState([]);
+  const [image, setImage] = useState(null);
+  const [mobileImage, setMobileImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -26,28 +31,57 @@ const AddHomeSlide = () => {
     }
   }, [isAuthenticated, loading, router]);
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
         toast.error("Image size should be less than 5MB");
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImages([{ file, preview: reader.result }]);
-      };
-      reader.readAsDataURL(file);
+
+      try {
+        const asset = await buildHomeSlideImageAsset({
+          file,
+          spec: HOME_SLIDE_DESKTOP_SPEC,
+        });
+        setImage(asset);
+      } catch (error) {
+        toast.error("Failed to load image preview");
+      }
     }
   };
 
   const removeImage = () => {
-    setImages([]);
+    setImage(null);
+  };
+
+  const handleMobileImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB");
+        return;
+      }
+
+      try {
+        const asset = await buildHomeSlideImageAsset({
+          file,
+          spec: HOME_SLIDE_MOBILE_SPEC,
+        });
+        setMobileImage(asset);
+      } catch (error) {
+        toast.error("Failed to load mobile image preview");
+      }
+    }
+  };
+
+  const removeMobileImage = () => {
+    setMobileImage(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (images.length === 0) {
+    if (!image) {
       toast.error("Please upload a slide image");
       return;
     }
@@ -55,20 +89,32 @@ const AddHomeSlide = () => {
     setIsSubmitting(true);
 
     try {
-      // Upload image first
-      const uploadResult = await uploadFile(images[0].file, token);
+      const uploadResult = await uploadFile(image.file, token);
       if (!uploadResult.success || !uploadResult.data?.url) {
         toast.error("Failed to upload image");
         setIsSubmitting(false);
         return;
       }
 
+      let mobileImageUrl = "";
+      if (mobileImage?.file) {
+        const mobileUploadResult = await uploadFile(mobileImage.file, token);
+        if (!mobileUploadResult.success || !mobileUploadResult.data?.url) {
+          toast.error("Failed to upload mobile image");
+          setIsSubmitting(false);
+          return;
+        }
+        mobileImageUrl = mobileUploadResult.data.url;
+      }
+
       const slideData = {
         title,
         subtitle,
         image: uploadResult.data.url,
+        mobileImage: mobileImageUrl,
         link,
-        order: Number(order) || 0,
+        buttonLink: link,
+        sortOrder: Number(order) || 0,
         isActive,
       };
 
@@ -174,38 +220,24 @@ const AddHomeSlide = () => {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 mt-5">
-          <h3 className="text-[16px] text-gray-700 font-[600]">
-            Slide Image *
-          </h3>
+        <HomeSlideImageField
+          label="Desktop Slide Image"
+          asset={image}
+          onChange={handleImageUpload}
+          onRemove={removeImage}
+          spec={HOME_SLIDE_DESKTOP_SPEC}
+          required
+          hint="Use this for desktop and tablet hero banners. If the ratio is very different, it will be stretched to fill the banner."
+        />
 
-          <div className="flex items-center gap-4 mt-2 flex-wrap">
-            {images.map((img, index) => (
-              <div
-                key={index}
-                className="w-[300px] h-[150px] rounded-md bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden"
-              >
-                <img
-                  src={img.preview}
-                  alt="slide preview"
-                  className="w-full h-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={removeImage}
-                  className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
-                >
-                  <IoMdClose size={16} />
-                </button>
-              </div>
-            ))}
-
-            {images.length === 0 && <UploadBox onChange={handleImageUpload} />}
-          </div>
-          <p className="text-sm text-gray-500">
-            Recommended size: 1920x600px. Max 5MB.
-          </p>
-        </div>
+        <HomeSlideImageField
+          label="Mobile Slide Image"
+          asset={mobileImage}
+          onChange={handleMobileImageUpload}
+          onRemove={removeMobileImage}
+          spec={HOME_SLIDE_MOBILE_SPEC}
+          hint="Optional, but strongly recommended for phones if the desktop image is wide. Without it, the desktop image will be stretched to fit the mobile banner."
+        />
 
         <div className="mt-8 flex gap-3">
           <Button

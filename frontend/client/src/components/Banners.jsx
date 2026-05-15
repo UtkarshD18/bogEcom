@@ -111,6 +111,8 @@ const Banners = ({ initialBanners = [] }) => {
   const [activeAudioBannerId, setActiveAudioBannerId] = useState(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const scrollerRef = useRef(null);
+  const scrollFrameRef = useRef(0);
+  const activeBannerIndexRef = useRef(0);
   const context = useContext(MyContext);
   const flavor = context?.flavor || FLAVORS.creamy;
 
@@ -134,6 +136,18 @@ const Banners = ({ initialBanners = [] }) => {
     fetchBanners();
   }, [initialBanners]);
 
+  useEffect(() => {
+    activeBannerIndexRef.current = activeBannerIndex;
+  }, [activeBannerIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollFrameRef.current) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+    };
+  }, []);
+
   if (loading) return null;
   if (banners.length === 0) return null;
 
@@ -150,17 +164,35 @@ const Banners = ({ initialBanners = [] }) => {
       block: "nearest",
       inline: "center",
     });
+    activeBannerIndexRef.current = normalizedIndex;
     setActiveBannerIndex(normalizedIndex);
   };
 
   const handleBannerScroll = () => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
+    if (scrollFrameRef.current) return;
 
-    const slideWidth = scroller.firstElementChild?.clientWidth || scroller.clientWidth;
-    const gap = 16;
-    const nextIndex = Math.round(scroller.scrollLeft / Math.max(slideWidth + gap, 1));
-    setActiveBannerIndex(Math.min(Math.max(nextIndex, 0), banners.length - 1));
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = 0;
+
+      const scroller = scrollerRef.current;
+      if (!scroller) return;
+
+      const slideWidth =
+        scroller.firstElementChild?.clientWidth || scroller.clientWidth;
+      const gap = 16;
+      const nextIndex = Math.round(
+        scroller.scrollLeft / Math.max(slideWidth + gap, 1),
+      );
+      const resolvedIndex = Math.min(
+        Math.max(nextIndex, 0),
+        banners.length - 1,
+      );
+
+      if (activeBannerIndexRef.current !== resolvedIndex) {
+        activeBannerIndexRef.current = resolvedIndex;
+        setActiveBannerIndex(resolvedIndex);
+      }
+    });
   };
 
   return (
@@ -239,8 +271,8 @@ const Banners = ({ initialBanners = [] }) => {
                     data-banner-campaign={bannerCampaign}
                   >
                     <motion.div
-                      whileHover={{ y: -5, scale: 1.02 }}
-                      transition={{ duration: 0.3 }}
+                      whileHover={{ y: -3 }}
+                      transition={{ duration: 0.24 }}
                       className="banner-image-container relative overflow-hidden rounded-3xl shadow-none"
                     >
                       <BannerMedia

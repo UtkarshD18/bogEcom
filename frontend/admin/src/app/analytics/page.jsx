@@ -496,7 +496,7 @@ export default function AnalyticsDashboardPage() {
           <MetricCard
             title="Total Visitors"
             value={overview?.totalVisitors || 0}
-            hint="Unique sessions in selected date range."
+            hint="Tracked visitor sessions with meaningful activity in this range."
           />
           <MetricCard
             title="New Visitors"
@@ -677,7 +677,7 @@ export default function AnalyticsDashboardPage() {
                 }
               }}
               placeholder="Enter user ID"
-              className="border border-gray-300 rounded-lg px-3 py-2 w-full md:w-[360px]"
+              className="border border-gray-300 rounded-lg px-3 py-2 w-full md:w-90"
             />
             <button
               type="button"

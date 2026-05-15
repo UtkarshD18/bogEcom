@@ -20,6 +20,7 @@ const AddProduct = () => {
 
   const [productName, setProductName] = useState("");
   const [description, setDescription] = useState("");
+  const [productStory, setProductStory] = useState("");
   const [shortDescription, setShortDescription] = useState("");
   const [categoryVal, setCategoryVal] = useState("");
   const [isNewArrival, setIsNewArrival] = useState(false);
@@ -35,6 +36,7 @@ const AddProduct = () => {
   const [productPage, setProductPage] = useState(() =>
     createDefaultProductPageConfig(),
   );
+  const [showStorefrontSettings, setShowStorefrontSettings] = useState(false);
 
   // Variants
   const hasVariants = true;
@@ -77,14 +79,15 @@ const AddProduct = () => {
       if (w) {
         let normalizedWeight = "";
         try {
-          normalizedWeight = normalizeVariantWeight({ weight: w, unit: u }).label;
+          normalizedWeight = normalizeVariantWeight({
+            weight: w,
+            unit: u,
+          }).label;
         } catch {
           normalizedWeight = `${w}${u}`;
         }
         const rawName = String(updated[index].name || "").trim();
-        const baseName = rawName
-          .replace(/\s*-\s*[\d.]+\s*(kg|g)$/i, "")
-          .trim();
+        const baseName = rawName.replace(/\s*-\s*[\d.]+\s*(kg|g)$/i, "").trim();
         updated[index].name = baseName
           ? `${baseName} - ${normalizedWeight}`
           : normalizedWeight;
@@ -174,31 +177,34 @@ const AddProduct = () => {
       variantData = variants
         .filter((v) => v.price)
         .map((v, i) => {
-        const normalizedWeight = normalizeVariantWeight(v);
-        const variantPrice = Math.round(Number(v.price));
-        const variantOriginalPrice = v.originalPrice
-          ? Math.round(Number(v.originalPrice))
-          : undefined;
-        return {
-          name: v.name || normalizedWeight.label,
-          label: normalizedWeight.label,
-          sku:
-            v.sku || `${productName.substring(0, 3).toUpperCase()}-V${i + 1}`,
-          price: variantPrice,
-          originalPrice: variantOriginalPrice,
-          weight: Number(v.weight),
-          unit: String(v.unit || "g").toLowerCase() === "kg" ? "kg" : "g",
-          isDefault: !!v.isDefault,
-          stock: v.stock ? Number(v.stock) : 0,
-          stock_quantity: v.stock ? Number(v.stock) : 0,
-        };
-      });
+          const normalizedWeight = normalizeVariantWeight(v);
+          const variantPrice = Math.round(Number(v.price));
+          const variantOriginalPrice = v.originalPrice
+            ? Math.round(Number(v.originalPrice))
+            : undefined;
+          return {
+            name: v.name || normalizedWeight.label,
+            label: normalizedWeight.label,
+            sku:
+              v.sku || `${productName.substring(0, 3).toUpperCase()}-V${i + 1}`,
+            price: variantPrice,
+            originalPrice: variantOriginalPrice,
+            weight: Number(v.weight),
+            unit: String(v.unit || "g").toLowerCase() === "kg" ? "kg" : "g",
+            isDefault: !!v.isDefault,
+            stock: v.stock ? Number(v.stock) : 0,
+            stock_quantity: v.stock ? Number(v.stock) : 0,
+          };
+        });
     } catch (error) {
       toast.error(error.message || "Invalid weight format");
       return;
     }
 
-    if (variantData.length === 0 || variantData.some((v) => !v.price || v.price <= 0)) {
+    if (
+      variantData.length === 0 ||
+      variantData.some((v) => !v.price || v.price <= 0)
+    ) {
       toast.error("Please add at least one variant with a valid price");
       return;
     }
@@ -229,6 +235,7 @@ const AddProduct = () => {
       const productData = {
         name: productName,
         description,
+        productStory,
         shortDescription,
         category: categoryVal,
         price: defaultVariant.price,
@@ -332,6 +339,19 @@ const AddProduct = () => {
             />
           </div>
 
+          <div className="form-group mb-4 flex flex-col gap-1">
+            <span className="text-[15px] text-gray-800 font-medium">
+              Product Story
+            </span>
+            <textarea
+              value={productStory}
+              onChange={(e) => setProductStory(e.target.value)}
+              placeholder="Add a story or narrative for this product"
+              rows={4}
+              className="w-full border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 py-3 text-[14px]"
+            />
+          </div>
+
           {/* Categories & Pricing */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
             <div className="col flex flex-col gap-1">
@@ -355,7 +375,6 @@ const AddProduct = () => {
                 ))}
               </Select>
             </div>
-
           </div>
 
           {/* Stock & Details */}
@@ -388,7 +407,6 @@ const AddProduct = () => {
                 className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
               />
             </div>
-
           </div>
 
           {/* Weight & Tags */}
@@ -484,9 +502,7 @@ const AddProduct = () => {
                 <span className="text-[15px] text-gray-800 font-semibold">
                   📦 Size / Weight Variants
                 </span>
-                <span className="text-sm text-gray-500">
-                  Required
-                </span>
+                <span className="text-sm text-gray-500">Required</span>
               </div>
               <Button
                 type="button"
@@ -498,159 +514,184 @@ const AddProduct = () => {
             </div>
 
             <>
-                <p className="text-xs text-gray-500 mb-4">
-                  Add different sizes/weights for this product (e.g., 500g, 1
-                  Kg). Each variant has its own price & stock.
-                </p>
+              <p className="text-xs text-gray-500 mb-4">
+                Add different sizes/weights for this product (e.g., 500g, 1 Kg).
+                Each variant has its own price & stock.
+              </p>
 
-                {variants.length === 0 && (
-                  <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg">
-                    <p className="text-gray-400 text-sm">
-                      No variants added yet. Click &quot;+ Add Size&quot; to
-                      add one.
-                    </p>
-                  </div>
-                )}
+              {variants.length === 0 && (
+                <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg">
+                  <p className="text-gray-400 text-sm">
+                    No variants added yet. Click &quot;+ Add Size&quot; to add
+                    one.
+                  </p>
+                </div>
+              )}
 
-                <div className="space-y-3">
-                  {variants.map((v, i) => (
-                    <div
-                      key={i}
-                      className={`grid grid-cols-1 sm:grid-cols-8 gap-3 items-end p-4 rounded-lg relative ${v.isDefault ? "bg-blue-50 border border-blue-200" : "bg-gray-50"}`}
-                    >
-                      {v.isDefault && (
-                        <span className="absolute -top-2 left-3 bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                          DEFAULT
-                        </span>
-                      )}
-                      <div className="sm:col-span-2 flex flex-col gap-1">
-                        <span className="text-xs text-gray-600 font-medium">
-                          Weight *
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            value={v.weight}
-                            onChange={(e) =>
-                              updateVariant(i, "weight", e.target.value)
-                            }
-                            placeholder="500"
-                            min="0"
-                            step="0.01"
-                            className="flex-1 min-w-0 h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
-                          />
-                          <select
-                            value={v.unit || "g"}
-                            onChange={(e) =>
-                              updateVariant(i, "unit", e.target.value)
-                            }
-                            className="w-[68px] shrink-0 h-[36px] border border-gray-300 rounded-md px-1 text-sm focus:border-blue-500 outline-none"
-                          >
-                            <option value="g">g</option>
-                            <option value="kg">kg</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="sm:col-span-1 flex flex-col gap-1">
-                        <span className="text-xs text-gray-600 font-medium">
-                          Price (₹) *
-                        </span>
+              <div className="space-y-3">
+                {variants.map((v, i) => (
+                  <div
+                    key={i}
+                    className={`grid grid-cols-1 sm:grid-cols-8 gap-3 items-end p-4 rounded-lg relative ${v.isDefault ? "bg-blue-50 border border-blue-200" : "bg-gray-50"}`}
+                  >
+                    {v.isDefault && (
+                      <span className="absolute -top-2 left-3 bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        DEFAULT
+                      </span>
+                    )}
+                    <div className="sm:col-span-2 flex flex-col gap-1">
+                      <span className="text-xs text-gray-600 font-medium">
+                        Weight *
+                      </span>
+                      <div className="flex items-center gap-1">
                         <input
                           type="number"
-                          value={v.price}
+                          value={v.weight}
                           onChange={(e) =>
-                            updateVariant(i, "price", e.target.value)
+                            updateVariant(i, "weight", e.target.value)
                           }
-                          placeholder="299"
+                          placeholder="500"
                           min="0"
-                          step="1"
-                          className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
+                          step="0.01"
+                          className="flex-1 min-w-0 h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
                         />
-                      </div>
-                      <div className="sm:col-span-1 flex flex-col gap-1">
-                        <span className="text-xs text-gray-600 font-medium">
-                          Original Price
-                        </span>
-                        <input
-                          type="number"
-                          value={v.originalPrice}
+                        <select
+                          value={v.unit || "g"}
                           onChange={(e) =>
-                            updateVariant(i, "originalPrice", e.target.value)
+                            updateVariant(i, "unit", e.target.value)
                           }
-                          placeholder="499"
-                          min="0"
-                          step="1"
-                          className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
-                        />
-                      </div>
-                      <div className="sm:col-span-1 flex flex-col gap-1">
-                        <span className="text-xs text-gray-600 font-medium">
-                          Stock
-                        </span>
-                        <input
-                          type="number"
-                          value={v.stock}
-                          onChange={(e) =>
-                            updateVariant(i, "stock", e.target.value)
-                          }
-                          placeholder="50"
-                          min="0"
-                          className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
-                        />
-                      </div>
-                      <div className="sm:col-span-1 flex flex-col gap-1">
-                        <span className="text-xs text-gray-600 font-medium">
-                          SKU
-                        </span>
-                        <input
-                          type="text"
-                          value={v.sku}
-                          onChange={(e) =>
-                            updateVariant(i, "sku", e.target.value)
-                          }
-                          placeholder="Auto"
-                          className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
-                        />
-                      </div>
-                      <div className="sm:col-span-1 flex flex-col gap-1">
-                        <span className="text-xs text-gray-600 font-medium">
-                          Default
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateVariant(i, "isDefault", !v.isDefault)
-                          }
-                          className={`h-[36px] w-full flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
-                            v.isDefault
-                              ? "bg-blue-600 text-white"
-                              : "bg-gray-200 text-gray-600 hover:bg-gray-300"
-                          }`}
+                          className="w-[68px] shrink-0 h-[36px] border border-gray-300 rounded-md px-1 text-sm focus:border-blue-500 outline-none"
                         >
-                          {v.isDefault ? "✓ Default" : "Set"}
-                        </button>
-                      </div>
-                      <div className="sm:col-span-1 flex items-end">
-                        <button
-                          type="button"
-                          onClick={() => removeVariant(i)}
-                          disabled={variants.length <= 1 && hasVariants}
-                          className="h-[36px] w-full flex items-center justify-center gap-1 bg-red-50 text-red-600 border border-red-200 rounded-md hover:bg-red-100 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <IoMdClose size={16} /> Remove
-                        </button>
+                          <option value="g">g</option>
+                          <option value="kg">kg</option>
+                        </select>
                       </div>
                     </div>
-                  ))}
-                </div>
+                    <div className="sm:col-span-1 flex flex-col gap-1">
+                      <span className="text-xs text-gray-600 font-medium">
+                        Price (₹) *
+                      </span>
+                      <input
+                        type="number"
+                        value={v.price}
+                        onChange={(e) =>
+                          updateVariant(i, "price", e.target.value)
+                        }
+                        placeholder="299"
+                        min="0"
+                        step="1"
+                        className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-1 flex flex-col gap-1">
+                      <span className="text-xs text-gray-600 font-medium">
+                        Original Price
+                      </span>
+                      <input
+                        type="number"
+                        value={v.originalPrice}
+                        onChange={(e) =>
+                          updateVariant(i, "originalPrice", e.target.value)
+                        }
+                        placeholder="499"
+                        min="0"
+                        step="1"
+                        className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-1 flex flex-col gap-1">
+                      <span className="text-xs text-gray-600 font-medium">
+                        Stock
+                      </span>
+                      <input
+                        type="number"
+                        value={v.stock}
+                        onChange={(e) =>
+                          updateVariant(i, "stock", e.target.value)
+                        }
+                        placeholder="50"
+                        min="0"
+                        className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-1 flex flex-col gap-1">
+                      <span className="text-xs text-gray-600 font-medium">
+                        SKU
+                      </span>
+                      <input
+                        type="text"
+                        value={v.sku}
+                        onChange={(e) =>
+                          updateVariant(i, "sku", e.target.value)
+                        }
+                        placeholder="Auto"
+                        className="w-full h-[36px] border border-gray-300 rounded-md px-2 text-sm focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-1 flex flex-col gap-1">
+                      <span className="text-xs text-gray-600 font-medium">
+                        Default
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateVariant(i, "isDefault", !v.isDefault)
+                        }
+                        className={`h-[36px] w-full flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
+                          v.isDefault
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                        }`}
+                      >
+                        {v.isDefault ? "✓ Default" : "Set"}
+                      </button>
+                    </div>
+                    <div className="sm:col-span-1 flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => removeVariant(i)}
+                        disabled={variants.length <= 1 && hasVariants}
+                        className="h-[36px] w-full flex items-center justify-center gap-1 bg-red-50 text-red-600 border border-red-200 rounded-md hover:bg-red-100 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <IoMdClose size={16} /> Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </>
           </div>
 
-          <ProductPageSettingsSection
-            productPage={productPage}
-            setProductPage={setProductPage}
-            token={token}
-          />
+          <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 className="text-[16px] font-semibold text-gray-800">
+                  Storefront Product Page
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Optional. Open this only when you want to customize the live
+                  product-page layout and copy for this product.
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={() =>
+                  setShowStorefrontSettings((current) => !current)
+                }
+                className="!self-start !bg-white !text-gray-700 !normal-case"
+              >
+                {showStorefrontSettings ? "Hide customization" : "Customize page"}
+              </Button>
+            </div>
+
+            {showStorefrontSettings ? (
+              <ProductPageSettingsSection
+                productPage={productPage}
+                setProductPage={setProductPage}
+                token={token}
+              />
+            ) : null}
+          </div>
 
           {/* Images */}
           <div className="flex flex-col gap-2 mt-5">

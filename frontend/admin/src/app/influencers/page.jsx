@@ -90,6 +90,8 @@ const Influencers = () => {
     email: "",
     phone: "",
     code: "",
+    portalPassword: "",
+    confirmPortalPassword: "",
     discountType: "PERCENT",
     discountValue: "",
     maxDiscountAmount: "",
@@ -138,6 +140,8 @@ const Influencers = () => {
         email: influencer.email || "",
         phone: influencer.phone || "",
         code: influencer.code || "",
+        portalPassword: "",
+        confirmPortalPassword: "",
         discountType: influencer.discountType || "PERCENT",
         discountValue: influencer.discountValue?.toString() || "",
         maxDiscountAmount: influencer.maxDiscountAmount?.toString() || "",
@@ -163,6 +167,8 @@ const Influencers = () => {
         email: "",
         phone: "",
         code: "",
+        portalPassword: "",
+        confirmPortalPassword: "",
         discountType: "PERCENT",
         discountValue: "",
         maxDiscountAmount: "",
@@ -256,6 +262,15 @@ const Influencers = () => {
       toast.error("Please enter a valid commission value");
       return;
     }
+    if (
+      formData.portalPassword ||
+      formData.confirmPortalPassword
+    ) {
+      if (formData.portalPassword !== formData.confirmPortalPassword) {
+        toast.error("Portal password and confirm password must match");
+        return;
+      }
+    }
 
     try {
       const payload = {
@@ -276,6 +291,9 @@ const Influencers = () => {
         expiresAt: formData.expiresAt || null,
         isActive: formData.isActive,
         notes: formData.notes,
+        ...(formData.portalPassword.trim()
+          ? { portalPassword: formData.portalPassword }
+          : {}),
         promotionPlatforms: (formData.promotionPlatforms || [])
           .map((entry) => ({
             platform: String(entry?.platform || "").trim(),
@@ -361,47 +379,151 @@ const Influencers = () => {
     return withProtocol.replace(/\/+$/, "");
   };
 
+  const normalizeClientBaseUrl = (raw) => {
+    const normalized = normalizeBaseUrl(String(raw || "").split(",")[0]);
+    if (!normalized) return "";
+
+    try {
+      const parsed = new URL(normalized);
+      const hostname = String(parsed.hostname || "").toLowerCase();
+
+      if (
+        (hostname === "localhost" || hostname === "127.0.0.1") &&
+        (parsed.port === "3001" || parsed.port === "3002")
+      ) {
+        parsed.port = "3000";
+      } else if (/^admin-dot-/i.test(parsed.hostname)) {
+        parsed.hostname = parsed.hostname.replace(/^admin-dot-/i, "client-dot-");
+      } else if (/^admin\./i.test(parsed.hostname)) {
+        parsed.hostname = parsed.hostname.replace(/^admin\./i, "");
+      }
+
+      if (/^\/admin(?:\/|$)/i.test(parsed.pathname)) {
+        parsed.pathname = parsed.pathname.replace(/^\/admin(?:\/|$)/i, "/");
+      }
+
+      return `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(
+        /\/+$/,
+        "",
+      );
+    } catch {
+      return normalized.replace(/\/admin(?:\/.*)?$/i, "");
+    }
+  };
+
+  const getInfluencerBaseUrl = () => {
+    const configuredBase = [
+      process.env.NEXT_PUBLIC_CLIENT_URL,
+      process.env.NEXT_PUBLIC_SITE_URL,
+      process.env.NEXT_PUBLIC_SHARE_BASE_URL,
+    ]
+      .map(normalizeClientBaseUrl)
+      .find(Boolean);
+
+    if (configuredBase) return configuredBase;
+
+    if (typeof window !== "undefined") {
+      return normalizeClientBaseUrl(window.location.origin);
+    }
+
+    return "https://healthyonegram.com";
+  };
+
+  const buildInfluencerUrl = (pathname, query = {}) => {
+    const baseUrl = getInfluencerBaseUrl();
+    if (!baseUrl) return "";
+
+    try {
+      const url = new URL(baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+      const basePath = url.pathname.replace(/\/+$/, "");
+      const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+
+      url.pathname = `${basePath}${normalizedPath}` || "/";
+      url.search = "";
+
+      Object.entries(query).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && String(value).trim()) {
+          url.searchParams.set(key, String(value).trim());
+        }
+      });
+
+      return url.toString();
+    } catch {
+      return "";
+    }
+  };
+
   const getFallbackReferralUrl = (codeValue) => {
     const code = String(codeValue || "").trim().toUpperCase();
     if (!code) return "";
-
-    const configuredBase =
-      normalizeBaseUrl(process.env.NEXT_PUBLIC_CLIENT_URL) ||
-      normalizeBaseUrl(process.env.NEXT_PUBLIC_SITE_URL);
-
-    if (configuredBase) return `${configuredBase}/?ref=${code}`;
-
-    if (typeof window !== "undefined") {
-      const { protocol, hostname, port } = window.location;
-      const mappedPort = port === "3001" ? "3000" : port;
-      const host = mappedPort ? `${hostname}:${mappedPort}` : hostname;
-      return `${protocol}//${host}/?ref=${code}`;
-    }
-
-    return `https://healthyonegram.com/?ref=${code}`;
+    return buildInfluencerUrl("/", { ref: code });
   };
 
-  // Copy referral URL from backend and keep a safe fallback by code
-  const copyReferralUrl = async (influencer) => {
-    let source = influencer;
-    if (typeof influencer === "string") {
-      source = influencers.find((item) => item.code === influencer) || {
-        code: influencer,
-      };
-    }
+  const getFallbackPortalLoginUrl = (codeValue) => {
+    const code = String(codeValue || "").trim().toUpperCase();
+    if (!code) return "";
+    return buildInfluencerUrl("/affiliate/login", { code });
+  };
 
-    const url = String(source?.referralUrl || "").trim() || getFallbackReferralUrl(source?.code);
+  const resolveInfluencerSource = (influencer) => {
+    if (typeof influencer !== "string") return influencer || {};
+    return influencers.find((item) => item.code === influencer) || {
+      code: influencer,
+    };
+  };
+
+  const getReferralUrl = (influencer) => {
+    const source = resolveInfluencerSource(influencer);
+    return (
+      String(source?.referralUrl || "").trim() ||
+      getFallbackReferralUrl(source?.code)
+    );
+  };
+
+  const getPortalLoginUrl = (influencer) => {
+    const source = resolveInfluencerSource(influencer);
+    return (
+      String(source?.portalLoginUrl || "").trim() ||
+      getFallbackPortalLoginUrl(source?.code)
+    );
+  };
+
+  const copyUrlToClipboard = async ({
+    url,
+    missingMessage,
+    successMessage,
+    errorMessage,
+  }) => {
     if (!url) {
-      toast.error("Referral URL not available");
+      toast.error(missingMessage);
       return;
     }
 
     try {
       await navigator.clipboard.writeText(url);
-      toast.success("Referral URL copied to clipboard!");
+      toast.success(successMessage);
     } catch (error) {
-      toast.error("Failed to copy referral URL");
+      toast.error(errorMessage);
     }
+  };
+
+  // Copy referral URL from backend and keep a safe fallback by code
+  const copyReferralUrl = async (influencer) => {
+    await copyUrlToClipboard({
+      url: getReferralUrl(influencer),
+      missingMessage: "Referral URL not available",
+      successMessage: "Referral URL copied to clipboard!",
+      errorMessage: "Failed to copy referral URL",
+    });
+  };
+
+  const copyPortalLoginUrl = async (influencer) => {
+    await copyUrlToClipboard({
+      url: getPortalLoginUrl(influencer),
+      missingMessage: "Collaborator login URL not available",
+      successMessage: "Collaborator login URL copied to clipboard!",
+      errorMessage: "Failed to copy collaborator login URL",
+    });
   };
 
   const formatDate = (dateString) => {
@@ -454,8 +576,14 @@ const Influencers = () => {
             earn commission on each successful order!
           </p>
           <p className="text-xs text-purple-600 mt-2">
-            <strong>Note:</strong> Click the copy icon next to any code to copy
-            the full referral URL.
+            <strong>Portal security:</strong> dashboard access now requires a
+            referral code and password. Influencers can create or reset that
+            password from the affiliate login page using their registered email.
+          </p>
+          <p className="text-xs text-purple-600 mt-1">
+            <strong>Note:</strong> The copy icon next to each code shares the
+            customer referral link. Use the portal link inside stats when you
+            want the influencer login page with the code pre-filled.
           </p>
         </div>
 
@@ -545,18 +673,27 @@ const Influencers = () => {
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <code className="bg-purple-100 text-purple-800 px-2 py-1 rounded font-bold">
-                          {influencer.code}
-                        </code>
-                        <Tooltip title="Copy referral URL">
-                          <IconButton
-                            size="small"
-                            onClick={() => copyReferralUrl(influencer)}
-                          >
-                            <RiFileCopyLine className="text-gray-500" />
-                          </IconButton>
-                        </Tooltip>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <code className="bg-purple-100 text-purple-800 px-2 py-1 rounded font-bold">
+                            {influencer.code}
+                          </code>
+                          <Tooltip title="Copy customer referral URL">
+                            <IconButton
+                              size="small"
+                              onClick={() => copyReferralUrl(influencer)}
+                            >
+                              <RiFileCopyLine className="text-gray-500" />
+                            </IconButton>
+                          </Tooltip>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyPortalLoginUrl(influencer)}
+                          className="mt-1 text-[11px] font-medium text-blue-600 hover:underline"
+                        >
+                          Copy collaborator login
+                        </button>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -589,30 +726,45 @@ const Influencers = () => {
                       </span>
                     </TableCell>
                     <TableCell>
-                      {influencer.isActive ? (
-                        <Chip
-                          label="Active"
-                          size="small"
-                          color="success"
-                          variant="outlined"
-                        />
-                      ) : (
-                        <Chip
-                          label="Inactive"
-                          size="small"
-                          color="default"
-                          variant="outlined"
-                        />
-                      )}
-                      {influencer.expiresAt &&
-                        new Date(influencer.expiresAt) < new Date() && (
+                      <div className="flex flex-wrap gap-1">
+                        {influencer.isActive ? (
                           <Chip
-                            label="Expired"
+                            label="Active"
                             size="small"
-                            color="error"
-                            className="ml-1"
+                            color="success"
+                            variant="outlined"
+                          />
+                        ) : (
+                          <Chip
+                            label="Inactive"
+                            size="small"
+                            color="default"
+                            variant="outlined"
                           />
                         )}
+                        <Chip
+                          label={
+                            influencer.portalAccessConfigured
+                              ? "Portal Ready"
+                              : "Password Setup Pending"
+                          }
+                          size="small"
+                          color={
+                            influencer.portalAccessConfigured
+                              ? "primary"
+                              : "warning"
+                          }
+                          variant="outlined"
+                        />
+                        {influencer.expiresAt &&
+                          new Date(influencer.expiresAt) < new Date() && (
+                            <Chip
+                              label="Expired"
+                              size="small"
+                              color="error"
+                            />
+                          )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1 justify-center">
@@ -720,6 +872,40 @@ const Influencers = () => {
                     Generate
                   </Button>
                 )}
+              </div>
+            </div>
+
+            <div className="border-t pt-4 mt-4">
+              <h3 className="font-medium text-gray-700 mb-3">
+                Portal Security
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <TextField
+                  label={
+                    editingInfluencer
+                      ? "New Portal Password"
+                      : "Portal Password"
+                  }
+                  name="portalPassword"
+                  type="password"
+                  value={formData.portalPassword}
+                  onChange={handleInputChange}
+                  fullWidth
+                  helperText={
+                    editingInfluencer
+                      ? "Leave blank to keep the current portal password."
+                      : "Optional. If left blank, the influencer can create a password from the affiliate login page."
+                  }
+                />
+                <TextField
+                  label="Confirm Portal Password"
+                  name="confirmPortalPassword"
+                  type="password"
+                  value={formData.confirmPortalPassword}
+                  onChange={handleInputChange}
+                  fullWidth
+                  helperText="Passwords must match before saving."
+                />
               </div>
             </div>
 
@@ -1006,11 +1192,11 @@ const Influencers = () => {
               {/* Referral URL */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="text-sm font-medium text-gray-700 mb-2">
-                  Referral URL
+                  Customer Referral URL
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 bg-white border px-3 py-2 rounded text-sm break-all">
-                    {influencerStats.influencer?.referralUrl || "-"}
+                    {getReferralUrl(influencerStats.influencer) || "-"}
                   </code>
                   <Button
                     size="small"
@@ -1020,6 +1206,30 @@ const Influencers = () => {
                     Copy
                   </Button>
                 </div>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  Collaborator Login URL
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-white border px-3 py-2 rounded text-sm break-all">
+                    {getPortalLoginUrl(influencerStats.influencer) || "-"}
+                  </code>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() =>
+                      copyPortalLoginUrl(influencerStats.influencer)
+                    }
+                  >
+                    Copy
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  This opens the influencer portal login page and fills in the
+                  referral code automatically.
+                </p>
               </div>
 
               <div className="bg-gray-50 p-4 rounded-lg">

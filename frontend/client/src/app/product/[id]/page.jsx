@@ -332,6 +332,29 @@ const buildShippingPoints = () => [
   "Packaging is designed to keep product quality protected throughout transit.",
 ];
 
+const DEFAULT_SUPPORT_CARDS = [
+  {
+    title: "Free Delivery",
+    description: "Stronger utility near the CTA block.",
+    Icon: MdLocalShipping,
+  },
+  {
+    title: "Secure Payment",
+    description: "Checkout trust signal stays visible.",
+    Icon: MdOutlineSecurity,
+  },
+  {
+    title: "Authentic Product",
+    description: "Premium surface with useful proof points.",
+    Icon: MdVerified,
+  },
+  {
+    title: "Clear Inventory",
+    description: "Variant-aware stock display for better decisions.",
+    Icon: MdOutlineInventory2,
+  },
+];
+
 const resolveVariantLabel = (variant, baseProduct) => {
   const weightLabel = getVariantWeightLabel(variant);
   if (weightLabel) return weightLabel;
@@ -627,6 +650,14 @@ const ProductDetailPage = () => {
   const productDescriptionParagraphs = splitTextParagraphs(
     product?.description || "",
   );
+  const productStoryText = stripHtml(product?.productStory || "");
+  const storyEyebrowText = pageConfig?.hero?.storyEyebrow || "";
+  const storyTitleText = pageConfig?.hero?.storyTitle || "";
+  const storyDescriptionOverride = pageConfig?.hero?.storyDescription || "";
+  const storyDescriptionText = storyDescriptionOverride || productStoryText;
+  const showStoryHeader = [storyEyebrowText, storyTitleText, storyDescriptionText].some(
+    Boolean,
+  );
   const fallbackDescriptionParagraphs =
     productDescriptionParagraphs.length > 0
       ? []
@@ -701,7 +732,14 @@ const ProductDetailPage = () => {
       : "No reviews yet";
   const heroStatusLabel = getHeroStatusLabel(product, displayReviewCount);
   const deliveryReady = deliveryPincode.length === 6;
-  const deliveryMessage = deliveryPreview.message;
+  const deliveryIdleMessage = mergeTextOverride(
+    pageConfig?.hero?.deliveryHelperText,
+    "Enter a 6-digit pincode to preview delivery timing.",
+  );
+  const deliveryMessage =
+    deliveryPreview.status === "idle"
+      ? deliveryIdleMessage
+      : deliveryPreview.message;
   const showDescriptionSection =
     pageConfig?.tabs?.showDescription !== false &&
     pageConfig?.descriptionSection?.show !== false;
@@ -713,8 +751,13 @@ const ProductDetailPage = () => {
     pageConfig?.shippingSection?.show !== false;
   const showHeroStoryCard = pageConfig?.hero?.showStoryCard !== false;
   const showHeroInsightCards = pageConfig?.hero?.showInsightCards !== false;
+  const showHeroSupportCards = pageConfig?.hero?.showSupportCards !== false;
   const showHeroDeliveryPreview =
     pageConfig?.hero?.showDeliveryPreview !== false;
+  const supportCards = mergeCardCopyWithDefaults(
+    DEFAULT_SUPPORT_CARDS,
+    pageConfig?.hero?.supportCards || [],
+  );
   const showReviewsSection = pageConfig?.reviewsSection?.show !== false;
   const showPublicReviewForm =
     !isDemoPreview &&
@@ -1944,25 +1987,26 @@ const ProductDetailPage = () => {
 
                 {showHeroStoryCard ? (
                   <div className="product-story-card product-reveal product-reveal-delay-2 rounded-[30px] border border-[#86614f] bg-[linear-gradient(155deg,_#3d2316_0%,_#6a4331_52%,_#8c634f_100%)] p-6 text-white shadow-[0_28px_60px_-45px_rgba(61,35,22,0.92)] lg:flex lg:h-full lg:flex-col">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#f1d9c9]">
-                      {mergeTextOverride(
-                        pageConfig?.hero?.storyEyebrow,
-                        "Product Story",
-                      )}
-                    </p>
-                    <h2 className="mt-3 text-2xl font-semibold leading-tight">
-                      {mergeTextOverride(
-                        pageConfig?.hero?.storyTitle,
-                        "A cleaner product story with the key buying details kept close to the decision point.",
-                      )}
-                    </h2>
-                    <p className="mt-4 text-sm leading-6 text-[#f8ebe2]">
-                      {mergeTextOverride(
-                        pageConfig?.hero?.storyDescription,
-                        "The refreshed detail page keeps product story, trust cues, pricing, and delivery context in one calm layout without pushing the buying actions too far away.",
-                      )}
-                    </p>
-                    <div className="mt-6 grid gap-3">
+                    {showStoryHeader ? (
+                      <>
+                        {storyEyebrowText ? (
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#f1d9c9]">
+                            {storyEyebrowText}
+                          </p>
+                        ) : null}
+                        {storyTitleText ? (
+                          <h2 className="mt-3 text-2xl font-semibold leading-tight">
+                            {storyTitleText}
+                          </h2>
+                        ) : null}
+                        {storyDescriptionText ? (
+                          <p className="mt-4 text-sm leading-6 text-[#f8ebe2]">
+                            {storyDescriptionText}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
+                    <div className={`grid gap-3 ${showStoryHeader ? "mt-6" : ""}`}>
                       {detailCards.slice(0, 2).map((card) => (
                         <div
                           key={card.label}
@@ -2142,7 +2186,10 @@ const ProductDetailPage = () => {
                   <div className="h-full rounded-[28px] border border-[#e3d4c9] bg-[#fbf7f2] p-5">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#7b6355]">
-                        Delivery Preview
+                        {mergeTextOverride(
+                          pageConfig?.hero?.deliveryEyebrow,
+                          "Delivery Preview",
+                        )}
                       </p>
                       <span className="text-xs font-medium text-[#5d4b41]">
                         {deliveryPreview.status === "live"
@@ -2153,8 +2200,14 @@ const ProductDetailPage = () => {
                             : deliveryPreview.status === "invalid"
                               ? "Invalid"
                               : deliveryReady
-                                ? "Ready"
-                                : "Optional"}
+                                ? mergeTextOverride(
+                                    pageConfig?.hero?.deliveryReadyLabel,
+                                    "Ready",
+                                  )
+                                : mergeTextOverride(
+                                    pageConfig?.hero?.deliveryOptionalLabel,
+                                    "Optional",
+                                  )}
                       </span>
                     </div>
                     <input
@@ -2165,7 +2218,10 @@ const ProductDetailPage = () => {
                       onChange={(event) =>
                         setDeliveryPincode(normalizePincode(event.target.value))
                       }
-                      placeholder="Enter pincode"
+                      placeholder={mergeTextOverride(
+                        pageConfig?.hero?.deliveryInputPlaceholder,
+                        "Enter pincode",
+                      )}
                       className="product-delivery-input mt-4 h-14 w-full rounded-2xl border border-[#d8c6bb] bg-white px-4 text-base text-[#24150f] outline-none transition"
                     />
                     <p
@@ -2318,68 +2374,35 @@ const ProductDetailPage = () => {
                 </div>
               )}
 
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-[24px] border border-[#e7dad1] bg-[#faf6f2] p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="product-trust-icon flex h-11 w-11 items-center justify-center rounded-2xl">
-                      <MdLocalShipping className="text-xl" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-[#24150f]">
-                        Free Delivery
-                      </p>
-                      <p className="text-sm text-[#5d4b41]">
-                        Stronger utility near the CTA block.
-                      </p>
-                    </div>
-                  </div>
+              {showHeroSupportCards ? (
+                <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                  {supportCards.map((card, index) => {
+                    const TrustIcon =
+                      card.Icon || DEFAULT_SUPPORT_CARDS[index]?.Icon;
+
+                    return (
+                      <div
+                        key={`${card.title}-${index}`}
+                        className="rounded-[24px] border border-[#e7dad1] bg-[#faf6f2] p-4"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="product-trust-icon flex h-11 w-11 items-center justify-center rounded-2xl">
+                            {TrustIcon ? <TrustIcon className="text-xl" /> : null}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-[#24150f]">
+                              {card.title}
+                            </p>
+                            <p className="text-sm text-[#5d4b41]">
+                              {card.description}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="rounded-[24px] border border-[#e7dad1] bg-[#faf6f2] p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="product-trust-icon flex h-11 w-11 items-center justify-center rounded-2xl">
-                      <MdOutlineSecurity className="text-xl" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-[#24150f]">
-                        Secure Payment
-                      </p>
-                      <p className="text-sm text-[#5d4b41]">
-                        Checkout trust signal stays visible.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-[24px] border border-[#e7dad1] bg-[#faf6f2] p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="product-trust-icon flex h-11 w-11 items-center justify-center rounded-2xl">
-                      <MdVerified className="text-xl" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-[#24150f]">
-                        Authentic Product
-                      </p>
-                      <p className="text-sm text-[#5d4b41]">
-                        Premium surface with useful proof points.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-[24px] border border-[#e7dad1] bg-[#faf6f2] p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="product-trust-icon flex h-11 w-11 items-center justify-center rounded-2xl">
-                      <MdOutlineInventory2 className="text-xl" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-[#24150f]">
-                        Clear Inventory
-                      </p>
-                      <p className="text-sm text-[#5d4b41]">
-                        Variant-aware stock display for better decisions.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              ) : null}
             </div>
           </div>
         </div>

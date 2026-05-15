@@ -12,6 +12,7 @@ const HEARTBEAT_INTERVAL_MS = 30000;
 const IDLE_TIMEOUT_MS = 30000;
 const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 300;
+const MOUSEMOVE_ACTIVITY_MIN_MS = 1200;
 const HOVER_MIN_DURATION_MS = 300;
 const HOVER_EMIT_THROTTLE_MS = 1000;
 const RAGE_CLICK_WINDOW_MS = 2000;
@@ -60,6 +61,9 @@ const trackerState = {
   eventRateWindowStartedAt: 0,
   eventRateWindowCount: 0,
   finalizedSession: false,
+  scrollTicking: false,
+  scrollRafId: 0,
+  lastMouseMoveActivityAt: 0,
 };
 
 const attachedTrackingElements = new WeakMap();
@@ -722,6 +726,20 @@ const updateScrollTracking = () => {
       });
     }
   }
+};
+
+const queueScrollTrackingUpdate = () => {
+  if (typeof window === "undefined" || trackerState.scrollTicking) {
+    return;
+  }
+
+  trackerState.scrollTicking = true;
+  trackerState.scrollRafId = window.requestAnimationFrame(() => {
+    trackerState.scrollTicking = false;
+    trackerState.scrollRafId = 0;
+    markActivity("scroll");
+    updateScrollTracking();
+  });
 };
 
 const getElementSignature = (element) => {
@@ -1543,14 +1561,19 @@ const attachEventListeners = () => {
     return;
   }
 
-  const onMouseMove = () => markActivity("mousemove");
+  const onMouseMove = () => {
+    const now = getNow();
+    if (now - trackerState.lastMouseMoveActivityAt < MOUSEMOVE_ACTIVITY_MIN_MS) {
+      return;
+    }
+
+    trackerState.lastMouseMoveActivityAt = now;
+    markActivity("mousemove");
+  };
   const onKeydown = () => markActivity("keydown");
   const onTouchStart = () => markActivity("touchstart");
   const onClick = (event) => processClickTracking(event);
-  const onScroll = () => {
-    markActivity("scroll");
-    updateScrollTracking();
-  };
+  const onScroll = () => queueScrollTrackingUpdate();
 
   const onPageHide = () => finalizeSession("pagehide");
   const onBeforeUnload = () => finalizeSession("beforeunload");
@@ -1583,6 +1606,11 @@ const attachEventListeners = () => {
   document.addEventListener("visibilitychange", onVisibilityChange);
 
   trackerState.detachListeners = () => {
+    if (trackerState.scrollRafId) {
+      window.cancelAnimationFrame(trackerState.scrollRafId);
+      trackerState.scrollRafId = 0;
+      trackerState.scrollTicking = false;
+    }
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("keydown", onKeydown);
     document.removeEventListener("touchstart", onTouchStart);

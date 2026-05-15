@@ -2,7 +2,7 @@
 
 import { API_BASE_URL } from "@/utils/api";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { Button, CircularProgress } from "@mui/material";
 import {
   FiCopy,
@@ -17,8 +17,6 @@ const API_URL = API_BASE_URL;
 
 const INFLUENCER_TOKEN_KEY = "influencerToken";
 const INFLUENCER_REFRESH_TOKEN_KEY = "influencerRefreshToken";
-const SESSION_KEY = "influencerPortalSession";
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const normalizePlatformKey = (platform) =>
   String(platform || "").trim().toLowerCase();
@@ -90,30 +88,27 @@ const buildPlatformProfileUrl = (platform, username) => {
   }
 };
 
+const formatAmount = (value) =>
+  `Rs ${new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0))}`;
+
 const AffiliatePortalPage = () => {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
   const [hasToken, setHasToken] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
 
-  const saveSession = (code, email) => {
+  const clearStoredAuth = () => {
     if (typeof window === "undefined") return;
-    const payload = {
-      code: code.trim().toUpperCase(),
-      email: email.trim().toLowerCase(),
-      savedAt: Date.now(),
-    };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    localStorage.removeItem(INFLUENCER_TOKEN_KEY);
+    localStorage.removeItem(INFLUENCER_REFRESH_TOKEN_KEY);
+    window.dispatchEvent(new Event("influencerAuthChanged"));
   };
 
-  const clearSession = () => {
-    if (typeof window === "undefined") return;
-    localStorage.removeItem(SESSION_KEY);
-  };
-
-  const refreshAccessToken = async () => {
+  const refreshAccessToken = useEffectEvent(async () => {
     if (typeof window === "undefined") return null;
     const refreshToken = localStorage.getItem(INFLUENCER_REFRESH_TOKEN_KEY);
     if (!refreshToken) return null;
@@ -133,58 +128,10 @@ const AffiliatePortalPage = () => {
 
     localStorage.setItem(INFLUENCER_TOKEN_KEY, result.data.accessToken);
     return result.data.accessToken;
-  };
+  });
 
-  const loadSession = () => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (!parsed?.code || !parsed?.email) return null;
-      if (parsed?.savedAt && Date.now() - parsed.savedAt > SESSION_TTL_MS) {
-        localStorage.removeItem(SESSION_KEY);
-        return null;
-      }
-      return parsed;
-    } catch (err) {
-      return null;
-    }
-  };
-
-  const fetchPortalData = async (code, email, persistSession = false) => {
+  const fetchPortalDataWithToken = useEffectEvent(async (token, retry = true) => {
     setError("");
-    setData(null);
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        code: code.trim(),
-        email: email.trim(),
-      });
-
-      const response = await fetch(
-        `${API_URL}/api/influencers/portal?${params.toString()}`,
-      );
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.message || "Failed to load collaborator stats");
-      }
-
-      setData(result.data);
-      if (persistSession) {
-        saveSession(code, email);
-      }
-    } catch (err) {
-      setError(err.message || "Failed to load collaborator stats.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchPortalDataWithToken = async (token, retry = true) => {
-    setError("");
-    setData(null);
     setLoading(true);
     try {
       let response = await fetch(`${API_URL}/api/influencers/portal/me`, {
@@ -192,6 +139,7 @@ const AffiliatePortalPage = () => {
           Authorization: `Bearer ${token}`,
         },
       });
+
       if (response.status === 401 && retry) {
         const newToken = await refreshAccessToken();
         if (!newToken) {
@@ -213,49 +161,38 @@ const AffiliatePortalPage = () => {
       setData(result.data);
     } catch (err) {
       if (err.message?.includes("Session expired")) {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem(INFLUENCER_TOKEN_KEY);
-          localStorage.removeItem(INFLUENCER_REFRESH_TOKEN_KEY);
-          window.dispatchEvent(new Event("influencerAuthChanged"));
-        }
+        clearStoredAuth();
         setHasToken(false);
-        router.push("/affiliate/login");
+        setData(null);
+        router.replace("/affiliate/login");
+        return;
       }
       setError(err.message || "Failed to load collaborator stats.");
     } finally {
       setLoading(false);
     }
-  };
+  });
 
   useEffect(() => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem(INFLUENCER_TOKEN_KEY)
-        : null;
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem(INFLUENCER_TOKEN_KEY);
 
-    if (token) {
-      setHasToken(true);
-      fetchPortalDataWithToken(token);
+    if (!token) {
+      setHasToken(false);
+      setLoading(false);
       return;
     }
 
-    const session = loadSession();
-    if (session?.code && session?.email) {
-      fetchPortalData(session.code, session.email, false);
-    }
+    setHasToken(true);
+    fetchPortalDataWithToken(token);
   }, []);
 
   const handleLogout = () => {
-    clearSession();
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(INFLUENCER_TOKEN_KEY);
-      localStorage.removeItem(INFLUENCER_REFRESH_TOKEN_KEY);
-      window.dispatchEvent(new Event("influencerAuthChanged"));
-    }
+    clearStoredAuth();
     setData(null);
     setError("");
     setHasToken(false);
-    router.replace("/");
+    router.replace("/affiliate/login");
   };
 
   const stats = data?.stats || {};
@@ -281,7 +218,7 @@ const AffiliatePortalPage = () => {
         document.body.removeChild(tempInput);
       }
       setCopyStatus("Copied");
-    } catch (error) {
+    } catch (copyError) {
       setCopyStatus("Copy failed");
     } finally {
       setTimeout(() => setCopyStatus(""), 2000);
@@ -298,7 +235,7 @@ const AffiliatePortalPage = () => {
                 Collaborator Earnings Portal
               </h1>
               <p className="text-gray-600">
-                Enter your referral code and registered email to view earnings.
+                Sign in with your referral code and portal password to view earnings.
               </p>
             </div>
             {data && (
@@ -308,18 +245,26 @@ const AffiliatePortalPage = () => {
             )}
           </div>
 
-          {!hasToken && (
-            <div className="mt-6">
-              <Button
-                variant="contained"
-                sx={{
-                  backgroundColor: "var(--primary)",
-                  "&:hover": { backgroundColor: "#047857" },
-                }}
-                onClick={() => router.push("/affiliate/login")}
-              >
-                Go to Influencer Login
-              </Button>
+          {!hasToken && !loading && (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm text-amber-900">
+                Secure access is required for the collaborator dashboard.
+              </p>
+              <p className="mt-1 text-sm text-amber-800">
+                Use the password setup flow if this is your first login.
+              </p>
+              <div className="mt-4">
+                <Button
+                  variant="contained"
+                  sx={{
+                    backgroundColor: "var(--primary)",
+                    "&:hover": { backgroundColor: "#047857" },
+                  }}
+                  onClick={() => router.push("/affiliate/login")}
+                >
+                  Go to Collaborator Login
+                </Button>
+              </div>
             </div>
           )}
 
@@ -341,7 +286,8 @@ const AffiliatePortalPage = () => {
                     Welcome, {data.influencer?.name || "Collaborator"}
                   </h2>
                   <p className="text-gray-500">
-                    Code: <span className="font-semibold">{data.influencer?.code}</span>
+                    Code:{" "}
+                    <span className="font-semibold">{data.influencer?.code}</span>
                   </p>
                 </div>
                 {referralUrl && (
@@ -373,19 +319,19 @@ const AffiliatePortalPage = () => {
                 <div className="bg-gray-50 rounded-xl p-4">
                   <p className="text-sm text-gray-500">Total Revenue</p>
                   <p className="text-2xl font-bold text-gray-800">
-                    ₹{Number(stats.totalRevenue || 0).toFixed(0)}
+                    {formatAmount(stats.totalRevenue)}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-4">
                   <p className="text-sm text-gray-500">Commission Earned</p>
                   <p className="text-2xl font-bold text-gray-800">
-                    ₹{Number(stats.totalCommission || 0).toFixed(0)}
+                    {formatAmount(stats.totalCommission)}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-4">
                   <p className="text-sm text-gray-500">Pending Commission</p>
                   <p className="text-2xl font-bold text-gray-800">
-                    ₹{Number(stats.pendingCommission || 0).toFixed(0)}
+                    {formatAmount(stats.pendingCommission)}
                   </p>
                 </div>
               </div>
@@ -478,10 +424,10 @@ const AffiliatePortalPage = () => {
                             {order.order_status || order.payment_status}
                           </td>
                           <td className="px-3 py-2 text-gray-700">
-                            ₹{Number(order.finalAmount || order.totalAmt || 0).toFixed(0)}
+                            {formatAmount(order.finalAmount || order.totalAmt)}
                           </td>
                           <td className="px-3 py-2 text-gray-700">
-                            ₹{Number(order.influencerCommission || 0).toFixed(0)}
+                            {formatAmount(order.influencerCommission)}
                           </td>
                         </tr>
                       ))}
@@ -503,7 +449,10 @@ const AffiliatePortalPage = () => {
               {data.monthlyStats?.length ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {data.monthlyStats.map((item) => (
-                    <div key={`${item._id.year}-${item._id.month}`} className="bg-gray-50 rounded-xl p-4">
+                    <div
+                      key={`${item._id.year}-${item._id.month}`}
+                      className="bg-gray-50 rounded-xl p-4"
+                    >
                       <p className="text-sm text-gray-500">
                         {item._id.month}/{item._id.year}
                       </p>
@@ -511,10 +460,10 @@ const AffiliatePortalPage = () => {
                         Orders: {item.orders}
                       </p>
                       <p className="text-sm text-gray-700">
-                        Revenue: ₹{Number(item.revenue || 0).toFixed(0)}
+                        Revenue: {formatAmount(item.revenue)}
                       </p>
                       <p className="text-sm text-gray-700">
-                        Commission: ₹{Number(item.commission || 0).toFixed(0)}
+                        Commission: {formatAmount(item.commission)}
                       </p>
                     </div>
                   ))}

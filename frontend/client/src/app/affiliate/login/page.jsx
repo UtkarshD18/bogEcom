@@ -4,20 +4,41 @@ import { API_BASE_URL } from "@/utils/api";
 
 import { useEffect, useState } from "react";
 import { Button, CircularProgress, TextField } from "@mui/material";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FiLock } from "react-icons/fi";
 
 const API_URL = API_BASE_URL;
 
 const INFLUENCER_TOKEN_KEY = "influencerToken";
 const INFLUENCER_REFRESH_TOKEN_KEY = "influencerRefreshToken";
-const SESSION_KEY = "influencerPortalSession";
+
+const EMPTY_RESET_FORM = {
+  code: "",
+  email: "",
+  otp: "",
+  newPassword: "",
+  confirmPassword: "",
+};
 
 const InfluencerLoginPage = () => {
   const router = useRouter();
-  const [form, setForm] = useState({ code: "", email: "" });
+  const searchParams = useSearchParams();
+  const [mode, setMode] = useState("login");
+  const [form, setForm] = useState({ code: "", password: "" });
+  const [resetForm, setResetForm] = useState(EMPTY_RESET_FORM);
+  const [resetRequested, setResetRequested] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const prefilledCode = String(
+    searchParams.get("code") ||
+      searchParams.get("ref") ||
+      searchParams.get("affiliate") ||
+      "",
+  )
+    .trim()
+    .toUpperCase();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -27,17 +48,49 @@ const InfluencerLoginPage = () => {
     }
   }, [router]);
 
+  useEffect(() => {
+    if (!prefilledCode) return;
+
+    setForm((prev) => ({
+      ...prev,
+      code: prev.code || prefilledCode,
+    }));
+    setResetForm((prev) => ({
+      ...prev,
+      code: prev.code || prefilledCode,
+    }));
+  }, [prefilledCode]);
+
+  const setModeState = (nextMode) => {
+    setMode(nextMode);
+    setError("");
+    setNotice("");
+    if (nextMode === "login") {
+      setResetRequested(false);
+      setResetForm({
+        ...EMPTY_RESET_FORM,
+        code: prefilledCode,
+      });
+    }
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleResetChange = (e) => {
+    const { name, value } = e.target;
+    setResetForm((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setNotice("");
 
-    if (!form.code.trim() || !form.email.trim()) {
-      setError("Please enter both referral code and email.");
+    if (!form.code.trim() || !form.password.trim()) {
+      setError("Please enter both referral code and password.");
       return;
     }
 
@@ -50,7 +103,7 @@ const InfluencerLoginPage = () => {
         },
         body: JSON.stringify({
           code: form.code.trim(),
-          email: form.email.trim(),
+          password: form.password,
         }),
       });
 
@@ -68,14 +121,6 @@ const InfluencerLoginPage = () => {
             result.data.refreshToken,
           );
         }
-        localStorage.setItem(
-          SESSION_KEY,
-          JSON.stringify({
-            code: form.code.trim().toUpperCase(),
-            email: form.email.trim().toLowerCase(),
-            savedAt: Date.now(),
-          }),
-        );
         window.dispatchEvent(new Event("influencerAuthChanged"));
       }
 
@@ -84,6 +129,114 @@ const InfluencerLoginPage = () => {
       setError(err.message || "Login failed");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRequestReset = async (e) => {
+    e.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (!resetForm.code.trim() || !resetForm.email.trim()) {
+      setError("Please enter the referral code and registered email.");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/influencers/forgot-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code: resetForm.code.trim(),
+          email: resetForm.email.trim(),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.message || "Failed to request OTP");
+      }
+
+      setResetRequested(true);
+      setNotice(
+        result.message ||
+          "If the referral code and email match our records, an OTP has been sent.",
+      );
+      setForm((prev) => ({
+        ...prev,
+        code: resetForm.code.trim().toUpperCase(),
+      }));
+    } catch (err) {
+      setError(err.message || "Failed to request OTP");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (!resetForm.otp.trim()) {
+      setError("Please enter the OTP sent to your email.");
+      return;
+    }
+
+    if (!resetForm.newPassword.trim() || !resetForm.confirmPassword.trim()) {
+      setError("Please enter and confirm your new password.");
+      return;
+    }
+
+    if (resetForm.newPassword !== resetForm.confirmPassword) {
+      setError("Password and confirm password must match.");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/influencers/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code: resetForm.code.trim(),
+          email: resetForm.email.trim(),
+          otp: resetForm.otp.trim(),
+          newPassword: resetForm.newPassword,
+          confirmPassword: resetForm.confirmPassword,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.message || "Failed to reset password");
+      }
+
+      setMode("login");
+      setResetRequested(false);
+      setResetForm({
+        ...EMPTY_RESET_FORM,
+        code: prefilledCode,
+      });
+      setForm((prev) => ({
+        ...prev,
+        code: resetForm.code.trim().toUpperCase(),
+        password: "",
+      }));
+      setNotice(
+        result.message || "Password updated successfully. Please sign in.",
+      );
+    } catch (err) {
+      setError(err.message || "Failed to reset password");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -96,50 +249,171 @@ const InfluencerLoginPage = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-800">
-              Influencer Login
+              Collaborator Portal
             </h1>
             <p className="text-sm text-gray-500">
-              Sign in to view your earnings and referrals.
+              Secure sign-in now uses your referral code and portal password.
             </p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 mt-6">
-          <TextField
-            label="Referral Code"
-            name="code"
-            value={form.code}
-            onChange={handleChange}
-            fullWidth
-            size="small"
-          />
-          <TextField
-            label="Registered Email"
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-            fullWidth
-            size="small"
-            type="email"
-          />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Use the password setup flow once if this is your first secure login.
+        </div>
+
+        <div className="mt-6 flex gap-2">
           <Button
-            type="submit"
-            variant="contained"
+            type="button"
+            variant={mode === "login" ? "contained" : "outlined"}
+            onClick={() => setModeState("login")}
             sx={{
-              backgroundColor: "var(--primary)",
-              "&:hover": { backgroundColor: "#047857" },
+              backgroundColor:
+                mode === "login" ? "var(--primary)" : "transparent",
+              "&:hover": {
+                backgroundColor:
+                  mode === "login" ? "#047857" : "rgba(4, 120, 87, 0.04)",
+              },
             }}
-            disabled={loading}
-            fullWidth
           >
-            {loading ? (
-              <CircularProgress size={20} color="inherit" />
-            ) : (
-              "Sign In"
-            )}
+            Sign In
           </Button>
-        </form>
+          <Button
+            type="button"
+            variant={mode === "reset" ? "contained" : "outlined"}
+            onClick={() => setModeState("reset")}
+            sx={{
+              backgroundColor:
+                mode === "reset" ? "var(--primary)" : "transparent",
+              "&:hover": {
+                backgroundColor:
+                  mode === "reset" ? "#047857" : "rgba(4, 120, 87, 0.04)",
+              },
+            }}
+          >
+            Set Or Reset Password
+          </Button>
+        </div>
+
+        {mode === "login" ? (
+          <form onSubmit={handleSubmit} className="space-y-4 mt-6">
+            <TextField
+              label="Referral Code"
+              name="code"
+              value={form.code}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Portal Password"
+              name="password"
+              value={form.password}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              type="password"
+            />
+            {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <Button
+              type="submit"
+              variant="contained"
+              sx={{
+                backgroundColor: "var(--primary)",
+                "&:hover": { backgroundColor: "#047857" },
+              }}
+              disabled={loading}
+              fullWidth
+            >
+              {loading ? (
+                <CircularProgress size={20} color="inherit" />
+              ) : (
+                "Sign In"
+              )}
+            </Button>
+            <button
+              type="button"
+              className="text-sm text-emerald-700 hover:text-emerald-800"
+              onClick={() => setModeState("reset")}
+            >
+              Forgot password or need to create one?
+            </button>
+          </form>
+        ) : (
+          <form
+            onSubmit={resetRequested ? handleResetPassword : handleRequestReset}
+            className="space-y-4 mt-6"
+          >
+            <TextField
+              label="Referral Code"
+              name="code"
+              value={resetForm.code}
+              onChange={handleResetChange}
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Registered Email"
+              name="email"
+              value={resetForm.email}
+              onChange={handleResetChange}
+              fullWidth
+              size="small"
+              type="email"
+            />
+            {resetRequested && (
+              <>
+                <TextField
+                  label="OTP"
+                  name="otp"
+                  value={resetForm.otp}
+                  onChange={handleResetChange}
+                  fullWidth
+                  size="small"
+                />
+                <TextField
+                  label="New Password"
+                  name="newPassword"
+                  value={resetForm.newPassword}
+                  onChange={handleResetChange}
+                  fullWidth
+                  size="small"
+                  type="password"
+                  helperText="Use at least 8 characters with uppercase, lowercase, and a number."
+                />
+                <TextField
+                  label="Confirm New Password"
+                  name="confirmPassword"
+                  value={resetForm.confirmPassword}
+                  onChange={handleResetChange}
+                  fullWidth
+                  size="small"
+                  type="password"
+                />
+              </>
+            )}
+            {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <Button
+              type="submit"
+              variant="contained"
+              sx={{
+                backgroundColor: "var(--primary)",
+                "&:hover": { backgroundColor: "#047857" },
+              }}
+              disabled={resetLoading}
+              fullWidth
+            >
+              {resetLoading ? (
+                <CircularProgress size={20} color="inherit" />
+              ) : resetRequested ? (
+                "Save New Password"
+              ) : (
+                "Send OTP"
+              )}
+            </Button>
+          </form>
+        )}
       </div>
     </section>
   );
