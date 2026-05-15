@@ -1,10 +1,13 @@
 import express from "express";
 import {
   createSupportTicket,
+  closeMySupportTicket,
   getAllSupportTicketsAdmin,
+  getMySupportTicketById,
   getMySupportTickets,
   getSupportTicketByIdAdmin,
   getUnresolvedSupportTicketCount,
+  replyToMySupportTicket,
   updateSupportTicketAdmin,
 } from "../controllers/support.controller.js";
 import admin from "../middlewares/admin.js";
@@ -40,6 +43,9 @@ router.post(
 );
 
 router.get("/my-tickets", auth, getMySupportTickets);
+router.get("/my-tickets/:ticketId", auth, getMySupportTicketById);
+router.post("/my-tickets/:ticketId/reply", auth, supportLimiter, replyToMySupportTicket);
+router.post("/my-tickets/:ticketId/close", auth, closeMySupportTicket);
 
 router.get("/admin/all", auth, admin, getAllSupportTicketsAdmin);
 router.get("/admin/unresolved-count", auth, admin, getUnresolvedSupportTicketCount);

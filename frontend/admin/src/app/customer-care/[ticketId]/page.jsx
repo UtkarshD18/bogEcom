@@ -94,6 +94,10 @@ const CustomerCareDetailPage = () => {
     if (!ticket?.orderId || typeof ticket.orderId !== "object") return null;
     return ticket.orderId;
   }, [ticket]);
+  const ticketMessages = useMemo(
+    () => (Array.isArray(ticket?.messages) ? ticket.messages : []),
+    [ticket],
+  );
 
   const handleSave = async () => {
     if (!ticket?.ticketId) return;
@@ -276,6 +280,61 @@ const CustomerCareDetailPage = () => {
           </p>
         </div>
 
+        <div className="border border-gray-100 rounded-lg p-4 bg-[#f8fafc]">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h2 className="text-[16px] font-semibold text-gray-800">
+              Conversation
+            </h2>
+            <span className="text-xs font-semibold text-gray-500">
+              {ticketMessages.length} message{ticketMessages.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {ticketMessages.length === 0 ? (
+            <p className="text-sm text-gray-500">No conversation messages yet.</p>
+          ) : (
+            <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+              {ticketMessages.map((message, index) => {
+                const isAdmin = message?.authorType === "admin";
+                const isSystem = message?.authorType === "system";
+                if (isSystem) {
+                  return (
+                    <div
+                      key={`${message?.created_at_ts || index}-${index}`}
+                      className="text-center text-xs font-medium text-gray-500"
+                    >
+                      {message.message}
+                    </div>
+                  );
+                }
+                return (
+                  <div
+                    key={`${message?.created_at_ts || index}-${index}`}
+                    className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                        isAdmin
+                          ? "bg-blue-600 text-white"
+                          : "bg-white border border-gray-200 text-gray-800"
+                      }`}
+                    >
+                      <p className="mb-1 text-[11px] font-semibold opacity-75">
+                        {isAdmin ? "Admin" : message?.authorName || "Customer"}
+                      </p>
+                      <p className="whitespace-pre-wrap leading-6">
+                        {message.message}
+                      </p>
+                      <p className="mt-2 text-[10px] opacity-70">
+                        {message.created_at || ""}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="border border-gray-100 rounded-lg p-4">
           <h2 className="text-[16px] font-semibold text-gray-800 mb-3">Images</h2>
           {!ticket.images?.length ? (
@@ -345,7 +404,7 @@ const CustomerCareDetailPage = () => {
 
         <div className="border border-gray-100 rounded-lg p-4">
           <h2 className="text-[16px] font-semibold text-gray-800 mb-3">
-            Admin Resolution
+            Reply / Resolution
           </h2>
           <div className="space-y-4">
             <TextField
@@ -361,13 +420,13 @@ const CustomerCareDetailPage = () => {
             </TextField>
 
             <TextField
-              label="Admin Reply"
+              label="Reply to Customer"
               value={adminReply}
               onChange={(event) => setAdminReply(event.target.value)}
               fullWidth
               multiline
               rows={5}
-              placeholder="Write resolution notes for the customer..."
+              placeholder="Write a reply the customer can read and respond to..."
             />
 
             <Button

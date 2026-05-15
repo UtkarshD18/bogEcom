@@ -640,8 +640,11 @@ const Contact = () => {
 
               {success && (
                 <div className="mb-6 p-4 bg-[var(--flavor-card-bg)] border border-primary rounded-lg text-primary">
-                  Ticket created successfully. Our customer care team will get back
-                  to you soon.
+                  Ticket created successfully. You can track replies from{" "}
+                  <Link href="/my-support" className="font-semibold underline">
+                    My Support
+                  </Link>
+                  .
                 </div>
               )}
 

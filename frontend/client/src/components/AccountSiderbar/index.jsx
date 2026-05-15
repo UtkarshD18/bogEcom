@@ -10,6 +10,7 @@ import { toast } from "react-hot-toast";
 import { BsBagCheck } from "react-icons/bs";
 import { FaRegHeart, FaRegUser } from "react-icons/fa6";
 import { FiCamera, FiMapPin, FiSettings, FiTrash2 } from "react-icons/fi";
+import { IoChatboxEllipsesOutline } from "react-icons/io5";
 import { IoMdLogOut } from "react-icons/io";
 
 const AccountSidebar = () => {
@@ -273,6 +274,11 @@ const AccountSidebar = () => {
       name: "My Orders",
       href: "/my-orders",
       icon: <BsBagCheck size={20} />,
+    },
+    {
+      name: "My Support",
+      href: "/my-support",
+      icon: <IoChatboxEllipsesOutline size={20} />,
     },
     {
       name: "Settings",

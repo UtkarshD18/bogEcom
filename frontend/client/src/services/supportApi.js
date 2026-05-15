@@ -93,3 +93,59 @@ export const createSupportTicket = async (formData) => {
     return toErrorPayload(error, "Failed to create support ticket.");
   }
 };
+
+export const fetchMySupportTickets = async () => {
+  try {
+    return await fetchDataFromApi(normalizeApiPath("/api/support/my-tickets"), {
+      skipCache: true,
+    });
+  } catch (error) {
+    return toErrorPayload(error, "Failed to fetch support tickets.");
+  }
+};
+
+export const fetchMySupportTicketById = async (ticketId) => {
+  const normalizedTicketId = String(ticketId || "").trim();
+  if (!normalizedTicketId) {
+    return { success: false, message: "Ticket ID is required.", data: null };
+  }
+
+  try {
+    return await fetchDataFromApi(
+      normalizeApiPath(
+        `/api/support/my-tickets/${encodeURIComponent(normalizedTicketId)}`,
+      ),
+      { skipCache: true },
+    );
+  } catch (error) {
+    return toErrorPayload(error, "Failed to fetch support ticket.");
+  }
+};
+
+export const replyToMySupportTicket = async (ticketId, message) => {
+  const normalizedTicketId = String(ticketId || "").trim();
+  try {
+    return await postData(
+      normalizeApiPath(
+        `/api/support/my-tickets/${encodeURIComponent(normalizedTicketId)}/reply`,
+      ),
+      { message },
+    );
+  } catch (error) {
+    return toErrorPayload(error, "Failed to send support reply.");
+  }
+};
+
+export const closeMySupportTicket = async (ticketId) => {
+  const normalizedTicketId = String(ticketId || "").trim();
+  try {
+    return await postData(
+      normalizeApiPath(
+        `/api/support/my-tickets/${encodeURIComponent(normalizedTicketId)}/close`,
+      ),
+      {},
+    );
+  } catch (error) {
+    return toErrorPayload(error, "Failed to close support ticket.");
+  }
+};

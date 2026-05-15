@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { buildIstTicketTimestampPayload, getIstNow } from "../config/dayjs.js";
 
 const SUPPORT_STATUS = ["OPEN", "PENDING", "IN_PROGRESS", "RESOLVED"];
+const SUPPORT_MESSAGE_AUTHORS = ["customer", "admin", "system"];
 
 const generateTicketId = () => {
   const datePart = getIstNow().format("YYYYMMDD");
@@ -86,6 +87,57 @@ const supportTicketSchema = new mongoose.Schema(
       trim: true,
       maxlength: 5000,
     },
+    messages: {
+      type: [
+        {
+          authorType: {
+            type: String,
+            enum: SUPPORT_MESSAGE_AUTHORS,
+            required: true,
+          },
+          authorName: {
+            type: String,
+            default: "",
+            trim: true,
+            maxlength: 120,
+          },
+          authorId: {
+            type: mongoose.Schema.ObjectId,
+            default: null,
+          },
+          authorModel: {
+            type: String,
+            enum: ["User", "admin", ""],
+            default: "",
+          },
+          message: {
+            type: String,
+            required: true,
+            trim: true,
+            maxlength: 5000,
+          },
+          created_at: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          created_at_ts: {
+            type: Number,
+            required: true,
+          },
+        },
+      ],
+      default: [],
+    },
+    closedBy: {
+      type: String,
+      enum: ["customer", "admin", ""],
+      default: "",
+    },
+    closedAt: {
+      type: Number,
+      default: null,
+    },
     created_at: {
       type: String,
       required: true,
@@ -149,6 +201,7 @@ supportTicketSchema.pre("save", function syncIstTimestamps() {
 supportTicketSchema.index({ status: 1, created_at_ts: -1 });
 supportTicketSchema.index({ userId: 1, created_at_ts: -1 });
 supportTicketSchema.index({ created_at_ts: -1 });
+supportTicketSchema.index({ "messages.created_at_ts": -1 });
 
 const SupportTicketModel = mongoose.model("supportTicket", supportTicketSchema);
 
