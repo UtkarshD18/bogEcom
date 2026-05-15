@@ -93,3 +93,15 @@ test("resolveSessionSummaryPatch keeps the strongest session activity signal", (
     "2026-04-09T12:00:00.000Z",
   );
 });
+
+test("resolveSessionSummaryPatch keeps the visitor id used for guest identity stitching", () => {
+  const patch = resolveSessionSummaryPatch({
+    eventType: "active_heartbeat",
+    timestamp: "2026-04-09T12:00:00.000Z",
+    metadata: {
+      visitorId: "visitor_12345678",
+    },
+  });
+
+  assert.equal(patch.visitorId, "visitor_12345678");
+});

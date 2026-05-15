@@ -196,6 +196,10 @@ export const resolveSessionSummaryPatch = (event = {}) => {
   const metadata =
     event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
 
+  const visitorId = toNullableString(
+    metadata.visitorId ?? metadata.visitor_id,
+    128,
+  );
   const sessionActiveMs = toNonNegativeNumber(
     metadata.sessionActiveMs ?? metadata.totalActiveTime,
     0,
@@ -215,6 +219,7 @@ export const resolveSessionSummaryPatch = (event = {}) => {
       : null;
 
   return {
+    visitorId,
     totalActiveTime,
     maxScrollDepth,
     endedAt,
@@ -230,6 +235,10 @@ export const normalizeEvent = (event = {}) => {
   ).toLowerCase();
   const metadata =
     event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
+  const visitorId = toNullableString(
+    metadata.visitorId ?? metadata.visitor_id,
+    128,
+  );
 
   const productId =
     toSafeString(
@@ -249,6 +258,7 @@ export const normalizeEvent = (event = {}) => {
     eventType,
     sessionId: toSafeString(event.sessionId || event.session_id),
     userId: toSafeString(event.userId || event.user_id) || null,
+    visitorId,
     timestamp,
     pageUrl: toSafeString(event.pageUrl || event.page || ""),
     referrer: toSafeString(event.referrer || ""),
@@ -312,6 +322,7 @@ export const persistTrackingBatchDirect = async ({
           eventType: event.eventType,
           sessionId: event.sessionId,
           userId: event.userId,
+          visitorId: event.visitorId,
           timestamp: event.timestamp,
           pageUrl: event.pageUrl,
           referrer: event.referrer,
@@ -381,6 +392,9 @@ export const persistTrackingBatchDirect = async ({
             location: event.location,
             isActive: sessionPatch.isActive,
             ...(event.userId ? { userId: event.userId } : {}),
+            ...(sessionPatch.visitorId
+              ? { visitorId: sessionPatch.visitorId }
+              : {}),
             ...(sessionPatch.endedAt ? { endedAt: sessionPatch.endedAt } : {}),
           },
           $min: { startedAt: event.timestamp },

@@ -148,6 +148,84 @@ const toNumberExpression = (fieldExpression, fallback = 0) => ({
   },
 });
 
+const toTrimmedStringExpression = (fieldExpression) => ({
+  $trim: {
+    input: {
+      $ifNull: [
+        {
+          $convert: {
+            input: fieldExpression,
+            to: "string",
+            onError: "",
+            onNull: "",
+          },
+        },
+        "",
+      ],
+    },
+  },
+});
+
+const buildBehaviorSessionBaseFields = () => ({
+  startedAtDate: toDateExpression("$startedAt"),
+  endedAtDate: toDateExpression("$endedAt"),
+  lastSeenAtDate: toDateExpression("$lastSeenAt"),
+  totalActiveTimeValue: toNumberExpression("$totalActiveTime", 0),
+  durationMsValue: toNumberExpression("$durationMs", 0),
+  pageViewsValue: toNumberExpression("$pageViews", 0),
+  eventCountValue: toNumberExpression("$eventCount", 0),
+});
+
+const buildSessionOverlapFields = () => ({
+  sessionStartDate: {
+    $ifNull: ["$startedAtDate", "$lastSeenAtDate"],
+  },
+  sessionEndDate: {
+    $ifNull: [
+      "$endedAtDate",
+      {
+        $ifNull: ["$lastSeenAtDate", "$startedAtDate"],
+      },
+    ],
+  },
+});
+
+const buildSessionOverlapMatch = (from, to, extra = {}) => ({
+  ...extra,
+  sessionStartDate: {
+    $ne: null,
+    $lte: to,
+  },
+  sessionEndDate: {
+    $ne: null,
+    $gte: from,
+  },
+});
+
+const buildVisitorKeyExpression = ({
+  userIdField = "$userIdText",
+  visitorIdField = "$visitorIdText",
+  sessionIdField = "$sessionIdText",
+} = {}) => ({
+  $cond: [
+    { $ne: [userIdField, ""] },
+    { $concat: ["u:", userIdField] },
+    {
+      $cond: [
+        { $ne: [visitorIdField, ""] },
+        { $concat: ["v:", visitorIdField] },
+        {
+          $cond: [
+            { $ne: [sessionIdField, ""] },
+            { $concat: ["s:", sessionIdField] },
+            "",
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 const toBucketFormat = (interval = "day") => {
   const normalized = String(interval || "day").toLowerCase();
   if (normalized === "hour") return "%Y-%m-%d %H:00";
@@ -431,7 +509,7 @@ const resolveCollections = async (db) => {
 };
 
 const getOverviewData = async (db, from, to) => {
-  const { sessions, purchases } = await resolveCollections(db);
+  const { sessions, purchases, pageViews } = await resolveCollections(db);
 
   const activeThreshold = new Date(
     Date.now() - ACTIVE_WINDOW_MINUTES * 60 * 1000,
@@ -440,29 +518,23 @@ const getOverviewData = async (db, from, to) => {
     sessionOverviewRows,
     purchasesDistinctSessions,
     revenueAggregation,
+    totalPageViewRows,
     visitorSegmentRows,
   ] = await Promise.all([
     sessions
       .aggregate([
         {
           $addFields: {
-            startedAtDate: toDateExpression("$startedAt"),
-            endedAtDate: toDateExpression("$endedAt"),
-            lastSeenAtDate: toDateExpression("$lastSeenAt"),
-            totalActiveTimeValue: toNumberExpression("$totalActiveTime", 0),
-            durationMsValue: toNumberExpression("$durationMs", 0),
-            pageViewsValue: toNumberExpression("$pageViews", 0),
-            eventCountValue: toNumberExpression("$eventCount", 0),
+            ...buildBehaviorSessionBaseFields(),
+            ...buildSessionOverlapFields(),
           },
         },
         {
-          $match: {
-            startedAtDate: {
-              $gte: from,
-              $lte: to,
-            },
-            ...buildBehaviorSessionQualityMatch(),
-          },
+          $match: buildSessionOverlapMatch(
+            from,
+            to,
+            buildBehaviorSessionQualityMatch(),
+          ),
         },
         {
           $project: {
@@ -626,50 +698,46 @@ const getOverviewData = async (db, from, to) => {
         },
       ])
       .toArray(),
-    sessions
+    pageViews
       .aggregate([
         {
           $addFields: {
             startedAtDate: toDateExpression("$startedAt"),
             endedAtDate: toDateExpression("$endedAt"),
-            lastSeenAtDate: toDateExpression("$lastSeenAt"),
-            totalActiveTimeValue: toNumberExpression("$totalActiveTime", 0),
-            pageViewsValue: toNumberExpression("$pageViews", 0),
-            eventCountValue: toNumberExpression("$eventCount", 0),
-            userIdText: {
-              $trim: {
-                input: {
-                  $ifNull: [
-                    {
-                      $convert: {
-                        input: "$userId",
-                        to: "string",
-                        onError: "",
-                        onNull: "",
-                      },
-                    },
-                    "",
-                  ],
-                },
-              },
+            pageViewStartDate: {
+              $ifNull: ["$startedAtDate", "$endedAtDate"],
             },
-            sessionIdText: {
-              $trim: {
-                input: {
-                  $ifNull: [
-                    {
-                      $convert: {
-                        input: "$sessionId",
-                        to: "string",
-                        onError: "",
-                        onNull: "",
-                      },
-                    },
-                    "",
-                  ],
-                },
-              },
+            pageViewEndDate: {
+              $ifNull: ["$endedAtDate", "$startedAtDate"],
             },
+          },
+        },
+        {
+          $match: {
+            pageViewStartDate: {
+              $ne: null,
+              $lte: to,
+            },
+            pageViewEndDate: {
+              $ne: null,
+              $gte: from,
+            },
+          },
+        },
+        {
+          $count: "count",
+        },
+      ])
+      .toArray(),
+    sessions
+      .aggregate([
+        {
+          $addFields: {
+            ...buildBehaviorSessionBaseFields(),
+            userIdText: toTrimmedStringExpression("$userId"),
+            visitorIdText: toTrimmedStringExpression("$visitorId"),
+            sessionIdText: toTrimmedStringExpression("$sessionId"),
+            ...buildSessionOverlapFields(),
           },
         },
         {
@@ -679,38 +747,13 @@ const getOverviewData = async (db, from, to) => {
         },
         {
           $addFields: {
-            visitorKey: {
-              $cond: [
-                { $ne: ["$userIdText", ""] },
-                { $concat: ["u:", "$userIdText"] },
-                {
-                  $cond: [
-                    { $ne: ["$sessionIdText", ""] },
-                    { $concat: ["s:", "$sessionIdText"] },
-                    "",
-                  ],
-                },
-              ],
-            },
-            sessionStartDate: {
-              $ifNull: ["$startedAtDate", "$lastSeenAtDate"],
-            },
-            sessionEndDate: {
-              $ifNull: [
-                "$endedAtDate",
-                {
-                  $ifNull: ["$lastSeenAtDate", "$startedAtDate"],
-                },
-              ],
-            },
+            visitorKey: buildVisitorKeyExpression(),
           },
         },
         {
-          $match: {
+          $match: buildSessionOverlapMatch(from, to, {
             visitorKey: { $ne: "" },
-            sessionStartDate: { $ne: null },
-            sessionEndDate: { $ne: null },
-          },
+          }),
         },
         {
           $group: {
@@ -783,6 +826,7 @@ const getOverviewData = async (db, from, to) => {
     purchasesDistinctSessions?.[0]?.count || 0,
   );
   const revenue = Number(revenueAggregation?.[0]?.revenue || 0);
+  const totalPageViews = Number(totalPageViewRows?.[0]?.count || 0);
   const newVisitors = Number(visitorSegmentRows?.[0]?.newVisitors || 0);
   const returningVisitors = Number(
     visitorSegmentRows?.[0]?.returningVisitors || 0,
@@ -801,6 +845,7 @@ const getOverviewData = async (db, from, to) => {
     bounceRate,
     conversionRate,
     revenue,
+    totalPageViews,
     newVisitors,
     returningVisitors,
     totalVisitorIdentities,
@@ -817,7 +862,7 @@ const getChartData = async (db, from, to, interval = "day") => {
     .aggregate([
       {
         $addFields: {
-          startedAtDate: toDateExpression("$startedAt"),
+          ...buildBehaviorSessionBaseFields(),
         },
       },
       {
@@ -1483,7 +1528,7 @@ const getEngagementData = async (db, from, to) => {
       .aggregate([
         {
           $addFields: {
-            startedAtDate: toDateExpression("$startedAt"),
+            ...buildBehaviorSessionBaseFields(),
             userType: {
               $cond: [
                 {
@@ -1508,15 +1553,15 @@ const getEngagementData = async (db, from, to) => {
                 },
               },
             },
+            ...buildSessionOverlapFields(),
           },
         },
         {
-          $match: {
-            startedAtDate: {
-              $gte: from,
-              $lte: to,
-            },
-          },
+          $match: buildSessionOverlapMatch(
+            from,
+            to,
+            buildBehaviorSessionQualityMatch(),
+          ),
         },
         {
           $group: {
@@ -3429,27 +3474,17 @@ export const getBehaviorSessions = async (req, res) => {
       queryFilter.$or = [{ sessionId: regex }, { userId: regex }];
     }
 
-    const toSessionRangeMatch = (filter = {}) => ({
-      startedAtDate: {
-        $gte: from,
-        $lte: to,
-      },
-      ...filter,
-    });
+    const toSessionRangeMatch = (filter = {}) =>
+      buildSessionOverlapMatch(from, to, filter);
 
     const [items, totalRows, guestRows, loggedInRows] = await Promise.all([
       sessionsCollection
         .aggregate([
           {
             $addFields: {
-              startedAtDate: toDateExpression("$startedAt"),
-              endedAtDate: toDateExpression("$endedAt"),
-              lastSeenAtDate: toDateExpression("$lastSeenAt"),
-              totalActiveTimeValue: toNumberExpression("$totalActiveTime", 0),
-              durationMsValue: toNumberExpression("$durationMs", 0),
-              pageViewsValue: toNumberExpression("$pageViews", 0),
-              eventCountValue: toNumberExpression("$eventCount", 0),
+              ...buildBehaviorSessionBaseFields(),
               maxScrollDepthValue: toNumberExpression("$maxScrollDepth", 0),
+              ...buildSessionOverlapFields(),
             },
           },
           {
@@ -3458,7 +3493,7 @@ export const getBehaviorSessions = async (req, res) => {
           {
             $match: buildBehaviorSessionQualityMatch(),
           },
-          { $sort: { startedAtDate: -1 } },
+          { $sort: { sessionEndDate: -1, startedAtDate: -1 } },
           { $skip: skip },
           { $limit: limit },
           {
@@ -3492,7 +3527,8 @@ export const getBehaviorSessions = async (req, res) => {
         .aggregate([
           {
             $addFields: {
-              startedAtDate: toDateExpression("$startedAt"),
+              ...buildBehaviorSessionBaseFields(),
+              ...buildSessionOverlapFields(),
             },
           },
           {
@@ -3510,7 +3546,8 @@ export const getBehaviorSessions = async (req, res) => {
         .aggregate([
           {
             $addFields: {
-              startedAtDate: toDateExpression("$startedAt"),
+              ...buildBehaviorSessionBaseFields(),
+              ...buildSessionOverlapFields(),
             },
           },
           {
@@ -3528,7 +3565,8 @@ export const getBehaviorSessions = async (req, res) => {
         .aggregate([
           {
             $addFields: {
-              startedAtDate: toDateExpression("$startedAt"),
+              ...buildBehaviorSessionBaseFields(),
+              ...buildSessionOverlapFields(),
             },
           },
           {
