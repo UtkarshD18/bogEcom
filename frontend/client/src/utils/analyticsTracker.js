@@ -3,13 +3,16 @@
 import { API_BASE_URL } from "@/utils/api";
 
 const CONSENT_STORAGE_KEY = "hog_analytics_consent";
-const SESSION_MARKER_KEY = "hog_analytics_session_started";
-const LOCAL_SESSION_KEY = "hog_analytics_local_session_id";
+const VISITOR_STORAGE_KEY = "hog_analytics_visitor_id";
+const SESSION_STORAGE_KEY = "hog_analytics_session_id";
+const SESSION_LAST_ACTIVITY_KEY = "hog_analytics_session_last_activity";
 const DEFAULT_FLUSH_MIN_MS = 10000;
 const DEFAULT_FLUSH_MAX_MS = 20000;
 const HEARTBEAT_INTERVAL_MS = 30000;
 const IDLE_TIMEOUT_MS = 30000;
+const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 300;
+const MOUSEMOVE_ACTIVITY_MIN_MS = 1200;
 const HOVER_MIN_DURATION_MS = 300;
 const HOVER_EMIT_THROTTLE_MS = 1000;
 const RAGE_CLICK_WINDOW_MS = 2000;
@@ -58,6 +61,9 @@ const trackerState = {
   eventRateWindowStartedAt: 0,
   eventRateWindowCount: 0,
   finalizedSession: false,
+  scrollTicking: false,
+  scrollRafId: 0,
+  lastMouseMoveActivityAt: 0,
 };
 
 const attachedTrackingElements = new WeakMap();
@@ -203,12 +209,82 @@ const getPageUrl = () =>
 const getReferrer = () =>
   typeof document !== "undefined" ? document.referrer || "" : "";
 
-const getOrCreateLocalSessionId = () => {
+const readStorageValue = (storage, key) => {
+  if (typeof window === "undefined") return "";
+  try {
+    return String(storage?.getItem(key) || "").trim();
+  } catch {
+    return "";
+  }
+};
+
+const writeStorageValue = (storage, key, value) => {
+  if (typeof window === "undefined") return;
+  try {
+    const normalized = String(value || "").trim();
+    if (!normalized) {
+      storage?.removeItem(key);
+      return;
+    }
+    storage?.setItem(key, normalized);
+  } catch {
+    // Ignore storage write failures.
+  }
+};
+
+const removeStorageValue = (storage, key) => {
+  if (typeof window === "undefined") return;
+  try {
+    storage?.removeItem(key);
+  } catch {
+    // Ignore storage removal failures.
+  }
+};
+
+const getSessionTimeoutMs = () =>
+  Math.max(
+    Number(
+      process.env.NEXT_PUBLIC_ANALYTICS_SESSION_TIMEOUT_MS ||
+        DEFAULT_SESSION_TIMEOUT_MS,
+    ),
+    IDLE_TIMEOUT_MS,
+  );
+
+const getStoredSessionId = () => {
+  if (typeof window === "undefined") return "";
+  return readStorageValue(window.sessionStorage, SESSION_STORAGE_KEY);
+};
+
+const getStoredSessionLastActivityAt = () => {
+  if (typeof window === "undefined") return 0;
+  const parsed = Number(
+    readStorageValue(window.sessionStorage, SESSION_LAST_ACTIVITY_KEY),
+  );
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const persistSessionState = (sessionId, lastActivityAt = getNow()) => {
+  if (typeof window === "undefined") return;
+  writeStorageValue(window.sessionStorage, SESSION_STORAGE_KEY, sessionId);
+  writeStorageValue(
+    window.sessionStorage,
+    SESSION_LAST_ACTIVITY_KEY,
+    String(Math.max(Number(lastActivityAt) || 0, 0)),
+  );
+};
+
+const clearStoredSessionState = () => {
+  if (typeof window === "undefined") return;
+  removeStorageValue(window.sessionStorage, SESSION_STORAGE_KEY);
+  removeStorageValue(window.sessionStorage, SESSION_LAST_ACTIVITY_KEY);
+};
+
+const getOrCreateVisitorId = () => {
   if (typeof window === "undefined") return createId();
-  const existing = String(localStorage.getItem(LOCAL_SESSION_KEY) || "").trim();
+  const existing = readStorageValue(window.localStorage, VISITOR_STORAGE_KEY);
   if (existing) return existing;
   const generated = createId();
-  localStorage.setItem(LOCAL_SESSION_KEY, generated);
+  writeStorageValue(window.localStorage, VISITOR_STORAGE_KEY, generated);
   return generated;
 };
 
@@ -276,8 +352,7 @@ const isButtonLikeElement = (element) => {
 
 export const getAnalyticsConsent = () => {
   if (typeof window === "undefined") return "unknown";
-  const stored = String(localStorage.getItem(CONSENT_STORAGE_KEY) || "")
-    .trim()
+  const stored = readStorageValue(window.localStorage, CONSENT_STORAGE_KEY)
     .toLowerCase();
 
   if (["granted", "denied"].includes(stored)) {
@@ -304,7 +379,7 @@ export const setAnalyticsConsent = async (consentValue) => {
     return;
   }
 
-  localStorage.setItem(CONSENT_STORAGE_KEY, normalized);
+  writeStorageValue(window.localStorage, CONSENT_STORAGE_KEY, normalized);
 
   try {
     await fetch(resolveConsentUrl(), {
@@ -319,6 +394,48 @@ export const setAnalyticsConsent = async (consentValue) => {
   }
 };
 
+const adoptSessionState = (
+  sessionId,
+  { startedAt = getNow(), lastActivityAt = startedAt } = {},
+) => {
+  trackerState.sessionId = String(sessionId || "").trim();
+  trackerState.sessionStartAt = startedAt;
+  trackerState.sessionActiveMs = 0;
+  trackerState.lastActivityAt = lastActivityAt;
+  trackerState.lastHeartbeatAt = startedAt;
+  trackerState.finalizedSession = false;
+  trackerState.isIdle = false;
+
+  if (trackerState.sessionId) {
+    persistSessionState(trackerState.sessionId, lastActivityAt);
+  }
+};
+
+const syncSessionActivity = (timeMs = getNow()) => {
+  trackerState.lastActivityAt = timeMs;
+  if (trackerState.sessionId) {
+    persistSessionState(trackerState.sessionId, timeMs);
+  }
+};
+
+const isSessionExpired = (referenceTime = getNow()) => {
+  const lastActivityAt =
+    trackerState.lastActivityAt || getStoredSessionLastActivityAt();
+  if (!trackerState.sessionId || !lastActivityAt) {
+    return false;
+  }
+  return referenceTime - lastActivityAt >= getSessionTimeoutMs();
+};
+
+const emitSessionStart = (startedAt = getNow()) => {
+  enqueue("session_start", {
+    startedAt: toIso(startedAt),
+    path: typeof window !== "undefined" ? window.location.pathname : "/",
+    title: typeof document !== "undefined" ? document.title : "",
+    isActive: true,
+  });
+};
+
 const buildEvent = (eventType, metadata = {}, overrides = {}) => {
   const normalizedType = String(eventType || "")
     .trim()
@@ -328,9 +445,12 @@ const buildEvent = (eventType, metadata = {}, overrides = {}) => {
     return null;
   }
 
-  const sessionId = trackerState.sessionId || getOrCreateLocalSessionId();
+  const sessionId = trackerState.sessionId || getStoredSessionId() || createId();
   const userId = decodeJwtUserId();
-  const sanitizedMetadata = sanitizeMetadata(metadata);
+  const sanitizedMetadata = sanitizeMetadata({
+    ...metadata,
+    visitorId: getOrCreateVisitorId(),
+  });
   const targetType = resolveTargetType(normalizedType, sanitizedMetadata);
   const targetId = resolveTargetId(sanitizedMetadata, sessionId);
 
@@ -430,9 +550,31 @@ const flushQueue = async ({ immediate = false } = {}) => {
   clearFlushTimer();
 
   while (trackerState.queue.length > 0) {
-    const batch = trackerState.queue.splice(0, MAX_EVENTS_PER_BATCH);
+    const batchSessionId =
+      String(
+        trackerState.queue[0]?.sessionId ||
+          trackerState.sessionId ||
+          getStoredSessionId() ||
+          "",
+      ).trim() || createId();
+    const batch = [];
+
+    while (
+      trackerState.queue.length > 0 &&
+      batch.length < MAX_EVENTS_PER_BATCH
+    ) {
+      const nextEvent = trackerState.queue[0];
+      if (
+        batch.length > 0 &&
+        String(nextEvent?.sessionId || "").trim() !== batchSessionId
+      ) {
+        break;
+      }
+      batch.push(trackerState.queue.shift());
+    }
+
     const payload = {
-      sessionId: trackerState.sessionId || getOrCreateLocalSessionId(),
+      sessionId: batchSessionId,
       consent: getAnalyticsConsent(),
       events: batch,
     };
@@ -479,14 +621,60 @@ const enqueue = (eventType, metadata = {}, overrides = {}) => {
   scheduleFlush();
 };
 
+const startFreshSession = ({
+  sessionId = "",
+  syncBackend = false,
+  emitStartEvent = true,
+} = {}) => {
+  const startedAt = getNow();
+  const resolvedSessionId = String(sessionId || createId()).trim() || createId();
+  adoptSessionState(resolvedSessionId, {
+    startedAt,
+    lastActivityAt: startedAt,
+  });
+
+  if (syncBackend) {
+    ensureBackendSessionId(resolvedSessionId).catch(() => {});
+  }
+
+  if (emitStartEvent) {
+    emitSessionStart(startedAt);
+  }
+
+  return resolvedSessionId;
+};
+
+const rotateSessionIfExpired = (
+  source = "activity",
+  { restartPageView = true, nextPath = "" } = {},
+) => {
+  if (!isSessionExpired()) {
+    return false;
+  }
+
+  const fallbackPath =
+    nextPath || trackerState.currentPageView?.path || getPagePath();
+  finalizeSession("inactivity_timeout", { clearStoredSession: true });
+  startFreshSession({
+    syncBackend: true,
+    emitStartEvent: true,
+  });
+  if (restartPageView) {
+    startPageView(fallbackPath);
+  }
+  trackerState.isIdle = false;
+  return true;
+};
+
 const markActivity = (source = "activity") => {
   const now = getNow();
   if (now - trackerState.lastInputAt < ACTIVITY_THROTTLE_MS) {
     return;
   }
 
+  rotateSessionIfExpired(source);
   trackerState.lastInputAt = now;
-  trackerState.lastActivityAt = now;
+  syncSessionActivity(now);
 
   if (trackerState.isIdle) {
     trackerState.isIdle = false;
@@ -538,6 +726,20 @@ const updateScrollTracking = () => {
       });
     }
   }
+};
+
+const queueScrollTrackingUpdate = () => {
+  if (typeof window === "undefined" || trackerState.scrollTicking) {
+    return;
+  }
+
+  trackerState.scrollTicking = true;
+  trackerState.scrollRafId = window.requestAnimationFrame(() => {
+    trackerState.scrollTicking = false;
+    trackerState.scrollRafId = 0;
+    markActivity("scroll");
+    updateScrollTracking();
+  });
 };
 
 const getElementSignature = (element) => {
@@ -1326,7 +1528,10 @@ const startPageView = (path = "") => {
   });
 };
 
-const finalizeSession = (reason = "pagehide") => {
+const finalizeSession = (
+  reason = "pagehide",
+  { clearStoredSession = true } = {},
+) => {
   if (trackerState.finalizedSession) {
     return;
   }
@@ -1344,6 +1549,10 @@ const finalizeSession = (reason = "pagehide") => {
     isActive: false,
   });
 
+  if (clearStoredSession) {
+    clearStoredSessionState();
+  }
+
   flushQueue({ immediate: true }).catch(() => {});
 };
 
@@ -1352,14 +1561,19 @@ const attachEventListeners = () => {
     return;
   }
 
-  const onMouseMove = () => markActivity("mousemove");
+  const onMouseMove = () => {
+    const now = getNow();
+    if (now - trackerState.lastMouseMoveActivityAt < MOUSEMOVE_ACTIVITY_MIN_MS) {
+      return;
+    }
+
+    trackerState.lastMouseMoveActivityAt = now;
+    markActivity("mousemove");
+  };
   const onKeydown = () => markActivity("keydown");
   const onTouchStart = () => markActivity("touchstart");
   const onClick = (event) => processClickTracking(event);
-  const onScroll = () => {
-    markActivity("scroll");
-    updateScrollTracking();
-  };
+  const onScroll = () => queueScrollTrackingUpdate();
 
   const onPageHide = () => finalizeSession("pagehide");
   const onBeforeUnload = () => finalizeSession("beforeunload");
@@ -1392,6 +1606,11 @@ const attachEventListeners = () => {
   document.addEventListener("visibilitychange", onVisibilityChange);
 
   trackerState.detachListeners = () => {
+    if (trackerState.scrollRafId) {
+      window.cancelAnimationFrame(trackerState.scrollRafId);
+      trackerState.scrollRafId = 0;
+      trackerState.scrollTicking = false;
+    }
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("keydown", onKeydown);
     document.removeEventListener("touchstart", onTouchStart);
@@ -1407,27 +1626,34 @@ const attachEventListeners = () => {
   };
 };
 
-const ensureBackendSessionId = async () => {
+const ensureBackendSessionId = async (preferredSessionId = "") => {
   try {
+    const headers = preferredSessionId
+      ? { "x-session-id": String(preferredSessionId || "").trim() }
+      : undefined;
     const response = await fetch(resolveTrackSessionUrl(), {
       method: "GET",
+      ...(headers ? { headers } : {}),
       credentials: "include",
     });
 
     if (!response.ok) {
-      return;
+      return "";
     }
 
     const data = await response.json();
     const sessionId = String(data?.data?.sessionId || "").trim();
-    if (!sessionId) return;
+    if (!sessionId) return "";
 
     trackerState.sessionId = sessionId;
-    if (typeof window !== "undefined") {
-      localStorage.setItem(LOCAL_SESSION_KEY, sessionId);
-    }
+    persistSessionState(
+      sessionId,
+      trackerState.lastActivityAt || getStoredSessionLastActivityAt() || getNow(),
+    );
+    return sessionId;
   } catch {
     // Keep local fallback when backend session call fails.
+    return "";
   }
 };
 
@@ -1445,26 +1671,47 @@ export const initializeBehaviorTracking = async () => {
   }
 
   trackerState.initializingPromise = (async () => {
-    trackerState.sessionId = getOrCreateLocalSessionId();
-    await ensureBackendSessionId();
-    trackerState.sessionStartAt = getNow();
-    trackerState.lastActivityAt = trackerState.sessionStartAt;
-    trackerState.lastHeartbeatAt = trackerState.sessionStartAt;
-    trackerState.finalizedSession = false;
+    const now = getNow();
+    const storedSessionId = getStoredSessionId();
+    const storedLastActivityAt = getStoredSessionLastActivityAt();
+    const canResumeStoredSession =
+      Boolean(storedSessionId) &&
+      storedLastActivityAt > 0 &&
+      now - storedLastActivityAt < getSessionTimeoutMs();
+
+    if (canResumeStoredSession) {
+      adoptSessionState(storedSessionId, {
+        startedAt: now,
+        lastActivityAt: storedLastActivityAt,
+      });
+      const syncedSessionId = await ensureBackendSessionId(storedSessionId);
+      if (syncedSessionId && syncedSessionId !== storedSessionId) {
+        adoptSessionState(syncedSessionId, {
+          startedAt: now,
+          lastActivityAt: storedLastActivityAt,
+        });
+      }
+    } else {
+      clearStoredSessionState();
+      const backendSessionId = await ensureBackendSessionId();
+      const resolvedSessionId =
+        String(backendSessionId || createId()).trim() || createId();
+
+      adoptSessionState(resolvedSessionId, {
+        startedAt: now,
+        lastActivityAt: now,
+      });
+
+      if (!backendSessionId) {
+        ensureBackendSessionId(resolvedSessionId).catch(() => {});
+      }
+
+      emitSessionStart(now);
+    }
 
     attachEventListeners();
     setupSectionTracking();
     startHeartbeat();
-
-    if (sessionStorage.getItem(SESSION_MARKER_KEY) !== "1") {
-      sessionStorage.setItem(SESSION_MARKER_KEY, "1");
-      enqueue("session_start", {
-        startedAt: toIso(trackerState.sessionStartAt),
-        path: window.location.pathname,
-        title: document.title,
-        isActive: true,
-      });
-    }
 
     trackerState.initialized = true;
   })().finally(() => {
@@ -1488,11 +1735,21 @@ export const handleRouteChangeTracking = (path) => {
     return;
   }
 
+  rotateSessionIfExpired("route_change", {
+    restartPageView: false,
+    nextPath: path,
+  });
+  syncSessionActivity(getNow());
   startPageView(path);
   observeTrackSections();
 };
 
 export const trackEvent = (eventType, metadata = {}, overrides = {}) => {
+  rotateSessionIfExpired("manual_event", {
+    restartPageView: true,
+    nextPath: getPagePath(),
+  });
+  syncSessionActivity(getNow());
   enqueue(eventType, metadata, overrides);
 };
 

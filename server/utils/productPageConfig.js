@@ -3,6 +3,21 @@ const toTrimmedString = (value, maxLength = 500) =>
     .trim()
     .slice(0, maxLength);
 
+const LEGACY_STORY_COPY = new Set(
+  [
+    "Product Story",
+    "A cleaner product story with the important buying details kept close to the decision point.",
+    "A cleaner product story with the key buying details kept close to the decision point.",
+    "Keep the product story, pricing, trust cues, and delivery context in one calm layout without pushing the buying actions too far away.",
+    "The refreshed detail page keeps product story, trust cues, pricing, and delivery context in one calm layout without pushing the buying actions too far away.",
+  ].map((value) => toTrimmedString(value).toLowerCase()),
+);
+
+const sanitizeStoryField = (value, maxLength = 500) => {
+  const trimmed = toTrimmedString(value, maxLength);
+  return LEGACY_STORY_COPY.has(trimmed.toLowerCase()) ? "" : trimmed;
+};
+
 const toBooleanWithFallback = (value, fallback = true) => {
   if (typeof value === "boolean") return value;
 
@@ -24,8 +39,23 @@ const toStringList = (value, { limit = 8, maxLength = 240 } = {}) => {
     .slice(0, limit);
 };
 
-const toCards = (value, { limit = 4 } = {}) => {
-  return [];
+const toCards = (
+  value,
+  { limit = 4, fields = ["label", "helper"], maxLength = 120 } = {},
+) => {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((card) => {
+      const normalizedCard = {};
+
+      fields.forEach((field) => {
+        normalizedCard[field] = toTrimmedString(card?.[field], maxLength);
+      });
+
+      return normalizedCard;
+    })
+    .slice(0, limit);
 };
 
 export const normalizeProductPageConfig = (value = {}) => {
@@ -45,9 +75,12 @@ export const normalizeProductPageConfig = (value = {}) => {
         source?.hero?.showDeliveryPreview,
         true,
       ),
-      storyEyebrow: toTrimmedString(source?.hero?.storyEyebrow, 80),
-      storyTitle: toTrimmedString(source?.hero?.storyTitle, 180),
-      storyDescription: toTrimmedString(source?.hero?.storyDescription, 360),
+      storyEyebrow: sanitizeStoryField(source?.hero?.storyEyebrow, 80),
+      storyTitle: sanitizeStoryField(source?.hero?.storyTitle, 180),
+      storyDescription: sanitizeStoryField(
+        source?.hero?.storyDescription,
+        360,
+      ),
       priceCardEyebrow: toTrimmedString(source?.hero?.priceCardEyebrow, 80),
       priceCardDescription: toTrimmedString(
         source?.hero?.priceCardDescription,
@@ -69,6 +102,29 @@ export const normalizeProductPageConfig = (value = {}) => {
         source?.hero?.socialProofDescription,
         220,
       ),
+      showSupportCards: toBooleanWithFallback(
+        source?.hero?.showSupportCards,
+        true,
+      ),
+      deliveryEyebrow: toTrimmedString(source?.hero?.deliveryEyebrow, 80),
+      deliveryOptionalLabel: toTrimmedString(
+        source?.hero?.deliveryOptionalLabel,
+        40,
+      ),
+      deliveryReadyLabel: toTrimmedString(source?.hero?.deliveryReadyLabel, 40),
+      deliveryInputPlaceholder: toTrimmedString(
+        source?.hero?.deliveryInputPlaceholder,
+        80,
+      ),
+      deliveryHelperText: toTrimmedString(
+        source?.hero?.deliveryHelperText,
+        180,
+      ),
+      supportCards: toCards(source?.hero?.supportCards, {
+        limit: 4,
+        fields: ["title", "description"],
+        maxLength: 180,
+      }),
     },
     tabs: {
       showDescription: toBooleanWithFallback(
@@ -132,7 +188,11 @@ export const normalizeProductPageConfig = (value = {}) => {
         source?.detailsSection?.showCards,
         true,
       ),
-      cards: toCards(source?.detailsSection?.cards),
+      cards: toCards(source?.detailsSection?.cards, {
+        limit: 4,
+        fields: ["label", "helper"],
+        maxLength: 120,
+      }),
     },
     shippingSection: {
       show: toBooleanWithFallback(source?.shippingSection?.show, true),
@@ -166,20 +226,38 @@ export const normalizeProductPageConfig = (value = {}) => {
     },
     reviewsSection: {
       show: toBooleanWithFallback(source?.reviewsSection?.show, true),
+      eyebrow: toTrimmedString(source?.reviewsSection?.eyebrow, 80),
+      title: toTrimmedString(source?.reviewsSection?.title, 180),
     },
     frequentlyBoughtSection: {
       show: toBooleanWithFallback(
         source?.frequentlyBoughtSection?.show,
         true,
       ),
-      emptyState: "",
+      eyebrow: toTrimmedString(
+        source?.frequentlyBoughtSection?.eyebrow,
+        80,
+      ),
+      title: toTrimmedString(source?.frequentlyBoughtSection?.title, 180),
+      buttonText: toTrimmedString(
+        source?.frequentlyBoughtSection?.buttonText,
+        60,
+      ),
     },
     recommendedCombosSection: {
       show: toBooleanWithFallback(
         source?.recommendedCombosSection?.show,
         true,
       ),
-      emptyState: "",
+      eyebrow: toTrimmedString(
+        source?.recommendedCombosSection?.eyebrow,
+        80,
+      ),
+      title: toTrimmedString(source?.recommendedCombosSection?.title, 180),
+      linkText: toTrimmedString(
+        source?.recommendedCombosSection?.linkText,
+        60,
+      ),
     },
   };
 };

@@ -12,10 +12,13 @@ import {
   loginInfluencer,
   getInfluencerPortalStatsAuth,
   refreshInfluencerToken,
+  requestInfluencerPasswordReset,
+  resetInfluencerPassword,
 } from "../controllers/influencer.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
 import influencerAuth from "../middlewares/influencerAuth.js";
+import { authLimiter } from "../middlewares/rateLimiter.js";
 
 const influencerRouter = Router();
 
@@ -33,13 +36,19 @@ influencerRouter.get("/validate", validateInfluencerCode);
  * @route POST /api/influencers/login
  * @access Public
  */
-influencerRouter.post("/login", loginInfluencer);
-influencerRouter.post("/refresh-token", refreshInfluencerToken);
+influencerRouter.post("/login", authLimiter, loginInfluencer);
+influencerRouter.post("/refresh-token", authLimiter, refreshInfluencerToken);
+influencerRouter.post(
+  "/forgot-password",
+  authLimiter,
+  requestInfluencerPasswordReset,
+);
+influencerRouter.post("/reset-password", authLimiter, resetInfluencerPassword);
 
 /**
  * Collaborator portal stats
- * @route GET /api/influencers/portal?code=CODE&email=EMAIL
- * @access Public (code + email verification)
+ * @route GET /api/influencers/portal
+ * @access Disabled legacy route
  */
 influencerRouter.get("/portal", getInfluencerPortalStats);
 

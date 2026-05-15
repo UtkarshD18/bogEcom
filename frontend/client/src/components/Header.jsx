@@ -224,6 +224,9 @@ const Header = () => {
   );
   const headerRootRef = useRef(null);
   const headerMeasuredHeightRef = useRef(0);
+  const scrolledRef = useRef(false);
+  const hideHeaderRef = useRef(false);
+  const mobileMenuOpenRef = useRef(false);
   const coinDesktopRef = useRef(null);
   const coinMobileRef = useRef(null);
   const coinAnimationRef = useRef(0);
@@ -258,20 +261,6 @@ const Header = () => {
 
   const open = Boolean(anchorEl);
   const isCoinPanelOpen = Boolean(coinPanelAnchor);
-
-  // ============ MOBILE MENU: Auto-close on scroll ============
-  useEffect(() => {
-    if (!mobileMenuOpen) return;
-    let lastScrollY = window.scrollY;
-    const handleScrollClose = () => {
-      const currentScrollY = window.scrollY;
-      if (Math.abs(currentScrollY - lastScrollY) > 10) {
-        setMobileMenuOpen(false);
-      }
-    };
-    window.addEventListener("scroll", handleScrollClose, { passive: true });
-    return () => window.removeEventListener("scroll", handleScrollClose);
-  }, [mobileMenuOpen]);
 
   // Function to check login status
   const checkLoginStatus = () => {
@@ -579,6 +568,18 @@ const Header = () => {
   }, [pathname]);
 
   useEffect(() => {
+    scrolledRef.current = scrolled;
+  }, [scrolled]);
+
+  useEffect(() => {
+    hideHeaderRef.current = hideHeader;
+  }, [hideHeader]);
+
+  useEffect(() => {
+    mobileMenuOpenRef.current = mobileMenuOpen;
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
     if (typeof document === "undefined" || typeof window === "undefined")
       return;
     const headerNode = headerRootRef.current;
@@ -630,24 +631,60 @@ const Header = () => {
 
   // Scroll detection
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
     let lastScrollY = window.scrollY;
-    const handleScroll = () => {
+    let animationFrame = 0;
+
+    const applyScrollState = () => {
+      animationFrame = 0;
       const currentScrollY = window.scrollY;
-      setScrolled(currentScrollY > 20);
-      if (currentScrollY > 100) {
-        if (currentScrollY > lastScrollY) {
-          setHideHeader(true);
-          setMobileMenuOpen(false);
-        } else if (currentScrollY < lastScrollY - 10) {
-          setHideHeader(false);
-        }
-      } else {
-        setHideHeader(false);
+
+      const nextScrolled = currentScrollY > 20;
+      if (scrolledRef.current !== nextScrolled) {
+        scrolledRef.current = nextScrolled;
+        setScrolled(nextScrolled);
       }
+
+      let nextHideHeader = hideHeaderRef.current;
+      if (currentScrollY <= 100) {
+        nextHideHeader = false;
+      } else if (currentScrollY > lastScrollY) {
+        nextHideHeader = true;
+      } else if (currentScrollY < lastScrollY - 10) {
+        nextHideHeader = false;
+      }
+
+      if (hideHeaderRef.current !== nextHideHeader) {
+        hideHeaderRef.current = nextHideHeader;
+        setHideHeader(nextHideHeader);
+      }
+
+      if (
+        mobileMenuOpenRef.current &&
+        Math.abs(currentScrollY - lastScrollY) > 10
+      ) {
+        mobileMenuOpenRef.current = false;
+        setMobileMenuOpen(false);
+      }
+
       lastScrollY = currentScrollY;
     };
+
+    const handleScroll = () => {
+      if (animationFrame) return;
+      animationFrame = window.requestAnimationFrame(applyScrollState);
+    };
+
+    handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+    };
   }, []);
 
   const handleClick = (event) => setAnchorEl(event.currentTarget);

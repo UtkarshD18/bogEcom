@@ -7,6 +7,7 @@ export const userSessionSchema = new Schema(
   {
     sessionId: { type: String, required: true, trim: true, maxlength: 128 },
     userId: { type: String, default: null, trim: true, maxlength: 128 },
+    visitorId: { type: String, default: null, trim: true, maxlength: 128 },
     ipAddress: { type: String, default: "unknown", trim: true, maxlength: 128 },
     userAgent: { type: String, default: "unknown", trim: true, maxlength: 2048 },
     deviceType: { type: String, default: "desktop", trim: true, maxlength: 64 },

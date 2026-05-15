@@ -1,8 +1,9 @@
-import { io } from "socket.io-client";
 import { API_BASE_URL } from "@/utils/api";
+import { io } from "socket.io-client";
 
 const SOCKET_TRANSPORTS = ["websocket", "polling"];
 const LOCAL_SOCKET_FALLBACK = "http://localhost:8000";
+const HEALTHY_ONE_GRAM_SOCKET_FALLBACK = "https://healthyonegram.com";
 
 const sanitizeBaseUrl = (value) =>
   String(value || "")
@@ -52,6 +53,16 @@ const resolveSocketBaseUrls = () => {
 
   if (typeof window !== "undefined") {
     pushCandidate(window.location.origin);
+
+    const hostname = String(window.location.hostname || "").toLowerCase();
+    const looksLikeAdminHost =
+      hostname.startsWith("admin-dot-") ||
+      hostname.startsWith("admin.") ||
+      hostname.endsWith(".healthyonegram.com");
+
+    if (looksLikeAdminHost) {
+      pushCandidate(HEALTHY_ONE_GRAM_SOCKET_FALLBACK);
+    }
   }
 
   if (candidates.length === 0) {

@@ -17,6 +17,7 @@ export const eventRawSchema = new Schema(
     eventType: { type: String, required: true, trim: true, maxlength: 64 },
     sessionId: { type: String, required: true, trim: true, maxlength: 128 },
     userId: { type: String, default: null, trim: true, maxlength: 128 },
+    visitorId: { type: String, default: null, trim: true, maxlength: 128 },
     timestamp: { type: Date, required: true },
     pageUrl: { type: String, default: "", trim: true, maxlength: 2048 },
     referrer: { type: String, default: "", trim: true, maxlength: 2048 },

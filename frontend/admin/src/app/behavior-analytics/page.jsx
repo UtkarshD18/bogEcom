@@ -178,6 +178,40 @@ const resolvePreviewTarget = (event = {}) =>
       "unknown_target",
   );
 
+const normalizeLiveButtonFeedEntry = (event = {}, index = 0) => {
+  const sessionId = safeString(event?.sessionId) || "-";
+  const timestamp = event?.timestamp || new Date().toISOString();
+
+  return {
+    id:
+      safeString(event?.id) ||
+      `${sessionId}-${safeString(timestamp) || Date.now()}-${index}`,
+    eventType: safeString(event?.eventType || "unknown"),
+    target: resolvePreviewTarget(event),
+    page: normalizePath(event?.pageUrl || event?.page),
+    timestamp,
+    sessionId,
+    userType: safeString(event?.userId) ? "Logged In" : "Guest",
+  };
+};
+
+const mergeLiveButtonFeedEntries = (incoming = [], existing = []) => {
+  const seen = new Set();
+  const merged = [];
+
+  for (const row of [...incoming, ...existing]) {
+    const key =
+      safeString(row?.id) ||
+      `${safeString(row?.eventType)}|${safeString(row?.timestamp)}|${safeString(row?.sessionId)}|${safeString(row?.target)}`;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(row);
+    if (merged.length >= LIVE_BUTTON_FEED_LIMIT) break;
+  }
+
+  return merged.slice(0, LIVE_BUTTON_FEED_LIMIT);
+};
+
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const normalizePresetDays = (value, fallback = 30) => {
@@ -324,6 +358,20 @@ const getWorkerState = (performance) => {
     };
   return {
     label: "Degraded",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
+  };
+};
+
+const getIngestionState = (performance) => {
+  const total = toNumber(performance?.workerHealth?.totalWorkers, 0);
+  const healthy = toNumber(performance?.workerHealth?.healthyWorkers, 0);
+
+  if (total > 0 && healthy > 0) {
+    return null;
+  }
+
+  return {
+    label: "Worker inactive, using direct ingestion",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   };
 };
@@ -558,6 +606,10 @@ export default function BehaviorAnalyticsPage() {
   const [funnelSearchInput, setFunnelSearchInput] = useState("");
 
   const workerState = useMemo(() => getWorkerState(performance), [performance]);
+  const ingestionState = useMemo(
+    () => getIngestionState(performance),
+    [performance],
+  );
   const timelineInsights = useMemo(
     () =>
       buildTimelineInsights(
@@ -720,7 +772,6 @@ export default function BehaviorAnalyticsPage() {
 
   const fetchAnalytics = useCallback(
     async ({ silent = false } = {}) => {
-      if (!token) return;
       if (!silent) {
         setLoading(true);
         setError("");
@@ -761,6 +812,17 @@ export default function BehaviorAnalyticsPage() {
 
         if (performanceRes?.success) {
           setPerformance(performanceRes.data);
+          if (Array.isArray(performanceRes.data?.recentButtonEvents)) {
+            const mappedRecentEvents = performanceRes.data.recentButtonEvents
+              .slice()
+              .reverse()
+              .map((event, index) =>
+                normalizeLiveButtonFeedEntry(event, index),
+              );
+            setLiveButtonFeed((prev) =>
+              mergeLiveButtonFeedEntries(mappedRecentEvents, prev),
+            );
+          }
         } else {
           failures.push(
             getApiErrorMessage(
@@ -786,9 +848,12 @@ export default function BehaviorAnalyticsPage() {
     [selectedRange, token],
   );
 
+  const refreshLiveSections = useCallback(() => {
+    fetchAnalytics({ silent: true });
+  }, [fetchAnalytics]);
+
   const fetchSessionExplorer = useCallback(
     async ({ silent = false } = {}) => {
-      if (!token) return;
       if (!silent) {
         setSessionExplorerLoading(true);
         setError("");
@@ -842,12 +907,12 @@ export default function BehaviorAnalyticsPage() {
   }, [authLoading, isAuthenticated, router]);
 
   useEffect(() => {
-    if (isAuthenticated && token) fetchAnalytics();
-  }, [fetchAnalytics, isAuthenticated, token]);
+    if (isAuthenticated) fetchAnalytics();
+  }, [fetchAnalytics, isAuthenticated]);
 
   useEffect(() => {
-    if (isAuthenticated && token) fetchSessionExplorer();
-  }, [fetchSessionExplorer, isAuthenticated, token]);
+    if (isAuthenticated) fetchSessionExplorer();
+  }, [fetchSessionExplorer, isAuthenticated]);
 
   const { trigger: triggerAnalyticsRefresh } = useLiveRefresh(
     () => fetchAnalytics({ silent: true }),
@@ -871,20 +936,10 @@ export default function BehaviorAnalyticsPage() {
           .filter((event) =>
             LIVE_BUTTON_EVENT_TYPES.has(safeString(event?.eventType)),
           )
-          .map((event, index) => ({
-            id: `${safeString(event?.sessionId) || "session"}-${safeString(event?.timestamp) || Date.now()}-${index}`,
-            eventType: safeString(event?.eventType || "unknown"),
-            target: resolvePreviewTarget(event),
-            page: normalizePath(event?.pageUrl),
-            timestamp: event?.timestamp || new Date().toISOString(),
-            sessionId: safeString(event?.sessionId) || "-",
-            userType: safeString(event?.userId) ? "Logged In" : "Guest",
-          }));
+          .map((event, index) => normalizeLiveButtonFeedEntry(event, index));
 
         if (mapped.length > 0) {
-          setLiveButtonFeed((prev) =>
-            [...mapped, ...prev].slice(0, LIVE_BUTTON_FEED_LIMIT),
-          );
+          setLiveButtonFeed((prev) => mergeLiveButtonFeedEntries(mapped, prev));
         }
       }
 
@@ -1077,6 +1132,12 @@ export default function BehaviorAnalyticsPage() {
                 label={`Worker: ${workerState.label}`}
                 className={workerState.className}
               />
+              {ingestionState ? (
+                <StatusPill
+                  label={ingestionState.label}
+                  className={`ml-2 ${ingestionState.className}`}
+                />
+              ) : null}
             </div>
           </div>
           <div className="flex flex-col gap-2">
@@ -1203,7 +1264,7 @@ export default function BehaviorAnalyticsPage() {
           ) : null}
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <PlainLanguageCard
             title="What Happened"
             rows={plainLanguageSummary.highlights}
@@ -1224,7 +1285,7 @@ export default function BehaviorAnalyticsPage() {
           <MetricCard
             title="Total Sessions"
             value={overview?.totalSessions || 0}
-            hint="Guest + logged-in sessions."
+            hint="Guest + logged-in sessions with meaningful tracked activity."
           />
           <MetricCard
             title="Active Users"
@@ -1305,7 +1366,19 @@ export default function BehaviorAnalyticsPage() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <ChartCard title="Events Per Minute (Last 60 Minutes)">
+          <ChartCard
+            title="Events Per Minute (Last 60 Minutes)"
+            actions={
+              <button
+                type="button"
+                onClick={refreshLiveSections}
+                disabled={refreshing}
+                className="px-3 py-1.5 rounded-md border border-gray-300 text-sm font-semibold text-gray-700 disabled:opacity-60"
+              >
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
+            }
+          >
             {(performance?.eventsPerMinute || []).length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={performance?.eventsPerMinute || []}>
@@ -1358,6 +1431,14 @@ export default function BehaviorAnalyticsPage() {
                 Button-level view of where users click, hover, and focus most.
               </p>
             </div>
+            <button
+              type="button"
+              onClick={refreshLiveSections}
+              disabled={refreshing}
+              className="px-3 py-1.5 rounded-md border border-gray-300 text-sm font-semibold text-gray-700 disabled:opacity-60"
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
           </div>
 
           {movementTargets.length > 0 ? (
@@ -1404,6 +1485,14 @@ export default function BehaviorAnalyticsPage() {
                 sessions.
               </p>
             </div>
+            <button
+              type="button"
+              onClick={refreshLiveSections}
+              disabled={refreshing}
+              className="px-3 py-1.5 rounded-md border border-gray-300 text-sm font-semibold text-gray-700 disabled:opacity-60"
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
           </div>
 
           {liveButtonFeed.length > 0 ? (
@@ -2445,10 +2534,13 @@ function UserTypeBehaviorCard({
   );
 }
 
-function ChartCard({ title, children }) {
+function ChartCard({ title, children, actions = null }) {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-      <h2 className="text-lg font-semibold text-gray-900 mb-3">{title}</h2>
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        {actions}
+      </div>
       {children}
     </div>
   );

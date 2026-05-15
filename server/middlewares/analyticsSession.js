@@ -36,7 +36,7 @@ const normalizeCookieDomain = (value) => {
   return hostOnly;
 };
 
-const buildCookieOptions = () => {
+export const buildCookieOptions = ({ persistent = false } = {}) => {
   const isProduction = process.env.NODE_ENV === "production";
   const configuredCookieDomain = normalizeCookieDomain(
     process.env.COOKIE_DOMAIN,
@@ -49,9 +49,12 @@ const buildCookieOptions = () => {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? "None" : "Lax",
-    maxAge: 365 * 24 * 60 * 60 * 1000,
     path: "/",
   };
+
+  if (persistent) {
+    options.maxAge = 365 * 24 * 60 * 60 * 1000;
+  }
 
   if (
     isProduction &&
@@ -65,18 +68,18 @@ const buildCookieOptions = () => {
   return options;
 };
 
-const normalizeSessionId = (value) => {
+export const normalizeSessionId = (value) => {
   const sessionId = String(value || "").trim();
   if (!sessionId) return "";
   return sessionId.slice(0, 128);
 };
 
-const resolveSessionId = (req) => {
+export const resolveSessionId = (req) => {
   const candidates = [
-    req.cookies?.[DEFAULT_ANALYTICS_SESSION_COOKIE],
-    req.cookies?.sessionId,
     req.headers["x-session-id"],
     req.body?.sessionId,
+    req.cookies?.[DEFAULT_ANALYTICS_SESSION_COOKIE],
+    req.cookies?.sessionId,
   ];
 
   for (const candidate of candidates) {
@@ -146,7 +149,7 @@ const analyticsSession = (req, res, next) => {
   const consentHeader = normalizeConsent(req.headers["x-analytics-consent"]);
   if (consentHeader) {
     res.cookie(DEFAULT_ANALYTICS_CONSENT_COOKIE, consentHeader, {
-      ...cookieOptions,
+      ...buildCookieOptions({ persistent: true }),
       httpOnly: false,
     });
   }

@@ -302,7 +302,11 @@ body {
   z-index: 99 !important;
   border: 1px solid var(--flavor-color, var(--primary)) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-  transition: all 400ms cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  transition:
+    background-color 240ms ease,
+    border-color 240ms ease,
+    box-shadow 240ms ease,
+    transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
 
 .swiper-button-next svg,
@@ -362,7 +366,11 @@ body {
   background-color: transparent !important;
   padding: 8px 18px !important;
   border-radius: 0.75rem !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition:
+    background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .btn-border-g:hover {
@@ -379,7 +387,11 @@ body {
   background: var(--primary) !important;
   padding: 8px 18px !important;
   border-radius: 0.75rem !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition:
+    background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .btn-g:hover {
@@ -582,4 +594,18 @@ input[type="number"] {
 
 .banner-audio {
   align-self: flex-end;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

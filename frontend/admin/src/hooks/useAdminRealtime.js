@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { readSharedAccessToken } from "@/utils/authSession";
 import { disconnectAdminSocket, getAdminSocket } from "@/utils/realtime";
+import { useEffect, useRef, useState } from "react";
 
 export const useAdminRealtime = ({
   token,
@@ -10,20 +11,25 @@ export const useAdminRealtime = ({
   onStockUpdate,
 } = {}) => {
   const [status, setStatus] = useState("disconnected");
-  const handlersRef = useRef({ onOrderUpdate, onAnalyticsBatch, onStockUpdate });
+  const handlersRef = useRef({
+    onOrderUpdate,
+    onAnalyticsBatch,
+    onStockUpdate,
+  });
 
   useEffect(() => {
     handlersRef.current = { onOrderUpdate, onAnalyticsBatch, onStockUpdate };
   }, [onOrderUpdate, onAnalyticsBatch, onStockUpdate]);
 
   useEffect(() => {
-    if (!token) {
+    const resolvedToken = token || readSharedAccessToken();
+    if (!resolvedToken) {
       disconnectAdminSocket();
       setStatus("disconnected");
       return undefined;
     }
 
-    const socket = getAdminSocket(token);
+    const socket = getAdminSocket(resolvedToken);
     if (!socket) return undefined;
 
     const handleConnect = () => setStatus("connected");

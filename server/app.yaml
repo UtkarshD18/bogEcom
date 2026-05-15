@@ -11,6 +11,7 @@ env_variables:
   MONGO_URI: "SET_AT_DEPLOY"
   ACCESS_TOKEN_SECRET: "SET_AT_DEPLOY"
   REFRESH_TOKEN_SECRET: "SET_AT_DEPLOY"
+  SITE_URL: "https://healthyonegram.com"
   CLIENT_URL: "SET_AT_DEPLOY"
   ADMIN_URL: "SET_AT_DEPLOY"
   SMTP_HOST: "smtp.gmail.com"

@@ -103,6 +103,33 @@ const staggerContainer = {
   },
 };
 
+const BLOG_MEDIA_VARIANTS = {
+  minimal: {
+    shell:
+      "relative aspect-[4/3] overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-slate-100 via-white to-slate-100 p-3",
+    frame:
+      "relative h-full w-full overflow-hidden rounded-[1.2rem] border border-white/70 shadow-[0_18px_50px_rgba(15,23,42,0.12)]",
+    media:
+      "h-full w-full object-contain transition-transform duration-500",
+  },
+  featured: {
+    shell:
+      "relative min-h-[260px] sm:min-h-[360px] lg:min-h-full overflow-hidden bg-gradient-to-br from-slate-100 via-white to-indigo-50 p-4 sm:p-6",
+    frame:
+      "relative h-full w-full overflow-hidden rounded-[1.75rem] border border-white/70 shadow-[0_22px_60px_rgba(15,23,42,0.14)]",
+    media:
+      "h-full w-full object-contain transition-transform duration-500",
+  },
+  grid: {
+    shell:
+      "relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-slate-100 via-white to-slate-100 p-3",
+    frame:
+      "relative h-full w-full overflow-hidden rounded-[1.2rem] border border-white/70 shadow-[0_18px_50px_rgba(15,23,42,0.12)]",
+    media:
+      "h-full w-full object-contain transition-transform duration-500",
+  },
+};
+
 export default function BlogPage() {
   const [blogs, setBlogs] = useState([]);
   const [pageConfig, setPageConfig] = useState(DEFAULT_PAGE);
@@ -127,8 +154,7 @@ export default function BlogPage() {
   const otherBlogs = blogs.slice(1);
 
   const resolveBlogHref = (blog) => `/blogs/${blog.slug || blog._id}`;
-  const hasBlogMedia = (blog) =>
-    Boolean(blog?.videoUrl || blog?.image);
+  const hasBlogMedia = (blog) => Boolean(blog?.videoUrl || blog?.image);
   const renderBlogMedia = (blog, className = "") => {
     if (blog.videoUrl) {
       return (
@@ -137,6 +163,7 @@ export default function BlogPage() {
           controls
           playsInline
           poster={blog.image || undefined}
+          preload="metadata"
           className={className}
         />
       );
@@ -147,6 +174,21 @@ export default function BlogPage() {
     }
 
     return null;
+  };
+  const renderBlogMediaSurface = (blog, variant = "grid") => {
+    if (!hasBlogMedia(blog)) return null;
+
+    const styles =
+      BLOG_MEDIA_VARIANTS[variant] || BLOG_MEDIA_VARIANTS.grid;
+    const mediaTone = blog?.videoUrl ? "bg-black" : "bg-white";
+
+    return (
+      <div className={styles.shell}>
+        <div className={`${styles.frame} ${mediaTone}`}>
+          {renderBlogMedia(blog, `${styles.media} ${mediaTone}`)}
+        </div>
+      </div>
+    );
   };
 
   const resolveBlogApiBaseUrl = () => {
@@ -356,12 +398,7 @@ export default function BlogPage() {
                         className="group h-full flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-lg transition-all duration-300"
                       >
                         {hasBlogMedia(blog) && (
-                          <div className="relative h-48 overflow-hidden bg-gray-50">
-                            {renderBlogMedia(
-                              blog,
-                              "w-full h-full object-cover group-hover:scale-105 transition-transform duration-700",
-                            )}
-                          </div>
+                          renderBlogMediaSurface(blog, "minimal")
                         )}
                         <div className="p-6 flex-1 flex flex-col">
                           <div className="text-xs text-gray-400 font-medium mb-2">
@@ -540,12 +577,8 @@ export default function BlogPage() {
               className={`grid grid-cols-1 ${hasBlogMedia(featuredBlog) ? "lg:grid-cols-2" : ""} gap-0 items-stretch bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/5`}
             >
               {hasBlogMedia(featuredBlog) && (
-                <div className="relative h-96 lg:h-auto overflow-hidden group">
-                  {renderBlogMedia(
-                    featuredBlog,
-                    "w-full h-full object-cover transition-transform duration-700 group-hover:scale-105",
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                <div className="relative group">
+                  {renderBlogMediaSurface(featuredBlog, "featured")}
                   <div
                     className={`absolute top-6 left-6 bg-gradient-to-r ${theme.accentStrong} text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg`}
                   >
@@ -626,12 +659,8 @@ export default function BlogPage() {
                       className="h-full flex flex-col bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border border-gray-100"
                     >
                       {hasBlogMedia(blog) && (
-                        <div className="relative h-60 overflow-hidden">
-                          {renderBlogMedia(
-                            blog,
-                            "w-full h-full object-cover group-hover:scale-110 transition-transform duration-700",
-                          )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+                        <div className="relative">
+                          {renderBlogMediaSurface(blog, "grid")}
                           <div className="absolute top-4 left-4">
                             <span className="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-bold text-gray-900 shadow-sm">
                               {blog.category || "General"}

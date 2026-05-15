@@ -224,8 +224,14 @@ export const getHeroImageUrl = (imageUrl) =>
   getOptimizedImageUrl(imageUrl, {
     width: 1800,
     height: 1200,
-    crop: "fill",
-    gravity: "auto",
+    crop: "fit",
+  });
+
+export const getHeroMobileImageUrl = (imageUrl) =>
+  getOptimizedImageUrl(imageUrl, {
+    width: 900,
+    height: 1200,
+    crop: "fit",
   });
 
 export const getCategoryImageUrl = (imageUrl) =>
@@ -258,6 +264,7 @@ export default {
   getProductImageUrl,
   getBannerImageUrl,
   getHeroImageUrl,
+  getHeroMobileImageUrl,
   getCategoryImageUrl,
   getProductCardImageUrl,
   isCloudinaryUrl,

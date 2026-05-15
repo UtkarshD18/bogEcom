@@ -114,6 +114,9 @@ export default function ProductPageSettingsSection({
   const [extraParagraphDraft, setExtraParagraphDraft] = useState(
     toParagraphText(productPage.descriptionSection.extraParagraphs),
   );
+  const [shippingPointsDraft, setShippingPointsDraft] = useState(
+    toLines(productPage.shippingSection.points),
+  );
   const [reasonsParagraphDraft, setReasonsParagraphDraft] = useState(
     toParagraphText(productPage.shippingSection.reasonsParagraphs),
   );
@@ -123,6 +126,10 @@ export default function ProductPageSettingsSection({
       toParagraphText(productPage.descriptionSection.extraParagraphs),
     );
   }, [productPage.descriptionSection.extraParagraphs]);
+
+  useEffect(() => {
+    setShippingPointsDraft(toLines(productPage.shippingSection.points));
+  }, [productPage.shippingSection.points]);
 
   useEffect(() => {
     setReasonsParagraphDraft(
@@ -138,6 +145,33 @@ export default function ProductPageSettingsSection({
         [field]: nextValue,
       },
     }));
+  };
+
+  const updateNestedArrayItemField = (
+    section,
+    arrayField,
+    index,
+    field,
+    nextValue,
+  ) => {
+    setProductPage((current) => {
+      const currentItems = Array.isArray(current?.[section]?.[arrayField])
+        ? current[section][arrayField]
+        : [];
+      const nextItems = [...currentItems];
+      nextItems[index] = {
+        ...(nextItems[index] || {}),
+        [field]: nextValue,
+      };
+
+      return {
+        ...current,
+        [section]: {
+          ...current[section],
+          [arrayField]: nextItems,
+        },
+      };
+    });
   };
 
   const handleBannerUpload = async (event) => {
@@ -186,12 +220,19 @@ export default function ProductPageSettingsSection({
             Hero And Top Blocks
           </h4>
           <p className="text-sm text-gray-500">
-            Manage the story card, highlight cards, and delivery preview near
-            the buy box.
+            Manage the story card, generated info cards, delivery preview, and
+            trust cards near the buy box.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <ToggleField
+            label="Show Story Card"
+            checked={productPage.hero.showStoryCard}
+            onChange={(nextValue) =>
+              updateSectionField("hero", "showStoryCard", nextValue)
+            }
+          />
           <ToggleField
             label="Show Insight Cards"
             checked={productPage.hero.showInsightCards}
@@ -206,40 +247,293 @@ export default function ProductPageSettingsSection({
               updateSectionField("hero", "showDeliveryPreview", nextValue)
             }
           />
+          <ToggleField
+            label="Show Trust Cards"
+            checked={productPage.hero.showSupportCards !== false}
+            onChange={(nextValue) =>
+              updateSectionField("hero", "showSupportCards", nextValue)
+            }
+          />
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
-            <TextAreaField
-              label="Price Card Description"
-              value={productPage.hero.priceCardDescription}
+        <div className="mt-5 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="mb-4">
+            <h5 className="text-sm font-semibold text-gray-800">
+              Story Card
+            </h5>
+            <p className="text-xs text-gray-500">
+              Every visible line in the story card can be controlled here.
+              Leave any field blank to hide it. If description is blank, the
+              product&apos;s main Product Story text is used instead.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <TextField
+              label="Story Eyebrow"
+              value={productPage.hero.storyEyebrow}
               onChange={(nextValue) =>
-                updateSectionField("hero", "priceCardDescription", nextValue)
+                updateSectionField("hero", "storyEyebrow", nextValue)
               }
-              rows={3}
+            />
+            <TextField
+              label="Story Title"
+              value={productPage.hero.storyTitle}
+              onChange={(nextValue) =>
+                updateSectionField("hero", "storyTitle", nextValue)
+              }
             />
           </div>
 
-          <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="mt-4">
             <TextAreaField
-              label="Variant Card Description"
-              value={productPage.hero.variantCardDescription}
+              label="Story Description"
+              value={productPage.hero.storyDescription}
               onChange={(nextValue) =>
-                updateSectionField("hero", "variantCardDescription", nextValue)
+                updateSectionField("hero", "storyDescription", nextValue)
               }
               rows={3}
+              hint="Optional override for the story paragraph inside the card."
             />
           </div>
+        </div>
 
-          <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
-            <TextAreaField
-              label="Social Proof Description"
-              value={productPage.hero.socialProofDescription}
-              onChange={(nextValue) =>
-                updateSectionField("hero", "socialProofDescription", nextValue)
-              }
-              rows={3}
-            />
+        <div className="mt-5 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="mb-4">
+            <h5 className="text-sm font-semibold text-gray-800">
+              Generated Info Cards
+            </h5>
+            <p className="text-xs text-gray-500">
+              Labels and helper text are editable. Values still come from live
+              product data such as category, selected pack, reviews, and stock.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {(productPage.detailsSection.cards || []).map((card, index) => (
+              <div
+                key={`detail-card-${index}`}
+                className="rounded-lg border border-gray-200 bg-gray-50 p-4"
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+                  Card {index + 1}
+                </p>
+                <div className="mt-3 space-y-3">
+                  <TextField
+                    label="Label"
+                    value={card.label || ""}
+                    onChange={(nextValue) =>
+                      updateNestedArrayItemField(
+                        "detailsSection",
+                        "cards",
+                        index,
+                        "label",
+                        nextValue,
+                      )
+                    }
+                  />
+                  <TextAreaField
+                    label="Helper Text"
+                    value={card.helper || ""}
+                    onChange={(nextValue) =>
+                      updateNestedArrayItemField(
+                        "detailsSection",
+                        "cards",
+                        index,
+                        "helper",
+                        nextValue,
+                      )
+                    }
+                    rows={2}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="mb-4">
+            <h5 className="text-sm font-semibold text-gray-800">
+              Insight Cards
+            </h5>
+            <p className="text-xs text-gray-500">
+              These are the three summary cards shown below the main hero
+              layout.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <TextField
+                label="Price Card Eyebrow"
+                value={productPage.hero.priceCardEyebrow}
+                onChange={(nextValue) =>
+                  updateSectionField("hero", "priceCardEyebrow", nextValue)
+                }
+              />
+              <TextAreaField
+                label="Price Card Description"
+                value={productPage.hero.priceCardDescription}
+                onChange={(nextValue) =>
+                  updateSectionField("hero", "priceCardDescription", nextValue)
+                }
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <TextField
+                label="Variant Card Eyebrow"
+                value={productPage.hero.variantCardEyebrow}
+                onChange={(nextValue) =>
+                  updateSectionField("hero", "variantCardEyebrow", nextValue)
+                }
+              />
+              <TextAreaField
+                label="Variant Card Description"
+                value={productPage.hero.variantCardDescription}
+                onChange={(nextValue) =>
+                  updateSectionField("hero", "variantCardDescription", nextValue)
+                }
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <TextField
+                label="Social Proof Eyebrow"
+                value={productPage.hero.socialProofEyebrow}
+                onChange={(nextValue) =>
+                  updateSectionField("hero", "socialProofEyebrow", nextValue)
+                }
+              />
+              <TextAreaField
+                label="Social Proof Description"
+                value={productPage.hero.socialProofDescription}
+                onChange={(nextValue) =>
+                  updateSectionField("hero", "socialProofDescription", nextValue)
+                }
+                rows={3}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <div className="mb-4">
+              <h5 className="text-sm font-semibold text-gray-800">
+                Delivery Preview
+              </h5>
+              <p className="text-xs text-gray-500">
+                Edit the visible copy in the pincode preview card.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <TextField
+                label="Delivery Eyebrow"
+                value={productPage.hero.deliveryEyebrow || ""}
+                onChange={(nextValue) =>
+                  updateSectionField("hero", "deliveryEyebrow", nextValue)
+                }
+              />
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <TextField
+                  label="Optional Label"
+                  value={productPage.hero.deliveryOptionalLabel || ""}
+                  onChange={(nextValue) =>
+                    updateSectionField(
+                      "hero",
+                      "deliveryOptionalLabel",
+                      nextValue,
+                    )
+                  }
+                />
+                <TextField
+                  label="Ready Label"
+                  value={productPage.hero.deliveryReadyLabel || ""}
+                  onChange={(nextValue) =>
+                    updateSectionField("hero", "deliveryReadyLabel", nextValue)
+                  }
+                />
+              </div>
+              <TextField
+                label="Input Placeholder"
+                value={productPage.hero.deliveryInputPlaceholder || ""}
+                onChange={(nextValue) =>
+                  updateSectionField(
+                    "hero",
+                    "deliveryInputPlaceholder",
+                    nextValue,
+                  )
+                }
+              />
+              <TextAreaField
+                label="Idle Helper Text"
+                value={productPage.hero.deliveryHelperText || ""}
+                onChange={(nextValue) =>
+                  updateSectionField("hero", "deliveryHelperText", nextValue)
+                }
+                rows={3}
+                hint="Shown before the customer enters a valid pincode."
+              />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <div className="mb-4">
+              <h5 className="text-sm font-semibold text-gray-800">
+                Trust Cards
+              </h5>
+              <p className="text-xs text-gray-500">
+                These four cards sit below Add to Cart and Buy Now. Icons stay
+                fixed, but the copy is fully editable.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {(productPage.hero.supportCards || []).map((card, index) => (
+                <div
+                  key={`support-card-${index}`}
+                  className="rounded-lg border border-gray-200 bg-gray-50 p-4"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+                    Trust Card {index + 1}
+                  </p>
+                  <div className="mt-3 space-y-3">
+                    <TextField
+                      label="Title"
+                      value={card.title || ""}
+                      onChange={(nextValue) =>
+                        updateNestedArrayItemField(
+                          "hero",
+                          "supportCards",
+                          index,
+                          "title",
+                          nextValue,
+                        )
+                      }
+                    />
+                    <TextAreaField
+                      label="Description"
+                      value={card.description || ""}
+                      onChange={(nextValue) =>
+                        updateNestedArrayItemField(
+                          "hero",
+                          "supportCards",
+                          index,
+                          "description",
+                          nextValue,
+                        )
+                      }
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -461,8 +755,8 @@ export default function ProductPageSettingsSection({
             Details And Shipping
           </h4>
           <p className="text-sm text-gray-500">
-            Toggle the live details cards. Card labels and values are always
-            generated from product and selected variant data.
+            Control the lower details and shipping sections that appear under
+            the tabbed content.
           </p>
         </div>
 
@@ -524,6 +818,22 @@ export default function ProductPageSettingsSection({
                 )
               }
             />
+            <TextAreaField
+              label="Shipping Points"
+              value={shippingPointsDraft}
+              onChange={(nextValue) => {
+                setShippingPointsDraft(nextValue);
+              }}
+              onBlur={() =>
+                updateSectionField(
+                  "shippingSection",
+                  "points",
+                  fromLines(shippingPointsDraft),
+                )
+              }
+              rows={6}
+              hint="One shipping or trust point per line."
+            />
           </div>
 
           <div className="space-y-4">
@@ -565,8 +875,8 @@ export default function ProductPageSettingsSection({
             Reviews And Recommendation Sections
           </h4>
           <p className="text-sm text-gray-500">
-            Choose which lower product sections are visible. Storefront text is
-            fixed by the design system.
+            Choose which lower product sections are visible and update the
+            headings or CTA text shown on the storefront.
           </p>
         </div>
 
@@ -579,6 +889,20 @@ export default function ProductPageSettingsSection({
                 updateSectionField("reviewsSection", "show", nextValue)
               }
             />
+            <TextField
+              label="Reviews Eyebrow"
+              value={productPage.reviewsSection.eyebrow || ""}
+              onChange={(nextValue) =>
+                updateSectionField("reviewsSection", "eyebrow", nextValue)
+              }
+            />
+            <TextField
+              label="Reviews Title"
+              value={productPage.reviewsSection.title || ""}
+              onChange={(nextValue) =>
+                updateSectionField("reviewsSection", "title", nextValue)
+              }
+            />
           </div>
 
           <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
@@ -587,6 +911,39 @@ export default function ProductPageSettingsSection({
               checked={productPage.frequentlyBoughtSection.show}
               onChange={(nextValue) =>
                 updateSectionField("frequentlyBoughtSection", "show", nextValue)
+              }
+            />
+            <TextField
+              label="Frequently Bought Eyebrow"
+              value={productPage.frequentlyBoughtSection.eyebrow || ""}
+              onChange={(nextValue) =>
+                updateSectionField(
+                  "frequentlyBoughtSection",
+                  "eyebrow",
+                  nextValue,
+                )
+              }
+            />
+            <TextField
+              label="Frequently Bought Title"
+              value={productPage.frequentlyBoughtSection.title || ""}
+              onChange={(nextValue) =>
+                updateSectionField(
+                  "frequentlyBoughtSection",
+                  "title",
+                  nextValue,
+                )
+              }
+            />
+            <TextField
+              label="Frequently Bought Button Text"
+              value={productPage.frequentlyBoughtSection.buttonText || ""}
+              onChange={(nextValue) =>
+                updateSectionField(
+                  "frequentlyBoughtSection",
+                  "buttonText",
+                  nextValue,
+                )
               }
             />
           </div>
@@ -599,6 +956,39 @@ export default function ProductPageSettingsSection({
                 updateSectionField(
                   "recommendedCombosSection",
                   "show",
+                  nextValue,
+                )
+              }
+            />
+            <TextField
+              label="Recommended Combos Eyebrow"
+              value={productPage.recommendedCombosSection.eyebrow || ""}
+              onChange={(nextValue) =>
+                updateSectionField(
+                  "recommendedCombosSection",
+                  "eyebrow",
+                  nextValue,
+                )
+              }
+            />
+            <TextField
+              label="Recommended Combos Title"
+              value={productPage.recommendedCombosSection.title || ""}
+              onChange={(nextValue) =>
+                updateSectionField(
+                  "recommendedCombosSection",
+                  "title",
+                  nextValue,
+                )
+              }
+            />
+            <TextField
+              label="Recommended Combos Link Text"
+              value={productPage.recommendedCombosSection.linkText || ""}
+              onChange={(nextValue) =>
+                updateSectionField(
+                  "recommendedCombosSection",
+                  "linkText",
                   nextValue,
                 )
               }

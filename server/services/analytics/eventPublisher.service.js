@@ -112,7 +112,7 @@ const shouldDirectIngestWhenNoWorker = () => {
     return ["true", "1", "yes", "on"].includes(explicit);
   }
 
-  return process.env.NODE_ENV !== "production";
+  return true;
 };
 
 const isWorkerActiveCached = async () => {
