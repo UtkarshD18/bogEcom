@@ -12,9 +12,28 @@ import {
 } from "../controllers/settings.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import createPublicResponseCacheMiddleware, {
+  getPublicResponseCacheTtlSeconds,
+} from "../middlewares/publicResponseCache.js";
 import requireAdminPermission from "../middlewares/requireAdminPermission.js";
 
 const router = express.Router();
+const SETTINGS_CACHE_TTL_SECONDS = getPublicResponseCacheTtlSeconds(
+  "PERF_RESPONSE_CACHE_SETTINGS_TTL_SECONDS",
+  90,
+);
+const MAINTENANCE_STATUS_CACHE_TTL_SECONDS = getPublicResponseCacheTtlSeconds(
+  "PERF_RESPONSE_CACHE_MAINTENANCE_STATUS_TTL_SECONDS",
+  30,
+);
+const settingsCache = createPublicResponseCacheMiddleware({
+  namespaces: ["settings"],
+  ttlSeconds: SETTINGS_CACHE_TTL_SECONDS,
+});
+const maintenanceStatusCache = createPublicResponseCacheMiddleware({
+  namespaces: ["settings"],
+  ttlSeconds: MAINTENANCE_STATUS_CACHE_TTL_SECONDS,
+});
 
 /**
  * Settings Routes
@@ -25,16 +44,16 @@ const router = express.Router();
 // ==================== PUBLIC ROUTES ====================
 
 // Header appearance settings
-router.get("/header", getHeaderSettings);
+router.get("/header", settingsCache, getHeaderSettings);
 
 // Computed maintenance status
-router.get("/maintenance-status", getMaintenanceStatus);
+router.get("/maintenance-status", maintenanceStatusCache, getMaintenanceStatus);
 
 // Get all public settings
-router.get("/public", getPublicSettings);
+router.get("/public", settingsCache, getPublicSettings);
 
 // Get specific setting by key
-router.get("/public/:key", getSettingByKey);
+router.get("/public/:key", settingsCache, getSettingByKey);
 
 // ==================== ADMIN ROUTES ====================
 

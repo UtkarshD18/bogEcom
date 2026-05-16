@@ -10,8 +10,19 @@ import {
 } from "../controllers/category.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import createPublicResponseCacheMiddleware, {
+  getPublicResponseCacheTtlSeconds,
+} from "../middlewares/publicResponseCache.js";
 
 const router = express.Router();
+const CATEGORY_CACHE_TTL_SECONDS = getPublicResponseCacheTtlSeconds(
+  "PERF_RESPONSE_CACHE_CATEGORIES_TTL_SECONDS",
+  300,
+);
+const categoryCache = createPublicResponseCacheMiddleware({
+  namespaces: ["categories", "products"],
+  ttlSeconds: CATEGORY_CACHE_TTL_SECONDS,
+});
 
 /**
  * Category Routes
@@ -23,13 +34,13 @@ const router = express.Router();
 // ==================== PUBLIC ROUTES ====================
 
 // Get all categories
-router.get("/", getCategories);
+router.get("/", categoryCache, getCategories);
 
 // Get category tree (hierarchical)
-router.get("/tree", getCategoryTree);
+router.get("/tree", categoryCache, getCategoryTree);
 
 // Get single category by ID or slug
-router.get("/:id", getCategoryById);
+router.get("/:id", categoryCache, getCategoryById);
 
 // ==================== ADMIN ROUTES ====================
 

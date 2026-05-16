@@ -1,4 +1,7 @@
 import BlogPageModel from "../models/blogPage.model.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
+
+const BLOG_RESPONSE_CACHE_NAMESPACES = ["blogs"];
 
 const mergeWithDefaults = (page) => {
   const defaults = BlogPageModel.getDefaultContent();
@@ -115,6 +118,7 @@ export const updateBlogPage = async (req, res) => {
         isActive: true,
       });
     }
+    await invalidatePublicResponseCache(BLOG_RESPONSE_CACHE_NAMESPACES);
 
     return res.status(200).json({
       error: false,

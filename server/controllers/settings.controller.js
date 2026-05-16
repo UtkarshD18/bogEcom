@@ -4,8 +4,10 @@ import {
   normalizeMaintenanceSettings,
   resolveMaintenanceStatus,
 } from "../utils/maintenance.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
 
 const isProduction = process.env.NODE_ENV === "production";
+const SETTINGS_RESPONSE_CACHE_NAMESPACES = ["settings"];
 // Debug-only logging to keep production output clean
 const debugLog = (...args) => {
   if (!isProduction) {
@@ -484,6 +486,7 @@ export const updateSetting = async (req, res) => {
 
     debugLog(`✓ Setting "${key}" updated/created by admin`);
 
+    await invalidatePublicResponseCache(SETTINGS_RESPONSE_CACHE_NAMESPACES);
     res.status(200).json({
       error: false,
       success: true,
@@ -552,6 +555,7 @@ export const createSetting = async (req, res) => {
 
     debugLog(`✓ Setting "${key}" created by admin`);
 
+    await invalidatePublicResponseCache(SETTINGS_RESPONSE_CACHE_NAMESPACES);
     res.status(201).json({
       error: false,
       success: true,
@@ -614,6 +618,7 @@ export const deleteSetting = async (req, res) => {
 
     debugLog(`✓ Setting "${key}" deleted`);
 
+    await invalidatePublicResponseCache(SETTINGS_RESPONSE_CACHE_NAMESPACES);
     res.status(200).json({
       error: false,
       success: true,
@@ -666,6 +671,7 @@ export const updateHeaderSettings = async (req, res) => {
         runValidators: true,
       },
     );
+    await invalidatePublicResponseCache(SETTINGS_RESPONSE_CACHE_NAMESPACES);
 
     return res.status(200).json({
       error: false,

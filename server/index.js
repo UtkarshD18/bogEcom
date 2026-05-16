@@ -905,3 +905,5 @@ connectDb()
     console.error("Server startup failed:", error?.message || error);
     process.exit(1);
   });
+
+// No custom shutdown handlers defined here; rely on default process behavior.

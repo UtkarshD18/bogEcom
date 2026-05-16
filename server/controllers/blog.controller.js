@@ -1,6 +1,9 @@
 import { deleteFromCloudinary } from "../config/cloudinary.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
 import BlogModel from "../models/blog.model.js";
 import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
+
+const BLOG_RESPONSE_CACHE_NAMESPACES = ["blogs"];
 
 const normalizeText = (value, fallback = "") => {
   if (typeof value !== "string") return fallback;
@@ -149,6 +152,24 @@ export const getBlogBySlug = async (req, res) => {
   }
 };
 
+export const incrementBlogViewCountBestEffort = async (identifier) => {
+  try {
+    const normalizedIdentifier = String(identifier || "").trim();
+    if (!normalizedIdentifier) {
+      return;
+    }
+
+    await BlogModel.updateOne(resolvePublicBlogQuery(normalizedIdentifier), {
+      $inc: { viewCount: 1 },
+    });
+  } catch (error) {
+    console.warn(
+      "Blog view count cache-hit update failed:",
+      error?.message || error,
+    );
+  }
+};
+
 /**
  * Get single blog by ID (Admin - for editing)
  */
@@ -257,6 +278,7 @@ export const createBlog = async (req, res) => {
     });
 
     await blog.save();
+    await invalidatePublicResponseCache(BLOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(201).json({
       error: false,
@@ -335,6 +357,7 @@ export const updateBlog = async (req, res) => {
     if (isPublished !== undefined) blog.isPublished = normalizePublishFlag(isPublished, blog.isPublished);
 
     await blog.save();
+    await invalidatePublicResponseCache(BLOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -379,6 +402,7 @@ export const deleteBlog = async (req, res) => {
         });
       }
     }
+    await invalidatePublicResponseCache(BLOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,

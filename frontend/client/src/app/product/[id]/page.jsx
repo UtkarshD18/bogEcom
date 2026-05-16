@@ -2288,7 +2288,7 @@ const ProductDetailPage = () => {
                   <p className="mt-3 text-lg font-semibold text-[#24150f]">
                     {isReservedForCheckout
                       ? "This pack is temporarily reserved"
-                      : "We&apos;re restocking soon"}
+                      : "We're restocking soon"}
                   </p>
                   <p className="mt-1 text-sm leading-6 text-[#6b5144]">
                     {isReservedForCheckout

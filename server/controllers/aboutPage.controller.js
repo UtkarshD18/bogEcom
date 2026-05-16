@@ -1,4 +1,7 @@
 import AboutPageModel from "../models/aboutPage.model.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
+
+const ABOUT_RESPONSE_CACHE_NAMESPACES = ["about"];
 
 const mergeWithDefaults = (page) => {
   const defaults = AboutPageModel.getDefaultContent();
@@ -139,6 +142,7 @@ export const updateAboutPage = async (req, res) => {
         isActive: true,
       });
     }
+    await invalidatePublicResponseCache(ABOUT_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -173,6 +177,7 @@ export const resetAboutPage = async (req, res) => {
       isActive: true,
       updatedBy: adminId,
     });
+    await invalidatePublicResponseCache(ABOUT_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,

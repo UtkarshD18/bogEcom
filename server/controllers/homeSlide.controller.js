@@ -1,4 +1,5 @@
 import { deleteFromCloudinary } from "../config/cloudinary.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
 import HomeSlideModel from "../models/homeSlide.model.js";
 import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
 
@@ -13,6 +14,7 @@ const HOME_SLIDES_PUBLIC_CACHE_TTL_MS = Math.max(
 );
 const homeSlidesResponseCache = new Map();
 const homeSlidesInFlightRequests = new Map();
+const HOME_SLIDES_RESPONSE_CACHE_NAMESPACES = ["home-slides"];
 
 const normalizeHomeSlideLimit = (value) => {
   const parsed = Number(value);
@@ -253,6 +255,7 @@ export const createSlide = async (req, res) => {
 
     await slide.save();
     clearHomeSlidesPublicCache();
+    await invalidatePublicResponseCache(HOME_SLIDES_RESPONSE_CACHE_NAMESPACES);
 
     res.status(201).json({
       error: false,
@@ -320,6 +323,7 @@ export const updateSlide = async (req, res) => {
       { new: true, runValidators: true },
     );
     clearHomeSlidesPublicCache();
+    await invalidatePublicResponseCache(HOME_SLIDES_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -374,6 +378,7 @@ export const deleteSlide = async (req, res) => {
     }
 
     clearHomeSlidesPublicCache();
+    await invalidatePublicResponseCache(HOME_SLIDES_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -415,6 +420,7 @@ export const reorderSlides = async (req, res) => {
 
     await HomeSlideModel.bulkWrite(bulkOps);
     clearHomeSlidesPublicCache();
+    await invalidatePublicResponseCache(HOME_SLIDES_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,

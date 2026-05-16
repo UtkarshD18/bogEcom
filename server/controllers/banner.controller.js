@@ -1,4 +1,5 @@
 import { deleteFromCloudinary } from "../config/cloudinary.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
 import BannerModel from "../models/banner.model.js";
 import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
 
@@ -13,6 +14,7 @@ const BANNER_PUBLIC_CACHE_TTL_MS = Math.max(
 );
 const bannerResponseCache = new Map();
 const bannerInFlightRequests = new Map();
+const BANNER_RESPONSE_CACHE_NAMESPACES = ["banners"];
 
 const normalizeBannerLimit = (value) => {
   const parsed = Number(value);
@@ -327,6 +329,7 @@ export const createBanner = async (req, res) => {
 
     await banner.save();
     clearBannerPublicCache();
+    await invalidatePublicResponseCache(BANNER_RESPONSE_CACHE_NAMESPACES);
 
     res.status(201).json({
       error: false,
@@ -434,6 +437,7 @@ export const updateBanner = async (req, res) => {
       { new: true, runValidators: true },
     );
     clearBannerPublicCache();
+    await invalidatePublicResponseCache(BANNER_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -488,6 +492,7 @@ export const deleteBanner = async (req, res) => {
     }
 
     clearBannerPublicCache();
+    await invalidatePublicResponseCache(BANNER_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,

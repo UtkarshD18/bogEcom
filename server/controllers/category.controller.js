@@ -1,5 +1,8 @@
 import CategoryModel from "../models/category.model.js";
 import ProductModel from "../models/product.model.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
+
+const CATEGORY_RESPONSE_CACHE_NAMESPACES = ["categories", "products", "combos"];
 
 /**
  * Category Controller
@@ -243,6 +246,7 @@ export const createCategory = async (req, res) => {
     });
 
     await category.save();
+    await invalidatePublicResponseCache(CATEGORY_RESPONSE_CACHE_NAMESPACES);
 
     res.status(201).json({
       error: false,
@@ -298,6 +302,7 @@ export const updateCategory = async (req, res) => {
       { $set: updateData },
       { new: true, runValidators: true },
     );
+    await invalidatePublicResponseCache(CATEGORY_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -369,6 +374,7 @@ export const deleteCategory = async (req, res) => {
     }
 
     await CategoryModel.findByIdAndDelete(id);
+    await invalidatePublicResponseCache(CATEGORY_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -408,6 +414,7 @@ export const reorderCategories = async (req, res) => {
     }));
 
     await CategoryModel.bulkWrite(bulkOps);
+    await invalidatePublicResponseCache(CATEGORY_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,

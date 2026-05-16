@@ -20,13 +20,20 @@ import {
   formatWeight,
   normalizeVariantWeight,
 } from "../utils/weightNormalization.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
 
 const isProduction = process.env.NODE_ENV === "production";
+const PRODUCT_RESPONSE_CACHE_NAMESPACES = ["products"];
+const CATALOG_RESPONSE_CACHE_NAMESPACES = ["products", "categories", "combos"];
 // Debug-only logging to keep production output clean
 const debugLog = (...args) => {
   if (!isProduction) {
     console.log(...args);
   }
+};
+
+const invalidateProductResponseCache = async (namespaces) => {
+  await invalidatePublicResponseCache(namespaces);
 };
 
 const canRequestViewExclusive = async (req) => {
@@ -1093,6 +1100,31 @@ export const getProductById = async (req, res) => {
   }
 };
 
+export const incrementProductViewCountBestEffort = async (identifier) => {
+  try {
+    const normalizedIdentifier = String(identifier || "").trim();
+    if (!normalizedIdentifier) {
+      return;
+    }
+
+    const query = normalizedIdentifier.match(/^[0-9a-fA-F]{24}$/)
+      ? { _id: normalizedIdentifier }
+      : {
+          slug: normalizedIdentifier,
+          isActive: { $ne: false },
+        };
+
+    await ProductModel.updateOne(query, {
+      $inc: { viewCount: 1 },
+    });
+  } catch (error) {
+    console.warn(
+      "Product view count cache-hit update failed:",
+      error?.message || error,
+    );
+  }
+};
+
 /**
  * Get highlighted products
  * @route GET /api/products/featured
@@ -1579,6 +1611,7 @@ export const createProduct = async (req, res) => {
     await CategoryModel.findByIdAndUpdate(category, {
       $inc: { productCount: 1 },
     });
+    await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(201).json({
       error: false,
@@ -1834,6 +1867,7 @@ export const updateProduct = async (req, res) => {
       productAfter: updatedProductForNotifications,
       source: "ADMIN_PRODUCT_UPDATE",
     });
+    await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -1878,6 +1912,7 @@ export const deleteProduct = async (req, res) => {
     });
 
     await ProductModel.findByIdAndDelete(id);
+    await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -1976,6 +2011,7 @@ export const bulkUpdateProducts = async (req, res) => {
         });
       }
     }
+    await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -2047,6 +2083,7 @@ export const updateStock = async (req, res) => {
       productAfter: updatedProductForNotifications,
       source: "ADMIN_STOCK_UPDATE",
     });
+    await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -2110,6 +2147,7 @@ export const addReview = async (req, res) => {
     });
 
     await product.save();
+    await invalidateProductResponseCache(PRODUCT_RESPONSE_CACHE_NAMESPACES);
 
     res.status(201).json({
       error: false,
@@ -2165,6 +2203,7 @@ export const deleteReview = async (req, res) => {
 
     product.reviews.pull(reviewId);
     await product.save();
+    await invalidateProductResponseCache(PRODUCT_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,
@@ -2211,6 +2250,7 @@ export const updateDemandStatus = async (req, res) => {
         message: "Product not found",
       });
     }
+    await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
 
     res.status(200).json({
       error: false,

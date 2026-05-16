@@ -6,6 +6,7 @@ import {
   getAllBlogsAdmin,
   getBlogById,
   getBlogBySlug,
+  incrementBlogViewCountBestEffort,
   updateBlog,
 } from "../controllers/blog.controller.js";
 import {
@@ -15,13 +16,29 @@ import {
 } from "../controllers/blogPage.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import createPublicResponseCacheMiddleware, {
+  getPublicResponseCacheTtlSeconds,
+} from "../middlewares/publicResponseCache.js";
 
 const router = express.Router();
+const BLOG_CACHE_TTL_SECONDS = getPublicResponseCacheTtlSeconds(
+  "PERF_RESPONSE_CACHE_CONTENT_TTL_SECONDS",
+  180,
+);
+const blogCache = createPublicResponseCacheMiddleware({
+  namespaces: ["blogs"],
+  ttlSeconds: BLOG_CACHE_TTL_SECONDS,
+});
+const blogDetailCache = createPublicResponseCacheMiddleware({
+  namespaces: ["blogs"],
+  ttlSeconds: BLOG_CACHE_TTL_SECONDS,
+  onHit: (req) => incrementBlogViewCountBestEffort(req.params.slug),
+});
 
 /**
  * Blogs Landing Page Config (Theme/Layout) - must be above `/:slug`
  */
-router.get("/page/public", getBlogPageContent);
+router.get("/page/public", blogCache, getBlogPageContent);
 router.get("/page/admin", auth, admin, getBlogPageAdmin);
 router.put("/page/admin", auth, admin, updateBlogPage);
 
@@ -47,9 +64,9 @@ router.delete("/:id", auth, admin, deleteBlog);
  * Public Routes
  */
 // Get all published blogs
-router.get("/", getAllBlogs);
+router.get("/", blogCache, getAllBlogs);
 
 // Get single blog by slug
-router.get("/:slug", getBlogBySlug);
+router.get("/:slug", blogDetailCache, getBlogBySlug);
 
 export default router;

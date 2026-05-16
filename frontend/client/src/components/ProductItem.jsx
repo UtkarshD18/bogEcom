@@ -412,7 +412,7 @@ const ProductItem = (props) => {
                 Out of stock
               </p>
               <p className="mt-1 text-[11px] font-medium text-white/80">
-                We&apos;re restocking soon
+                We're restocking soon
               </p>
             </div>
           </>

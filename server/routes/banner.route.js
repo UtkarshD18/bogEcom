@@ -10,8 +10,19 @@ import {
 } from "../controllers/banner.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import createPublicResponseCacheMiddleware, {
+  getPublicResponseCacheTtlSeconds,
+} from "../middlewares/publicResponseCache.js";
 
 const router = express.Router();
+const BANNER_CACHE_TTL_SECONDS = getPublicResponseCacheTtlSeconds(
+  "PERF_RESPONSE_CACHE_BANNERS_TTL_SECONDS",
+  120,
+);
+const bannerCache = createPublicResponseCacheMiddleware({
+  namespaces: ["banners"],
+  ttlSeconds: BANNER_CACHE_TTL_SECONDS,
+});
 
 /**
  * Banner Routes
@@ -23,10 +34,10 @@ const router = express.Router();
 // ==================== PUBLIC ROUTES ====================
 
 // Get active banners
-router.get("/", getBanners);
+router.get("/", bannerCache, getBanners);
 
 // Get single banner
-router.get("/:id", getBannerById);
+router.get("/:id", bannerCache, getBannerById);
 
 // Track banner click
 router.post("/:id/click", trackBannerClick);

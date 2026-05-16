@@ -10,12 +10,23 @@ import {
   togglePolicyStatus,
   updatePolicy,
 } from "../controllers/policy.controller.js";
+import createPublicResponseCacheMiddleware, {
+  getPublicResponseCacheTtlSeconds,
+} from "../middlewares/publicResponseCache.js";
 
 const router = express.Router();
+const POLICY_CACHE_TTL_SECONDS = getPublicResponseCacheTtlSeconds(
+  "PERF_RESPONSE_CACHE_CONTENT_TTL_SECONDS",
+  180,
+);
+const policyCache = createPublicResponseCacheMiddleware({
+  namespaces: ["policies"],
+  ttlSeconds: POLICY_CACHE_TTL_SECONDS,
+});
 
 // Public routes
-router.get("/public", getActivePolicies);
-router.get("/public/:slug", getPolicyBySlug);
+router.get("/public", policyCache, getActivePolicies);
+router.get("/public/:slug", policyCache, getPolicyBySlug);
 
 // Admin routes
 router.get("/admin/all", auth, admin, getAllPoliciesAdmin);

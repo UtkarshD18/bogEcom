@@ -23,8 +23,19 @@ import {
   toggleCombo,
   updateCombo,
 } from "../controllers/combo.controller.js";
+import createPublicResponseCacheMiddleware, {
+  getPublicResponseCacheTtlSeconds,
+} from "../middlewares/publicResponseCache.js";
 
 const router = express.Router();
+const COMBO_CACHE_TTL_SECONDS = getPublicResponseCacheTtlSeconds(
+  "PERF_RESPONSE_CACHE_COMBOS_TTL_SECONDS",
+  60,
+);
+const comboCache = createPublicResponseCacheMiddleware({
+  namespaces: ["combos", "products"],
+  ttlSeconds: COMBO_CACHE_TTL_SECONDS,
+});
 
 // Admin
 router.get("/admin/all", auth, admin, getAdminCombos);
@@ -43,10 +54,10 @@ router.get("/admin/analytics", auth, admin, getComboAnalyticsDashboard);
 router.get("/admin/analytics/orders", auth, admin, getComboOrderInsights);
 
 // Public
-router.get("/", optionalAuth, getCombos);
-router.get("/sections", optionalAuth, getComboSections);
+router.get("/", comboCache, optionalAuth, getCombos);
+router.get("/sections", comboCache, optionalAuth, getComboSections);
 router.post("/cart-upsell", optionalAuth, getCartUpsells);
-router.get("/slug/:slug", optionalAuth, getComboBySlug);
-router.get("/:id", optionalAuth, getComboById);
+router.get("/slug/:slug", comboCache, optionalAuth, getComboBySlug);
+router.get("/:id", comboCache, optionalAuth, getComboById);
 
 export default router;

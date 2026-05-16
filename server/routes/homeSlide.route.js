@@ -10,8 +10,19 @@ import {
 } from "../controllers/homeSlide.controller.js";
 import admin from "../middlewares/admin.js";
 import auth from "../middlewares/auth.js";
+import createPublicResponseCacheMiddleware, {
+  getPublicResponseCacheTtlSeconds,
+} from "../middlewares/publicResponseCache.js";
 
 const router = express.Router();
+const HOME_SLIDE_CACHE_TTL_SECONDS = getPublicResponseCacheTtlSeconds(
+  "PERF_RESPONSE_CACHE_HOME_SLIDES_TTL_SECONDS",
+  120,
+);
+const homeSlideCache = createPublicResponseCacheMiddleware({
+  namespaces: ["home-slides"],
+  ttlSeconds: HOME_SLIDE_CACHE_TTL_SECONDS,
+});
 
 /**
  * Home Slide Routes
@@ -23,10 +34,10 @@ const router = express.Router();
 // ==================== PUBLIC ROUTES ====================
 
 // Get active slides
-router.get("/", getHomeSlides);
+router.get("/", homeSlideCache, getHomeSlides);
 
 // Get single slide
-router.get("/:id", getSlideById);
+router.get("/:id", homeSlideCache, getSlideById);
 
 // ==================== ADMIN ROUTES ====================
 

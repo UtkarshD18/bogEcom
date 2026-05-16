@@ -29,11 +29,13 @@ import {
   getCartUpsellProductSuggestion,
   getComboSectionsForProduct,
 } from "../services/combos/comboRecommendation.service.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
 import { AppError, asyncHandler, sendSuccess } from "../utils/errorHandler.js";
 import { normalizeProductPageConfig } from "../utils/productPageConfig.js";
 
 const round2 = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const COMBO_RESPONSE_CACHE_NAMESPACES = ["combos", "products"];
 
 const roundCurrency = (value) => Math.max(Math.round(Number(value || 0)), 0);
 
@@ -569,6 +571,7 @@ export const createCombo = asyncHandler(async (req, res) => {
   });
 
   await upsertComboItems(combo._id, items);
+  await invalidatePublicResponseCache(COMBO_RESPONSE_CACHE_NAMESPACES);
 
   return sendSuccess(res, combo, "Combo created", 201);
 });
@@ -588,6 +591,7 @@ export const updateCombo = asyncHandler(async (req, res) => {
   await existing.save();
 
   await upsertComboItems(existing._id, items);
+  await invalidatePublicResponseCache(COMBO_RESPONSE_CACHE_NAMESPACES);
 
   return sendSuccess(res, existing, "Combo updated");
 });
@@ -600,6 +604,7 @@ export const deleteCombo = asyncHandler(async (req, res) => {
 
   await ComboModel.deleteOne({ _id: combo._id });
   await ComboOrderModel.deleteMany({ comboId: combo._id });
+  await invalidatePublicResponseCache(COMBO_RESPONSE_CACHE_NAMESPACES);
 
   return sendSuccess(res, { deleted: true }, "Combo deleted");
 });
@@ -654,6 +659,7 @@ export const toggleCombo = asyncHandler(async (req, res) => {
   combo.updatedBy = req.user || null;
 
   await combo.save();
+  await invalidatePublicResponseCache(COMBO_RESPONSE_CACHE_NAMESPACES);
   return sendSuccess(res, combo, "Combo updated");
 });
 
@@ -847,6 +853,7 @@ export const publishComboDraft = asyncHandler(async (req, res) => {
   draft.status = "approved";
   draft.lastUpdated = new Date();
   await draft.save();
+  await invalidatePublicResponseCache(COMBO_RESPONSE_CACHE_NAMESPACES);
 
   return sendSuccess(res, { draft, combo }, "Combo published");
 });

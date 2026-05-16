@@ -1,8 +1,11 @@
 import PolicyModel from "../models/policy.model.js";
+import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
 import {
   sanitizePolicyHtml,
   slugifyPolicyTitle,
 } from "../utils/policySanitizer.js";
+
+const POLICY_RESPONSE_CACHE_NAMESPACES = ["policies"];
 
 const THEME_STYLES = [
   "mint",
@@ -162,6 +165,7 @@ export const createPolicy = async (req, res) => {
       updatedBy: adminId,
       ...(normalizedTheme ? { theme: normalizedTheme } : {}),
     });
+    await invalidatePublicResponseCache(POLICY_RESPONSE_CACHE_NAMESPACES);
 
     return res.status(201).json({
       error: false,
@@ -246,6 +250,7 @@ export const updatePolicy = async (req, res) => {
     policy.version = Number(policy.version || 1) + 1;
     policy.updatedBy = adminId;
     await policy.save();
+    await invalidatePublicResponseCache(POLICY_RESPONSE_CACHE_NAMESPACES);
 
     return res.json({
       error: false,
@@ -280,6 +285,7 @@ export const togglePolicyStatus = async (req, res) => {
     policy.updatedBy = adminId;
     policy.version = Number(policy.version || 1) + 1;
     await policy.save();
+    await invalidatePublicResponseCache(POLICY_RESPONSE_CACHE_NAMESPACES);
 
     return res.json({
       error: false,
@@ -307,6 +313,7 @@ export const deletePolicy = async (req, res) => {
         message: "Policy not found",
       });
     }
+    await invalidatePublicResponseCache(POLICY_RESPONSE_CACHE_NAMESPACES);
 
     return res.json({
       error: false,
