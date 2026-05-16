@@ -241,8 +241,31 @@ const InfluencerLoginPage = () => {
   };
 
   return (
-    <section className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
-      <div className="bg-white rounded-2xl shadow-sm p-8 w-full max-w-lg">
+    <section className="relative flex min-h-[calc(100vh-var(--header-height,128px))] items-center justify-center overflow-hidden bg-[#f6efe4] px-4 py-10">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(189,122,6,0.14),transparent_34%),radial-gradient(circle_at_78%_72%,rgba(36,21,15,0.12),transparent_30%)]" />
+      <div className="relative grid w-full max-w-5xl overflow-hidden rounded-[34px] border border-[#e6d8ca] bg-white/95 shadow-[0_30px_90px_-60px_rgba(83,52,28,0.85)] lg:grid-cols-[0.95fr_1.05fr]">
+        <div className="hidden bg-gradient-to-br from-[#281710] via-[#6f4a32] to-[#bd7a06] p-8 text-white lg:flex lg:flex-col lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-amber-100">
+              Collaborator Program
+            </p>
+            <h2 className="mt-5 text-4xl font-black leading-tight">
+              Track your referral growth with Buy One Gram.
+            </h2>
+            <p className="mt-4 text-sm font-medium leading-6 text-white/75">
+              Sign in to view earnings, referral activity, and campaign performance from the same storefront experience customers already trust.
+            </p>
+          </div>
+          <div className="grid gap-3 text-sm font-semibold text-white/80">
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+              Secure referral dashboard
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+              Real-time order and commission tracking
+            </div>
+          </div>
+        </div>
+      <div className="p-7 sm:p-8">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
             <FiLock />
@@ -414,6 +437,7 @@ const InfluencerLoginPage = () => {
             </Button>
           </form>
         )}
+      </div>
       </div>
     </section>
   );

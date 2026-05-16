@@ -50,18 +50,17 @@ import {
   useState,
 } from "react";
 import {
+  FiCheckCircle,
   FiChevronLeft,
   FiChevronRight,
   FiMaximize2,
+  FiPackage,
+  FiShield,
+  FiTruck,
   FiX,
 } from "react-icons/fi";
 import { IoMdCart } from "react-icons/io";
-import {
-  MdLocalShipping,
-  MdOutlineInventory2,
-  MdOutlineSecurity,
-  MdVerified,
-} from "react-icons/md";
+import { MdVerified } from "react-icons/md";
 
 const DEFAULT_TABS = [
   { id: "description", label: "Description" },
@@ -336,22 +335,22 @@ const DEFAULT_SUPPORT_CARDS = [
   {
     title: "Free Delivery",
     description: "Stronger utility near the CTA block.",
-    Icon: MdLocalShipping,
+    Icon: FiTruck,
   },
   {
     title: "Secure Payment",
     description: "Checkout trust signal stays visible.",
-    Icon: MdOutlineSecurity,
+    Icon: FiShield,
   },
   {
     title: "Authentic Product",
     description: "Premium surface with useful proof points.",
-    Icon: MdVerified,
+    Icon: FiCheckCircle,
   },
   {
     title: "Clear Inventory",
     description: "Variant-aware stock display for better decisions.",
-    Icon: MdOutlineInventory2,
+    Icon: FiPackage,
   },
 ];
 
@@ -2386,8 +2385,10 @@ const ProductDetailPage = () => {
                         className="rounded-[24px] border border-[#e7dad1] bg-[#faf6f2] p-4"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="product-trust-icon flex h-11 w-11 items-center justify-center rounded-2xl">
-                            {TrustIcon ? <TrustIcon className="text-xl" /> : null}
+                          <div className="product-trust-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl">
+                            {TrustIcon ? (
+                              <TrustIcon className="h-5 w-5 shrink-0" />
+                            ) : null}
                           </div>
                           <div>
                             <p className="font-semibold text-[#24150f]">
@@ -3372,6 +3373,15 @@ const ProductDetailPage = () => {
         .product-trust-icon {
           background: var(--pd-accent);
           color: var(--pd-accent-text);
+        }
+
+        .product-trust-icon svg {
+          display: block;
+          height: 20px;
+          width: 20px;
+          max-height: 20px;
+          max-width: 20px;
+          stroke-width: 2.1;
         }
 
         .product-review-card {

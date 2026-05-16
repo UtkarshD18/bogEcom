@@ -214,16 +214,12 @@ const ProductItem = (props) => {
     defaultVariant?.stockNotificationRequested,
   );
   const actionLabel = alreadyInCart
-    ? isComboItem
-      ? "Remove combo"
-      : "Remove from cart"
+    ? "Remove from cart"
     : showNotifyAction
       ? "Notify me when back in stock"
       : isOutOfStock
         ? "Currently unavailable"
-        : isComboItem
-          ? "Add combo to cart"
-          : "Add to cart";
+        : "Add to cart";
   const primaryCartButtonStyle = {
     background:
       "linear-gradient(135deg, var(--flavor-color, #24150f) 0%, var(--flavor-hover, #3a2418) 100%)",

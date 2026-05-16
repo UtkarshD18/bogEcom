@@ -226,27 +226,47 @@ const AffiliatePortalPage = () => {
   };
 
   return (
-    <section className="min-h-screen bg-gray-50 py-10 px-4">
-      <div className="max-w-4xl mx-auto space-y-8">
-        <div className="bg-white rounded-2xl shadow-sm p-6">
+    <section className="relative min-h-[calc(100vh-var(--header-height,128px))] overflow-hidden bg-[#f6efe4] px-4 py-10">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(189,122,6,0.13),transparent_32%),radial-gradient(circle_at_82%_68%,rgba(36,21,15,0.10),transparent_34%)]" />
+      <div className="relative max-w-5xl mx-auto space-y-8">
+        <div className="overflow-hidden rounded-[32px] border border-[#e2d1c0] bg-white shadow-[0_24px_70px_-50px_rgba(83,52,28,0.7)]">
+          <div className="bg-gradient-to-br from-[#2c1a12] via-[#6f4a32] to-[#bd7a06] p-6 text-white">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800 mb-2">
+              <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-amber-100">
+                Buy One Gram
+              </p>
+              <h1 className="text-3xl font-black tracking-tight">
                 Collaborator Earnings Portal
               </h1>
-              <p className="text-gray-600">
+              <p className="mt-2 max-w-2xl text-sm font-medium text-white/78">
                 Sign in with your referral code and portal password to view earnings.
               </p>
             </div>
-            {data && (
-              <Button variant="outlined" onClick={handleLogout}>
-                Sign out
-              </Button>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {data && (
+                <Button
+                  variant="outlined"
+                  onClick={handleLogout}
+                  sx={{
+                    borderColor: "rgba(255,255,255,0.65)",
+                    color: "#fff",
+                    fontWeight: 800,
+                    "&:hover": {
+                      borderColor: "#fff",
+                      backgroundColor: "rgba(255,255,255,0.12)",
+                    },
+                  }}
+                >
+                  Sign out
+                </Button>
+              )}
+            </div>
+          </div>
           </div>
 
           {!hasToken && !loading && (
-            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="m-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
               <p className="text-sm text-amber-900">
                 Secure access is required for the collaborator dashboard.
               </p>
@@ -269,23 +289,26 @@ const AffiliatePortalPage = () => {
           )}
 
           {loading && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+            <div className="m-6 flex items-center gap-2 text-sm text-gray-500">
               <CircularProgress size={16} />
               Loading earnings...
             </div>
           )}
-          {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+          {error && <p className="m-6 text-sm text-red-600">{error}</p>}
         </div>
 
         {data && (
           <>
-            <div className="bg-white rounded-2xl shadow-sm p-6">
+            <div className="rounded-[28px] border border-[#e2d1c0] bg-white/95 p-6 shadow-[0_20px_60px_-48px_rgba(83,52,28,0.65)]">
               <div className="flex items-start justify-between flex-wrap gap-4">
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-800">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#bd7a06]">
+                    Dashboard
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black text-gray-900">
                     Welcome, {data.influencer?.name || "Collaborator"}
                   </h2>
-                  <p className="text-gray-500">
+                  <p className="text-sm font-medium text-gray-500">
                     Code:{" "}
                     <span className="font-semibold">{data.influencer?.code}</span>
                   </p>
@@ -310,25 +333,25 @@ const AffiliatePortalPage = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-                <div className="bg-gray-50 rounded-xl p-4">
+                <div className="rounded-2xl border border-[#efe3d7] bg-[#fff8ee] p-4">
                   <p className="text-sm text-gray-500">Total Orders</p>
                   <p className="text-2xl font-bold text-gray-800">
                     {stats.totalOrders || 0}
                   </p>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-4">
+                <div className="rounded-2xl border border-[#efe3d7] bg-[#fff8ee] p-4">
                   <p className="text-sm text-gray-500">Total Revenue</p>
                   <p className="text-2xl font-bold text-gray-800">
                     {formatAmount(stats.totalRevenue)}
                   </p>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-4">
+                <div className="rounded-2xl border border-[#efe3d7] bg-[#fff8ee] p-4">
                   <p className="text-sm text-gray-500">Commission Earned</p>
                   <p className="text-2xl font-bold text-gray-800">
                     {formatAmount(stats.totalCommission)}
                   </p>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-4">
+                <div className="rounded-2xl border border-[#efe3d7] bg-[#fff8ee] p-4">
                   <p className="text-sm text-gray-500">Pending Commission</p>
                   <p className="text-2xl font-bold text-gray-800">
                     {formatAmount(stats.pendingCommission)}
@@ -337,7 +360,7 @@ const AffiliatePortalPage = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm p-6">
+            <div className="rounded-[28px] border border-[#e2d1c0] bg-white/95 p-6 shadow-[0_20px_60px_-48px_rgba(83,52,28,0.65)]">
               <div className="flex items-center justify-between gap-3 mb-4">
                 <div className="flex items-center gap-2">
                   <FiGlobe className="text-indigo-500" />
@@ -360,7 +383,7 @@ const AffiliatePortalPage = () => {
                     return (
                       <div
                         key={`${entry.platform}-${entry.username}-${index}`}
-                        className="bg-gray-50 rounded-xl px-4 py-3"
+                        className="rounded-2xl border border-[#efe3d7] bg-[#fff8ee] px-4 py-3"
                       >
                         <p className="text-sm font-semibold text-gray-800">
                           {entry.displayPlatform}
@@ -390,7 +413,7 @@ const AffiliatePortalPage = () => {
               )}
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm p-6">
+            <div className="rounded-[28px] border border-[#e2d1c0] bg-white/95 p-6 shadow-[0_20px_60px_-48px_rgba(83,52,28,0.65)]">
               <div className="flex items-center gap-2 mb-4">
                 <FiTrendingUp className="text-primary" />
                 <h3 className="text-lg font-semibold text-gray-800">
@@ -400,7 +423,7 @@ const AffiliatePortalPage = () => {
               {data.recentOrders?.length ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-100">
+                    <thead className="bg-[#f6efe4]">
                       <tr>
                         <th className="text-left px-3 py-2">Order</th>
                         <th className="text-left px-3 py-2">Date</th>
@@ -439,7 +462,7 @@ const AffiliatePortalPage = () => {
               )}
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm p-6">
+            <div className="rounded-[28px] border border-[#e2d1c0] bg-white/95 p-6 shadow-[0_20px_60px_-48px_rgba(83,52,28,0.65)]">
               <div className="flex items-center gap-2 mb-4">
                 <FiUser className="text-blue-500" />
                 <h3 className="text-lg font-semibold text-gray-800">
@@ -451,7 +474,7 @@ const AffiliatePortalPage = () => {
                   {data.monthlyStats.map((item) => (
                     <div
                       key={`${item._id.year}-${item._id.month}`}
-                      className="bg-gray-50 rounded-xl p-4"
+                      className="rounded-2xl border border-[#efe3d7] bg-[#fff8ee] p-4"
                     >
                       <p className="text-sm text-gray-500">
                         {item._id.month}/{item._id.year}

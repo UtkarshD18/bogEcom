@@ -533,6 +533,8 @@ export const getProducts = async (req, res) => {
       bestSeller,
       priceDrop,
       minDiscount,
+      flavor,
+      productType,
       onSale,
       inStock,
       lowStock,
@@ -545,10 +547,15 @@ export const getProducts = async (req, res) => {
       String(separateVariants || "")
         .trim()
         .toLowerCase() === "true";
+    const normalizedProductType = String(productType || "all")
+      .trim()
+      .toLowerCase();
     const shouldIncludeCombos =
-      String(includeCombos || "")
+      normalizedProductType === "combo" ||
+      (String(includeCombos || "")
         .trim()
-        .toLowerCase() === "true";
+        .toLowerCase() === "true" &&
+        normalizedProductType !== "product");
 
     const canViewExclusive = req?.userIsAdmin === true;
 
@@ -649,8 +656,27 @@ export const getProducts = async (req, res) => {
       filter.brand = { $regex: brand, $options: "i" };
     }
 
+    if (flavor && String(flavor).trim()) {
+      const flavorTerm = String(flavor).trim();
+      const sanitizedFlavor = flavorTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const flavorRegex = new RegExp(sanitizedFlavor, "i");
+      filter.$and = [
+        ...(Array.isArray(filter.$and) ? filter.$and : []),
+        {
+          $or: [
+            { name: { $regex: flavorRegex } },
+            { tags: { $elemMatch: { $regex: flavorRegex } } },
+          ],
+        },
+      ];
+    }
+
     // Price range
-    if (minPrice || maxPrice) {
+    if (
+      (minPrice || maxPrice) &&
+      !shouldSeparateVariants &&
+      !shouldIncludeCombos
+    ) {
       filter.price = {};
       if (minPrice) filter.price.$gte = Number(minPrice);
       if (maxPrice) filter.price.$lte = Number(maxPrice);
@@ -784,8 +810,16 @@ export const getProducts = async (req, res) => {
     }
 
     // Build sort object. `popular` keeps popular items first, then newest first.
+    const normalizedSortBy = String(sortBy || "").trim();
+    const sortDirection = order === "asc" ? 1 : -1;
+    const sortField =
+      normalizedSortBy === "newestCombos"
+        ? "createdAt"
+        : normalizedSortBy === "bestSeller"
+        ? "isBestSeller"
+        : normalizedSortBy || "createdAt";
     const sortOptions =
-      String(sortBy || "").trim() === "popular"
+      normalizedSortBy === "popular"
         ? {
             isNewArrival: -1,
             isPopular: -1,
@@ -793,18 +827,21 @@ export const getProducts = async (req, res) => {
             soldCount: -1,
             createdAt: -1,
           }
-        : { [sortBy]: order === "asc" ? 1 : -1 };
+        : { [sortField]: sortDirection };
 
     const safePage = Math.max(Number(page) || 1, 1);
     const safeLimit = Math.min(Math.max(Number(limit) || 15, 1), 200);
 
     if (shouldSeparateVariants || shouldIncludeCombos) {
-      const productsRaw = await ProductModel.find(filter)
-        .populate("category", "name slug")
-        .populate("subCategory", "name slug")
-        .select("-reviews -description")
-        .sort(sortOptions)
-        .lean();
+      const productsRaw =
+        normalizedProductType === "combo"
+          ? []
+          : await ProductModel.find(filter)
+              .populate("category", "name slug")
+              .populate("subCategory", "name slug")
+              .select("-reviews -description")
+              .sort(sortOptions)
+              .lean();
 
       const expandedProducts = [];
       for (const product of productsRaw) {
@@ -901,6 +938,24 @@ export const getProducts = async (req, res) => {
           ];
         }
 
+        if (flavor && String(flavor).trim()) {
+          const flavorRegex = new RegExp(
+            String(flavor).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            "i",
+          );
+          comboFilter.$and = [
+            ...(Array.isArray(comboFilter.$and) ? comboFilter.$and : []),
+            {
+              $or: [
+                { name: { $regex: flavorRegex } },
+                { tags: { $elemMatch: { $regex: flavorRegex } } },
+              ],
+            },
+          ];
+        }
+
+        if (bestSeller === "true") comboFilter.isBestSeller = true;
+
         const combosRaw = await ComboModel.find(comboFilter)
           .sort({ priority: -1, totalSavings: -1, createdAt: -1 })
           .lean();
@@ -950,6 +1005,9 @@ export const getProducts = async (req, res) => {
             items: Array.isArray(combo?.items) ? combo.items : [],
             rating: Number(combo?.adminStarRating ?? combo?.rating ?? 0),
             reviewCount: Number(combo?.reviewCount || 0),
+            soldCount: Number(combo?.soldCount || combo?.priority || 0),
+            isBestSeller: Boolean(combo?.isBestSeller),
+            isNewArrival: false,
             availableStock: Number(
               combo?.availableStock ?? combo?.stockQuantity ?? 0,
             ),
@@ -965,7 +1023,67 @@ export const getProducts = async (req, res) => {
         });
       }
 
-      const combined = [...productsWithNotificationState, ...comboCards];
+      const safeMinPrice = Number(minPrice);
+      const safeMaxPrice = Number(maxPrice);
+      const combined = [...productsWithNotificationState, ...comboCards]
+        .filter((item) => {
+          if (normalizedProductType === "combo" && item?.itemType !== "combo") {
+            return false;
+          }
+          if (
+            normalizedProductType === "product" &&
+            String(item?.itemType || "product") === "combo"
+          ) {
+            return false;
+          }
+
+          const itemPrice = Number(item?.price ?? 0);
+          if (Number.isFinite(safeMinPrice) && minPrice !== "" && itemPrice < safeMinPrice) {
+            return false;
+          }
+          if (Number.isFinite(safeMaxPrice) && maxPrice !== "" && itemPrice > safeMaxPrice) {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          const direction = order === "asc" ? 1 : -1;
+          const key =
+            normalizedSortBy === "newestCombos"
+              ? "createdAt"
+              : normalizedSortBy === "bestSeller"
+              ? "isBestSeller"
+              : normalizedSortBy || "createdAt";
+
+          if (
+            normalizedProductType !== "combo" &&
+            normalizedSortBy !== "newestCombos"
+          ) {
+            const firstIsCombo = String(a?.itemType || "product") === "combo";
+            const secondIsCombo = String(b?.itemType || "product") === "combo";
+            if (firstIsCombo !== secondIsCombo) {
+              return firstIsCombo ? 1 : -1;
+            }
+          }
+
+          const getValue = (item) => {
+            if (key === "price") return Number(item?.price ?? 0);
+            if (key === "soldCount") return Number(item?.soldCount ?? 0);
+            if (key === "isBestSeller") return item?.isBestSeller ? 1 : 0;
+            if (key === "rating") return Number(item?.rating ?? 0);
+            if (key === "createdAt") return new Date(item?.createdAt || 0).getTime();
+            return item?.[key] ?? 0;
+          };
+
+          const first = getValue(a);
+          const second = getValue(b);
+          if (first < second) return -1 * direction;
+          if (first > second) return 1 * direction;
+          return (
+            new Date(b?.createdAt || 0).getTime() -
+            new Date(a?.createdAt || 0).getTime()
+          );
+        });
       const startIndex = (safePage - 1) * safeLimit;
       const paginated = combined.slice(startIndex, startIndex + safeLimit);
       const totalProducts = combined.length;
