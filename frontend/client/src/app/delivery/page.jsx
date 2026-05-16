@@ -1,7 +1,9 @@
 "use client";
 
+import { fetchDataFromApi, getStoredAccessToken } from "@/utils/api";
 import { useSettings } from "@/context/SettingsContext";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 const FALLBACK_STORE_INFO = {
   email: "healthyonegram.com",
@@ -17,13 +19,158 @@ const normalizeStoreLink = (value) => {
   return "";
 };
 
+const buildXpressbeesTrackingUrl = (awb, candidateUrl = "") => {
+  const normalizedAwb = String(awb || "").trim();
+  if (!normalizedAwb) return "";
+
+  const fallbackUrl = `https://www.xpressbees.com/shipment/tracking?awbNo=${encodeURIComponent(normalizedAwb)}`;
+  const explicitUrl = String(candidateUrl || "").trim();
+  if (!explicitUrl) return fallbackUrl;
+
+  try {
+    const parsed = new URL(explicitUrl);
+    const host = String(parsed.hostname || "").toLowerCase();
+    if (!host.includes("xpressbees.com")) return explicitUrl;
+
+    parsed.pathname = "/shipment/tracking";
+    parsed.search = "";
+    parsed.searchParams.set("awbNo", normalizedAwb);
+    return parsed.toString();
+  } catch {
+    return explicitUrl.toLowerCase().includes("xpressbees.com")
+      ? fallbackUrl
+      : explicitUrl;
+  }
+};
+
+const resolveTrackingUrl = (order = {}) => {
+  const explicitUrl = String(
+    order?.trackingUrl ||
+      order?.tracking_url ||
+      order?.shipmentTrackingUrl ||
+      "",
+  ).trim();
+  const awb = String(
+    order?.awbNo ||
+      order?.awb_no ||
+      order?.awbNumber ||
+      order?.awb_number ||
+      order?.shipment?.awbNo ||
+      order?.shipment?.awb_no ||
+      order?.shipment?.awb_number ||
+      order?.shipment?.awb ||
+      order?.shipping?.awbNo ||
+      order?.shipping?.awb_no ||
+      order?.shipping?.awb_number ||
+      order?.shipping?.awb ||
+      "",
+  ).trim();
+
+  if (!explicitUrl) {
+    return buildXpressbeesTrackingUrl(awb);
+  }
+
+  if (!awb) return explicitUrl;
+
+  try {
+    const parsed = new URL(explicitUrl);
+    const host = String(parsed.hostname || "").toLowerCase();
+    if (!host.includes("xpressbees.com")) return explicitUrl;
+    return buildXpressbeesTrackingUrl(awb, explicitUrl);
+  } catch {
+    return explicitUrl.toLowerCase().includes("xpressbees.com")
+      ? buildXpressbeesTrackingUrl(awb, explicitUrl)
+      : explicitUrl;
+  }
+};
+
+const FALLBACK_TRACKING_CTA = {
+  href: "/my-orders",
+  label: "View My Orders",
+  helper: "Open your orders to see shipment updates and tracking links.",
+  isExternal: false,
+};
+
 export default function DeliveryPage() {
   const { storeInfo: liveStoreInfo } = useSettings();
+  const [trackingCta, setTrackingCta] = useState(FALLBACK_TRACKING_CTA);
+  const [trackingLoading, setTrackingLoading] = useState(true);
   const storeInfo = {
     ...FALLBACK_STORE_INFO,
     ...(liveStoreInfo || {}),
   };
   const supportLink = normalizeStoreLink(storeInfo.email);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTrackingLink = async () => {
+      const token = getStoredAccessToken();
+      if (!token) {
+        if (isMounted) {
+          setTrackingCta({
+            href: "/login?redirect=/my-orders",
+            label: "Login to Track Order",
+            helper:
+              "Sign in once and we will take you straight to your latest shipment updates.",
+            isExternal: false,
+          });
+          setTrackingLoading(false);
+        }
+        return;
+      }
+
+      const endpoints = ["/api/orders/my-orders", "/api/orders/user/my-orders"];
+      let orders = [];
+
+      for (const endpoint of endpoints) {
+        const response = await fetchDataFromApi(endpoint, {
+          skipCache: true,
+          cacheTtlMs: 0,
+        });
+
+        if (response?.success && Array.isArray(response.data)) {
+          orders = response.data;
+          break;
+        }
+      }
+
+      const latestTrackableOrder = [...orders]
+        .sort(
+          (left, right) =>
+            new Date(right?.createdAt || 0).getTime() -
+            new Date(left?.createdAt || 0).getTime(),
+        )
+        .find((order) => resolveTrackingUrl(order));
+
+      if (!isMounted) return;
+
+      if (latestTrackableOrder) {
+        const trackingUrl = resolveTrackingUrl(latestTrackableOrder);
+        setTrackingCta({
+          href: trackingUrl,
+          label: "Track Latest Order",
+          helper:
+            "This opens the live Xpressbees tracking page for your most recent dispatched order.",
+          isExternal: true,
+        });
+      } else {
+        setTrackingCta({
+          ...FALLBACK_TRACKING_CTA,
+          helper:
+            "Your shipped orders will show a direct courier tracking link inside My Orders.",
+        });
+      }
+
+      setTrackingLoading(false);
+    };
+
+    void loadTrackingLink();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-orange-50 to-white py-12">
@@ -132,8 +279,30 @@ export default function DeliveryPage() {
             Receive a tracking ID via email once your order ships. Monitor your
             package in real-time with updates at every step.
           </p>
-          <p className="text-sm opacity-90">
+          <p className="text-sm opacity-90 mb-5">
             Tracking updates sent via SMS and email
+          </p>
+          {trackingCta.isExternal ? (
+            <a
+              href={trackingCta.href}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center rounded-full bg-white px-6 py-3 text-sm font-bold text-orange-700 shadow-md transition hover:-translate-y-0.5 hover:bg-orange-50"
+            >
+              {trackingLoading ? "Checking latest order..." : trackingCta.label}
+            </a>
+          ) : (
+            <Link
+              href={trackingCta.href}
+              className="inline-flex items-center rounded-full bg-white px-6 py-3 text-sm font-bold text-orange-700 shadow-md transition hover:-translate-y-0.5 hover:bg-orange-50"
+            >
+              {trackingLoading ? "Checking latest order..." : trackingCta.label}
+            </Link>
+          )}
+          <p className="mt-4 text-sm text-orange-100">
+            {trackingLoading
+              ? "Looking for your newest trackable shipment..."
+              : trackingCta.helper}
           </p>
         </section>
 

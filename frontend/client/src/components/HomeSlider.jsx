@@ -1,16 +1,17 @@
 "use client";
 
+import SeoImage from "@/components/SeoImage";
+import { useSettings } from "@/context/SettingsContext";
 import { useProducts } from "@/context/ProductContext";
 import {
   getHeroImageUrl,
   getHeroMobileImageUrl,
   isCloudinaryUrl,
 } from "@/utils/imageUtils";
-import { AnimatePresence, motion } from "framer-motion";
-import SeoImage from "@/components/SeoImage";
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { FiArrowUpRight, FiPlus, FiX } from "react-icons/fi";
+import { FiArrowUpRight } from "react-icons/fi";
 import { Swiper, SwiperSlide } from "swiper/react";
 
 import "swiper/css";
@@ -30,14 +31,14 @@ const fallbackSlides = [
   {
     image: "/slide_2.jpg",
     title: "Fuel Your Fitness",
-    subtitle: "High Protein • No Sugar",
+    subtitle: "High Protein | No Sugar",
     cta: "Explore",
     link: "/products?category=protein-peanut-butter",
   },
   {
     image: "/slide_3.jpg",
     title: "Clean Eating",
-    subtitle: "No Palm Oil • No Preservatives",
+    subtitle: "No Palm Oil | No Preservatives",
     cta: "Discover",
     link: "/products?category=organic-natural",
   },
@@ -54,56 +55,32 @@ const formatSlides = (slides = []) =>
     backgroundColor: slide.backgroundColor || "#f5f5f5",
   }));
 
-const HERO_CARD_POSITIONS = [
-  {
-    id: "lower-left",
-    className:
-      "left-4 bottom-[4.5rem] sm:left-6 sm:bottom-24 md:left-16 md:bottom-24 lg:left-24 lg:bottom-28",
-  },
-  {
-    id: "lifted-left",
-    className:
-      "left-4 bottom-[10rem] sm:left-6 sm:bottom-[10.5rem] md:left-20 md:bottom-[15rem] lg:left-28 lg:bottom-[15.5rem]",
-  },
-  {
-    id: "upper-left",
-    className:
-      "left-4 top-20 sm:left-6 sm:top-24 md:left-16 md:top-28 lg:left-24 lg:top-32",
-  },
-  {
-    id: "mid-left",
-    className:
-      "left-4 top-[34%] sm:left-6 sm:top-[33%] md:left-16 md:top-[31%] lg:left-24 lg:top-[30%]",
-  },
-  {
-    id: "drift-left",
-    className:
-      "left-6 bottom-[7.25rem] sm:left-10 sm:bottom-[8.25rem] md:left-28 md:bottom-[11rem] lg:left-36 lg:bottom-[12rem]",
-  },
+const HERO_TRUST_DEFAULTS = [
+  "100% Natural",
+  "No Palm Oil",
+  "High Protein",
+  "Fast Moving Picks",
 ];
 
-const pickNextCardPositionIndex = (currentIndex = 0) => {
-  if (HERO_CARD_POSITIONS.length < 2) return currentIndex;
+const HERO_TRUST_SETTING_KEYS = [
+  "homepage_trust_1_text",
+  "homepage_trust_2_text",
+  "homepage_trust_3_text",
+  "homepage_trust_4_text",
+];
 
-  let nextIndex = currentIndex;
-
-  while (nextIndex === currentIndex) {
-    nextIndex = Math.floor(Math.random() * HERO_CARD_POSITIONS.length);
-  }
-
-  return nextIndex;
-};
+const HERO_STATS = [
+  { label: "Best Seller", value: "Top Rated" },
+  { label: "Clean Label", value: "No Nasties" },
+  { label: "Everyday Use", value: "Snack + Fitness" },
+];
 
 const HomeSlider = ({ initialSlides = [] }) => {
   const { homeSlides = [], fetchHomeSlides } = useProducts();
+  const { settings } = useSettings();
   const [activeIndex, setActiveIndex] = useState(0);
-  const [hoveredIndex, setHoveredIndex] = useState(null);
-  const [expandedIndex, setExpandedIndex] = useState(null);
-  const [cardPositionIndices, setCardPositionIndices] = useState({});
-  const [cardRespawnKeys, setCardRespawnKeys] = useState({});
-  const [supportsHover, setSupportsHover] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
+
   const displaySlides = useMemo(() => {
     if (homeSlides?.length > 0) {
       return formatSlides(homeSlides);
@@ -115,44 +92,36 @@ const HomeSlider = ({ initialSlides = [] }) => {
 
     return fallbackSlides;
   }, [homeSlides, initialSlides]);
+
   const motionEnabled = !prefersReducedMotion;
+  const heroTrustItems = useMemo(
+    () =>
+      HERO_TRUST_SETTING_KEYS.map(
+        (key, index) =>
+          String(settings?.[key] ?? "").trim() || HERO_TRUST_DEFAULTS[index],
+      ),
+    [settings],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return undefined;
 
-    const hoverQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const viewportQuery = window.matchMedia("(max-width: 767px)");
-    const updatePreferences = () => {
-      setSupportsHover(hoverQuery.matches);
+    const syncMotionPreference = () => {
       setPrefersReducedMotion(motionQuery.matches);
-      setIsMobileViewport(viewportQuery.matches);
     };
 
-    updatePreferences();
+    syncMotionPreference();
 
-    const cleanupFns = [hoverQuery, motionQuery, viewportQuery].map(
-      (mediaQuery) => {
-      if (typeof mediaQuery.addEventListener === "function") {
-        mediaQuery.addEventListener("change", updatePreferences);
-        return () =>
-          mediaQuery.removeEventListener("change", updatePreferences);
-      }
+    if (typeof motionQuery.addEventListener === "function") {
+      motionQuery.addEventListener("change", syncMotionPreference);
+      return () =>
+        motionQuery.removeEventListener("change", syncMotionPreference);
+    }
 
-      mediaQuery.addListener(updatePreferences);
-      return () => mediaQuery.removeListener(updatePreferences);
-      },
-    );
-
-    return () => {
-      cleanupFns.forEach((cleanup) => cleanup());
-    };
+    motionQuery.addListener(syncMotionPreference);
+    return () => motionQuery.removeListener(syncMotionPreference);
   }, []);
-
-  useEffect(() => {
-    setHoveredIndex(null);
-    setExpandedIndex(null);
-  }, [activeIndex]);
 
   useEffect(() => {
     if (!homeSlides?.length && !initialSlides?.length) {
@@ -160,25 +129,8 @@ const HomeSlider = ({ initialSlides = [] }) => {
     }
   }, [fetchHomeSlides, homeSlides?.length, initialSlides?.length]);
 
-  const openSlideCard = (index) => {
-    setExpandedIndex(index);
-  };
-
-  const dismissSlideCard = (index) => {
-    setHoveredIndex((current) => (current === index ? null : current));
-    setExpandedIndex((current) => (current === index ? null : current));
-    setCardPositionIndices((current) => ({
-      ...current,
-      [index]: pickNextCardPositionIndex(current[index] ?? 0),
-    }));
-    setCardRespawnKeys((current) => ({
-      ...current,
-      [index]: (current[index] ?? 0) + 1,
-    }));
-  };
-
   return (
-    <section className="relative w-full h-[60vh] md:h-[85vh] min-h-100 md:min-h-150 overflow-hidden bg-black p-0">
+    <section className="relative overflow-hidden rounded-b-[2rem] bg-[#1a120d] shadow-[0_40px_120px_rgba(26,18,13,0.16)] md:rounded-b-[3rem]">
       <Swiper
         speed={motionEnabled ? 850 : 500}
         spaceBetween={0}
@@ -201,26 +153,24 @@ const HomeSlider = ({ initialSlides = [] }) => {
             "swiper-pagination-bullet-active home-slide-bullet-active",
         }}
         modules={[Autoplay, Pagination, EffectFade]}
-        className="h-full w-full homeSlider"
+        className="h-[62vh] min-h-[34rem] w-full md:h-[88vh] md:min-h-[46rem] homeSlider"
         onSlideChange={(swiper) => setActiveIndex(swiper.realIndex)}
       >
         {displaySlides.map((slide, index) => (
           <SwiperSlide
             key={`${slide.title || "slide"}-${index}`}
-            className="relative w-full h-full"
+            className="relative h-full w-full"
           >
-            {/* Background image */}
-            <div className="relative w-full h-full overflow-hidden">
+            <div className="relative h-full w-full overflow-hidden">
               <motion.div
-                className="absolute inset-0 transform-gpu"
+                className="absolute inset-0"
                 initial={false}
-                animate={{ scale: 1 }}
+                animate={{ scale: 1.02 }}
                 transition={
                   motionEnabled
                     ? { duration: 5.6, ease: "easeOut" }
                     : { duration: 0.18 }
                 }
-                style={{ willChange: "auto" }}
               >
                 {(() => {
                   const desktopSrc = getHeroImageUrl(slide.image);
@@ -230,275 +180,155 @@ const HomeSlider = ({ initialSlides = [] }) => {
                   const desktopCloudinary = isCloudinaryUrl(desktopSrc);
                   const mobileCloudinary = isCloudinaryUrl(mobileSrc);
 
-                    return (
-                      <>
-                        <div
-                          className="absolute inset-0 hidden md:block"
-                          style={{
-                            backgroundColor: slide.backgroundColor || "#f5f5f5",
-                          }}
-                        >
-                          <SeoImage
-                            src={desktopSrc}
-                            fallbackAlt={slide.title}
-                            fill
-                            priority={index === 0}
-                            sizes="100vw"
-                            fetchPriority={index === 0 ? "high" : undefined}
-                            loading={index === 0 ? "eager" : "lazy"}
-                            unoptimized={desktopCloudinary}
-                            className="object-fill"
-                          />
-                        </div>
-                        <div
-                          className="absolute inset-0 md:hidden"
-                          style={{
-                            backgroundColor: slide.backgroundColor || "#f5f5f5",
-                          }}
-                        >
-                          <SeoImage
-                            src={mobileSrc}
-                            fallbackAlt={slide.title}
-                            fill
-                            priority={index === 0}
-                            sizes="100vw"
-                            fetchPriority={index === 0 ? "high" : undefined}
-                            loading={index === 0 ? "eager" : "lazy"}
-                            unoptimized={mobileCloudinary}
-                            className="object-fill"
-                          />
-                        </div>
-                      </>
-                    );
-                  })()}
+                  return (
+                    <>
+                      <div
+                        className="absolute inset-0 hidden md:block"
+                        style={{
+                          backgroundColor: slide.backgroundColor || "#f5f5f5",
+                        }}
+                      >
+                        <SeoImage
+                          src={desktopSrc}
+                          fallbackAlt={slide.title}
+                          fill
+                          priority={index === 0}
+                          sizes="100vw"
+                          fetchPriority={index === 0 ? "high" : undefined}
+                          loading={index === 0 ? "eager" : "lazy"}
+                          unoptimized={desktopCloudinary}
+                          className="object-cover"
+                        />
+                      </div>
+                      <div
+                        className="absolute inset-0 md:hidden"
+                        style={{
+                          backgroundColor: slide.backgroundColor || "#f5f5f5",
+                        }}
+                      >
+                        <SeoImage
+                          src={mobileSrc}
+                          fallbackAlt={slide.title}
+                          fill
+                          priority={index === 0}
+                          sizes="100vw"
+                          fetchPriority={index === 0 ? "high" : undefined}
+                          loading={index === 0 ? "eager" : "lazy"}
+                          unoptimized={mobileCloudinary}
+                          className="object-cover"
+                        />
+                      </div>
+                    </>
+                  );
+                })()}
               </motion.div>
+
               <div
                 className="absolute inset-0"
                 style={{
                   background:
-                    "linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.2) 40%, transparent 70%)",
+                    "linear-gradient(115deg, rgba(15,10,7,0.78) 0%, rgba(15,10,7,0.44) 34%, rgba(15,10,7,0.18) 62%, transparent 82%), linear-gradient(to top, rgba(0,0,0,0.74) 0%, rgba(0,0,0,0.24) 38%, transparent 72%)",
                 }}
               />
+              <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#1d140f]/60 to-transparent" />
             </div>
 
-            {/* Content per slide */}
             <div className="pointer-events-none absolute inset-0">
-              <AnimatePresence mode="wait">
-                {activeIndex === index && (
-                  (() => {
-                    const isExpanded =
-                      hoveredIndex === index || expandedIndex === index;
-                    const interactionHint = supportsHover
-                      ? "Hover to expand"
-                      : "Tap to expand";
-                    const cardPosition =
-                      HERO_CARD_POSITIONS[cardPositionIndices[index] ?? 0] ||
-                      HERO_CARD_POSITIONS[0];
-                    const respawnKey = cardRespawnKeys[index] ?? 0;
+              <div className="mx-auto flex h-full max-w-7xl items-end px-4 pb-24 pt-24 sm:pb-28 md:items-center md:pb-20">
+                <motion.div
+                  key={`hero-panel-${activeIndex}-${index}`}
+                  initial={
+                    motionEnabled
+                      ? { opacity: 0, y: 24, scale: 0.98 }
+                      : { opacity: 0 }
+                  }
+                  animate={
+                    motionEnabled
+                      ? { opacity: 1, y: 0, scale: 1 }
+                      : { opacity: 1 }
+                  }
+                  transition={
+                    motionEnabled
+                      ? { duration: 0.45, ease: [0.22, 1, 0.36, 1] }
+                      : { duration: 0.18 }
+                  }
+                  className="pointer-events-auto relative max-w-[35rem] overflow-hidden rounded-[2rem] border border-white/18 bg-[linear-gradient(145deg,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0.1)_46%,rgba(255,255,255,0.08)_100%)] px-5 py-5 text-white shadow-[0_32px_90px_-44px_rgba(0,0,0,0.82)] backdrop-blur-md sm:px-6 sm:py-6 md:rounded-[2.25rem] md:px-8 md:py-8"
+                >
+                  <div className="pointer-events-none absolute inset-0">
+                    <div className="absolute left-[-8%] top-[-16%] h-28 w-32 rounded-full bg-white/24 blur-2xl" />
+                    <div className="absolute bottom-[-20%] right-[-8%] h-32 w-36 rounded-full bg-[rgba(255,255,255,0.14)] blur-3xl" />
+                    <div className="absolute inset-x-7 top-0 h-px bg-white/30" />
+                  </div>
 
-                    return (
-                      <motion.div
-                        key={`slide-content-${index}-${cardPosition.id}-${respawnKey}`}
-                        initial={
-                          motionEnabled
-                            ? {
-                                opacity: 0,
-                                scale: 0.94,
-                                x: -10,
-                                y: 14,
-                              }
-                            : { opacity: 0 }
-                        }
-                        animate={
-                          motionEnabled
-                            ? {
-                                opacity: 1,
-                                scale: 1,
-                                x: 0,
-                                y: 0,
-                              }
-                            : { opacity: 1 }
-                        }
-                        exit={
-                          motionEnabled
-                            ? {
-                                opacity: 0,
-                                scale: 0.98,
-                                x: 12,
-                                y: -8,
-                              }
-                            : { opacity: 0 }
-                        }
-                        transition={
-                          motionEnabled
-                            ? {
-                                duration: 0.34,
-                                ease: [0.22, 1, 0.36, 1],
-                              }
-                            : { duration: 0.18 }
-                        }
-                        className={`pointer-events-auto absolute transform-gpu ${cardPosition.className}`}
-                        style={{
-                          willChange: motionEnabled
-                            ? "transform, opacity"
-                            : "auto",
-                        }}
+                  <div className="relative z-10">
+                    <span className="inline-flex items-center rounded-full border border-white/15 bg-[rgba(121,80,41,0.24)] px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-white/90">
+                      Bestseller Range
+                    </span>
+
+                    <h1 className="mt-4 text-[2.35rem] font-black leading-[0.95] tracking-[-0.05em] text-white drop-shadow-[0_12px_32px_rgba(0,0,0,0.28)] sm:text-[2.9rem] md:text-[3.45rem]">
+                      {slide.title}
+                    </h1>
+
+                    <p className="mt-4 max-w-[28rem] text-sm font-medium leading-6 text-white/82 sm:text-base">
+                      {slide.subtitle}
+                    </p>
+
+                    <div className="mt-6 flex flex-wrap items-center gap-3">
+                      <Link
+                        href={slide.link}
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-[#352116] shadow-[0_18px_45px_-30px_rgba(255,255,255,0.4)] transition duration-300 hover:-translate-y-0.5 hover:bg-[#fff6ea] sm:px-6"
                       >
-                        <motion.div
-                          onHoverStart={() => {
-                            if (supportsHover) {
-                              setHoveredIndex(index);
-                            }
-                          }}
-                          onHoverEnd={() => {
-                            if (supportsHover) {
-                              setHoveredIndex((current) =>
-                                current === index ? null : current,
-                              );
-                            }
-                          }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 220,
-                            damping: 26,
-                          }}
-                          className={`home-glass-card relative overflow-hidden border border-white/22 text-white shadow-[0_35px_95px_-52px_rgba(15,23,42,0.9)] backdrop-blur-md sm:backdrop-blur-xl transform-gpu ${
-                            isExpanded
-                              ? "w-[min(86vw,28rem)] rounded-[30px] px-5 py-5 sm:w-[22rem] sm:px-6 sm:py-6 md:w-[27rem]"
-                              : "w-[13.25rem] rounded-[24px] px-4 py-4 sm:w-[14.5rem] sm:px-5"
-                          }`}
-                          style={{
-                            background: isExpanded
-                              ? "linear-gradient(140deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.1) 42%, rgba(255,255,255,0.08) 100%)"
-                              : "linear-gradient(140deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.08) 100%)",
-                            boxShadow: isExpanded
-                              ? "0 30px 70px -42px rgba(15,23,42,0.88), inset 0 1px 0 rgba(255,255,255,0.34)"
-                              : "0 24px 50px -40px rgba(15,23,42,0.72), inset 0 1px 0 rgba(255,255,255,0.28)",
-                            willChange: motionEnabled
-                              ? "transform, opacity"
-                              : "auto",
-                          }}
+                        {slide.cta}
+                        <FiArrowUpRight size={16} />
+                      </Link>
+
+                      <Link
+                        href="/products"
+                        className="inline-flex items-center gap-2 rounded-full border border-white/24 bg-white/10 px-4 py-3 text-sm font-semibold text-white/90 transition duration-300 hover:bg-white/16"
+                      >
+                        View catalog
+                      </Link>
+                    </div>
+
+                    <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      {HERO_STATS.map((item) => (
+                        <div
+                          key={item.label}
+                          className="rounded-[1.1rem] border border-white/12 bg-white/8 px-4 py-3"
                         >
-                          <div className="pointer-events-none absolute inset-0">
-                            <div className="absolute left-[-16%] top-[-22%] h-28 w-32 rounded-full bg-white/28 blur-2xl" />
-                            <div className="absolute bottom-[-28%] right-[-10%] h-32 w-36 rounded-full bg-[rgba(255,255,255,0.16)] blur-3xl" />
-                            <div className="absolute inset-x-6 top-0 h-px bg-white/35" />
-                            <div className="absolute inset-y-5 left-0 w-px bg-white/18" />
-                          </div>
-
-                          {!isExpanded ? (
-                            <button
-                              type="button"
-                              onClick={() => openSlideCard(index)}
-                              aria-label={`Expand ${slide.title} banner`}
-                              aria-expanded="false"
-                              className="absolute inset-0 z-10"
-                            />
-                          ) : null}
-
-                          <div className="relative z-20">
-                            <div className="flex items-start justify-between gap-3">
-                              <motion.span
-                                initial={{ opacity: 0, x: -18 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ duration: 0.45, delay: 0.15 }}
-                                className="inline-flex items-center rounded-full border border-white/16 bg-[rgba(121,80,41,0.22)] px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-white/90"
-                              >
-                                Top Pick
-                              </motion.span>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  isExpanded
-                                    ? dismissSlideCard(index)
-                                    : openSlideCard(index)
-                                }
-                                aria-label={
-                                  isExpanded
-                                    ? `Move ${slide.title} banner`
-                                    : `Expand ${slide.title} banner`
-                                }
-                                aria-expanded={isExpanded ? "true" : "false"}
-                                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/24 bg-white/10 text-white/90 transition duration-300 ${
-                                  isExpanded
-                                    ? "hover:bg-white/18"
-                                    : "hover:scale-105 hover:bg-white/14"
-                                }`}
-                              >
-                                {isExpanded ? <FiX size={16} /> : <FiPlus size={16} />}
-                              </button>
-                            </div>
-
-                            <motion.h2
-                              initial={{ opacity: 0, y: 18 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.5, delay: 0.22 }}
-                              className={`mt-3 font-black leading-[1.02] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.25)] ${
-                                isExpanded
-                                  ? "text-[2rem] sm:text-[2.35rem]"
-                                  : "line-clamp-2 text-[1.45rem] sm:text-[1.65rem]"
-                              }`}
-                            >
-                              {slide.title}
-                            </motion.h2>
-
-                            <AnimatePresence initial={false} mode="popLayout">
-                              {isExpanded ? (
-                                <motion.div
-                                  key={`expanded-copy-${index}`}
-                                  initial={{ opacity: 0, y: 12 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: 8 }}
-                                  transition={{ duration: 0.28, ease: "easeOut" }}
-                                  className="mt-4"
-                                >
-                                  <p className="max-w-[26rem] text-sm leading-6 text-white/82 sm:text-base">
-                                    {slide.subtitle}
-                                  </p>
-
-                                  <div className="mt-5 flex flex-wrap items-center gap-3">
-                                    <Link
-                                      href={slide.link}
-                                      className="inline-flex items-center gap-2 rounded-full border border-white/26 bg-white/12 px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_45px_-30px_rgba(255,255,255,0.35)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:bg-white/18"
-                                    >
-                                      {slide.cta}
-                                      <FiArrowUpRight size={16} />
-                                    </Link>
-                                    <span className="text-xs font-medium uppercase tracking-[0.18em] text-white/58">
-                                      Swipe for more
-                                    </span>
-                                  </div>
-                                </motion.div>
-                              ) : (
-                                <motion.p
-                                  key={`collapsed-hint-${index}`}
-                                  initial={{ opacity: 0, y: 8 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: 6 }}
-                                  transition={{ duration: 0.24, ease: "easeOut" }}
-                                  className="mt-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/62"
-                                >
-                                  {interactionHint}
-                                </motion.p>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        </motion.div>
-                      </motion.div>
-                    );
-                  })()
-                )}
-              </AnimatePresence>
+                          <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-white/58">
+                            {item.label}
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-white/90">
+                            {item.value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
             </div>
           </SwiperSlide>
         ))}
       </Swiper>
 
-      {/* Custom pagination & slide styling */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-12 z-20 hidden px-4 sm:block">
+        <div className="mx-auto flex max-w-5xl items-center justify-center gap-3 rounded-full border border-white/18 bg-black/20 px-4 py-3 text-white/88 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+          {heroTrustItems.map((item) => (
+            <span
+              key={item}
+              className="rounded-full bg-white/10 px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.2em]"
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+      </div>
+
       <style jsx global>{`
         .homeSlider .swiper-pagination {
-          bottom: 24px !important;
+          bottom: 18px !important;
         }
         .home-slide-bullet {
           width: 32px !important;

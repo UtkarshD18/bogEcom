@@ -76,6 +76,33 @@ const DEFAULT_FLAVOUR_BUTTON_SETTINGS = [
   },
 ];
 
+const DEFAULT_HOMEPAGE_TRUST_SETTINGS = [
+  {
+    key: "homepage_trust_1_text",
+    value: "100% Natural",
+    description: "Homepage trust pill 1 text",
+    category: "display",
+  },
+  {
+    key: "homepage_trust_2_text",
+    value: "No Palm Oil",
+    description: "Homepage trust pill 2 text",
+    category: "display",
+  },
+  {
+    key: "homepage_trust_3_text",
+    value: "High Protein",
+    description: "Homepage trust pill 3 text",
+    category: "display",
+  },
+  {
+    key: "homepage_trust_4_text",
+    value: "Fast Moving Picks",
+    description: "Homepage trust pill 4 text",
+    category: "display",
+  },
+];
+
 const createSeoPageDefaults = ({
   label,
   path,
@@ -204,6 +231,7 @@ settingsSchema.statics.defaultSettings = [
     category: "display",
   },
   ...DEFAULT_FLAVOUR_BUTTON_SETTINGS,
+  ...DEFAULT_HOMEPAGE_TRUST_SETTINGS,
   {
     key: "showOfferPopup",
     value: true,

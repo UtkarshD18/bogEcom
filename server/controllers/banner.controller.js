@@ -102,7 +102,7 @@ export const getBanners = async (req, res) => {
 
       const banners = await BannerModel.find(filter)
         .select(
-          "title subtitle image mobileImage link linkText position backgroundColor textColor mediaType videoUrl buttonText sortOrder",
+          "title subtitle image mobileImage link buttonText linkText position backgroundColor textColor mediaType videoUrl sortOrder",
         )
         .sort({ sortOrder: 1, createdAt: -1 })
         .limit(limit)
@@ -249,6 +249,7 @@ export const createBanner = async (req, res) => {
       image,
       mobileImage,
       link,
+      buttonText,
       linkText,
       position,
       backgroundColor,
@@ -308,13 +309,17 @@ export const createBanner = async (req, res) => {
     }
     // ===== END VIDEO VALIDATION =====
 
+    const normalizedButtonText =
+      String(buttonText || linkText || "Shop Now").trim() || "Shop Now";
+
     const banner = new BannerModel({
       title,
       subtitle,
       image,
       mobileImage,
       link,
-      linkText,
+      buttonText: normalizedButtonText,
+      linkText: normalizedButtonText,
       position: position || "home-top",
       backgroundColor,
       textColor,
@@ -408,6 +413,22 @@ export const updateBanner = async (req, res) => {
       updateData.videoUrl = "";
     }
     // ===== END VIDEO VALIDATION =====
+
+    if (
+      Object.prototype.hasOwnProperty.call(updateData, "buttonText") ||
+      Object.prototype.hasOwnProperty.call(updateData, "linkText")
+    ) {
+      const normalizedButtonText =
+        String(
+          updateData.buttonText ||
+            updateData.linkText ||
+            existingBanner.buttonText ||
+            existingBanner.linkText ||
+            "Shop Now",
+        ).trim() || "Shop Now";
+      updateData.buttonText = normalizedButtonText;
+      updateData.linkText = normalizedButtonText;
+    }
 
     // Clean up old images if they're being replaced
     if (updateData.image && existingBanner.image !== updateData.image) {

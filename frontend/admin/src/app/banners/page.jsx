@@ -3,6 +3,7 @@ import { useAdmin } from "@/context/AdminContext";
 import { deleteData, getData } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
 import { Button } from "@mui/material";
+import Image from "next/image";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -142,10 +143,12 @@ const Banners = () => {
                               poster={getImageUrl(banner.image)}
                             />
                           ) : (
-                            <img
+                            <Image
                               src={getImageUrl(banner.image)}
                               alt="banner image"
-                              className="w-full h-full object-cover hover:scale-105 transition-all"
+                              fill
+                              unoptimized
+                              className="object-cover hover:scale-105 transition-all"
                             />
                           )}
                           {/* Video indicator badge */}
@@ -167,6 +170,9 @@ const Banners = () => {
                           {banner.subtitle}
                         </p>
                       )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        CTA: {banner.buttonText || banner.linkText || "Shop Now"}
+                      </p>
                     </TableCell>
 
                     <TableCell>
