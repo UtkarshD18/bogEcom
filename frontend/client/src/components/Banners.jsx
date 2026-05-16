@@ -78,12 +78,12 @@ const BannerMedia = ({ banner, onMuteToggle, isMuted }) => {
 
     return (
       <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden rounded-3xl">
-        <div className="absolute inset-0 hidden md:block">
+                        <div className="absolute inset-0 hidden md:block">
                   <Image
                     src={desktopSrc}
                     alt={desktopAlt}
             fill
-            sizes="(max-width: 768px) 100vw, 50vw"
+            sizes="100vw"
             unoptimized={isCloudinaryUrl(desktopSrc)}
             className="object-cover transition-transform duration-700 hover:scale-105"
           />

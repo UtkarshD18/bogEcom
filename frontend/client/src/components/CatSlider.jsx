@@ -9,6 +9,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useContext, useEffect, useRef, useState } from "react";
 import { FiArrowRight, FiChevronLeft, FiChevronRight } from "react-icons/fi";
+import PopularProducts from "./PopularProducts";
 import { Navigation } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 
@@ -81,6 +82,10 @@ const CatSlider = () => {
     return (
         <div>
             <FlavorSwitcherBar />
+            {/* Popular products shown just below flavor/theme switcher */}
+            <div className="max-w-7xl mx-auto px-4">
+                <PopularProducts />
+            </div>
             <section className="py-10 sm:py-14 bg-gradient-to-b from-white to-gray-50/50">
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -89,13 +94,13 @@ const CatSlider = () => {
                     transition={{ duration: 0.6 }}
                     className="max-w-7xl mx-auto px-4"
                 >
-                    <div className="flex items-center justify-between mb-8">
-                        <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight transition-colors duration-500" style={{ color: 'var(--color-primary)' }}>
+                    <div className="flex flex-col md:flex-row items-center md:justify-between mb-8">
+                        <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight transition-colors duration-500 self-start md:self-auto" style={{ color: 'var(--color-primary)' }}>
                             Shop by Category
                         </h2>
                         <Link
                             href="/products"
-                            className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full font-bold text-sm text-white shadow-lg shadow-primary/30 hover:-translate-y-1 hover:shadow-xl transition-all duration-300 active:scale-95"
+                            className="mt-4 md:mt-0 inline-flex items-center gap-2 px-7 py-3.5 rounded-full font-bold text-sm text-white shadow-lg shadow-primary/30 hover:-translate-y-1 hover:shadow-xl transition-all duration-300 active:scale-95 self-end md:self-auto"
                             style={{
                                 background: "linear-gradient(135deg, var(--color-primary) 0%, var(--flavor-hover) 100%)",
                             }}
@@ -151,7 +156,9 @@ const CatSlider = () => {
 
                         <Swiper
                             spaceBetween={16}
-                            slidesPerView={2}
+                            centeredSlides={true}
+                            centeredSlidesBounds={true}
+                            slidesPerView={'auto'}
                             navigation={{
                                 prevEl: prevRef.current,
                                 nextEl: nextRef.current,
@@ -162,15 +169,16 @@ const CatSlider = () => {
                             }}
                             modules={[Navigation]}
                             breakpoints={{
-                                480: { slidesPerView: 3, spaceBetween: 16 },
-                                640: { slidesPerView: 4, spaceBetween: 20 },
-                                768: { slidesPerView: 5, spaceBetween: 24 },
-                                1024: { slidesPerView: 6, spaceBetween: 24 },
+                                480: { slidesPerView: 2, spaceBetween: 12 },
+                                640: { slidesPerView: 2, spaceBetween: 16 },
+                                768: { slidesPerView: 2.5, spaceBetween: 20 },
+                                1024: { slidesPerView: 3, spaceBetween: 24 },
+                                1280: { slidesPerView: 3, spaceBetween: 32 },
                             }}
                             className="!px-1 !pb-2 !overflow-visible"
                         >
                             {categories.map((category, index) => (
-                                <SwiperSlide key={category._id} className="!h-auto py-1">
+                                <SwiperSlide key={category._id} className="!h-auto py-1 !w-[220px] sm:!w-[240px] md:!w-[260px] lg:!w-[300px]">
                                     <motion.div
                                         initial={{ opacity: 0, scale: 0.8 }}
                                         whileInView={{ opacity: 1, scale: 1 }}

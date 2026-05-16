@@ -213,8 +213,8 @@ export const getProductImageUrl = (imageUrl) => {
  */
 export const getBannerImageUrl = (imageUrl) => {
   return getOptimizedImageUrl(imageUrl, {
-    width: 1600,
-    height: 720,
+    width: 1920,
+    height: 400,
     crop: "fill",
     gravity: "auto",
   });

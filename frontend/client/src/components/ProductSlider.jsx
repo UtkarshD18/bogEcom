@@ -300,54 +300,9 @@ const ProductSlider = ({
           <FiChevronRight size={18} />
         </button>
 
-        <div className="sm:hidden">
-          <Swiper
-            modules={[Navigation, Autoplay]}
-            spaceBetween={12}
-            slidesPerView={Math.min(2.05, totalProducts)}
-            navigation={{
-              prevEl: prevRef.current,
-              nextEl: nextRef.current,
-            }}
-            onBeforeInit={(swiper) => {
-              swiper.params.navigation.prevEl = prevRef.current;
-              swiper.params.navigation.nextEl = nextRef.current;
-            }}
-            autoplay={{ delay: 4000, disableOnInteraction: false }}
-            breakpoints={responsiveSlides}
-            className="px-0.5"
-          >
-            {products.map((product) => (
-              <SwiperSlide key={product._id} className="h-auto!">
-                <div className="h-full">
-                  <ProductItem
-                    id={product._id}
-                    name={product.name}
-                    brand={product.brand || "Buy One Gram"}
-                    price={product.price}
-                    originalPrice={product.originalPrice}
-                    discount={product.discount}
-                    rating={product.rating}
-                    image={product.thumbnail || product.images?.[0]}
-                    product={product}
-                  />
-                </div>
-              </SwiperSlide>
-            ))}
-          </Swiper>
-        </div>
-
-        <div
-          className={`hidden sm:grid gap-3 sm:gap-4 ${
-            totalProducts === 1
-              ? "grid-cols-1"
-              : totalProducts === 2
-                ? "grid-cols-2"
-                : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4"
-          }`}
-        >
+        <div className="flex gap-4 overflow-x-auto py-5 snap-x snap-mandatory scroll-smooth"> 
           {products.map((product) => (
-            <div key={product._id} className="h-full">
+            <div key={product._id} className="flex-shrink-0 w-[260px]">
               <ProductItem
                 id={product._id}
                 name={product.name}

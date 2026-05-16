@@ -21,6 +21,7 @@ const AddBanner = () => {
   const [position, setPosition] = useState("home-top");
   const [isActive, setIsActive] = useState(true);
   const [images, setImages] = useState([]);
+  const [mobileImages, setMobileImages] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ===== NEW VIDEO SUPPORT STATE =====
@@ -45,7 +46,23 @@ const AddBanner = () => {
       }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImages([{ file, preview: reader.result }]);
+        const dataUrl = reader.result;
+        const img = new window.Image();
+        img.onload = () => {
+          const w = img.naturalWidth;
+          const h = img.naturalHeight;
+          const ratio = w / Math.max(h, 1);
+          const targetRatio = 1920 / 400; // ~4.8
+          if (w < 1200 || h < 300 || ratio < targetRatio * 0.8 || ratio > targetRatio * 1.2) {
+            toast.error("Desktop banner should be close to 1920x400px (wider images preferred)");
+            return;
+          }
+          setImages([{ file, preview: dataUrl }]);
+        };
+        img.onerror = () => {
+          toast.error("Invalid image file");
+        };
+        img.src = dataUrl;
       };
       reader.readAsDataURL(file);
     }
@@ -53,6 +70,41 @@ const AddBanner = () => {
 
   const removeImage = () => {
     setImages([]);
+  };
+
+  const handleMobileImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result;
+        const img = new window.Image();
+        img.onload = () => {
+          const w = img.naturalWidth;
+          const h = img.naturalHeight;
+          const ratio = w / Math.max(h, 1);
+          const targetRatio = 900 / 400; // ~2.25
+          if (w < 600 || h < 250 || ratio < targetRatio * 0.7 || ratio > targetRatio * 1.5) {
+            toast.error("Mobile banner should be close to 900x400px (portrait-like will be rejected)");
+            return;
+          }
+          setMobileImages([{ file, preview: dataUrl }]);
+        };
+        img.onerror = () => {
+          toast.error("Invalid image file");
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeMobileImage = () => {
+    setMobileImages([]);
   };
 
   // ===== VIDEO HANDLERS =====
@@ -85,11 +137,16 @@ const AddBanner = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // For image banners, image is required
-    // For video banners, image is optional (poster/fallback)
-    if (mediaType === "image" && images.length === 0) {
-      toast.error("Please upload a banner image");
-      return;
+    // For image banners, both desktop and mobile images are required
+    if (mediaType === "image") {
+      if (images.length === 0) {
+        toast.error("Please upload a desktop banner image");
+        return;
+      }
+      if (mobileImages.length === 0) {
+        toast.error("Please upload a mobile banner image");
+        return;
+      }
     }
 
     // Video validation
@@ -105,15 +162,27 @@ const AddBanner = () => {
     try {
       let imageUrl = "";
 
-      // Upload image if provided
+      // Upload desktop image if provided
       if (images.length > 0 && images[0].file) {
         const uploadResult = await uploadFile(images[0].file, token);
         if (!uploadResult.success || !uploadResult.data?.url) {
-          toast.error("Failed to upload image");
+          toast.error("Failed to upload desktop image");
           setIsSubmitting(false);
           return;
         }
         imageUrl = uploadResult.data.url;
+      }
+
+      // Upload mobile image if provided
+      let mobileImageUrl = "";
+      if (mobileImages.length > 0 && mobileImages[0].file) {
+        const mobileUploadResult = await uploadFile(mobileImages[0].file, token);
+        if (!mobileUploadResult.success || !mobileUploadResult.data?.url) {
+          toast.error("Failed to upload mobile image");
+          setIsSubmitting(false);
+          return;
+        }
+        mobileImageUrl = mobileUploadResult.data.url;
       }
 
       // Handle video upload if video file is provided
@@ -132,6 +201,7 @@ const AddBanner = () => {
         title,
         subtitle,
         image: imageUrl, // Optional for video banners
+        mobileImage: mobileImageUrl,
         link,
         position,
         isActive,
@@ -430,34 +500,65 @@ const AddBanner = () => {
               : "Banner Image *"}
           </h3>
 
-          <div className="flex items-center gap-4 mt-2 flex-wrap">
-            {images.map((img, index) => (
-              <div
-                key={index}
-                className="w-[250px] h-[150px] rounded-md bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden"
-              >
-                <img
-                  src={img.preview}
-                  alt="banner preview"
-                  className="w-full h-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={removeImage}
-                  className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
-                >
-                  <IoMdClose size={16} />
-                </button>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+            <div>
+              <label className="text-sm font-medium">Desktop Image</label>
+              <div className="mt-2 flex items-center gap-4 flex-wrap">
+                {images.map((img, index) => (
+                  <div
+                    key={index}
+                    className="w-[250px] h-[150px] rounded-md bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden"
+                  >
+                    <img
+                      src={img.preview}
+                      alt="banner preview"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                    >
+                      <IoMdClose size={16} />
+                    </button>
+                  </div>
+                ))}
 
-            {images.length === 0 && <UploadBox onChange={handleImageUpload} />}
+                {images.length === 0 && <UploadBox onChange={handleImageUpload} />}
+              </div>
+              <p className="text-sm text-gray-500 mt-2">Recommended desktop size: 1920x400px. Max 5MB.</p>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Mobile Image</label>
+              <div className="mt-2 flex items-center gap-4 flex-wrap">
+                {mobileImages.map((img, index) => (
+                  <div
+                    key={index}
+                    className="w-[180px] h-[150px] rounded-md bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden"
+                  >
+                    <img
+                      src={img.preview}
+                      alt="mobile banner preview"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={removeMobileImage}
+                      className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                    >
+                      <IoMdClose size={16} />
+                    </button>
+                  </div>
+                ))}
+
+                {mobileImages.length === 0 && (
+                  <UploadBox onChange={handleMobileImageUpload} />
+                )}
+              </div>
+              <p className="text-sm text-gray-500 mt-2">Recommended mobile size: 900x400px. Max 5MB.</p>
+            </div>
           </div>
-          <p className="text-sm text-gray-500">
-            {mediaType === "video"
-              ? "Optional: Shows while video loads. Recommended: 1920x400px. Max 5MB."
-              : "Recommended size: 1920x400px for top banners. Max 5MB."}
-          </p>
         </div>
 
         <div className="mt-8 flex gap-3">

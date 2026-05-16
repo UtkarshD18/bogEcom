@@ -6,9 +6,7 @@ import dynamic from "next/dynamic";
 const HomeComboDeals = dynamic(() => import("@/components/HomeComboDeals"), {
   loading: () => null,
 });
-const PopularProducts = dynamic(() => import("@/components/PopularProducts"), {
-  loading: () => null,
-});
+// PopularProducts removed from homepage per layout change; replaced by CatSlider
 const MembershipCTA = dynamic(() => import("@/components/MembershipCTA"), {
   loading: () => null,
 });
@@ -105,9 +103,8 @@ export default async function Home() {
         }}
       >
         <HomeSlider initialSlides={homeSlides} />
-        <CatSlider />
         <Banners initialBanners={banners} />
-        <PopularProducts />
+        <CatSlider />
         <HomeComboDeals />
         <MembershipCTA />
       </div>
