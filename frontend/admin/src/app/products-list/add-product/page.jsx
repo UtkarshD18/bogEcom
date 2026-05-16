@@ -3,6 +3,17 @@ import ProductPageSettingsSection from "@/components/ProductPageSettingsSection"
 import UploadBox from "@/components/UploadBox";
 import { useAdmin } from "@/context/AdminContext";
 import { getData, postData, uploadFile } from "@/utils/api";
+import {
+  buildProductImageAsset,
+  formatImageDimensions,
+  getProductImageDimensionError,
+  getProductImageQualityLabel,
+  PRODUCT_IMAGE_DESKTOP_SPEC,
+  PRODUCT_IMAGE_MAX_FILES,
+  PRODUCT_IMAGE_MAX_SIZE_BYTES,
+  PRODUCT_IMAGE_MOBILE_SPEC,
+  PRODUCT_IMAGE_MIN_SPEC,
+} from "@/utils/productImageUpload";
 import { createDefaultProductPageConfig } from "@/utils/productPageConfig";
 import { normalizeVariantWeight } from "@/utils/weightNormalization";
 import { Button } from "@mui/material";
@@ -137,19 +148,45 @@ const AddProduct = () => {
     setCategoryVal(e.target.value);
   };
 
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files);
-    files.forEach((file) => {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("Image size should be less than 5MB");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImages((prev) => [...prev, { file, preview: reader.result }]);
-      };
-      reader.readAsDataURL(file);
-    });
+  const handleImageUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const remainingSlots = Math.max(PRODUCT_IMAGE_MAX_FILES - images.length, 0);
+    if (remainingSlots === 0) {
+      toast.error(`You can upload up to ${PRODUCT_IMAGE_MAX_FILES} images only`);
+      e.target.value = "";
+      return;
+    }
+
+    if (files.length > remainingSlots) {
+      toast.error(`Only ${remainingSlots} more image slots are available`);
+    }
+
+    const assets = await Promise.all(
+      files.slice(0, remainingSlots).map(async (file) => {
+        if (file.size > PRODUCT_IMAGE_MAX_SIZE_BYTES) {
+          toast.error(`${file.name}: image size should be less than 5MB`);
+          return null;
+        }
+
+        const asset = await buildProductImageAsset({ file });
+        const dimensionError = getProductImageDimensionError(asset?.dimensions);
+        if (dimensionError) {
+          toast.error(`${file.name}: ${dimensionError}`);
+          return null;
+        }
+
+        return asset;
+      }),
+    );
+
+    const nextAssets = assets.filter(Boolean);
+    if (nextAssets.length > 0) {
+      setImages((prev) => [...prev, ...nextAssets]);
+    }
+
+    e.target.value = "";
   };
 
   const removeImage = (index) => {
@@ -219,7 +256,10 @@ const AddProduct = () => {
       const uploadedImageUrls = [];
 
       for (const img of images) {
-        const uploadResult = await uploadFile(img.file, token);
+        const uploadResult = await uploadFile(img.file, token, {
+          folder: "products",
+          preserveQuality: true,
+        });
         if (uploadResult.success && uploadResult.data?.url) {
           uploadedImageUrls.push(uploadResult.data.url);
         } else {
@@ -702,38 +742,93 @@ const AddProduct = () => {
               </span>
             </h3>
 
+            <div className="mt-2 rounded-2xl border border-[#d7e3f0] bg-[#f8fbff] p-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Desktop quality
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {PRODUCT_IMAGE_DESKTOP_SPEC.width} x{" "}
+                    {PRODUCT_IMAGE_DESKTOP_SPEC.height} or larger
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Mobile quality
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {PRODUCT_IMAGE_MOBILE_SPEC.width} x{" "}
+                    {PRODUCT_IMAGE_MOBILE_SPEC.height} or larger
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Minimum accepted
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {PRODUCT_IMAGE_MIN_SPEC.width} x{" "}
+                    {PRODUCT_IMAGE_MIN_SPEC.height}, square works best
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                We keep the source image strong, then serve lighter responsive
+                versions automatically for desktop and mobile storefronts.
+              </p>
+            </div>
+
             <div className="flex items-center gap-4 mt-2 flex-wrap">
               {images.map((img, index) => (
-                <div
-                  key={index}
-                  className="w-[150px] h-[150px] rounded-md bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden"
-                >
-                  <img
-                    src={img.preview}
-                    alt={`preview ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                  {index === 0 && (
-                    <span className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-2 py-0.5 rounded">
-                      Thumbnail
+                <div key={index} className="w-[176px]">
+                  <div className="w-[150px] h-[150px] rounded-md bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden">
+                    <img
+                      src={img.preview}
+                      alt={`preview ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    {index === 0 && (
+                      <span className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-2 py-0.5 rounded">
+                        Thumbnail
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                    >
+                      <IoMdClose size={16} />
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${getProductImageQualityLabel(img).className}`}
+                    >
+                      {getProductImageQualityLabel(img).label}
                     </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeImage(index)}
-                    className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
-                  >
-                    <IoMdClose size={16} />
-                  </button>
+                    <p className="text-[11px] text-gray-600">
+                      {formatImageDimensions(img.dimensions)}
+                    </p>
+                    {img.warnings?.[0] ? (
+                      <p className="text-[11px] text-amber-700">
+                        {img.warnings[0]}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               ))}
 
-              {images.length < 10 && (
-                <UploadBox onChange={handleImageUpload} multiple />
+              {images.length < PRODUCT_IMAGE_MAX_FILES && (
+                <UploadBox
+                  onChange={handleImageUpload}
+                  multiple
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                />
               )}
             </div>
             <p className="text-sm text-gray-500">
-              Max 10 images, 5MB each. Supported: JPG, PNG, WebP
+              Max {PRODUCT_IMAGE_MAX_FILES} images, 5MB each. Supported: JPG,
+              PNG, WebP
             </p>
           </div>
 

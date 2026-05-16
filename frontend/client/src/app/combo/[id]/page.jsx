@@ -20,7 +20,7 @@ import { sanitizeHTML } from "@/utils/sanitize";
 import { Rating } from "@mui/material";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { IoMdCart } from "react-icons/io";
@@ -282,6 +282,8 @@ export default function ComboDetailPage() {
     comment: "",
   });
   const [submittingPublicReview, setSubmittingPublicReview] = useState(false);
+  const reviewSectionRef = useRef(null);
+  const publicReviewFormRef = useRef(null);
 
   useEffect(() => {
     if (!routeId) return;
@@ -421,9 +423,10 @@ export default function ComboDetailPage() {
     buildShippingPoints(),
   );
   const heroStatusLabel = getHeroStatusLabel(combo, reviewCount);
+  const showReviewsSection = pageConfig?.reviewsSection?.show !== false;
   const showHeroStoryCard = pageConfig?.hero?.showStoryCard !== false;
   const showPublicReviewForm =
-    pageConfig?.reviewsSection?.show !== false &&
+    showReviewsSection &&
     reviewSettings.allowPublicSubmissions !== false &&
     reviewSettings.showPublicReviewForm !== false;
   const showFrequentlyBoughtSection =
@@ -436,6 +439,40 @@ export default function ComboDetailPage() {
   const imageStageClassName = showHeroStoryCard
     ? "product-image-stage relative flex min-h-[480px] overflow-hidden rounded-[30px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(244,236,229,0.88)_100%)] p-0 lg:h-full lg:min-h-[540px]"
     : "product-image-stage relative mx-auto flex min-h-[420px] max-w-[840px] overflow-hidden rounded-[30px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(244,236,229,0.88)_100%)] p-0";
+  const scrollToReviews = useCallback(() => {
+    if (!showReviewsSection) return;
+
+    const targetElement =
+      publicReviewFormRef.current || reviewSectionRef.current;
+    if (!targetElement) return;
+
+    targetElement.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+
+    if (typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}#reviews`,
+      );
+    }
+
+    const focusTarget = publicReviewFormRef.current?.querySelector(
+      "input:not([type='hidden']), textarea",
+    );
+
+    if (focusTarget && typeof window !== "undefined") {
+      window.setTimeout(() => {
+        try {
+          focusTarget.focus({ preventScroll: true });
+        } catch {
+          focusTarget.focus();
+        }
+      }, 420);
+    }
+  }, [showReviewsSection]);
 
   const openGalleryAtIndex = (index) => {
     setActiveImageIndex(index);
@@ -612,6 +649,17 @@ export default function ComboDetailPage() {
       setActiveTab(tabs[0].id);
     }
   }, [activeTab, tabs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (window.location.hash !== "#reviews") return undefined;
+
+    const timer = window.setTimeout(() => {
+      scrollToReviews();
+    }, 140);
+
+    return () => window.clearTimeout(timer);
+  }, [comboId, scrollToReviews, showReviewsSection]);
 
   const getRecommendationPayload = (item) => {
     const recommendation = item?.recommendation || {};
@@ -923,6 +971,9 @@ export default function ComboDetailPage() {
                   <ProductImage
                     src={activeImage}
                     alt={combo?.name || "Combo image"}
+                    responsiveProfile="gallery"
+                    sizes="(max-width: 768px) 92vw, (max-width: 1280px) 54vw, 720px"
+                    eager
                     fit="cover"
                     aspect=""
                     rounded="rounded-[28px]"
@@ -990,6 +1041,8 @@ export default function ComboDetailPage() {
                     <ProductImage
                       src={image}
                       alt={`${combo?.name || "Combo"} ${index + 1}`}
+                      responsiveProfile="thumb"
+                      sizes="98px"
                       aspect="aspect-square"
                       fit="cover"
                       padding="p-1"
@@ -1007,6 +1060,8 @@ export default function ComboDetailPage() {
                     <ProductImage
                       src={images[maxVisibleThumbnails]}
                       alt="More combo images"
+                      responsiveProfile="thumb"
+                      sizes="98px"
                       aspect="aspect-square"
                       fit="cover"
                       padding="p-1"
@@ -1048,18 +1103,26 @@ export default function ComboDetailPage() {
             </div>
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 rounded-full border border-[#ecd8c9] bg-[#fbf7f2] px-4 py-2">
+              <button
+                type="button"
+                onClick={scrollToReviews}
+                disabled={!showReviewsSection}
+                aria-controls="reviews"
+                aria-label="Jump to ratings and review form"
+                className="flex items-center gap-2 rounded-full border border-[#ecd8c9] bg-[#fbf7f2] px-4 py-2 transition hover:bg-[#f7efe7] disabled:cursor-default disabled:hover:bg-[#fbf7f2]"
+              >
                 <Rating
                   value={Math.max(starRating, reviewCount > 0 ? starRating : 5)}
                   readOnly
                   size="small"
+                  sx={{ pointerEvents: "none" }}
                 />
                 <span className="text-sm text-[#4b392f]">
                   {reviewCount > 0
                     ? `${reviewCount} review${reviewCount === 1 ? "" : "s"}`
                     : "No reviews yet"}
                 </span>
-              </div>
+              </button>
               <div className="rounded-full border border-[#ecd8c9] bg-[#fbf7f2] px-4 py-2 text-sm font-medium text-[#6c4a3a]">
                 {heroStatusLabel}
               </div>
@@ -1400,6 +1463,7 @@ export default function ComboDetailPage() {
                             pageConfig.descriptionSection.featuredBannerImage
                           }
                           alt={combo?.name || "Combo showcase"}
+                          responsiveProfile="content"
                           fit="cover"
                           aspect="aspect-[4/3]"
                           className="w-full bg-white/10"
@@ -1543,8 +1607,15 @@ export default function ComboDetailPage() {
           </div>
         ) : null}
 
-        {pageConfig?.reviewsSection?.show !== false ? (
-          <div className="product-reveal product-reveal-delay-3 mt-12 rounded-[36px] border border-[#e1cdbf] bg-white/88 p-6 shadow-[0_34px_90px_-55px_rgba(44,29,20,0.38)] backdrop-blur sm:p-8">
+        {showReviewsSection ? (
+          <div
+            id="reviews"
+            ref={reviewSectionRef}
+            className="product-reveal product-reveal-delay-3 mt-12 rounded-[36px] border border-[#e1cdbf] bg-white/88 p-6 shadow-[0_34px_90px_-55px_rgba(44,29,20,0.38)] backdrop-blur sm:p-8"
+            style={{
+              scrollMarginTop: "calc(var(--header-height, 0px) + 24px)",
+            }}
+          >
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#7b6355]">
@@ -1641,7 +1712,13 @@ export default function ComboDetailPage() {
             </div>
 
             {showPublicReviewForm ? (
-              <div className="mt-8 rounded-[28px] border border-[#eaded5] bg-[#f8f2eb] p-6">
+              <div
+                ref={publicReviewFormRef}
+                className="mt-8 rounded-[28px] border border-[#eaded5] bg-[#f8f2eb] p-6"
+                style={{
+                  scrollMarginTop: "calc(var(--header-height, 0px) + 24px)",
+                }}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#7b6355]">
@@ -1800,6 +1877,8 @@ export default function ComboDetailPage() {
                           <ProductImage
                             src={getImageUrl(recommendation.image)}
                             alt={recProduct?.name || "Suggested product"}
+                            responsiveProfile="thumb"
+                            sizes="72px"
                             aspect="aspect-square"
                             fit="cover"
                             className="h-[72px] w-[72px] flex-shrink-0 border border-[#efe4dc]"

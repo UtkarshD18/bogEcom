@@ -56,6 +56,10 @@ export const getImageUrl = (
     return `https:${normalizedPath}`;
   }
 
+  if (normalizedPath.startsWith("res.cloudinary.com/")) {
+    return `https://${normalizedPath}`;
+  }
+
   // Already a full URL (Cloudinary or external)
   if (
     normalizedPath.startsWith("http://") ||
