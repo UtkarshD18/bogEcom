@@ -107,6 +107,7 @@ jobs:
           REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
           CLIENT_URL: ${{ secrets.CLIENT_URL }}
           ADMIN_URL: ${{ secrets.ADMIN_URL }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
@@ -181,6 +182,7 @@ jobs:
               "REFRESH_TOKEN_SECRET",
               "CLIENT_URL",
               "ADMIN_URL",
+              "CORS_ORIGINS",
           ]
           missing = [key for key in required if not os.environ.get(key)]
           if missing:
@@ -236,6 +238,7 @@ jobs:
               "REFRESH_TOKEN_SECRET": os.environ["REFRESH_TOKEN_SECRET"],
               "CLIENT_URL": os.environ["CLIENT_URL"],
               "ADMIN_URL": os.environ["ADMIN_URL"],
+              "CORS_ORIGINS": os.environ["CORS_ORIGINS"],
           }
 
           optional = [
