@@ -130,7 +130,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
   }, [fetchHomeSlides, homeSlides?.length, initialSlides?.length]);
 
   return (
-    <section className="relative overflow-hidden rounded-b-[2rem] bg-[#1a120d] shadow-[0_40px_120px_rgba(26,18,13,0.16)] md:rounded-b-[3rem]">
+    <section className="relative overflow-hidden rounded-b-[1.5rem] bg-[#1a120d] shadow-[0_40px_120px_rgba(26,18,13,0.16)] md:rounded-b-[3rem]">
       <Swiper
         speed={motionEnabled ? 850 : 500}
         spaceBetween={0}
@@ -153,7 +153,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
             "swiper-pagination-bullet-active home-slide-bullet-active",
         }}
         modules={[Autoplay, Pagination, EffectFade]}
-        className="h-[62vh] min-h-[34rem] w-full md:h-[88vh] md:min-h-[46rem] homeSlider"
+        className="homeSlider h-[calc(100svh-var(--header-height,128px))] min-h-[25rem] w-full sm:min-h-[36rem] md:h-[88vh] md:min-h-[46rem]"
         onSlideChange={(swiper) => setActiveIndex(swiper.realIndex)}
       >
         {displaySlides.map((slide, index) => (
@@ -197,7 +197,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
                           fetchPriority={index === 0 ? "high" : undefined}
                           loading={index === 0 ? "eager" : "lazy"}
                           unoptimized={desktopCloudinary}
-                          className="object-cover"
+                          className="object-cover object-center"
                         />
                       </div>
                       <div
@@ -215,7 +215,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
                           fetchPriority={index === 0 ? "high" : undefined}
                           loading={index === 0 ? "eager" : "lazy"}
                           unoptimized={mobileCloudinary}
-                          className="object-cover"
+                          className="object-cover object-center"
                         />
                       </div>
                     </>
@@ -224,17 +224,24 @@ const HomeSlider = ({ initialSlides = [] }) => {
               </motion.div>
 
               <div
-                className="absolute inset-0"
+                className="absolute inset-0 hidden md:block"
                 style={{
                   background:
                     "linear-gradient(115deg, rgba(15,10,7,0.78) 0%, rgba(15,10,7,0.44) 34%, rgba(15,10,7,0.18) 62%, transparent 82%), linear-gradient(to top, rgba(0,0,0,0.74) 0%, rgba(0,0,0,0.24) 38%, transparent 72%)",
                 }}
               />
+              <div
+                className="absolute inset-0 md:hidden"
+                style={{
+                  background:
+                    "linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.18) 30%, rgba(0,0,0,0.7) 100%), linear-gradient(105deg, rgba(15,10,7,0.72) 0%, rgba(15,10,7,0.28) 54%, transparent 100%)",
+                }}
+              />
               <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#1d140f]/60 to-transparent" />
             </div>
 
-            <div className="pointer-events-none absolute inset-0">
-              <div className="mx-auto flex h-full max-w-7xl items-end px-4 pb-24 pt-24 sm:pb-28 md:items-center md:pb-20">
+            <div className="home-slide-content-layer pointer-events-none absolute inset-0">
+              <div className="mx-auto flex h-full max-w-7xl items-end px-4 pb-28 pt-8 sm:pb-32 md:items-center md:pb-20 md:pt-24">
                 <motion.div
                   key={`hero-panel-${activeIndex}-${index}`}
                   initial={
@@ -252,7 +259,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
                       ? { duration: 0.45, ease: [0.22, 1, 0.36, 1] }
                       : { duration: 0.18 }
                   }
-                  className="pointer-events-auto relative max-w-[35rem] overflow-hidden rounded-[2rem] border border-white/18 bg-[linear-gradient(145deg,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0.1)_46%,rgba(255,255,255,0.08)_100%)] px-5 py-5 text-white shadow-[0_32px_90px_-44px_rgba(0,0,0,0.82)] backdrop-blur-md sm:px-6 sm:py-6 md:rounded-[2.25rem] md:px-8 md:py-8"
+                  className="pointer-events-auto relative w-full max-w-[22.5rem] overflow-hidden rounded-[1.35rem] border border-white/18 bg-[linear-gradient(145deg,rgba(255,255,255,0.17)_0%,rgba(255,255,255,0.08)_46%,rgba(255,255,255,0.06)_100%)] px-3.5 py-3.5 text-white shadow-[0_32px_90px_-44px_rgba(0,0,0,0.82)] backdrop-blur-[4px] sm:max-w-[35rem] sm:rounded-[2rem] sm:px-6 sm:py-6 sm:backdrop-blur-md md:rounded-[2.25rem] md:px-8 md:py-8"
                 >
                   <div className="pointer-events-none absolute inset-0">
                     <div className="absolute left-[-8%] top-[-16%] h-28 w-32 rounded-full bg-white/24 blur-2xl" />
@@ -261,22 +268,22 @@ const HomeSlider = ({ initialSlides = [] }) => {
                   </div>
 
                   <div className="relative z-10">
-                    <span className="inline-flex items-center rounded-full border border-white/15 bg-[rgba(121,80,41,0.24)] px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-white/90">
+                    <span className="inline-flex items-center rounded-full border border-white/15 bg-[rgba(121,80,41,0.24)] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-white/90 sm:px-3 sm:text-[11px] sm:tracking-[0.22em]">
                       Bestseller Range
                     </span>
 
-                    <h1 className="mt-4 text-[2.35rem] font-black leading-[0.95] tracking-[-0.05em] text-white drop-shadow-[0_12px_32px_rgba(0,0,0,0.28)] sm:text-[2.9rem] md:text-[3.45rem]">
+                    <h1 className="mt-2.5 text-[1.65rem] font-black leading-[1.05] tracking-normal text-white drop-shadow-[0_12px_32px_rgba(0,0,0,0.28)] sm:mt-4 sm:text-[2.9rem] md:text-[3.45rem]">
                       {slide.title}
                     </h1>
 
-                    <p className="mt-4 max-w-[28rem] text-sm font-medium leading-6 text-white/82 sm:text-base">
+                    <p className="mt-2.5 max-w-[28rem] text-sm font-semibold leading-5 text-white/86 sm:mt-4 sm:text-base sm:font-medium sm:leading-6 sm:text-white/82">
                       {slide.subtitle}
                     </p>
 
-                    <div className="mt-6 flex flex-wrap items-center gap-3">
+                    <div className="mt-4 flex flex-wrap items-center gap-2.5 sm:mt-6 sm:gap-3">
                       <Link
                         href={slide.link}
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-[#352116] shadow-[0_18px_45px_-30px_rgba(255,255,255,0.4)] transition duration-300 hover:-translate-y-0.5 hover:bg-[#fff6ea] sm:px-6"
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-[#352116] shadow-[0_18px_45px_-30px_rgba(255,255,255,0.4)] transition duration-300 hover:-translate-y-0.5 hover:bg-[#fff6ea] sm:px-6 sm:py-3"
                       >
                         {slide.cta}
                         <FiArrowUpRight size={16} />
@@ -284,22 +291,22 @@ const HomeSlider = ({ initialSlides = [] }) => {
 
                       <Link
                         href="/products"
-                        className="inline-flex items-center gap-2 rounded-full border border-white/24 bg-white/10 px-4 py-3 text-sm font-semibold text-white/90 transition duration-300 hover:bg-white/16"
+                        className="inline-flex items-center gap-2 rounded-full border border-white/24 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white/90 transition duration-300 hover:bg-white/16 sm:py-3"
                       >
                         View catalog
                       </Link>
                     </div>
 
-                    <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="mt-6 hidden grid-cols-3 gap-3 sm:grid">
                       {HERO_STATS.map((item) => (
                         <div
                           key={item.label}
-                          className="rounded-[1.1rem] border border-white/12 bg-white/8 px-4 py-3"
+                          className="rounded-[0.9rem] border border-white/12 bg-white/8 px-2.5 py-2.5 sm:rounded-[1.1rem] sm:px-4 sm:py-3"
                         >
-                          <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-white/58">
+                          <p className="text-[8px] font-extrabold uppercase tracking-[0.14em] text-white/62 sm:text-[10px] sm:tracking-[0.2em] sm:text-white/58">
                             {item.label}
                           </p>
-                          <p className="mt-1 text-sm font-semibold text-white/90">
+                          <p className="mt-1 text-xs font-semibold leading-tight text-white/92 sm:text-sm">
                             {item.value}
                           </p>
                         </div>
@@ -313,12 +320,12 @@ const HomeSlider = ({ initialSlides = [] }) => {
         ))}
       </Swiper>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-12 z-20 hidden px-4 sm:block">
-        <div className="mx-auto flex max-w-5xl items-center justify-center gap-3 rounded-full border border-white/18 bg-black/20 px-4 py-3 text-white/88 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-x-0 bottom-12 z-20 px-2 sm:px-4">
+        <div className="mx-auto flex max-w-[24rem] flex-nowrap items-center justify-center gap-1.5 rounded-full border border-white/18 bg-black/28 px-2 py-2 text-white/92 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur-xl sm:max-w-5xl sm:gap-3 sm:bg-black/20 sm:px-4 sm:py-3 sm:text-white/88 md:w-fit md:max-w-none md:bg-black/30 md:px-5 md:py-3">
           {heroTrustItems.map((item) => (
             <span
               key={item}
-              className="rounded-full bg-white/10 px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.2em]"
+              className="whitespace-nowrap rounded-full bg-white/12 px-2 py-1.5 text-[7px] font-extrabold uppercase tracking-[0.08em] sm:bg-white/10 sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.2em]"
             >
               {item}
             </span>
@@ -327,6 +334,13 @@ const HomeSlider = ({ initialSlides = [] }) => {
       </div>
 
       <style jsx global>{`
+        .homeSlider .home-slide-content-layer {
+          opacity: 0;
+          transition: opacity 0.2s ease;
+        }
+        .homeSlider .swiper-slide-active .home-slide-content-layer {
+          opacity: 1;
+        }
         .homeSlider .swiper-pagination {
           bottom: 18px !important;
         }
