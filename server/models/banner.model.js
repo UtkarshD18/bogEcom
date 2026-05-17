@@ -53,6 +53,12 @@ const bannerSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    buttonText: {
+      type: String,
+      default: "Shop Now",
+      trim: true,
+      maxLength: [40, "Button text cannot exceed 40 characters"],
+    },
     linkText: {
       type: String,
       default: "Shop Now",

@@ -208,6 +208,10 @@ const defaultSettings = {
   flavour_button_4_text: "Low-calorie",
   flavour_button_4_bg_color: "#CFEFE8",
   flavour_button_4_text_color: "#1F4D46",
+  homepage_trust_1_text: "100% Natural",
+  homepage_trust_2_text: "No Palm Oil",
+  homepage_trust_3_text: "High Protein",
+  homepage_trust_4_text: "Fast Moving Picks",
 };
 
 /**

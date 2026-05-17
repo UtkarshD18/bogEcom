@@ -11,6 +11,51 @@ import { API_BASE_URL } from "@/utils/api";
 
 const API_URL = API_BASE_URL;
 const DEFAULT_PLACEHOLDER = "/product_1.png";
+const CLOUDINARY_TRANSFORM_TOKEN_PATTERN =
+  /(?:^|,)(?:c|w|h|g|q|f|dpr|ar|x|y|z|bo|e|fl)_[^,/]+/i;
+
+const RESPONSIVE_IMAGE_PROFILES = {
+  thumb: {
+    widths: [96, 144, 196, 256],
+    width: 256,
+    height: 256,
+    crop: "limit",
+    quality: "auto:good",
+    sizes: "96px",
+  },
+  card: {
+    widths: [240, 320, 420, 520, 680],
+    width: 680,
+    height: 680,
+    crop: "limit",
+    quality: "auto:good",
+    sizes:
+      "(max-width: 640px) 44vw, (max-width: 1024px) 28vw, (max-width: 1536px) 20vw, 320px",
+  },
+  gallery: {
+    widths: [480, 720, 960, 1280, 1600],
+    width: 1600,
+    height: 1600,
+    crop: "limit",
+    quality: "auto:best",
+    sizes: "(max-width: 768px) 92vw, (max-width: 1280px) 54vw, 720px",
+  },
+  content: {
+    widths: [480, 720, 960, 1280, 1600],
+    width: 1600,
+    crop: "limit",
+    quality: "auto:good",
+    sizes: "(max-width: 768px) 92vw, (max-width: 1280px) 64vw, 920px",
+  },
+  zoom: {
+    widths: [720, 1080, 1440, 1800, 2200],
+    width: 2200,
+    height: 2200,
+    crop: "limit",
+    quality: "auto:best",
+    sizes: "92vw",
+  },
+};
 
 const normalizeImageInput = (imageValue) => {
   if (!imageValue) return "";
@@ -57,16 +102,20 @@ const buildCloudinaryUrl = (imageUrl, transformations = []) => {
     return normalizedUrl;
   }
 
-  return `${parts[0]}/upload/${serializedTransforms}/${parts[1]}`;
+  const uploadPathSegments = String(parts[1] || "").split("/");
+  const [firstSegment, ...remainingSegments] = uploadPathSegments;
+  const hasExistingTransformations =
+    firstSegment &&
+    !/^v\d+$/i.test(firstSegment) &&
+    CLOUDINARY_TRANSFORM_TOKEN_PATTERN.test(firstSegment);
+  const normalizedUploadPath = hasExistingTransformations
+    ? remainingSegments.join("/")
+    : parts[1];
+
+  return `${parts[0]}/upload/${serializedTransforms}/${normalizedUploadPath}`;
 };
 
-/**
- * Get the proper image URL for display
- * @param {string} imageUrl - The image URL from database
- * @param {string} fallback - Fallback image path
- * @returns {string} - Resolved image URL
- */
-export const getImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
+const resolveBaseImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
   const normalizedValue = normalizeImageInput(imageUrl);
   if (!normalizedValue) return fallback;
 
@@ -80,12 +129,14 @@ export const getImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
     return `https:${normalizedPath}`;
   }
 
-  // Already a full URL (Cloudinary or external)
+  if (normalizedPath.startsWith("res.cloudinary.com/")) {
+    return `https://${normalizedPath}`;
+  }
+
   if (
     normalizedPath.startsWith("http://") ||
     normalizedPath.startsWith("https://")
   ) {
-    // Rewrite localhost upload links to current API base to avoid broken production/media URLs.
     if (
       /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/uploads\//i.test(
         normalizedPath,
@@ -98,17 +149,9 @@ export const getImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
       return `${API_URL}${uploadPath}`;
     }
 
-    if (normalizedPath.includes("res.cloudinary.com")) {
-      return buildCloudinaryUrl(normalizedPath, [
-        "f_auto",
-        "q_auto:good",
-        "dpr_auto",
-      ]);
-    }
     return normalizedPath;
   }
 
-  // Local server uploads
   if (normalizedPath.startsWith("/uploads/")) {
     return `${API_URL}${normalizedPath}`;
   }
@@ -117,7 +160,6 @@ export const getImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
     return `${API_URL}/${normalizedPath}`;
   }
 
-  // Local public folder image (like /product_1.png)
   if (normalizedPath.startsWith("/")) {
     return normalizedPath;
   }
@@ -127,6 +169,20 @@ export const getImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
   }
 
   return fallback;
+};
+
+/**
+ * Get the proper image URL for display
+ * @param {string} imageUrl - The image URL from database
+ * @param {string} fallback - Fallback image path
+ * @returns {string} - Resolved image URL
+ */
+export const getImageUrl = (imageUrl, fallback = DEFAULT_PLACEHOLDER) => {
+  const baseUrl = resolveBaseImageUrl(imageUrl, fallback);
+  if (baseUrl.includes("res.cloudinary.com")) {
+    return buildCloudinaryUrl(baseUrl, ["f_auto", "q_auto:good", "dpr_auto"]);
+  }
+  return baseUrl;
 };
 
 /**
@@ -248,6 +304,55 @@ export const getProductCardImageUrl = (imageUrl) =>
     crop: "limit",
   });
 
+export const getResponsiveImageSet = (
+  imageUrl,
+  { profile = "gallery", sizes = "" } = {},
+) => {
+  const selectedProfile =
+    RESPONSIVE_IMAGE_PROFILES[profile] || RESPONSIVE_IMAGE_PROFILES.gallery;
+  const baseUrl = resolveBaseImageUrl(imageUrl, DEFAULT_PLACEHOLDER);
+
+  if (!baseUrl.includes("res.cloudinary.com")) {
+    return {
+      src: getImageUrl(baseUrl),
+      srcSet: undefined,
+      sizes: sizes || selectedProfile.sizes,
+    };
+  }
+
+  const widths =
+    Array.isArray(selectedProfile.widths) && selectedProfile.widths.length > 0
+      ? selectedProfile.widths
+      : [selectedProfile.width].filter(Boolean);
+  const imageOptions = {
+    height: selectedProfile.height,
+    crop: selectedProfile.crop || "limit",
+    quality: selectedProfile.quality || "auto:good",
+    format: "auto",
+    dpr: "auto",
+  };
+
+  const srcSet = widths
+    .map((width) => {
+      const candidate = getOptimizedImageUrl(baseUrl, {
+        ...imageOptions,
+        width,
+      });
+      return candidate ? `${candidate} ${width}w` : "";
+    })
+    .filter(Boolean)
+    .join(", ");
+
+  return {
+    src: getOptimizedImageUrl(baseUrl, {
+      ...imageOptions,
+      width: selectedProfile.width || widths[widths.length - 1],
+    }),
+    srcSet: srcSet || undefined,
+    sizes: sizes || selectedProfile.sizes,
+  };
+};
+
 /**
  * Check if an image URL is a Cloudinary URL
  * @param {string} imageUrl - Image URL to check
@@ -267,5 +372,6 @@ export default {
   getHeroMobileImageUrl,
   getCategoryImageUrl,
   getProductCardImageUrl,
+  getResponsiveImageSet,
   isCloudinaryUrl,
 };

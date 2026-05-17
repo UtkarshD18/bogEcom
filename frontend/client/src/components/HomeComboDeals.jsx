@@ -26,7 +26,7 @@ const HomeComboDeals = () => {
         } else {
           setCombos([]);
         }
-      } catch (error) {
+      } catch {
         setCombos([]);
       } finally {
         setLoading(false);
@@ -65,29 +65,46 @@ const HomeComboDeals = () => {
 
   return (
     <section
-      className="relative py-12 sm:py-16 md:py-20 overflow-hidden transition-all duration-500"
-      style={{ backgroundColor: "var(--flavor-light, #F7F1EF)" }}
+      className="relative overflow-hidden border-t border-[#eedec9] py-14 sm:py-16 md:py-20 transition-all duration-500"
+      style={{
+        background:
+          "linear-gradient(180deg, #f7f0e5 0%, #fbf7f1 52%, #ffffff 100%)",
+      }}
     >
-      <div className="relative max-w-7xl mx-auto px-4 z-10 space-y-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-          <div className="max-w-lg space-y-3">
-            <span className="inline-flex items-center gap-2 text-[11px] uppercase tracking-widest font-extrabold px-4 py-2 rounded-full bg-[var(--flavor-glass)] text-primary border border-primary/20">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="absolute left-0 top-0 h-20 w-full"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(236,219,193,0.42) 0%, transparent 100%)",
+          }}
+        />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#d6b98a] to-transparent" />
+        <div className="absolute -left-20 top-16 h-52 w-52 rounded-full bg-[#f5e5ca] blur-[100px]" />
+        <div className="absolute -right-14 bottom-10 h-56 w-56 rounded-full bg-[rgba(90,58,34,0.10)] blur-[110px]" />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-7xl px-4">
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div className="max-w-2xl space-y-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#e8c991] bg-[#f5e5c6] px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#c78608] shadow-[0_8px_24px_rgba(199,134,8,0.10)]">
               Combo Savings
             </span>
             <h2
-              className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight"
+              className="text-[clamp(2.05rem,4vw,4.2rem)] font-black tracking-[-0.05em]"
               style={{ color: "var(--color-primary)" }}
             >
               Combo Deals
             </h2>
-            <p className="text-sm sm:text-base text-gray-500 font-medium leading-relaxed max-w-md">
-              Handpicked bundles built from what customers love together.
+            <p className="max-w-xl text-sm font-medium leading-relaxed text-slate-600 sm:text-base">
+              Handpicked bundles built from what customers love together, laid
+              out in a warmer section so each deal block stands apart clearly.
             </p>
           </div>
 
           <Link
             href="/combo-deals"
-            className="self-start md:self-auto inline-flex items-center gap-2 px-6 py-3 rounded-full font-bold text-sm text-white shadow-lg shadow-primary/30 hover:-translate-y-1 hover:shadow-xl transition-all duration-300 active:scale-95"
+            className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl active:scale-95 sm:px-6 sm:py-3"
             style={{
               background:
                 "linear-gradient(135deg, var(--color-primary) 0%, var(--flavor-hover) 100%)",
@@ -97,23 +114,29 @@ const HomeComboDeals = () => {
           </Link>
         </div>
 
-        {loading ? (
-          <p className="text-sm text-gray-500">Loading combo deals...</p>
-        ) : combos.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {renderedCombos.map((combo) => (
-              <ComboCard
-                key={combo._id || combo.slug}
-                combo={combo}
-                context="home_combo_deals"
-                variant="compact"
-                action="details"
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">No combo deals right now.</p>
-        )}
+        <div className="rounded-[2rem] border border-white/80 bg-white/72 p-3 shadow-[0_22px_60px_rgba(90,58,34,0.08)] backdrop-blur-sm sm:p-4 lg:p-5">
+          {loading ? (
+            <p className="px-2 py-4 text-sm text-slate-500">
+              Loading combo deals...
+            </p>
+          ) : combos.length > 0 ? (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-5 lg:grid-cols-4 lg:gap-6">
+              {renderedCombos.map((combo) => (
+                <ComboCard
+                  key={combo._id || combo.slug}
+                  combo={combo}
+                  context="home_combo_deals"
+                  variant="compact"
+                  action="details"
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="px-2 py-4 text-sm text-slate-500">
+              No combo deals right now.
+            </p>
+          )}
+        </div>
       </div>
     </section>
   );

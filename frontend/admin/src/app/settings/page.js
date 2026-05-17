@@ -2,6 +2,7 @@
 
 import { getData, putData, uploadFile } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
+import Image from "next/image";
 
 import { useAdmin } from "@/context/AdminContext";
 import {
@@ -71,6 +72,12 @@ const DEFAULT_FLAVOUR_BUTTON_SETTINGS = {
   flavour_button_4_bg_color: "#CFEFE8",
   flavour_button_4_text_color: "#1F4D46",
 };
+const DEFAULT_HOMEPAGE_TRUST_SETTINGS = {
+  homepage_trust_1_text: "100% Natural",
+  homepage_trust_2_text: "No Palm Oil",
+  homepage_trust_3_text: "High Protein",
+  homepage_trust_4_text: "Fast Moving Picks",
+};
 const FLAVOUR_BUTTON_FIELDS = [
   {
     label: "Creamy",
@@ -95,6 +102,28 @@ const FLAVOUR_BUTTON_FIELDS = [
     textKey: "flavour_button_4_text",
     bgKey: "flavour_button_4_bg_color",
     textColorKey: "flavour_button_4_text_color",
+  },
+];
+const HOMEPAGE_TRUST_FIELDS = [
+  {
+    label: "Trust Pill 1",
+    key: "homepage_trust_1_text",
+    fallback: "100% Natural",
+  },
+  {
+    label: "Trust Pill 2",
+    key: "homepage_trust_2_text",
+    fallback: "No Palm Oil",
+  },
+  {
+    label: "Trust Pill 3",
+    key: "homepage_trust_3_text",
+    fallback: "High Protein",
+  },
+  {
+    label: "Trust Pill 4",
+    key: "homepage_trust_4_text",
+    fallback: "Fast Moving Picks",
   },
 ];
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -425,6 +454,9 @@ const SettingsPage = () => {
   const [flavourButtonSettings, setFlavourButtonSettings] = useState(
     DEFAULT_FLAVOUR_BUTTON_SETTINGS,
   );
+  const [homepageTrustSettings, setHomepageTrustSettings] = useState(
+    DEFAULT_HOMEPAGE_TRUST_SETTINGS,
+  );
 
   // High Traffic Notice
   const [highTrafficNotice, setHighTrafficNotice] = useState({
@@ -700,6 +732,19 @@ const SettingsPage = () => {
             return;
           }
 
+          if (
+            Object.prototype.hasOwnProperty.call(
+              DEFAULT_HOMEPAGE_TRUST_SETTINGS,
+              setting.key,
+            )
+          ) {
+            setHomepageTrustSettings((prev) => ({
+              ...prev,
+              [setting.key]: String(setting.value ?? ""),
+            }));
+            return;
+          }
+
           switch (setting.key) {
             case "shippingSettings":
               setShippingSettings(setting.value);
@@ -934,25 +979,10 @@ const SettingsPage = () => {
       const flavourButtonSaveCalls = Object.entries(flavourButtonSettings).map(
         ([key, value]) => saveSetting(key, String(value || "").trim()),
       );
-      const [
-        popupSaveResult,
-        shippingSaved,
-        orderSaved,
-        orderNumberSeriesSaved,
-        discountSaved,
-        storeSaved,
-        trafficSaved,
-        paymentSaved,
-        defaultPaymentProviderSaved,
-        maintenanceSettingsSaved,
-        maintenanceSaved,
-        showOfferPopupSaved,
-        offerCouponCodeSaved,
-        offerTitleSaved,
-        offerDescriptionSaved,
-        offerDiscountTextSaved,
-        ...flavourButtonSavedResults
-      ] = await Promise.all([
+      const homepageTrustSaveCalls = Object.entries(homepageTrustSettings).map(
+        ([key, value]) => saveSetting(key, String(value || "").trim()),
+      );
+      const fixedSaveResults = await Promise.all([
         savePopupConfig(popupSettings),
         saveSetting("shippingSettings", shippingSettings),
         saveSetting("orderSettings", orderSettings),
@@ -1007,8 +1037,38 @@ const SettingsPage = () => {
           "offerDiscountText",
           String(offerPopupSettings.offerDiscountText || "").trim(),
         ),
-        ...flavourButtonSaveCalls,
       ]);
+      const dynamicSaveResults = await Promise.all([
+        ...flavourButtonSaveCalls,
+        ...homepageTrustSaveCalls,
+      ]);
+
+      const [
+        popupSaveResult,
+        shippingSaved,
+        orderSaved,
+        orderNumberSeriesSaved,
+        discountSaved,
+        storeSaved,
+        trafficSaved,
+        paymentSaved,
+        defaultPaymentProviderSaved,
+        maintenanceSettingsSaved,
+        maintenanceSaved,
+        showOfferPopupSaved,
+        offerCouponCodeSaved,
+        offerTitleSaved,
+        offerDescriptionSaved,
+        offerDiscountTextSaved,
+      ] = fixedSaveResults;
+
+      const flavourButtonSavedResults = dynamicSaveResults.slice(
+        0,
+        flavourButtonSaveCalls.length,
+      );
+      const homepageTrustSavedResults = dynamicSaveResults.slice(
+        flavourButtonSaveCalls.length,
+      );
 
       const coreSettingsSaved = [
         shippingSaved,
@@ -1027,6 +1087,7 @@ const SettingsPage = () => {
         offerDescriptionSaved,
         offerDiscountTextSaved,
         ...flavourButtonSavedResults,
+        ...homepageTrustSavedResults,
       ].every(Boolean);
 
       if (popupSaveResult.success && coreSettingsSaved) {
@@ -2094,14 +2155,18 @@ const SettingsPage = () => {
             }}
           >
             {popupSettings.imageUrl ? (
-              <img
-                src={getImageUrl(
-                  popupSettings.imageUrl,
-                  popupSettings.imageUrl,
-                )}
-                alt="Popup preview"
-                className="w-full h-35 object-cover"
-              />
+              <div className="relative h-35 w-full">
+                <Image
+                  src={getImageUrl(
+                    popupSettings.imageUrl,
+                    popupSettings.imageUrl,
+                  )}
+                  alt="Popup preview"
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              </div>
             ) : null}
             <div className="p-4">
               <h4 className="text-lg font-bold text-gray-900">
@@ -2821,6 +2886,51 @@ const SettingsPage = () => {
 
         <p className="text-sm text-gray-500 mt-3">
           Clear any field to fall back to the current storefront default.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <MdStore className="text-2xl text-amber-600" />
+          <h2 className="text-lg font-semibold text-gray-800">
+            Homepage Trust Pills
+          </h2>
+        </div>
+        <Divider className="mb-4" />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {HOMEPAGE_TRUST_FIELDS.map((field) => (
+            <div
+              key={field.key}
+              className="rounded-lg border border-gray-100 p-4"
+            >
+              <div className="text-sm font-semibold text-gray-800 mb-3">
+                {field.label}
+              </div>
+              <TextField
+                label="Text"
+                value={homepageTrustSettings[field.key]}
+                onChange={(e) =>
+                  setHomepageTrustSettings((prev) => ({
+                    ...prev,
+                    [field.key]: e.target.value,
+                  }))
+                }
+                size="small"
+                fullWidth
+              />
+              <div className="mt-3">
+                <span className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-gray-900 px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.2em] text-white">
+                  {String(homepageTrustSettings[field.key] || "").trim() ||
+                    field.fallback}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-sm text-gray-500 mt-3">
+          These control the four trust chips shown under the homepage hero.
         </p>
       </div>
 
