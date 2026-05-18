@@ -53,9 +53,9 @@ const TEST_PRODUCTS = [
 ];
 
 const SLIDER_IMAGES = [
-  "slide_1.jpg - 3011x1343",
-  "slide_2.jpg - 3019x1343",
-  "slide_3.jpg - 3007x1343",
+  "slide_1.webp - 3011x1343",
+  "slide_2.webp - 3019x1343",
+  "slide_3.webp - 3007x1343",
 ];
 
 export const metadata = {

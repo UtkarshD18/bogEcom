@@ -22,21 +22,21 @@ import { Autoplay, EffectFade, Pagination } from "swiper/modules";
 
 const fallbackSlides = [
   {
-    image: "/slide_1.jpg",
+    image: "/slide_1.webp",
     title: "Pure Nutrition",
     subtitle: "100% Natural Peanut Butter",
     cta: "Shop Now",
     link: "/products",
   },
   {
-    image: "/slide_2.jpg",
+    image: "/slide_2.webp",
     title: "Fuel Your Fitness",
     subtitle: "High Protein | No Sugar",
     cta: "Explore",
     link: "/products?category=protein-peanut-butter",
   },
   {
-    image: "/slide_3.jpg",
+    image: "/slide_3.webp",
     title: "Clean Eating",
     subtitle: "No Palm Oil | No Preservatives",
     cta: "Discover",
@@ -132,7 +132,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
   return (
     <section className="relative overflow-hidden rounded-b-[1.5rem] bg-[#1a120d] shadow-[0_40px_120px_rgba(26,18,13,0.16)] md:rounded-b-[3rem]">
       <Swiper
-        speed={motionEnabled ? 850 : 500}
+        speed={motionEnabled ? 520 : 320}
         spaceBetween={0}
         slidesPerView={1}
         loop={true}
@@ -165,12 +165,8 @@ const HomeSlider = ({ initialSlides = [] }) => {
               <motion.div
                 className="absolute inset-0"
                 initial={false}
-                animate={{ scale: 1.02 }}
-                transition={
-                  motionEnabled
-                    ? { duration: 5.6, ease: "easeOut" }
-                    : { duration: 0.18 }
-                }
+                animate={{ scale: 1 }}
+                transition={{ duration: 0.18 }}
               >
                 {(() => {
                   const desktopSrc = getHeroImageUrl(slide.image);
@@ -246,7 +242,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
                   key={`hero-panel-${activeIndex}-${index}`}
                   initial={
                     motionEnabled
-                      ? { opacity: 0, y: 24, scale: 0.98 }
+                      ? { opacity: 0, y: 12, scale: 0.995 }
                       : { opacity: 0 }
                   }
                   animate={
@@ -256,7 +252,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
                   }
                   transition={
                     motionEnabled
-                      ? { duration: 0.45, ease: [0.22, 1, 0.36, 1] }
+                      ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] }
                       : { duration: 0.18 }
                   }
                   className="pointer-events-auto relative w-full max-w-[22.5rem] overflow-hidden rounded-[1.35rem] border border-white/18 bg-[linear-gradient(145deg,rgba(255,255,255,0.17)_0%,rgba(255,255,255,0.08)_46%,rgba(255,255,255,0.06)_100%)] px-3.5 py-3.5 text-white shadow-[0_32px_90px_-44px_rgba(0,0,0,0.82)] backdrop-blur-[4px] sm:max-w-[35rem] sm:rounded-[2rem] sm:px-6 sm:py-6 sm:backdrop-blur-md md:rounded-[2.25rem] md:px-8 md:py-8"
@@ -297,7 +293,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
                       </Link>
                     </div>
 
-                    <div className="mt-6 hidden grid-cols-3 gap-3 sm:grid">
+                    <div className="mx-auto mt-6 hidden max-w-[31rem] grid-cols-3 gap-3 sm:grid">
                       {HERO_STATS.map((item) => (
                         <div
                           key={item.label}

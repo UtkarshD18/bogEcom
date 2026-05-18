@@ -32,7 +32,7 @@ const CartDrawer = () => {
   const [upsellLoading, setUpsellLoading] = useState(false);
   const [upsellCombo, setUpsellCombo] = useState(null);
   const [upsellProducts, setUpsellProducts] = useState([]);
-  const COMBO_FALLBACK_IMAGE = "/product_1.png";
+  const COMBO_FALLBACK_IMAGE = "/product_1.webp";
 
   const subtotal = round2(cartSubTotalAmount || 0);
   const shippingCost = 0;
@@ -160,7 +160,7 @@ const CartDrawer = () => {
         product?.thumbnail ||
         product?.images?.[0] ||
         item?.image ||
-        "/product_1.png",
+        "/product_1.webp",
       price: Number(item?.price ?? product?.price ?? 0),
       originalPrice: Number(item?.originalPrice ?? product?.originalPrice ?? 0),
       brand: product?.brand || "BOG",
@@ -630,7 +630,7 @@ const CartDrawer = () => {
                               upsellProductData?.image ||
                                 upsellProductEntity?.thumbnail ||
                                 upsellProductEntity?.images?.[0] ||
-                                "/product_1.png",
+                                "/product_1.webp",
                             )}
                             alt={
                               upsellProductEntity?.name || "Product suggestion"

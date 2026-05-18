@@ -25,7 +25,7 @@ const OrderRow = () => {
         <td className="text-[14px] text-gray-600 font-[500] px-4 py-2">
           <div className="flex items-center gap-3 w-[300px]">
             <div className="rounded-full w-[50px] h-[50px] overflow-hidden">
-              <img src={"/Profile1.png"} alt="image" />
+              <img src={"/Profile1.webp"} alt="image" />
             </div>
 
             <div className="info flex flex-col gap-0">

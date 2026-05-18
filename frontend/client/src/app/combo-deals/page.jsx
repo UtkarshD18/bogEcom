@@ -5,6 +5,10 @@ import { fetchDataFromApi } from "@/utils/api";
 import { trackEvent } from "@/utils/analyticsTracker";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const CENTERED_COMBO_GRID_CLASS = "flex flex-wrap justify-center gap-4 sm:gap-6";
+const CENTERED_COMBO_CARD_CLASS =
+  "shrink-0 grow-0 basis-[calc((100%_-_1rem)/2)] sm:basis-[calc((100%_-_1.5rem)/2)] md:basis-[calc((100%_-_3rem)/3)] lg:basis-[calc((100%_-_4.5rem)/4)]";
+
 export default function ComboDealsPage() {
   const [combos, setCombos] = useState([]);
   const [page, setPage] = useState(1);
@@ -118,14 +122,19 @@ export default function ComboDealsPage() {
               <p className="text-sm text-gray-500">
                 Showing {renderedCombos.length} of {total || renderedCombos.length} combos
               </p>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              <div className={CENTERED_COMBO_GRID_CLASS}>
                 {renderedCombos.map((combo) => (
-                  <ComboCard
+                  <div
                     key={combo._id || combo.slug}
-                    combo={combo}
-                    context="combo_deals"
-                    action="details"
-                  />
+                    className={CENTERED_COMBO_CARD_CLASS}
+                  >
+                    <ComboCard
+                      combo={combo}
+                      context="combo_deals"
+                      action="details"
+                      compactListing
+                    />
+                  </div>
                 ))}
               </div>
               {page < pages ? (

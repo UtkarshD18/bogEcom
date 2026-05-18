@@ -120,7 +120,7 @@ const Verify = () => {
           className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-[480px] border border-gray-100 flex flex-col items-center"
         >
           <img
-            src="/forgot-password.png"
+            src="/forgot-password.webp"
             alt="image"
             className="w-28 h-28 object-contain mb-4"
           />

@@ -10,7 +10,7 @@ const siteUrl = String(
 
 const pagePath = "/healthy-peanut-butter-guide";
 const pageUrl = `${siteUrl}${pagePath}`;
-const heroImage = "/slide_1.jpg";
+const heroImage = "/slide_1.webp";
 
 export const metadata = {
   title: "Healthy Peanut Butter Guide | Healthy One Gram",

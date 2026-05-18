@@ -80,6 +80,7 @@ const ProductItem = (props) => {
     product,
     itemType,
     realtimeManagedExternally = false,
+    compactListing = false,
   } = props;
 
   const [isAddingToCart, setIsAddingToCart] = useState(false);
@@ -134,7 +135,7 @@ const ProductItem = (props) => {
       brand: brand || "Buy One Gram",
       price: price || 349,
       originalPrice: originalPrice || 499,
-      images: [image || "/product_1.png"],
+      images: [image || "/product_1.webp"],
       rating: rating || 0,
       discount: discount || 30,
     };
@@ -345,7 +346,11 @@ const ProductItem = (props) => {
   return (
     <Link
       href={productHref}
-      className={`group relative flex h-full w-full min-w-0 flex-col rounded-[22px] border bg-white p-3 shadow-[0_6px_16px_rgba(0,0,0,0.08)] transition-all ${
+      className={`group relative flex h-full w-full min-w-0 flex-col border bg-white shadow-[0_6px_16px_rgba(0,0,0,0.08)] transition-all ${
+        compactListing
+          ? "rounded-[18px] p-2 sm:rounded-[22px] sm:p-3"
+          : "rounded-[22px] p-3"
+      } ${
         isOutOfStock
           ? "border-gray-100"
           : "border-gray-100 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
@@ -356,9 +361,9 @@ const ProductItem = (props) => {
         src={productData.images?.[0]}
         alt={imgAlt}
         cardImage
-        aspect="aspect-square"
+        aspect={compactListing ? "aspect-[4/3] sm:aspect-square" : "aspect-square"}
         fit="cover"
-        className="mb-3 w-full aspect-square bg-[#f5f5f5]"
+        className={compactListing ? "mb-2 w-full bg-[#f5f5f5] sm:mb-3" : "mb-3 w-full bg-[#f5f5f5]"}
         imgClassName={`object-cover transition-all duration-300 ${
           isOutOfStock
             ? "grayscale-[0.45] saturate-50 opacity-70"
@@ -377,7 +382,9 @@ const ProductItem = (props) => {
         {/* Wishlist Button */}
         <button
           onClick={handleWishlistClick}
-          className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm text-gray-400 shadow-sm transition-all hover:bg-red-50 hover:text-red-500 active:scale-95"
+          className={`absolute right-2 top-2 z-10 flex items-center justify-center rounded-full bg-white/80 text-gray-400 shadow-sm backdrop-blur-sm transition-all hover:bg-red-50 hover:text-red-500 active:scale-95 ${
+            compactListing ? "h-7 w-7 sm:h-8 sm:w-8" : "h-8 w-8"
+          }`}
         >
           {isWishlisted ? (
             <IoMdHeart className="text-red-500" />
@@ -395,19 +402,23 @@ const ProductItem = (props) => {
             productId={productCardId}
             productName={displayProductName || productData.name}
             variant="icon"
-            iconSizeClass="h-8 w-8"
-            iconGlyphClass="h-4 w-4"
+            iconSizeClass={compactListing ? "h-7 w-7 sm:h-8 sm:w-8" : "h-8 w-8"}
+            iconGlyphClass={compactListing ? "h-3.5 w-3.5 sm:h-4 sm:w-4" : "h-4 w-4"}
           />
         </div>
 
         {isOutOfStock ? (
           <>
             <div className="absolute inset-0 bg-black/18" />
-            <div className="absolute inset-x-3 bottom-3 rounded-2xl border border-white/15 bg-black/55 px-3 py-2 text-white shadow-[0_18px_35px_-24px_rgba(0,0,0,0.6)] backdrop-blur-sm">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white">
+            <div className={`absolute border border-white/15 bg-black/55 text-white shadow-[0_18px_35px_-24px_rgba(0,0,0,0.6)] backdrop-blur-sm ${
+              compactListing
+                ? "inset-x-2 bottom-2 rounded-xl px-2 py-1.5 sm:inset-x-3 sm:bottom-3 sm:rounded-2xl sm:px-3 sm:py-2"
+                : "inset-x-3 bottom-3 rounded-2xl px-3 py-2"
+            }`}>
+              <p className={compactListing ? "text-[9px] font-bold uppercase tracking-[0.14em] text-white sm:text-[10px]" : "text-[10px] font-bold uppercase tracking-[0.16em] text-white"}>
                 Out of stock
               </p>
-              <p className="mt-1 text-[11px] font-medium text-white/80">
+              <p className={compactListing ? "mt-0.5 line-clamp-1 text-[10px] font-medium text-white/80 sm:mt-1 sm:text-[11px]" : "mt-1 text-[11px] font-medium text-white/80"}>
                 We're restocking soon
               </p>
             </div>
@@ -417,15 +428,15 @@ const ProductItem = (props) => {
 
       {/* Content */}
       <div className="flex flex-1 flex-col">
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400">
+        <p className={compactListing ? "mb-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-gray-400 sm:mb-1 sm:text-[10px]" : "mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400"}>
           {productData.brand}
         </p>
-        <h3 className="text-[13px] font-semibold leading-snug text-gray-900 transition-colors group-hover:text-primary">
+        <h3 className={compactListing ? "line-clamp-2 text-[12px] font-semibold leading-snug text-gray-900 transition-colors group-hover:text-primary sm:text-[13px]" : "text-[13px] font-semibold leading-snug text-gray-900 transition-colors group-hover:text-primary"}>
           {displayProductName || productData.name}
         </h3>
-        <div className="mt-1 min-h-7">
+        <div className={compactListing ? "mt-1 min-h-5 sm:min-h-7" : "mt-1 min-h-7"}>
           {displayShortDescription ? (
-            <p className="line-clamp-2 text-[11px] font-medium text-gray-500">
+            <p className={compactListing ? "line-clamp-1 text-[10px] font-medium text-gray-500 sm:line-clamp-2 sm:text-[11px]" : "line-clamp-2 text-[11px] font-medium text-gray-500"}>
               {displayShortDescription}
             </p>
           ) : null}
@@ -433,7 +444,7 @@ const ProductItem = (props) => {
 
         {/* Weight */}
         {displayWeightLabel && (
-          <span className="mt-2 inline-flex w-fit rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[11px] font-semibold text-gray-600">
+          <span className={compactListing ? "mt-1 inline-flex w-fit rounded-full bg-[#f0f0f0] px-2 py-0.5 text-[10px] font-semibold text-gray-600 sm:mt-2 sm:px-2.5 sm:text-[11px]" : "mt-2 inline-flex w-fit rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[11px] font-semibold text-gray-600"}>
             {displayWeightLabel}
             {productData.hasVariants && productData.variants?.length > 1 && (
               <span className="ml-1 text-gray-400">
@@ -444,16 +455,16 @@ const ProductItem = (props) => {
         )}
 
         {/* Rating */}
-        <div className="mt-2 flex items-center gap-1">
-          <div className="flex text-xs">{renderStars()}</div>
+        <div className={compactListing ? "mt-1 flex items-center gap-1 sm:mt-2" : "mt-2 flex items-center gap-1"}>
+          <div className={compactListing ? "flex text-[10px] sm:text-xs" : "flex text-xs"}>{renderStars()}</div>
           <span className="text-[10px] text-gray-400">
             ({displayReviewCount})
           </span>
         </div>
 
         {/* Price & Cart */}
-        <div className="mt-auto border-t border-[#f3ece6] pt-3">
-          <div className="min-h-10 flex items-end">
+        <div className={compactListing ? "mt-auto border-t border-[#f3ece6] pt-2 sm:pt-3" : "mt-auto border-t border-[#f3ece6] pt-3"}>
+          <div className={compactListing ? "flex min-h-8 items-end sm:min-h-10" : "min-h-10 flex items-end"}>
             <div>
               <ProductCardPriceBlock
                 originalPrice={displayOriginalPrice}
@@ -462,7 +473,7 @@ const ProductItem = (props) => {
             </div>
           </div>
 
-          <div className="mt-3 min-h-11">
+          <div className={compactListing ? "mt-2 min-h-10 sm:mt-3 sm:min-h-11" : "mt-3 min-h-11"}>
             {showNotifyAction ? (
               <StockNotificationButton
                 productId={productCardId}
@@ -471,6 +482,11 @@ const ProductItem = (props) => {
                 variantName={notifyVariantName}
                 initialRequested={notifyRequested}
                 compact
+                className={
+                  compactListing
+                    ? "max-sm:min-h-10 max-sm:rounded-xl max-sm:px-2 max-sm:py-2 max-sm:text-[11px] max-sm:leading-tight"
+                    : ""
+                }
                 preventNavigation
               />
             ) : (
@@ -484,7 +500,11 @@ const ProductItem = (props) => {
                       : `Add ${displayProductName || productData.name} to cart`
                 }
                 disabled={isAddingToCart || (!alreadyInCart && isOutOfStock)}
-                className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                className={`inline-flex w-full items-center justify-center gap-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                  compactListing
+                    ? "min-h-10 rounded-xl px-2 py-2 text-[12px] sm:min-h-11 sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm"
+                    : "min-h-11 rounded-2xl px-4 py-3 text-sm"
+                } ${
                   alreadyInCart
                     ? "border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
                     : isOutOfStock

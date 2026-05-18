@@ -251,7 +251,7 @@ const Checkout = () => {
           combo?.comboImages?.[0] ||
           comboItems?.[0]?.image ||
           item?.image ||
-          "/product_1.png",
+          "/product_1.webp",
         price: resolvedComboPrice,
         quantity: item?.quantity || 1,
         demandStatus: "NORMAL",
@@ -342,7 +342,7 @@ const Checkout = () => {
         product?.images?.[0] ||
         item.image ||
         item.images?.[0] ||
-        "/product_1.png",
+        "/product_1.webp",
       price: item.price || product?.price || 0,
       quantity: item.quantity || 1,
       demandStatus: product?.demandStatus || item.demandStatus || "NORMAL",

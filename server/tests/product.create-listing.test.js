@@ -55,8 +55,8 @@ test("newly created product appears in listings and product detail even when opt
       name: "Backend Created Test Product",
       category: String(category._id),
       price: 449,
-      images: ["/product_1.png"],
-      thumbnail: "/product_1.png",
+      images: ["/product_1.webp"],
+      thumbnail: "/product_1.webp",
       stock: 8,
     },
   };

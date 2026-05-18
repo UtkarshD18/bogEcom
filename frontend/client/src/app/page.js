@@ -1,8 +1,12 @@
-import Banners from "@/components/Banners";
-import CatSlider from "@/components/CatSlider";
 import HomeSlider from "@/components/HomeSlider";
 import dynamic from "next/dynamic";
 
+const Banners = dynamic(() => import("@/components/Banners"), {
+  loading: () => null,
+});
+const CatSlider = dynamic(() => import("@/components/CatSlider"), {
+  loading: () => null,
+});
 const HomeComboDeals = dynamic(() => import("@/components/HomeComboDeals"), {
   loading: () => null,
 });

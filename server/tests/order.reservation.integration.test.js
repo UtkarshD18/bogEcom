@@ -107,8 +107,8 @@ const createProduct = async ({
     stock,
     stock_quantity: stock,
     reserved_quantity: 0,
-    images: ["/product_1.png"],
-    thumbnail: "/product_1.png",
+    images: ["/product_1.webp"],
+    thumbnail: "/product_1.webp",
   });
 
 const createOrderLine = (product, quantity = 1) => ({
@@ -116,7 +116,7 @@ const createOrderLine = (product, quantity = 1) => ({
   productTitle: String(product?.name || "Reservation Product"),
   quantity,
   price: Number(product?.price || 0),
-  image: "/product_1.png",
+  image: "/product_1.webp",
   subTotal: Number(product?.price || 0) * quantity,
 });
 

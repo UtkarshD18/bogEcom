@@ -62,10 +62,10 @@ const demoProduct = {
     },
   ],
   images: [
-    "/prodImage1.png",
-    "/prodImage2.png",
-    "/prodImage3.png",
-    "/product_1.png",
+    "/prodImage1.webp",
+    "/prodImage2.webp",
+    "/prodImage3.webp",
+    "/product_1.webp",
   ],
 };
 
@@ -78,7 +78,7 @@ const demoReviews = [
     comment:
       "This layout feels premium and easy to trust. The images and descriptions finally look like a real flagship product page.",
     createdAt: "2026-04-11T10:00:00.000Z",
-    avatar: "/profile1.jpeg",
+    avatar: "/Profile1.webp",
   },
   {
     _id: "demo-review-2",
@@ -88,7 +88,7 @@ const demoReviews = [
     comment:
       "The new structure is much clearer. Variant selection, pricing, and the review section all feel closer to what shoppers expect on strong ecommerce brands.",
     createdAt: "2026-04-09T10:00:00.000Z",
-    avatar: "/profile2.jpeg",
+    avatar: "/profile2.webp",
   },
   {
     _id: "demo-review-3",
@@ -108,7 +108,7 @@ const demoReviews = [
     comment:
       "The page feels much more polished now. Images, pricing, and reviews all sit in a more natural order.",
     createdAt: "2026-04-05T10:00:00.000Z",
-    avatar: "/Profile1.png",
+    avatar: "/Profile1.webp",
   },
 ];
 

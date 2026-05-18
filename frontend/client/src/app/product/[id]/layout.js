@@ -192,7 +192,7 @@ export async function generateMetadata({ params }) {
     const description =
       "Preview the upgraded storefront product detail experience with demo data, richer visuals, and conversion-focused layout blocks.";
     const url = `${siteUrl}/product/${DEMO_PRODUCT_ID}`;
-    const imageUrl = `${siteUrl}/prodImage1.png`;
+    const imageUrl = `${siteUrl}/prodImage1.webp`;
 
     return {
       title,

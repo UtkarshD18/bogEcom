@@ -7,12 +7,17 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { AiOutlineYoutube } from "react-icons/ai";
-import { BiSupport } from "react-icons/bi";
-import { BsWallet2 } from "react-icons/bs";
+import {
+  FiCreditCard,
+  FiGift,
+  FiHeadphones,
+  FiShield,
+  FiTruck,
+} from "react-icons/fi";
 import { FaFacebook, FaInstagram, FaLinkedin } from "react-icons/fa";
 import { FaXTwitter } from "react-icons/fa6";
 import { IoLocationSharp } from "react-icons/io5";
-import { LiaGiftSolid, LiaShippingFastSolid } from "react-icons/lia";
+import { BiSupport } from "react-icons/bi";
 
 const API_URL = API_BASE_URL;
 const FALLBACK_STORE_INFO = {
@@ -121,34 +126,29 @@ const Footer = () => {
 
   const features = [
     {
-      icon: <LiaShippingFastSolid />,
+      icon: <FiTruck />,
       title: "Free Delivery",
       desc: "On Every Order, We've Got It Covered",
-      gradient: "linear-gradient(135deg, var(--primary), var(--flavor-hover))",
     },
     {
-      icon: <BsWallet2 />,
+      icon: <FiShield />,
       title: "100% Genuine",
       desc: "Quality Assured",
-      gradient: "linear-gradient(135deg, #7c3aed, #a78bfa)",
     },
     {
-      icon: <BsWallet2 />,
+      icon: <FiCreditCard />,
       title: "Secure Payment",
       desc: "UPI, Credit Cards, Debit Cards",
-      gradient: "linear-gradient(135deg, #3b82f6, #60a5fa)",
     },
     {
-      icon: <LiaGiftSolid />,
+      icon: <FiGift />,
       title: "Special Gifts",
       desc: "For Selected lucky Users",
-      gradient: "linear-gradient(135deg, #ff6b9d, #ff9ec0)",
     },
     {
-      icon: <BiSupport />,
+      icon: <FiHeadphones />,
       title: "24/7 Support",
       desc: "Always Here",
-      gradient: "linear-gradient(135deg, #ffb020, #fcd34d)",
     },
   ];
 
@@ -177,17 +177,17 @@ const Footer = () => {
 
       <div className="container mx-auto px-4 sm:px-6 relative z-10">
         {/* ============ FEATURE CARDS ============ */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 py-10 sm:py-14">
+        <div className="mx-auto grid max-w-6xl grid-cols-2 justify-center gap-3 py-10 sm:grid-cols-3 sm:gap-4 sm:py-14 lg:grid-cols-5">
           {features.map((item, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.1 }}
-              whileHover={{ y: -5, transition: { duration: 0.2 } }}
-              whileTap={{ y: -3, scale: 0.97, transition: { duration: 0.15 } }}
-              className="group flex flex-col items-center p-4 sm:p-6 rounded-2xl sm:rounded-3xl cursor-default active:bg-white/[0.08]"
+              transition={{ duration: 0.24, delay: i * 0.04 }}
+              whileHover={{ y: -2, transition: { duration: 0.16 } }}
+              whileTap={{ scale: 0.98, transition: { duration: 0.12 } }}
+              className="group mx-auto flex h-full w-full max-w-[14rem] cursor-default flex-col items-center rounded-2xl p-4 active:bg-white/[0.08] sm:p-6"
               style={{
                 background: "rgba(255, 255, 255, 0.04)",
                 border: "1px solid rgba(255, 255, 255, 0.06)",
@@ -195,8 +195,11 @@ const Footer = () => {
               }}
             >
               <div
-                className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-2xl text-white text-[22px] sm:text-[26px] transition-all duration-500 group-hover:scale-110 group-hover:shadow-lg"
-                style={{ background: item.gradient }}
+                className="flex h-12 w-12 items-center justify-center rounded-2xl text-[22px] text-[#121212] transition-all duration-200 group-hover:shadow-lg sm:h-14 sm:w-14 sm:text-[26px]"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--primary), var(--flavor-hover))",
+                }}
               >
                 {item.icon}
               </div>
@@ -227,7 +230,7 @@ const Footer = () => {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
+            transition={{ duration: 0.28 }}
             className="flex flex-col gap-4 sm:gap-5 lg:border-r lg:pr-8 border-white/5"
           >
             <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em]">
@@ -318,7 +321,7 @@ const Footer = () => {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6, delay: 0.2 }}
+            transition={{ duration: 0.28, delay: 0.08 }}
           >
             <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-5 sm:mb-7">
               Products
@@ -355,7 +358,7 @@ const Footer = () => {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6, delay: 0.3 }}
+            transition={{ duration: 0.28, delay: 0.12 }}
           >
             <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-5 sm:mb-7">
               Our Company
@@ -397,7 +400,7 @@ const Footer = () => {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6, delay: 0.4 }}
+            transition={{ duration: 0.28, delay: 0.16 }}
           >
             <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-3 sm:mb-4">
               Stay in the loop
@@ -444,9 +447,9 @@ const Footer = () => {
                 {status === "loading" ? (
                   <span className="w-5 h-5 border-2 border-[#0a0a0a]/20 border-t-[#0a0a0a] rounded-full animate-spin" />
                 ) : status === "success" ? (
-                  "✓ SUBSCRIBED!"
+                  "SUBSCRIBED"
                 ) : (
-                  "SUBSCRIBE →"
+                  "SUBSCRIBE"
                 )}
               </button>
             </form>
@@ -482,7 +485,7 @@ const Footer = () => {
         />
 
         {/* ============ BOTTOM BAR ============ */}
-        <div className="py-6 sm:py-8 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6">
+        <div className="py-6 sm:py-8 flex flex-col md:flex-row items-center justify-center md:justify-between gap-4 sm:gap-6">
           {/* Social Icons */}
           <div className="flex gap-2.5 sm:gap-3">
             {[
@@ -520,14 +523,12 @@ const Footer = () => {
                 initial={{ opacity: 0, scale: 0 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.3, delay: i * 0.1 }}
+                transition={{ duration: 0.2, delay: i * 0.04 }}
                 whileHover={{
-                  y: -5,
-                  scale: 1.1,
+                  y: -2,
                   color: hoverColor,
                   borderColor: `${hoverColor}40`,
-                  boxShadow: `0 8px 24px ${hoverColor}20`,
-                  transition: { duration: 0.2 },
+                  transition: { duration: 0.16 },
                 }}
                 whileTap={{
                   scale: 0.95,

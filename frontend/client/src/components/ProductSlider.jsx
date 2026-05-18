@@ -44,7 +44,7 @@ const resolveComboImage = (combo) =>
   combo?.image ||
   combo?.images?.[0] ||
   combo?.comboImages?.[0] ||
-  "/product_1.png";
+  "/product_1.webp";
 
 const toComboCardPayload = (combo) => {
   const price = toNumber(
@@ -387,7 +387,7 @@ const ProductSlider = ({
           swiper.params.navigation.nextEl = nextRef.current;
         }}
         onSwiper={() => setSwiperReady(true)}
-        autoplay={{ delay: 4000, disableOnInteraction: false }}
+        autoplay={{ delay: 7000, disableOnInteraction: true, pauseOnMouseEnter: true }}
         breakpoints={responsiveSlides}
         className="px-0.5 sm:px-1!"
       >

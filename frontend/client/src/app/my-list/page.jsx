@@ -208,7 +208,7 @@ const MyWishlistPage = () => {
                     entity.comboThumbnail ||
                     entity.image ||
                     entity.thumbnail ||
-                    "/product_1.png";
+                    "/product_1.webp";
                   const itemLink =
                     itemType === "combo"
                       ? `/combo/${itemId}`

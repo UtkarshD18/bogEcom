@@ -106,11 +106,12 @@ const areFlavorsEqual = (firstFlavor, secondFlavor) =>
       String(firstFlavor?.[key] || "") === String(secondFlavor?.[key] || ""),
   );
 
-export default function FlavorSwitcherBar() {
+export default function FlavorSwitcherBar({ variant = "default", className = "" }) {
   const context = useContext(MyContext);
   const { settings } = useSettings();
   const [selected, setSelected] = useState(FLAVORS.creamy.name);
   const [mounted, setMounted] = useState(false);
+  const isCompact = variant === "compact";
 
   const configuredFlavors = FLAVORS_ARRAY.map((flavor, index) => {
     const buttonNumber = index + 1;
@@ -195,12 +196,13 @@ export default function FlavorSwitcherBar() {
 
   return (
     <div
+      className={className}
       style={{
         width: "100%",
         display: "flex",
         justifyContent: "center",
-        padding: "24px 16px",
-        background: currentFlavor.gradient,
+        padding: isCompact ? "12px 0" : "24px 16px",
+        background: isCompact ? "transparent" : currentFlavor.gradient,
         zIndex: 20,
         transition: "background 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
       }}
@@ -208,16 +210,21 @@ export default function FlavorSwitcherBar() {
       <style>{`
         .flavor-bar {
           display: flex;
-          gap: 12px;
-          background: ${currentFlavor.cardBg};
-          border-radius: 20px;
-          padding: 10px 20px;
-          box-shadow: 0 4px 20px ${currentFlavor.color}15;
+          gap: ${isCompact ? "8px" : "12px"};
+          background: ${isCompact ? "rgba(255,255,255,0.82)" : currentFlavor.cardBg};
+          border-radius: ${isCompact ? "18px" : "20px"};
+          padding: ${isCompact ? "8px" : "10px 20px"};
+          box-shadow: ${isCompact ? "0 10px 28px rgba(74,52,36,0.08)" : `0 4px 20px ${currentFlavor.color}15`};
           backdrop-filter: blur(12px);
           border: 2px solid ${currentFlavor.color}20;
           transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
           align-items: center;
+          max-width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
         }
+        .flavor-bar::-webkit-scrollbar { display: none; }
         .flavor-btn { 
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
           position: relative; 
@@ -266,18 +273,20 @@ export default function FlavorSwitcherBar() {
           <button
             key={flavor.name}
             className="flavor-btn"
+            type="button"
+            aria-pressed={selected === flavor.name}
             onClick={() => handleClick(flavor)}
             style={{
               background: flavor.buttonBg,
               color: flavor.buttonTextColor,
               fontWeight: "600",
-              fontSize: "0.95rem",
+              fontSize: isCompact ? "0.86rem" : "0.95rem",
               border:
                 selected === flavor.name
                   ? "2px solid rgba(255,255,255,0.65)"
                   : `2px solid ${flavor.buttonBg}`,
-              borderRadius: "12px",
-              padding: "10px 24px",
+              borderRadius: isCompact ? "999px" : "12px",
+              padding: isCompact ? "9px 16px" : "10px 24px",
               boxShadow:
                 selected === flavor.name
                   ? `0 4px 16px ${flavor.buttonShadow}`

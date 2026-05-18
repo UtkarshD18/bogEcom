@@ -70,6 +70,25 @@ const defaultMetadata = {
   },
 };
 
+const headerBackgroundBootstrapScript = `(function () {
+  try {
+    var key = "hog_header_background_color";
+    var color = localStorage.getItem(key) || "";
+    var valid = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color);
+    if (valid) {
+      var normalized = color.toLowerCase();
+      if (normalized.length === 4) {
+        normalized =
+          "#" +
+          normalized[1] + normalized[1] +
+          normalized[2] + normalized[2] +
+          normalized[3] + normalized[3];
+      }
+      document.documentElement.style.setProperty("--header-bg-color", normalized);
+    }
+  } catch (e) {}
+})();`;
+
 export async function generateMetadata({ request }) {
   try {
     const pathname = request?.nextUrl?.pathname || "/";
@@ -110,26 +129,11 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${poppins.variable} ${inter.className}`}>
-        <Script id="header-bg-bootstrap" strategy="beforeInteractive">
-          {`(function () {
-            try {
-              var key = "hog_header_background_color";
-              var color = localStorage.getItem(key) || "";
-              var valid = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color);
-              if (valid) {
-                var normalized = color.toLowerCase();
-                if (normalized.length === 4) {
-                  normalized =
-                    "#" +
-                    normalized[1] + normalized[1] +
-                    normalized[2] + normalized[2] +
-                    normalized[3] + normalized[3];
-                }
-                document.documentElement.style.setProperty("--header-bg-color", normalized);
-              }
-            } catch (e) {}
-          })();`}
-        </Script>
+        <Script
+          id="header-bg-bootstrap"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: headerBackgroundBootstrapScript }}
+        />
         <FlavorThemeProvider>
           <ThemeProvider>
             <ClientLayout inter={inter}>{children}</ClientLayout>

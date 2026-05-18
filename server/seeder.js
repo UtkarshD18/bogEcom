@@ -39,10 +39,10 @@ const connectDB = async () => {
 };
 
 const SEED_PUBLIC_IMAGES = [
-  "/prodImage1.png",
-  "/prodImage2.png",
-  "/prodImage3.png",
-  "/product_1.png",
+  "/prodImage1.webp",
+  "/prodImage2.webp",
+  "/prodImage3.webp",
+  "/product_1.webp",
 ];
 
 const resolveSeedPublicImage = (index = 0) =>
@@ -82,7 +82,7 @@ const categories = [
     slug: "classic-peanut-butter",
     description: "Traditional creamy and crunchy peanut butter",
     icon: "🥜",
-    image: "/product_1.png",
+    image: "/product_1.webp",
     isFeatured: true,
     isActive: true,
     sortOrder: 1,
@@ -92,7 +92,7 @@ const categories = [
     slug: "flavored-peanut-butter",
     description: "Unique flavored peanut butter varieties",
     icon: "🍫",
-    image: "/product_1.png",
+    image: "/product_1.webp",
     isFeatured: true,
     isActive: true,
     sortOrder: 2,
@@ -102,7 +102,7 @@ const categories = [
     slug: "organic-natural",
     description: "100% organic and all-natural peanut butter",
     icon: "🌿",
-    image: "/product_1.png",
+    image: "/product_1.webp",
     isFeatured: true,
     isActive: true,
     sortOrder: 3,
@@ -112,7 +112,7 @@ const categories = [
     slug: "protein-peanut-butter",
     description: "High protein peanut butter for fitness enthusiasts",
     icon: "💪",
-    image: "/product_1.png",
+    image: "/product_1.webp",
     isFeatured: true,
     isActive: true,
     sortOrder: 4,
@@ -122,7 +122,7 @@ const categories = [
     slug: "gift-packs",
     description: "Peanut butter gift sets and combos",
     icon: "🎁",
-    image: "/product_1.png",
+    image: "/product_1.webp",
     isFeatured: false,
     isActive: true,
     sortOrder: 5,
@@ -400,7 +400,7 @@ const homeSlides = [
     subtitle: "100% Natural",
     description:
       "Made from premium hand-picked peanuts. No added sugar, no preservatives. Just pure, delicious peanut butter.",
-    image: "/slide_1.jpg",
+    image: "/slide_1.webp",
     buttonText: "Shop Now",
     buttonLink: "/products",
     textPosition: "left",
@@ -412,7 +412,7 @@ const homeSlides = [
     subtitle: "Bestseller",
     description:
       "Rich dark chocolate meets creamy peanut butter. Try our most loved flavor today!",
-    image: "/slide_2.jpg",
+    image: "/slide_2.webp",
     buttonText: "Try Now",
     buttonLink: "/product/chocolate-peanut-butter",
     textPosition: "center",
@@ -424,7 +424,7 @@ const homeSlides = [
     subtitle: "32g Protein",
     description:
       "High protein peanut butter for fitness enthusiasts. Power up your gains!",
-    image: "/slide_3.jpg",
+    image: "/slide_3.webp",
     buttonText: "Shop Protein",
     buttonLink: "/products?category=protein-peanut-butter",
     textPosition: "right",
@@ -438,7 +438,7 @@ const banners = [
   {
     title: "Free Delivery",
     subtitle: "On orders above ₹499",
-    image: "/prodImage1.png",
+    image: "/prodImage1.webp",
     link: "/products",
     position: "home-top",
     isActive: true,
@@ -447,7 +447,7 @@ const banners = [
   {
     title: "Subscribe & Save 10%",
     subtitle: "Monthly peanut butter delivery",
-    image: "/prodImage2.png",
+    image: "/prodImage2.webp",
     link: "/subscribe",
     position: "home-middle",
     isActive: true,

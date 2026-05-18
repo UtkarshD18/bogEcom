@@ -1,6 +1,8 @@
 import { v2 as cloudinary } from "cloudinary";
+import { Storage } from "@google-cloud/storage";
 import dotenv from "dotenv";
 import path from "path";
+import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
 
 // Get directory name for ES modules
@@ -10,6 +12,28 @@ const __dirname = path.dirname(__filename);
 // Ensure environment variables are loaded from server root
 dotenv.config({ path: path.join(__dirname, "../.env") });
 const isProduction = process.env.NODE_ENV === "production";
+const mediaStorageProvider = String(
+  process.env.MEDIA_STORAGE_PROVIDER || "cloudinary",
+)
+  .trim()
+  .toLowerCase();
+const useGcsMediaStorage = ["gcs", "google-cloud-storage", "google_storage"].includes(
+  mediaStorageProvider,
+);
+const gcsMediaBucketName = String(
+  process.env.GCS_MEDIA_BUCKET ||
+    process.env.GOOGLE_CLOUD_STORAGE_BUCKET ||
+    process.env.FIREBASE_STORAGE_BUCKET ||
+    "",
+)
+  .trim()
+  .replace(/^gs:\/\//i, "");
+const gcsPublicBaseUrl = String(process.env.GCS_MEDIA_PUBLIC_BASE_URL || "")
+  .trim()
+  .replace(/\/+$/, "");
+const gcsMakePublic =
+  String(process.env.GCS_MEDIA_MAKE_PUBLIC || "false").toLowerCase() === "true";
+const gcsStorage = useGcsMediaStorage ? new Storage() : null;
 // Debug-only logging to keep production output clean
 const debugLog = (...args) => {
   if (!isProduction) {
@@ -41,6 +65,109 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+const MIME_EXTENSION_MAP = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+};
+
+const normalizeFolder = (folder = "buyonegram") =>
+  String(folder || "buyonegram")
+    .trim()
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\\/g, "/");
+
+const bufferFromUploadInput = (file) => {
+  if (Buffer.isBuffer(file)) return file;
+  const raw = String(file || "");
+  const dataUriMatch = raw.match(/^data:([^;]+);base64,(.+)$/i);
+  if (dataUriMatch) return Buffer.from(dataUriMatch[2], "base64");
+  return Buffer.from(raw, "base64");
+};
+
+const getGcsPublicUrl = (objectPath) => {
+  const encodedPath = objectPath
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  if (gcsPublicBaseUrl) return `${gcsPublicBaseUrl}/${encodedPath}`;
+  return `https://storage.googleapis.com/${gcsMediaBucketName}/${encodedPath}`;
+};
+
+const extractGcsObjectPath = (value = "") => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (!/^https?:\/\//i.test(normalized)) {
+    return normalized.replace(/^\/+/, "");
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const pathname = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+    if (parsed.hostname === "storage.googleapis.com") {
+      const [bucket, ...objectParts] = pathname.split("/");
+      return bucket === gcsMediaBucketName ? objectParts.join("/") : "";
+    }
+    if (gcsPublicBaseUrl && normalized.startsWith(`${gcsPublicBaseUrl}/`)) {
+      return decodeURIComponent(normalized.slice(gcsPublicBaseUrl.length + 1));
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+};
+
+const uploadToGcsMediaStorage = async (
+  file,
+  folder = "buyonegram",
+  { mimeType = "image/jpeg" } = {},
+) => {
+  if (!gcsMediaBucketName) {
+    return {
+      success: false,
+      error:
+        "GCS media storage selected but GCS_MEDIA_BUCKET is not configured",
+    };
+  }
+
+  const normalizedMimeType = String(mimeType || "application/octet-stream")
+    .trim()
+    .toLowerCase();
+  const extension = MIME_EXTENSION_MAP[normalizedMimeType] || "bin";
+  const objectPath = `${normalizeFolder(folder)}/${Date.now()}-${randomUUID()}.${extension}`;
+  const bucket = gcsStorage.bucket(gcsMediaBucketName);
+  const targetFile = bucket.file(objectPath);
+  const buffer = bufferFromUploadInput(file);
+
+  await targetFile.save(buffer, {
+    resumable: false,
+    metadata: {
+      contentType: normalizedMimeType,
+      cacheControl: "public, max-age=31536000, immutable",
+    },
+  });
+
+  if (gcsMakePublic) {
+    await targetFile.makePublic();
+  }
+
+  return {
+    success: true,
+    url: getGcsPublicUrl(objectPath),
+    publicId: objectPath,
+    width: null,
+    height: null,
+    format: extension,
+    size: buffer.length,
+  };
+};
+
 /**
  * Upload image to Cloudinary
  * @param {Buffer|string} file - File buffer or base64 string
@@ -53,6 +180,10 @@ export const uploadToCloudinary = async (
   { mimeType = "image/jpeg", resourceType = "", preserveQuality = false } = {},
 ) => {
   try {
+    if (useGcsMediaStorage) {
+      return await uploadToGcsMediaStorage(file, folder, { mimeType });
+    }
+
     // Verify Cloudinary is configured
     const config = cloudinary.config();
     if (!config.cloud_name || !config.api_key || !config.api_secret) {
@@ -159,8 +290,15 @@ export const uploadMultipleToCloudinary = async (
 export const uploadVideoToCloudinary = async (
   file,
   folder = "buyonegram/videos",
+  { mimeType = "video/mp4" } = {},
 ) => {
   try {
+    if (useGcsMediaStorage) {
+      return await uploadToGcsMediaStorage(file, folder, {
+        mimeType,
+      });
+    }
+
     // Verify Cloudinary is configured
     const config = cloudinary.config();
     if (!config.cloud_name || !config.api_key || !config.api_secret) {
@@ -222,6 +360,20 @@ export const uploadVideoToCloudinary = async (
 
 export const deleteFromCloudinary = async (publicId) => {
   try {
+    if (useGcsMediaStorage) {
+      const objectPath = extractGcsObjectPath(publicId);
+      if (!objectPath || !gcsMediaBucketName) {
+        return { success: false, error: "Could not determine GCS object path" };
+      }
+
+      await gcsStorage
+        .bucket(gcsMediaBucketName)
+        .file(objectPath)
+        .delete({ ignoreNotFound: true });
+
+      return { success: true, result: "ok" };
+    }
+
     const result = await cloudinary.uploader.destroy(publicId);
     return {
       success: result.result === "ok",

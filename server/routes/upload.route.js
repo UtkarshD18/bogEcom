@@ -293,6 +293,7 @@ router.post(
       const result = await uploadVideoToCloudinary(
         req.file.buffer,
         "buyonegram/videos",
+        { mimeType: req.file.mimetype },
       );
 
       debugLog("Cloudinary result:", result);
@@ -355,6 +356,14 @@ router.delete("/", auth, admin, async (req, res) => {
       const matches = url.match(/\/upload\/(?:v\d+\/)?(.+)\.[a-z]+$/i);
       if (matches && matches[1]) {
         idToDelete = matches[1];
+      } else if (
+        ["gcs", "google-cloud-storage", "google_storage"].includes(
+          String(process.env.MEDIA_STORAGE_PROVIDER || "")
+            .trim()
+            .toLowerCase(),
+        )
+      ) {
+        idToDelete = url;
       }
     }
 

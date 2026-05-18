@@ -133,7 +133,7 @@ export default function CartPage() {
           combo?.comboImages?.[0] ||
           comboItems?.[0]?.image ||
           item?.image ||
-          "/product_1.png",
+          "/product_1.webp",
         price,
         originalPrice,
         brand: "Combo Deal",
@@ -169,7 +169,7 @@ export default function CartPage() {
         product?.thumbnail ||
         product?.images?.[0] ||
         item?.image ||
-        "/product_1.png",
+        "/product_1.webp",
       price,
       originalPrice,
       brand: product?.brand || item?.brand || "BOG",

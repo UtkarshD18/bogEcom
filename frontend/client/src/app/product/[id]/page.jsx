@@ -709,7 +709,7 @@ const ProductDetailPage = () => {
     selectedVariant,
     isDemoPreview ? buildDemoProduct().images : [],
   );
-  const activeImage = images[activeImageIndex] || images[0] || "/product_1.png";
+  const activeImage = images[activeImageIndex] || images[0] || "/product_1.webp";
   const visibleGalleryImages = images.slice(0, 4);
   const remainingGalleryCount = Math.max(images.length - 4, 0);
   const selectedPackLabel =

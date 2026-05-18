@@ -42,7 +42,7 @@ const ProductImage = ({
       {...props}
     >
       <img
-        src={resolvedSrc || "/product_1.png"}
+        src={resolvedSrc || "/product_1.webp"}
         srcSet={responsiveImage?.srcSet}
         sizes={responsiveImage?.sizes}
         alt={alt}

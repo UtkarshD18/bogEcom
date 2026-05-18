@@ -195,52 +195,56 @@ const MyAccount = () => {
   };
 
   return (
-    <section className="bg-gray-100 py-8">
-      <div className="container flex flex-col lg:flex-row gap-5">
-        <div className="w-full lg:w-[20%] shrink-0">
+    <section className="bg-[#f7f4ef] py-8 sm:py-10">
+      <div className="container mx-auto flex max-w-7xl flex-col gap-5 px-4 lg:flex-row">
+        <div className="w-full shrink-0 lg:w-[20%]">
           <AccountSidebar />
         </div>
 
-        <div className="wrapper w-full lg:w-[75%]">
+        <div className="wrapper mx-auto w-full max-w-5xl lg:w-[75%]">
           {/* Authentication Methods Overview */}
           <AuthenticationMethods />
 
-          <div className="bg-white shadow-md rounded-md mb-5">
-            <div className="p-4 flex items-center justify-between border-b-[1px] border-[rgba(0,0,0,0.2)">
+          <div className="mb-5 overflow-hidden rounded-2xl border border-[#eadfd4] bg-white shadow-[0_18px_50px_rgba(74,52,36,0.08)]">
+            <div className="flex flex-col gap-4 border-b border-[#efe6dd] bg-[#fffaf4] p-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="info">
-                <h4 className="text-[20px] font-[500] text-gray-700">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8a5b18]">
+                  Account
+                </p>
+                <h4 className="text-[22px] font-bold text-gray-800">
                   My Profile
                 </h4>
-                <p className="text-[16px] text-gray-500">
-                  All your account information in one place
+                <p className="mt-1 text-[14px] text-gray-500">
+                  Keep your name and email updated for orders, invoices, and support.
                 </p>
                 <div className="mt-1 flex items-center gap-2">
-                  <span className="text-[14px] text-gray-700 font-[500]">
+                  <span className="text-[14px] font-semibold text-gray-700">
                     {fullName || "User"}
                   </span>
                   <MemberBadge isMember={isMember} className="text-[9px]" />
                 </div>
               </div>
             </div>
-            <form className=" p-5" onSubmit={handleSubmit}>
-              <div className="grid grid-cols-2 gap-5 mb-5">
-                <div className="form-group">
+            <form className="p-5 sm:p-6" onSubmit={handleSubmit}>
+              <div className="mx-auto grid max-w-4xl grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="form-group rounded-xl border border-[#eee3d8] bg-[#fffdf9] p-3">
                   <TextField
                     id="fullName"
                     label="Full Name"
                     variant="outlined"
-                    size="small"
+                    size="medium"
                     className="w-full"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                   />
                 </div>
-                <div className="form-group">
+                <div className="form-group rounded-xl border border-[#eee3d8] bg-[#fffdf9] p-3">
                   <TextField
                     id="email"
                     label="Email"
                     variant="outlined"
-                    size="small"
+                    size="medium"
+                    type="email"
                     className="w-full"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -248,33 +252,44 @@ const MyAccount = () => {
                 </div>
               </div>
               {message && (
-                <p className="text-emerald-600 text-sm font-semibold mb-3">
+                <p className="mx-auto mt-4 max-w-4xl rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
                   {message}
                 </p>
               )}
               {error && (
-                <p className="text-red-500 text-sm font-semibold mb-3">
+                <p className="mx-auto mt-4 max-w-4xl rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
                   {error}
                 </p>
               )}
-              <Button type="submit" className="btn-g px-5" disabled={saving}>
-                {saving ? "Updating..." : "Update Profile"}
-              </Button>
+              <div className="mx-auto mt-5 flex max-w-4xl justify-center sm:justify-start">
+                <Button
+                  type="submit"
+                  className="btn-g !rounded-full !px-7 !py-2.5"
+                  disabled={saving}
+                >
+                  {saving ? "Updating..." : "Update Profile"}
+                </Button>
+              </div>
             </form>
           </div>
 
-          <div className="bg-white shadow-md rounded-md mb-5">
-            <div className="p-4 flex items-center justify-between border-b border-gray-200">
+          <div className="mb-5 overflow-hidden rounded-2xl border border-[#eadfd4] bg-white shadow-[0_18px_50px_rgba(74,52,36,0.08)]">
+            <div className="flex flex-col gap-4 border-b border-[#efe6dd] bg-[#fffaf4] p-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="info">
-                <h4 className="text-[20px] font-[500] text-gray-700">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8a5b18]">
+                  Delivery
+                </p>
+                <h4 className="text-[22px] font-bold text-gray-800">
                   My Addresses
                 </h4>
-                <p className="text-[14px] text-gray-500">
+                <p className="mt-1 text-[14px] text-gray-500">
                   Your default delivery address and checkout shortcut
                 </p>
               </div>
               <Link href="/address">
-                <Button className="btn-g !capitalize">Manage Addresses</Button>
+                <Button className="btn-g !rounded-full !px-6 !capitalize">
+                  Manage Addresses
+                </Button>
               </Link>
             </div>
             <div className="p-5">
@@ -285,7 +300,7 @@ const MyAccount = () => {
                   );
 
                   return (
-                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                    <div className="mx-auto max-w-4xl rounded-2xl border border-[#eee3d8] bg-[#fffdf9] p-5">
                       <p className="text-[12px] font-[700] uppercase tracking-[0.2em] text-[var(--primary)] mb-2">
                         Default
                       </p>
@@ -314,12 +329,14 @@ const MyAccount = () => {
                   );
                 })()
               ) : (
-                <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-5 text-center">
+                <div className="mx-auto max-w-4xl rounded-2xl border border-dashed border-[#d9c8b9] bg-[#fffdf9] p-6 text-center">
                   <p className="text-[15px] text-gray-600 mb-4">
                     No delivery address saved yet.
                   </p>
                   <Link href="/address">
-                    <Button className="btn-g !capitalize">Add Address</Button>
+                    <Button className="btn-g !rounded-full !px-6 !capitalize">
+                      Add Address
+                    </Button>
                   </Link>
                 </div>
               )}

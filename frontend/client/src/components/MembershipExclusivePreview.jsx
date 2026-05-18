@@ -13,7 +13,7 @@ const TEASER_PRODUCTS = [
     _id: "teaser-1",
     name: "Elite Protein Shaker",
     brand: "Members Series",
-    image: "/product_1.png",
+    image: "/product_1.webp",
   },
   {
     _id: "teaser-2",

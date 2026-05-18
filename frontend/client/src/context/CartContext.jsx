@@ -238,7 +238,7 @@ const buildComboCartPayload = (combo, quantity = 1) => {
     combo?.thumbnail ||
     combo?.image ||
     combo?.comboImages?.[0] ||
-    "/product_1.png";
+    "/product_1.webp";
   const items = (Array.isArray(combo?.items) ? combo.items : []).map(
     (item) => ({
       productId: String(item?.productId || item?.product || "").trim(),

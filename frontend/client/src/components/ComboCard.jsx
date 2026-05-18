@@ -122,9 +122,15 @@ const mapComboToProductCard = (combo) => {
   };
 };
 
-const ComboCard = ({ combo }) => {
+const ComboCard = ({ combo, compactListing = false }) => {
   const mapped = mapComboToProductCard(combo || {});
-  return <ProductItem product={mapped} itemType="combo" />;
+  return (
+    <ProductItem
+      product={mapped}
+      itemType="combo"
+      compactListing={compactListing}
+    />
+  );
 };
 
 export default ComboCard;

@@ -15,7 +15,7 @@ import { Swiper, SwiperSlide } from "swiper/react";
  * @param {string[]} props.images - Array of image URLs
  */
 const ProductZoom = ({
-  images = ["/product_1.png", "/product_1.png", "/product_1.png"],
+  images = ["/product_1.webp", "/product_1.webp", "/product_1.webp"],
   productId = "",
   zoomType = "product",
 }) => {
