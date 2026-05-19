@@ -84,16 +84,26 @@ const HomeSlides = () => {
 
   return (
     <section className="w-full py-3 px-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-[18px] text-gray-700 font-[600]">Home Slides</h2>
-        <Link href="/home-slides/add-home-slide">
-          <Button
-            className="!bg-blue-600 !text-white !px-4 !py-2 !rounded-md hover:!bg-blue-700"
-            size="small"
-          >
-            Add Home Slide
-          </Button>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/home-slides/panel-settings">
+            <Button
+              className="!border !border-gray-300 !text-gray-700 !px-4 !py-2 !rounded-md hover:!bg-gray-50"
+              size="small"
+            >
+              Detail Panel Settings
+            </Button>
+          </Link>
+          <Link href="/home-slides/add-home-slide">
+            <Button
+              className="!bg-blue-600 !text-white !px-4 !py-2 !rounded-md hover:!bg-blue-700"
+              size="small"
+            >
+              Add Home Slide
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="w-full p-4 rounded-md shadow-md bg-white mt-3">

@@ -2,7 +2,7 @@
 import ProductPageSettingsSection from "@/components/ProductPageSettingsSection";
 import UploadBox from "@/components/UploadBox";
 import { useAdmin } from "@/context/AdminContext";
-import { getData, postData, uploadFile } from "@/utils/api";
+import { getData, postData, uploadFile, uploadVideoFile } from "@/utils/api";
 import {
   buildProductImageAsset,
   formatImageDimensions,
@@ -14,6 +14,12 @@ import {
   PRODUCT_IMAGE_MOBILE_SPEC,
   PRODUCT_IMAGE_MIN_SPEC,
 } from "@/utils/productImageUpload";
+import {
+  PRODUCT_VIDEO_ACCEPT,
+  PRODUCT_VIDEO_MAX_FILES,
+  buildProductVideoAsset,
+  formatProductVideoSize,
+} from "@/utils/productVideoUpload";
 import { createDefaultProductPageConfig } from "@/utils/productPageConfig";
 import { normalizeVariantWeight } from "@/utils/weightNormalization";
 import { Button } from "@mui/material";
@@ -42,6 +48,7 @@ const AddProduct = () => {
   const [hsnCode, setHsnCode] = useState("");
   const [tags, setTags] = useState("");
   const [images, setImages] = useState([]); // { file, preview }
+  const [videos, setVideos] = useState([]); // { file, preview, name, size }
   const [categories, setCategories] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [productPage, setProductPage] = useState(() =>
@@ -193,6 +200,46 @@ const AddProduct = () => {
     setImages(images.filter((_, i) => i !== index));
   };
 
+  const handleVideoUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const remainingSlots = Math.max(PRODUCT_VIDEO_MAX_FILES - videos.length, 0);
+    if (remainingSlots === 0) {
+      toast.error(`You can upload up to ${PRODUCT_VIDEO_MAX_FILES} videos only`);
+      e.target.value = "";
+      return;
+    }
+
+    if (files.length > remainingSlots) {
+      toast.error(`Only ${remainingSlots} more video slots are available`);
+    }
+
+    const nextVideos = [];
+    for (const file of files.slice(0, remainingSlots)) {
+      try {
+        const asset = buildProductVideoAsset(file);
+        if (asset) nextVideos.push(asset);
+      } catch (error) {
+        toast.error(error.message || "Invalid product video");
+      }
+    }
+
+    if (nextVideos.length > 0) {
+      setVideos((prev) => [...prev, ...nextVideos]);
+    }
+
+    e.target.value = "";
+  };
+
+  const removeVideo = (index) => {
+    const video = videos[index];
+    if (video?.preview) {
+      URL.revokeObjectURL(video.preview);
+    }
+    setVideos(videos.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -272,6 +319,24 @@ const AddProduct = () => {
         }
       }
 
+      const uploadedVideoUrls = [];
+
+      for (const video of videos) {
+        const uploadResult = await uploadVideoFile(video.file, token, {
+          folder: "products",
+        });
+        if (uploadResult.success && uploadResult.data?.url) {
+          uploadedVideoUrls.push(uploadResult.data.url);
+        } else {
+          toast.error(
+            "Failed to upload video: " +
+              (uploadResult.message || "Unknown error"),
+          );
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       const productData = {
         name: productName,
         description,
@@ -294,6 +359,7 @@ const AddProduct = () => {
         unit: defaultVariant.unit || "g",
         tags: tags ? tags.split(",").map((t) => t.trim()) : [],
         images: uploadedImageUrls,
+        videos: uploadedVideoUrls,
         thumbnail: uploadedImageUrls[0] || "",
         hasVariants,
         variants: variantData,
@@ -829,6 +895,67 @@ const AddProduct = () => {
             <p className="text-sm text-gray-500">
               Max {PRODUCT_IMAGE_MAX_FILES} images, 5MB each. Supported: JPG,
               PNG, WebP
+            </p>
+          </div>
+
+          {/* Videos */}
+          <div className="flex flex-col gap-2 mt-5">
+            <h3 className="text-[16px] text-gray-700 font-[600]">
+              Product Videos{" "}
+              <span className="text-sm font-normal text-gray-500">
+                (Optional, shown in the product gallery)
+              </span>
+            </h3>
+
+            <div className="rounded-2xl border border-[#ead7c2] bg-[#fffaf3] p-4">
+              <p className="text-sm font-semibold text-slate-800">
+                Add short product demo videos
+              </p>
+              <p className="mt-1 text-xs text-slate-600">
+                Use MP4 or WebM files. Keep them short and compressed for faster
+                storefront loading.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-4 mt-2 flex-wrap">
+              {videos.map((video, index) => (
+                <div key={`${video.name}-${index}`} className="w-[210px]">
+                  <div className="relative h-[150px] overflow-hidden rounded-md border-2 border-dashed border-amber-300 bg-black">
+                    <video
+                      src={video.preview}
+                      className="h-full w-full object-cover"
+                      muted
+                      controls
+                      playsInline
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeVideo(index)}
+                      className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                    >
+                      <IoMdClose size={16} />
+                    </button>
+                  </div>
+                  <p className="mt-2 truncate text-xs font-semibold text-slate-700">
+                    {video.name}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    {formatProductVideoSize(video.size)}
+                  </p>
+                </div>
+              ))}
+
+              {videos.length < PRODUCT_VIDEO_MAX_FILES && (
+                <UploadBox
+                  onChange={handleVideoUpload}
+                  multiple
+                  accept={PRODUCT_VIDEO_ACCEPT}
+                />
+              )}
+            </div>
+            <p className="text-sm text-gray-500">
+              Max {PRODUCT_VIDEO_MAX_FILES} videos, 100MB each. Supported: MP4,
+              WebM
             </p>
           </div>
 

@@ -10,6 +10,24 @@ const CatSlider = dynamic(() => import("@/components/CatSlider"), {
 const HomeComboDeals = dynamic(() => import("@/components/HomeComboDeals"), {
   loading: () => null,
 });
+const HomeCustomerReviews = dynamic(
+  () => import("@/components/HomeCustomerReviews"),
+  {
+    loading: () => null,
+  },
+);
+const OfferCountdownStrip = dynamic(
+  () => import("@/components/OfferCountdownStrip"),
+  {
+    loading: () => null,
+  },
+);
+const WhatsAppFloatingButton = dynamic(
+  () => import("@/components/WhatsAppFloatingButton"),
+  {
+    loading: () => null,
+  },
+);
 // PopularProducts removed from homepage per layout change; replaced by CatSlider
 const MembershipCTA = dynamic(() => import("@/components/MembershipCTA"), {
   loading: () => null,
@@ -92,9 +110,10 @@ const getHomepageData = async (path) => {
 };
 
 export default async function Home() {
-  const [homeSlides, banners] = await Promise.all([
+  const [homeSlides, banners, featuredReviews] = await Promise.all([
     getHomepageData("/api/home-slides"),
     getHomepageData("/api/banners"),
+    getHomepageData("/api/reviews/featured/home?limit=6"),
   ]);
 
   return (
@@ -109,11 +128,14 @@ export default async function Home() {
       <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[140rem] bg-[radial-gradient(circle_at_top,rgba(255,241,214,0.5),transparent_46%)]" />
       <div className="relative z-10">
         <HomeSlider initialSlides={homeSlides} />
+        <OfferCountdownStrip />
         <Banners initialBanners={banners} />
         <CatSlider />
         <HomeComboDeals />
+        <HomeCustomerReviews initialReviews={featuredReviews} />
         <MembershipCTA />
       </div>
+      <WhatsAppFloatingButton />
     </main>
   );
 }

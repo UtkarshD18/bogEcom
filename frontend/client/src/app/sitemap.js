@@ -9,6 +9,12 @@ const BASE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://healthyonegram.com";
 const SITEMAP_REVALIDATE_SECONDS = 3600;
 
+const normalizeBaseUrl = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\/+$/, "");
+
 export const revalidate = 3600;
 
 export default async function sitemap() {
@@ -66,7 +72,7 @@ export default async function sitemap() {
 
   // Try to include admin-managed SEO pages from settings (seoSettings.pages)
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || BASE_URL;
+    const apiBase = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL || BASE_URL);
     const resp = await fetch(`${apiBase}/api/settings/public`, {
       headers: { "content-type": "application/json" },
       next: { revalidate: SITEMAP_REVALIDATE_SECONDS },

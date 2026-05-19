@@ -13,6 +13,21 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 
+const TIMER_POSITIONS = [
+  { value: "top-right", label: "Top right" },
+  { value: "top-left", label: "Top left" },
+  { value: "bottom-right", label: "Bottom right" },
+  { value: "bottom-left", label: "Bottom left" },
+];
+
+const toDateTimeLocal = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+};
+
 const EditHomeSlide = () => {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
@@ -25,7 +40,12 @@ const EditHomeSlide = () => {
   const [buttonText, setButtonText] = useState("");
   const [link, setLink] = useState("");
   const [order, setOrder] = useState(0);
+  const [stayDurationSeconds, setStayDurationSeconds] = useState(6);
   const [isActive, setIsActive] = useState(true);
+  const [offerEnabled, setOfferEnabled] = useState(false);
+  const [offerBadgeText, setOfferBadgeText] = useState("Offer ends in");
+  const [offerEndsAt, setOfferEndsAt] = useState("");
+  const [offerTimerPosition, setOfferTimerPosition] = useState("top-right");
   const [image, setImage] = useState(null);
   const [mobileImage, setMobileImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,7 +63,14 @@ const EditHomeSlide = () => {
         setButtonText(slide.buttonText || "Shop Now");
         setLink(slide.link || slide.buttonLink || "");
         setOrder(slide.sortOrder || slide.order || 0);
+        setStayDurationSeconds(
+          Math.max(Math.round(Number(slide.stayDurationMs || 5600) / 1000), 2),
+        );
         setIsActive(slide.isActive !== false);
+        setOfferEnabled(Boolean(slide.offerEnabled));
+        setOfferBadgeText(slide.offerBadgeText || "Offer ends in");
+        setOfferEndsAt(toDateTimeLocal(slide.offerEndsAt));
+        setOfferTimerPosition(slide.offerTimerPosition || "top-right");
         if (slide.image) {
           const desktopAsset = await buildHomeSlideImageAsset({
             src: slide.image,
@@ -175,6 +202,11 @@ const EditHomeSlide = () => {
         link,
         buttonLink: link,
         sortOrder: Number(order) || 0,
+        stayDurationMs: Math.max(Number(stayDurationSeconds) || 6, 2) * 1000,
+        offerEnabled,
+        offerBadgeText,
+        offerEndsAt: offerEndsAt || null,
+        offerTimerPosition,
         isActive,
       };
 
@@ -289,7 +321,7 @@ const EditHomeSlide = () => {
 
           <div className="form-group flex flex-col gap-1">
             <span className="text-[15px] text-gray-800 font-medium">
-              Display Order
+              Slide Priority
             </span>
             <input
               type="number"
@@ -297,6 +329,20 @@ const EditHomeSlide = () => {
               onChange={(e) => setOrder(e.target.value)}
               placeholder="0"
               min="0"
+              className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+            />
+          </div>
+
+          <div className="form-group flex flex-col gap-1">
+            <span className="text-[15px] text-gray-800 font-medium">
+              Stay Duration (seconds)
+            </span>
+            <input
+              type="number"
+              value={stayDurationSeconds}
+              onChange={(e) => setStayDurationSeconds(e.target.value)}
+              min="2"
+              max="60"
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
             />
           </div>
@@ -314,6 +360,67 @@ const EditHomeSlide = () => {
               <span className="text-sm text-gray-600">
                 {isActive ? "Active" : "Inactive"}
               </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-[16px] font-semibold text-gray-800">
+                Time Limited Offer On This Slide
+              </h3>
+              <p className="text-sm text-gray-500">
+                Show a live offer timer on this slide and control where it
+                appears.
+              </p>
+            </div>
+            <Switch
+              checked={offerEnabled}
+              onChange={(e) => setOfferEnabled(e.target.checked)}
+              color="warning"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="form-group flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                Offer Label
+              </span>
+              <input
+                type="text"
+                value={offerBadgeText}
+                onChange={(e) => setOfferBadgeText(e.target.value)}
+                placeholder="Offer ends in"
+                className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+              />
+            </div>
+            <div className="form-group flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                Offer Ends At
+              </span>
+              <input
+                type="datetime-local"
+                value={offerEndsAt}
+                onChange={(e) => setOfferEndsAt(e.target.value)}
+                className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+              />
+            </div>
+            <div className="form-group flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                Timer Position
+              </span>
+              <select
+                value={offerTimerPosition}
+                onChange={(e) => setOfferTimerPosition(e.target.value)}
+                className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+              >
+                {TIMER_POSITIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

@@ -13,6 +13,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 
+const TIMER_POSITIONS = [
+  { value: "top-right", label: "Top right" },
+  { value: "top-left", label: "Top left" },
+  { value: "bottom-right", label: "Bottom right" },
+  { value: "bottom-left", label: "Bottom left" },
+];
+
 const AddHomeSlide = () => {
   const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
@@ -20,7 +27,12 @@ const AddHomeSlide = () => {
   const [subtitle, setSubtitle] = useState("");
   const [link, setLink] = useState("");
   const [order, setOrder] = useState(0);
+  const [stayDurationSeconds, setStayDurationSeconds] = useState(6);
   const [isActive, setIsActive] = useState(true);
+  const [offerEnabled, setOfferEnabled] = useState(false);
+  const [offerBadgeText, setOfferBadgeText] = useState("Offer ends in");
+  const [offerEndsAt, setOfferEndsAt] = useState("");
+  const [offerTimerPosition, setOfferTimerPosition] = useState("top-right");
   const [image, setImage] = useState(null);
   const [mobileImage, setMobileImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -115,6 +127,11 @@ const AddHomeSlide = () => {
         link,
         buttonLink: link,
         sortOrder: Number(order) || 0,
+        stayDurationMs: Math.max(Number(stayDurationSeconds) || 6, 2) * 1000,
+        offerEnabled,
+        offerBadgeText,
+        offerEndsAt: offerEndsAt || null,
+        offerTimerPosition,
         isActive,
       };
 
@@ -191,7 +208,7 @@ const AddHomeSlide = () => {
 
           <div className="form-group flex flex-col gap-1">
             <span className="text-[15px] text-gray-800 font-medium">
-              Display Order
+              Slide Priority
             </span>
             <input
               type="number"
@@ -199,6 +216,20 @@ const AddHomeSlide = () => {
               onChange={(e) => setOrder(e.target.value)}
               placeholder="0"
               min="0"
+              className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+            />
+          </div>
+
+          <div className="form-group flex flex-col gap-1">
+            <span className="text-[15px] text-gray-800 font-medium">
+              Stay Duration (seconds)
+            </span>
+            <input
+              type="number"
+              value={stayDurationSeconds}
+              onChange={(e) => setStayDurationSeconds(e.target.value)}
+              min="2"
+              max="60"
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
             />
           </div>
@@ -216,6 +247,67 @@ const AddHomeSlide = () => {
               <span className="text-sm text-gray-600">
                 {isActive ? "Active" : "Inactive"}
               </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-[16px] font-semibold text-gray-800">
+                Time Limited Offer On This Slide
+              </h3>
+              <p className="text-sm text-gray-500">
+                Shows a live offer timer on the slide, similar to quick-commerce
+                offer banners.
+              </p>
+            </div>
+            <Switch
+              checked={offerEnabled}
+              onChange={(e) => setOfferEnabled(e.target.checked)}
+              color="warning"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="form-group flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                Offer Label
+              </span>
+              <input
+                type="text"
+                value={offerBadgeText}
+                onChange={(e) => setOfferBadgeText(e.target.value)}
+                placeholder="Offer ends in"
+                className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+              />
+            </div>
+            <div className="form-group flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                Offer Ends At
+              </span>
+              <input
+                type="datetime-local"
+                value={offerEndsAt}
+                onChange={(e) => setOfferEndsAt(e.target.value)}
+                className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+              />
+            </div>
+            <div className="form-group flex flex-col gap-1">
+              <span className="text-[15px] text-gray-800 font-medium">
+                Timer Position
+              </span>
+              <select
+                value={offerTimerPosition}
+                onChange={(e) => setOfferTimerPosition(e.target.value)}
+                className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+              >
+                {TIMER_POSITIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

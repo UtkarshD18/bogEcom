@@ -70,6 +70,12 @@ const defaultMetadata = {
   },
 };
 
+const normalizeApiBase = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\/+$/, "");
+
 const headerBackgroundBootstrapScript = `(function () {
   try {
     var key = "hog_header_background_color";
@@ -92,7 +98,7 @@ const headerBackgroundBootstrapScript = `(function () {
 export async function generateMetadata({ request }) {
   try {
     const pathname = request?.nextUrl?.pathname || "/";
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || siteUrl;
+    const apiBase = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL || siteUrl);
     const resp = await fetch(`${apiBase}/api/settings/public`, { cache: "no-store" });
     if (!resp.ok) return defaultMetadata;
     const json = await resp.json();

@@ -26,6 +26,56 @@ import {
 
 const PRODUCTS_PER_PAGE = 24;
 const FALLBACK_POLL_INTERVAL_MS = 45000;
+const CENTERED_LISTING_GRID_CLASS =
+    "flex flex-wrap items-start justify-center gap-4 sm:gap-6 md:gap-8";
+const CENTERED_LISTING_CARD_CLASS =
+    "shrink-0 grow-0 basis-[calc((100%_-_1rem)/2)] sm:basis-[calc((100%_-_1.5rem)/2)] md:basis-[calc((100%_-_4rem)/3)] lg:basis-[calc((100%_-_6rem)/4)]";
+
+const toNumber = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const isInventoryTracked = (entry, fallbackEntry = null) => {
+    const source = entry || fallbackEntry || {};
+    return source?.track_inventory !== false && source?.trackInventory !== false;
+};
+
+const getAvailableQuantity = (entry, fallbackEntry = null) => {
+    const source = entry || fallbackEntry || {};
+    if (!isInventoryTracked(entry, fallbackEntry)) return Number.MAX_SAFE_INTEGER;
+
+    const explicitAvailable = [
+        source?.available_quantity,
+        source?.available_stock,
+        source?.availableStock,
+    ]
+        .map((value) => Number(value))
+        .find((value) => Number.isFinite(value));
+
+    if (Number.isFinite(explicitAvailable)) {
+        return Math.max(explicitAvailable, 0);
+    }
+
+    const stock = toNumber(source?.stock_quantity ?? source?.stock, 0);
+    const reserved = toNumber(source?.reserved_quantity, 0);
+    return Math.max(stock - reserved, 0);
+};
+
+const isProductOutOfStock = (product) => {
+    if (!product) return false;
+    const isComboItem = String(product?.itemType || "product").toLowerCase() === "combo";
+    const variant =
+        !isComboItem && product?.hasVariants && Array.isArray(product?.variants) && product.variants.length > 0
+            ? product.variants[0]
+            : null;
+    const isVariantCard = Boolean(product?.variantId);
+    const availabilitySource = isVariantCard ? variant || product : variant || product;
+    return (
+        isInventoryTracked(availabilitySource, product) &&
+        getAvailableQuantity(availabilitySource, product) <= 0
+    );
+};
 
 const PRICE_FILTERS = [
     { label: "All prices", min: "", max: "" },
@@ -59,9 +109,12 @@ const SORT_OPTIONS = [
 ];
 
 const ProductsGridSkeleton = () => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+    <div className={CENTERED_LISTING_GRID_CLASS}>
         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="aspect-3/4 bg-gray-100 animate-pulse rounded-3xl" />
+            <div
+                key={i}
+                className={`${CENTERED_LISTING_CARD_CLASS} aspect-3/4 animate-pulse rounded-3xl bg-gray-100`}
+            />
         ))}
     </div>
 );
@@ -488,6 +541,10 @@ function ProductsPageContent() {
     const productItems = products.filter(
         (product) => String(product?.itemType || "product") !== "combo",
     );
+    const availableProductItems = productItems.filter(
+        (product) => !isProductOutOfStock(product),
+    );
+    const outOfStockProductItems = productItems.filter(isProductOutOfStock);
     const comboItems = products.filter(
         (product) => String(product?.itemType || "") === "combo",
     );
@@ -592,24 +649,54 @@ function ProductsPageContent() {
                         <p className="text-sm text-gray-500">
                             Showing {products.length} of {totalProducts || products.length} products
                         </p>
-                        {productItems.length > 0 ? (
+                        {availableProductItems.length > 0 ? (
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between gap-3">
                                     <h2 className="text-lg font-black text-gray-900">Products</h2>
                                     <span className="text-xs font-bold text-gray-400">
-                                        {productItems.length} items
+                                        {availableProductItems.length} items
                                     </span>
                                 </div>
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
-                                    {productItems.map((product) => (
-                                        <ProductItem
-                                            key={product._id}
-                                            product={product}
-                                            realtimeManagedExternally
-                                        />
+                                <div className={CENTERED_LISTING_GRID_CLASS}>
+                                    {availableProductItems.map((product) => (
+                                        <div key={product._id} className={CENTERED_LISTING_CARD_CLASS}>
+                                            <ProductItem
+                                                product={product}
+                                                realtimeManagedExternally
+                                                compactListing
+                                            />
+                                        </div>
                                     ))}
                                 </div>
                             </div>
+                        ) : null}
+                        {outOfStockProductItems.length > 0 ? (
+                            <section className="space-y-4 rounded-[22px] border border-red-100 bg-red-50/35 px-3 py-4 sm:px-5 sm:py-5">
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                                    <div>
+                                        <h2 className="text-lg font-black text-red-600">
+                                            Few items are out of stock
+                                        </h2>
+                                        <p className="text-sm font-semibold text-gray-500">
+                                            We're restocking soon
+                                        </p>
+                                    </div>
+                                    <span className="text-xs font-bold text-red-300">
+                                        {outOfStockProductItems.length} items
+                                    </span>
+                                </div>
+                                <div className={CENTERED_LISTING_GRID_CLASS}>
+                                    {outOfStockProductItems.map((product) => (
+                                        <div key={product._id} className={CENTERED_LISTING_CARD_CLASS}>
+                                            <ProductItem
+                                                product={product}
+                                                realtimeManagedExternally
+                                                compactListing
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
                         ) : null}
                         {comboItems.length > 0 ? (
                             <div className="space-y-4">
@@ -622,13 +709,15 @@ function ProductsPageContent() {
                                     </div>
                                     <div className="h-px flex-1 bg-gradient-to-l from-transparent via-primary/25 to-primary/10" />
                                 </div>
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
+                                <div className={CENTERED_LISTING_GRID_CLASS}>
                                     {comboItems.map((product) => (
-                                        <ProductItem
-                                            key={product._id}
-                                            product={product}
-                                            realtimeManagedExternally
-                                        />
+                                        <div key={product._id} className={CENTERED_LISTING_CARD_CLASS}>
+                                            <ProductItem
+                                                product={product}
+                                                realtimeManagedExternally
+                                                compactListing
+                                            />
+                                        </div>
                                     ))}
                                 </div>
                             </div>

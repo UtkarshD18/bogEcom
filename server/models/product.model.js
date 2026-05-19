@@ -193,6 +193,16 @@ const productSchema = new mongoose.Schema(
         message: "Cannot have more than 10 images",
       },
     },
+    videos: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: function (v) {
+          return v.length <= 3;
+        },
+        message: "Cannot have more than 3 product videos",
+      },
+    },
     thumbnail: {
       type: String,
       default: "",

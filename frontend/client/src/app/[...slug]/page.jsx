@@ -8,6 +8,12 @@ const SITE_URL = String(
   .replace(/^["']|["']$/g, "")
   .replace(/\/+$/, "");
 
+const normalizeBaseUrl = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\/+$/, "");
+
 const DEFAULT_METADATA = {
   title: "Healthy One Gram - Premium Peanut Butter Store",
   description:
@@ -41,7 +47,7 @@ const normalizePath = (segments = []) => {
 
 const fetchSeoSettings = async () => {
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || SITE_URL;
+    const apiBase = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL || SITE_URL);
     const response = await fetch(`${apiBase}/api/settings/public`, {
       cache: "no-store",
     });

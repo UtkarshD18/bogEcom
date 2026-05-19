@@ -80,6 +80,33 @@ const toResponseReview = (review) => ({
   updatedAt: review.updatedAt,
 });
 
+const toFeaturedHomeReview = (review) => {
+  const productRef = review.productId || null;
+  const comboRef = review.comboId || null;
+  const itemRef =
+    comboRef && typeof comboRef === "object" && comboRef._id
+      ? comboRef
+      : productRef && typeof productRef === "object" && productRef._id
+        ? productRef
+        : null;
+  const itemName =
+    String(itemRef?.name || itemRef?.title || "").trim() ||
+    (comboRef ? "Combo deal" : "Healthy One Gram");
+  const itemImage =
+    itemRef?.thumbnail ||
+    itemRef?.image ||
+    (Array.isArray(itemRef?.images) ? itemRef.images[0] : "") ||
+    "";
+
+  return {
+    ...toResponseReview(review),
+    itemName,
+    itemImage,
+    itemType: comboRef ? "combo" : "product",
+    itemSlug: itemRef?.slug || "",
+  };
+};
+
 const toAdminResponseReview = (review) => {
   const productRef = review.productId || null;
   const orderRef = review.orderId || null;
@@ -614,6 +641,47 @@ export const getComboReviews = async (req, res) => {
       success: false,
       error: true,
       message: "Failed to fetch combo reviews",
+      details: error.message,
+    });
+  }
+};
+
+export const getFeaturedHomeReviews = async (req, res) => {
+  try {
+    const limit = Math.min(
+      Math.max(Number.parseInt(String(req.query?.limit || "6"), 10) || 6, 1),
+      12,
+    );
+
+    const reviews = await ReviewModel.find({
+      $or: [
+        { visibility: "visible" },
+        { visibility: { $exists: false } },
+        { visibility: null },
+      ],
+      rating: { $gte: 4 },
+    })
+      .select(
+        "productId variantId comboId orderId userName userEmail city rating comment source visibility isVerifiedPurchase createdAt updatedAt",
+      )
+      .populate("productId", "name title slug thumbnail images")
+      .populate("comboId", "name title slug thumbnail image images")
+      .sort({ isVerifiedPurchase: -1, rating: -1, createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      error: false,
+      data: reviews.map((review) => toFeaturedHomeReview(review)),
+      total: reviews.length,
+    });
+  } catch (error) {
+    console.error("getFeaturedHomeReviews error:", error);
+    return res.status(500).json({
+      success: false,
+      error: true,
+      message: "Failed to fetch featured reviews",
       details: error.message,
     });
   }

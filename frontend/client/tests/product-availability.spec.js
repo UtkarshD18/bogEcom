@@ -144,9 +144,22 @@ test("products page renders reserved stock as unavailable and blocks purchase", 
   const reservedCard = page
     .locator('a[href="/product/product-reserved"]')
     .first();
+  await expect(page.getByText("Few items are out of stock")).toBeVisible();
   await expect(reservedCard).toContainText("Reserved Peanut Butter");
   await expect(reservedCard).toContainText("Out of stock");
   await expect(reservedCard).toContainText("We're restocking soon");
+
+  const lastUnitCard = page
+    .locator('a[href="/product/product-last-unit"]')
+    .first();
+  await expect(lastUnitCard).toContainText("Last Unit Peanut Butter");
+
+  const reservedBox = await reservedCard.boundingBox();
+  const lastUnitBox = await lastUnitCard.boundingBox();
+  expect(reservedBox).not.toBeNull();
+  expect(lastUnitBox).not.toBeNull();
+  expect(lastUnitBox.y).toBeLessThan(reservedBox.y);
+
   await reservedCard
     .getByRole("button", { name: "Notify me when back in stock" })
     .click();
@@ -163,9 +176,6 @@ test("products page renders reserved stock as unavailable and blocks purchase", 
     email: "guest-alert@example.com",
   });
 
-  const lastUnitCard = page
-    .locator('a[href="/product/product-last-unit"]')
-    .first();
   await expect(lastUnitCard).toContainText("Only 1 left");
   await expect(
     lastUnitCard.getByLabel("Add Last Unit Peanut Butter to cart"),

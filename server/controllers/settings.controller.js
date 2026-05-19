@@ -101,6 +101,8 @@ export const getPublicSettings = async (req, res) => {
       "offerTitle",
       "offerDescription",
       "offerDiscountText",
+      "offerCountdownSettings",
+      "homeSlidePanelSettings",
       // Checkout settings (needed for cart/checkout)
       "shippingSettings",
       "taxSettings",
@@ -614,6 +616,8 @@ export const deleteSetting = async (req, res) => {
       "storeInfo",
       "discountSettings",
       "popupSettings",
+      "offerCountdownSettings",
+      "homeSlidePanelSettings",
       "headerSettings",
       "reviewSettings",
       "seoSettings",

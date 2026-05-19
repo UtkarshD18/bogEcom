@@ -1,12 +1,13 @@
 "use client";
 
 import useSeoAlt from "@/hooks/useSeoAlt";
+import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { getBannerImageUrl, isCloudinaryUrl } from "@/utils/imageUtils";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import {
   FiChevronLeft,
   FiChevronRight,
@@ -90,8 +91,9 @@ const BannerMedia = ({ banner, isMuted }) => {
             alt={desktopAlt}
             fill
             sizes="100vw"
+            loading="lazy"
             unoptimized={isCloudinaryUrl(desktopSrc)}
-            className="object-cover transition-transform duration-700 group-hover:scale-105"
+            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
           />
         </div>
         <div className="absolute inset-0 md:hidden">
@@ -100,8 +102,9 @@ const BannerMedia = ({ banner, isMuted }) => {
             alt={mobileAlt}
             fill
             sizes="100vw"
+            loading="lazy"
             unoptimized={isCloudinaryUrl(mobileSrc)}
-            className="object-cover transition-transform duration-700 group-hover:scale-105"
+            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
           />
         </div>
       </div>
@@ -119,6 +122,8 @@ const Banners = ({ initialBanners = [] }) => {
   const scrollerRef = useRef(null);
   const scrollFrameRef = useRef(0);
   const activeBannerIndexRef = useRef(0);
+  const context = useContext(MyContext);
+  const flavor = context?.flavor || FLAVORS.creamy;
 
   useEffect(() => {
     if (initialBanners.length > 0) {
@@ -209,7 +214,7 @@ const Banners = ({ initialBanners = [] }) => {
               <span
                 className="inline-flex items-center rounded-full border px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.24em]"
                 style={{
-                  backgroundColor: "var(--flavor-glass, rgba(90,58,46,0.24))",
+                  backgroundColor: flavor.glass,
                   borderColor: "rgba(255,255,255,0.75)",
                   color: "var(--color-primary)",
                 }}
@@ -289,7 +294,7 @@ const Banners = ({ initialBanners = [] }) => {
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
-                    transition={{ duration: 0.5, delay: index * 0.08 }}
+                    transition={{ duration: 0.28, delay: Math.min(index * 0.04, 0.16) }}
                     className="min-w-full snap-center md:min-w-[calc(50%_-_10px)]"
                   >
                     <div className="relative">
@@ -306,8 +311,8 @@ const Banners = ({ initialBanners = [] }) => {
                         data-banner-campaign={bannerCampaign}
                       >
                         <motion.div
-                          whileHover={{ y: -4 }}
-                          transition={{ duration: 0.24 }}
+                          whileHover={{ y: -2 }}
+                          transition={{ duration: 0.16 }}
                           className="relative overflow-hidden rounded-[1.8rem] border border-black/5 bg-white shadow-[0_18px_44px_rgba(90,58,34,0.10)]"
                         >
                           <BannerMedia

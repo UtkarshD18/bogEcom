@@ -125,7 +125,6 @@ const PUBLIC_GET_LIMITER_EXEMPT_PREFIXES = [
 ];
 const PUBLIC_GET_LIMITER_ALLOWED_PREFIXES = [
   "/api/about",
-  "/api/api-docs",
   "/api/banners",
   "/api/blogs",
   "/api/categories",

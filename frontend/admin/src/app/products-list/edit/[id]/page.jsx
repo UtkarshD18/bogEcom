@@ -2,7 +2,7 @@
 import ProductPageSettingsSection from "@/components/ProductPageSettingsSection";
 import UploadBox from "@/components/UploadBox";
 import { useAdmin } from "@/context/AdminContext";
-import { getData, putData, uploadFile } from "@/utils/api";
+import { getData, putData, uploadFile, uploadVideoFile } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
 import {
   buildProductImageAsset,
@@ -15,6 +15,12 @@ import {
   PRODUCT_IMAGE_MOBILE_SPEC,
   PRODUCT_IMAGE_MIN_SPEC,
 } from "@/utils/productImageUpload";
+import {
+  PRODUCT_VIDEO_ACCEPT,
+  PRODUCT_VIDEO_MAX_FILES,
+  buildProductVideoAsset,
+  formatProductVideoSize,
+} from "@/utils/productVideoUpload";
 import {
   createDefaultProductPageConfig,
   mergeProductPageConfig,
@@ -49,6 +55,8 @@ const EditProduct = () => {
   const [tags, setTags] = useState("");
   const [newImages, setNewImages] = useState([]); // { file, preview }
   const [existingImages, setExistingImages] = useState([]); // URLs
+  const [newVideos, setNewVideos] = useState([]); // { file, preview, name, size }
+  const [existingVideos, setExistingVideos] = useState([]); // URLs
   const [categories, setCategories] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -166,6 +174,7 @@ const EditProduct = () => {
         setHsnCode(product.hsnCode || "");
         setTags(product.tags ? product.tags.join(", ") : "");
         setExistingImages(product.images || []);
+        setExistingVideos(product.videos || []);
         setProductPage(mergeProductPageConfig(product.productPage));
 
         // Load variants
@@ -311,6 +320,54 @@ const EditProduct = () => {
     setExistingImages(existingImages.filter((_, i) => i !== index));
   };
 
+  const handleVideoUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const remainingSlots = Math.max(
+      PRODUCT_VIDEO_MAX_FILES - (existingVideos.length + newVideos.length),
+      0,
+    );
+
+    if (remainingSlots === 0) {
+      toast.error(`You can upload up to ${PRODUCT_VIDEO_MAX_FILES} videos only`);
+      e.target.value = "";
+      return;
+    }
+
+    if (files.length > remainingSlots) {
+      toast.error(`Only ${remainingSlots} more video slots are available`);
+    }
+
+    const nextVideos = [];
+    for (const file of files.slice(0, remainingSlots)) {
+      try {
+        const asset = buildProductVideoAsset(file);
+        if (asset) nextVideos.push(asset);
+      } catch (error) {
+        toast.error(error.message || "Invalid product video");
+      }
+    }
+
+    if (nextVideos.length > 0) {
+      setNewVideos((prev) => [...prev, ...nextVideos]);
+    }
+
+    e.target.value = "";
+  };
+
+  const removeNewVideo = (index) => {
+    const video = newVideos[index];
+    if (video?.preview) {
+      URL.revokeObjectURL(video.preview);
+    }
+    setNewVideos(newVideos.filter((_, i) => i !== index));
+  };
+
+  const removeExistingVideo = (index) => {
+    setExistingVideos(existingVideos.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -405,6 +462,26 @@ const EditProduct = () => {
       // Combine existing and new images
       const allImages = [...existingImages, ...uploadedImageUrls];
 
+      const uploadedVideoUrls = [];
+
+      for (const video of newVideos) {
+        const uploadResult = await uploadVideoFile(video.file, token, {
+          folder: "products",
+        });
+        if (uploadResult.success && uploadResult.data?.url) {
+          uploadedVideoUrls.push(uploadResult.data.url);
+        } else {
+          toast.error(
+            "Failed to upload video: " +
+              (uploadResult.message || "Unknown error"),
+          );
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const allVideos = [...existingVideos, ...uploadedVideoUrls];
+
       const productData = {
         name: productName,
         description,
@@ -421,6 +498,7 @@ const EditProduct = () => {
         hsnCode: String(hsnCode || "").trim(),
         tags: tags ? tags.split(",").map((t) => t.trim()) : [],
         images: allImages,
+        videos: allVideos,
         thumbnail: allImages[0] || "",
         hasVariants,
         variants: variantData,
@@ -994,6 +1072,94 @@ const EditProduct = () => {
             <p className="text-sm text-gray-500">
               Max {PRODUCT_IMAGE_MAX_FILES} images, 5MB each. Supported: JPG,
               PNG, WebP
+            </p>
+          </div>
+
+          {/* Videos */}
+          <div className="flex flex-col gap-2 mt-5">
+            <h3 className="text-[16px] text-gray-700 font-[600]">
+              Product Videos{" "}
+              <span className="text-sm font-normal text-gray-500">
+                (Optional, shown in the product gallery)
+              </span>
+            </h3>
+
+            <div className="rounded-2xl border border-[#ead7c2] bg-[#fffaf3] p-4">
+              <p className="text-sm font-semibold text-slate-800">
+                Manage product demo videos
+              </p>
+              <p className="mt-1 text-xs text-slate-600">
+                Existing videos stay live unless removed. New MP4/WebM uploads
+                are added after saving.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-4 mt-2 flex-wrap">
+              {existingVideos.map((video, index) => (
+                <div key={`existing-video-${index}`} className="w-[210px]">
+                  <div className="relative h-[150px] overflow-hidden rounded-md border-2 border-dashed border-gray-300 bg-black">
+                    <video
+                      src={video}
+                      className="h-full w-full object-cover"
+                      muted
+                      controls
+                      playsInline
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeExistingVideo(index)}
+                      className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                    >
+                      <IoMdClose size={16} />
+                    </button>
+                  </div>
+                  <p className="mt-2 text-[11px] text-gray-500">
+                    Existing video
+                  </p>
+                </div>
+              ))}
+
+              {newVideos.map((video, index) => (
+                <div key={`${video.name}-${index}`} className="w-[210px]">
+                  <div className="relative h-[150px] overflow-hidden rounded-md border-2 border-dashed border-green-400 bg-black">
+                    <video
+                      src={video.preview}
+                      className="h-full w-full object-cover"
+                      muted
+                      controls
+                      playsInline
+                    />
+                    <span className="absolute bottom-1 left-1 bg-green-600 text-white text-xs px-2 py-0.5 rounded">
+                      New
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeNewVideo(index)}
+                      className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700"
+                    >
+                      <IoMdClose size={16} />
+                    </button>
+                  </div>
+                  <p className="mt-2 truncate text-xs font-semibold text-slate-700">
+                    {video.name}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    {formatProductVideoSize(video.size)}
+                  </p>
+                </div>
+              ))}
+
+              {existingVideos.length + newVideos.length < PRODUCT_VIDEO_MAX_FILES && (
+                <UploadBox
+                  onChange={handleVideoUpload}
+                  multiple
+                  accept={PRODUCT_VIDEO_ACCEPT}
+                />
+              )}
+            </div>
+            <p className="text-sm text-gray-500">
+              Max {PRODUCT_VIDEO_MAX_FILES} videos, 100MB each. Supported: MP4,
+              WebM
             </p>
           </div>
 

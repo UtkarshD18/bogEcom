@@ -76,6 +76,30 @@ const homeSlideSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    stayDurationMs: {
+      type: Number,
+      default: 5600,
+      min: 1500,
+      max: 60000,
+    },
+    offerEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    offerBadgeText: {
+      type: String,
+      default: "",
+      maxLength: 80,
+    },
+    offerEndsAt: {
+      type: Date,
+      default: null,
+    },
+    offerTimerPosition: {
+      type: String,
+      enum: ["top-left", "top-right", "bottom-left", "bottom-right"],
+      default: "top-right",
+    },
     startDate: {
       type: Date,
       default: null,

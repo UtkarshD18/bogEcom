@@ -313,6 +313,7 @@ const ProductSlider = ({
                 rating={product.rating}
                 image={product.thumbnail || product.images?.[0]}
                 product={product}
+                compactListing
               />
             </div>
           ))}
@@ -404,6 +405,7 @@ const ProductSlider = ({
                 rating={product.rating}
                 image={product.thumbnail || product.images?.[0]}
                 product={product}
+                compactListing
               />
             </div>
           </SwiperSlide>

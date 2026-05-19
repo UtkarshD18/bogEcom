@@ -6,8 +6,8 @@ import { withAdminBasePath } from "@/utils/basePath";
 import { Button } from "@mui/material";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { FiX } from "react-icons/fi";
+import { useEffect, useMemo, useState } from "react";
+import { FiSearch, FiX } from "react-icons/fi";
 import { IoIosLogOut } from "react-icons/io";
 import { IoBagCheckOutline } from "react-icons/io5";
 import { LiaImageSolid } from "react-icons/lia";
@@ -22,7 +22,6 @@ import {
   MdOutlineHub,
   MdOutlineInventory2,
   MdOutlineLocalOffer,
-  MdOutlinePictureAsPdf,
   MdOutlinePolicy,
   MdSettings,
   MdSupportAgent,
@@ -47,6 +46,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
   const pathname = stripAdminBasePath(usePathname());
   const router = useRouter();
   const [openTicketCount, setOpenTicketCount] = useState(0);
+  const [navQuery, setNavQuery] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -88,34 +88,10 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       href: "/",
     },
     {
-      name: "Behavior",
-      icon: <MdInsights size={22} />,
-      href: "/behavior-analytics",
-      requiredPermission: "view_analytics",
-    },
-    {
-      name: "Analytics",
-      icon: <MdInsights size={22} />,
-      href: "/analytics",
-      requiredPermission: "view_analytics",
-    },
-    {
-      name: "Sales Analytics",
-      icon: <MdInsights size={22} />,
-      href: "/sales-analytics",
-      requiredPermission: "view_analytics",
-    },
-    {
-      name: "Home Slides",
-      icon: <LiaImageSolid size={20} />,
-      href: "/home-slides",
-      requiredPermission: "manage_settings",
-    },
-    {
-      name: "Category",
-      icon: <MdOutlineCategory size={22} />,
-      href: "/category-list",
-      requiredPermission: "manage_settings",
+      name: "Orders",
+      icon: <IoBagCheckOutline size={22} />,
+      href: "/orders",
+      requiredPermission: "manage_shipping",
     },
     {
       name: "Products",
@@ -130,16 +106,38 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       requiredPermission: "manage_settings",
     },
     {
-      name: "Users",
-      icon: <TbUsers size={22} />,
-      href: "/users",
-      requiredPermission: "manage_users",
+      name: "Category",
+      icon: <MdOutlineCategory size={22} />,
+      href: "/category-list",
+      requiredPermission: "manage_settings",
     },
     {
-      name: "Orders",
-      icon: <IoBagCheckOutline size={22} />,
-      href: "/orders",
-      requiredPermission: "manage_shipping",
+      name: "Combos",
+      icon: <MdOutlineLocalOffer size={22} />,
+      href: "/combos",
+      requiredPermission: "manage_settings",
+      children: [
+        { name: "Management", href: "/combos" },
+        { name: "Analytics", href: "/combos/analytics" },
+      ],
+    },
+    {
+      name: "Home Slides",
+      icon: <LiaImageSolid size={20} />,
+      href: "/home-slides",
+      requiredPermission: "manage_settings",
+    },
+    {
+      name: "Banners",
+      icon: <PiImageSquare size={22} />,
+      href: "/banners",
+      requiredPermission: "manage_settings",
+    },
+    {
+      name: "Coupons",
+      icon: <RiCoupon2Line size={22} />,
+      href: "/coupons",
+      requiredPermission: "manage_settings",
     },
     {
       name: "Customer Care",
@@ -163,16 +161,28 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       ],
     },
     {
-      name: "Coupons",
-      icon: <RiCoupon2Line size={22} />,
-      href: "/coupons",
-      requiredPermission: "manage_settings",
+      name: "Users",
+      icon: <TbUsers size={22} />,
+      href: "/users",
+      requiredPermission: "manage_users",
     },
     {
-      name: "Influencers",
-      icon: <TbShare size={22} />,
-      href: "/influencers",
-      requiredPermission: "manage_settings",
+      name: "Sales Analytics",
+      icon: <MdInsights size={22} />,
+      href: "/sales-analytics",
+      requiredPermission: "view_analytics",
+    },
+    {
+      name: "Analytics",
+      icon: <MdInsights size={22} />,
+      href: "/analytics",
+      requiredPermission: "view_analytics",
+    },
+    {
+      name: "Behavior",
+      icon: <MdInsights size={22} />,
+      href: "/behavior-analytics",
+      requiredPermission: "view_analytics",
     },
     {
       name: "Notifications",
@@ -193,30 +203,6 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       requiredPermission: "manage_crm",
     },
     {
-      name: "API PDFs",
-      icon: <MdOutlinePictureAsPdf size={22} />,
-      href: "/api-docs",
-      requiredPermission: "manage_settings",
-    },
-    {
-      name: "Partner API",
-      icon: <MdKey size={22} />,
-      href: "/partner-api",
-      requiredPermission: "manage_settings",
-    },
-    {
-      name: "Banners",
-      icon: <PiImageSquare size={22} />,
-      href: "/banners",
-      requiredPermission: "manage_settings",
-    },
-    {
-      name: "Blogs",
-      icon: <MdOutlineArticle size={22} />,
-      href: "/blogs",
-      requiredPermission: "manage_settings",
-    },
-    {
       name: "Membership",
       icon: <RiVipCrownLine size={22} />,
       href: "/membership",
@@ -229,14 +215,34 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       ],
     },
     {
-      name: "Combos",
-      icon: <MdOutlineLocalOffer size={22} />,
-      href: "/combos",
+      name: "Partner API",
+      icon: <MdKey size={22} />,
+      href: "/partner-api",
       requiredPermission: "manage_settings",
-      children: [
-        { name: "Management", href: "/combos" },
-        { name: "Analytics", href: "/combos/analytics" },
-      ],
+    },
+    {
+      name: "Influencers",
+      icon: <TbShare size={22} />,
+      href: "/influencers",
+      requiredPermission: "manage_settings",
+    },
+    {
+      name: "Blogs",
+      icon: <MdOutlineArticle size={22} />,
+      href: "/blogs",
+      requiredPermission: "manage_settings",
+    },
+    {
+      name: "SEO Pages",
+      icon: <MdOutlineArticle size={22} />,
+      href: "/seo-pages",
+      requiredPermission: "manage_settings",
+    },
+    {
+      name: "About Us",
+      icon: <MdInfoOutline size={22} />,
+      href: "/about-page",
+      requiredPermission: "manage_settings",
     },
     {
       name: "Cancellation & Return",
@@ -251,18 +257,6 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       requiredPermission: "manage_settings",
     },
     {
-      name: "About Us",
-      icon: <MdInfoOutline size={22} />,
-      href: "/about-page",
-      requiredPermission: "manage_settings",
-    },
-    {
-      name: "SEO Pages",
-      icon: <MdOutlineArticle size={22} />,
-      href: "/seo-pages",
-      requiredPermission: "manage_settings",
-    },
-    {
       name: "Settings",
       icon: <MdSettings size={22} />,
       href: "/settings",
@@ -274,6 +268,36 @@ const Sidebar = ({ isOpen = false, onClose }) => {
     if (!tab.requiredPermission) return true;
     return hasAdminPermission(admin, tab.requiredPermission);
   });
+
+  const searchedSidebarTabs = useMemo(() => {
+    const query = navQuery.trim().toLowerCase();
+    if (!query) return visibleSidebarTabs;
+
+    return visibleSidebarTabs
+      .map((tab) => {
+        const visibleChildren = Array.isArray(tab.children)
+          ? tab.children.filter((child) => {
+              if (!child.requiredPermission) return true;
+              return hasAdminPermission(admin, child.requiredPermission);
+            })
+          : [];
+        const tabText = [tab.name, tab.href].join(" ").toLowerCase();
+        const tabMatches = tabText.includes(query);
+        const matchedChildren = visibleChildren.filter((child) =>
+          [child.name, child.href].join(" ").toLowerCase().includes(query),
+        );
+
+        if (tabMatches) return tab;
+        if (matchedChildren.length > 0) {
+          return {
+            ...tab,
+            children: matchedChildren,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [admin, navQuery, visibleSidebarTabs]);
 
   const isActive = (href) => {
     if (href === "/") return pathname === "/";
@@ -342,9 +366,28 @@ const Sidebar = ({ isOpen = false, onClose }) => {
         <p className="text-xs text-gray-500 truncate">{admin?.email || ""}</p>
       </div>
 
+      {/* Search */}
+      <div className="px-3 pt-3">
+        <label className="relative block">
+          <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={navQuery}
+            onChange={(event) => setNavQuery(event.target.value)}
+            placeholder="Search admin pages..."
+            className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm font-medium text-gray-800 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
+          />
+        </label>
+      </div>
+
       {/* Navigation */}
       <div className="flex flex-col gap-1 mt-4 px-3 flex-1 overflow-y-auto">
-        {visibleSidebarTabs.map((tab) => {
+        {searchedSidebarTabs.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-4 text-center text-sm font-medium text-gray-500">
+            No pages found
+          </div>
+        ) : null}
+        {searchedSidebarTabs.map((tab) => {
           const visibleChildren = Array.isArray(tab.children)
             ? tab.children.filter((child) => {
                 if (!child.requiredPermission) return true;

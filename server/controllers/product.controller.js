@@ -1538,6 +1538,7 @@ export const createProduct = async (req, res) => {
       price,
       originalPrice,
       images,
+      videos,
       thumbnail,
       category,
       subCategory,
@@ -1703,7 +1704,8 @@ export const createProduct = async (req, res) => {
       price: derivedPrice,
       originalPrice:
         derivedOriginalPrice === null ? undefined : derivedOriginalPrice,
-      images: images || [],
+      images: Array.isArray(images) ? images : [],
+      videos: Array.isArray(videos) ? videos.filter(Boolean).slice(0, 3) : [],
       thumbnail,
       category,
       subCategory,
@@ -1850,6 +1852,16 @@ export const updateProduct = async (req, res) => {
     }
     if ("productPage" in updateData) {
       updateData.productPage = normalizeProductPageConfig(updateData.productPage);
+    }
+    if ("images" in updateData) {
+      updateData.images = Array.isArray(updateData.images)
+        ? updateData.images.filter(Boolean).slice(0, 10)
+        : [];
+    }
+    if ("videos" in updateData) {
+      updateData.videos = Array.isArray(updateData.videos)
+        ? updateData.videos.filter(Boolean).slice(0, 3)
+        : [];
     }
 
     const product = await ProductModel.findById(id);

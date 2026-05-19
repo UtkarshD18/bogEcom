@@ -94,7 +94,7 @@ export const getHomeSlides = async (req, res) => {
 
       const slides = await HomeSlideModel.find(filter)
         .select(
-          "title subtitle description image mobileImage buttonText buttonLink secondaryButtonText secondaryButtonLink backgroundColor textColor textPosition overlayOpacity sortOrder",
+          "title subtitle description image mobileImage buttonText buttonLink secondaryButtonText secondaryButtonLink backgroundColor textColor textPosition overlayOpacity sortOrder stayDurationMs offerEnabled offerBadgeText offerEndsAt offerTimerPosition",
         )
         .sort({ sortOrder: 1, createdAt: -1 })
         .limit(limit)
@@ -221,6 +221,11 @@ export const createSlide = async (req, res) => {
       overlayOpacity,
       isActive,
       sortOrder,
+      stayDurationMs,
+      offerEnabled,
+      offerBadgeText,
+      offerEndsAt,
+      offerTimerPosition,
       startDate,
       endDate,
     } = req.body;
@@ -249,6 +254,11 @@ export const createSlide = async (req, res) => {
       overlayOpacity: overlayOpacity || 0,
       isActive: isActive !== false,
       sortOrder: sortOrder || 0,
+      stayDurationMs: Number(stayDurationMs) || 5600,
+      offerEnabled: Boolean(offerEnabled),
+      offerBadgeText,
+      offerEndsAt: offerEndsAt || null,
+      offerTimerPosition: offerTimerPosition || "top-right",
       startDate: startDate || null,
       endDate: endDate || null,
     });

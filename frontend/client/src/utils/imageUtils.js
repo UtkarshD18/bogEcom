@@ -10,7 +10,7 @@
 import { API_BASE_URL } from "@/utils/api";
 
 const API_URL = API_BASE_URL;
-const DEFAULT_PLACEHOLDER = "/product_1.png";
+const DEFAULT_PLACEHOLDER = "/product_1.webp";
 const CLOUDINARY_TRANSFORM_TOKEN_PATTERN =
   /(?:^|,)(?:c|w|h|g|q|f|dpr|ar|x|y|z|bo|e|fl)_[^,/]+/i;
 

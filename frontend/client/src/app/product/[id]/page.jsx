@@ -28,7 +28,6 @@ import { normalizePincode } from "@/utils/addressForm";
 import { trackEvent } from "@/utils/analyticsTracker";
 import { fetchDataFromApi, postData } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
-import { parseCompositeProductRouteId } from "@/utils/productRouting";
 import { sanitizeHTML } from "@/utils/sanitize";
 import {
   applyStockUpdateToProduct,
@@ -56,6 +55,7 @@ import {
   FiChevronRight,
   FiMaximize2,
   FiPackage,
+  FiPlayCircle,
   FiShield,
   FiTruck,
   FiX,
@@ -387,6 +387,19 @@ const resolveProductImages = (
     .filter((image, index, allImages) => allImages.indexOf(image) === index);
 };
 
+const resolveProductVideos = (product, selectedVariant) => {
+  const variantVideos = Array.isArray(selectedVariant?.videos)
+    ? selectedVariant.videos
+    : [];
+  const productVideos = Array.isArray(product?.videos) ? product.videos : [];
+
+  return [...variantVideos, ...productVideos]
+    .filter(Boolean)
+    .map((video) => String(video || "").trim())
+    .filter(Boolean)
+    .filter((video, index, allVideos) => allVideos.indexOf(video) === index);
+};
+
 const averageReviewRating = (reviews = []) => {
   if (!Array.isArray(reviews) || reviews.length === 0) return 0;
   const total = reviews.reduce(
@@ -460,15 +473,11 @@ const ReviewCard = ({ review, compact = false }) => (
 
 const ProductDetailPage = () => {
   const { id } = useParams();
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const rawRouteId = String(id || "").trim();
-  const parsedRouteId = parseCompositeProductRouteId(rawRouteId);
-  const routeId = parsedRouteId.lookupId || rawRouteId;
-  const requestedVariantId = String(
-    searchParams.get("variantId") || parsedRouteId.variantId || "",
-  ).trim();
-  const isDemoPreview = rawRouteId.toLowerCase() === DEMO_PRODUCT_ID;
+  const searchParams = useSearchParams();
+  const routeId = String(id || "").trim();
+  const requestedVariantId = String(searchParams.get("variantId") || "").trim();
+  const isDemoPreview = routeId.toLowerCase() === DEMO_PRODUCT_ID;
   const { addToCart, removeFromCart, isInCart, cartItems, isComboCartItem } =
     useCart();
 
@@ -714,9 +723,18 @@ const ProductDetailPage = () => {
     selectedVariant,
     isDemoPreview ? buildDemoProduct().images : [],
   );
-  const activeImage = images[activeImageIndex] || images[0] || "/product_1.png";
-  const visibleGalleryImages = images.slice(0, 4);
-  const remainingGalleryCount = Math.max(images.length - 4, 0);
+  const videos = resolveProductVideos(product, selectedVariant);
+  const galleryItems = [
+    ...images.map((src) => ({ type: "image", src })),
+    ...videos.map((src) => ({ type: "video", src })),
+  ];
+  const activeGalleryItem =
+    galleryItems[activeImageIndex] ||
+    galleryItems[0] || { type: "image", src: "/product_1.webp" };
+  const activeImage = activeGalleryItem.src;
+  const isActiveVideo = activeGalleryItem.type === "video";
+  const visibleGalleryItems = galleryItems.slice(0, 4);
+  const remainingGalleryCount = Math.max(galleryItems.length - 4, 0);
   const selectedPackLabel =
     resolveVariantLabel(selectedVariant, product) ||
     resolveVariantLabel(defaultVariant, product) ||
@@ -1293,25 +1311,6 @@ const ProductDetailPage = () => {
   useEffect(() => {
     if (!product?.hasVariants || !Array.isArray(product?.variants)) return;
 
-    if (requestedVariantId) {
-      const requestedVariant =
-        product.variants.find(
-          (variant) =>
-            String(variant?._id || variant?.id || "") ===
-            String(requestedVariantId),
-        ) || null;
-      if (requestedVariant) {
-        setSelectedVariant((previous) => {
-          const previousVariantId = previous?._id || previous?.id;
-          return String(previousVariantId || "") ===
-            String(requestedVariantId || "")
-            ? previous
-            : requestedVariant;
-        });
-      }
-      return;
-    }
-
     setSelectedVariant((previous) => {
       const currentVariantId = previous?._id || previous?.id;
       if (!currentVariantId) return previous;
@@ -1325,7 +1324,7 @@ const ProductDetailPage = () => {
 
       return nextVariant || previous;
     });
-  }, [product, requestedVariantId]);
+  }, [product]);
 
   useEffect(() => {
     if (!routeId || isDemoPreview) return undefined;
@@ -1366,10 +1365,10 @@ const ProductDetailPage = () => {
   ]);
 
   useEffect(() => {
-    if (activeImageIndex >= images.length) {
+    if (activeImageIndex >= galleryItems.length) {
       setActiveImageIndex(0);
     }
-  }, [activeImageIndex, images.length]);
+  }, [activeImageIndex, galleryItems.length]);
 
   useEffect(() => {
     if (tabs.length === 0) return;
@@ -1535,17 +1534,17 @@ const ProductDetailPage = () => {
         return;
       }
 
-      if (images.length <= 1) return;
+      if (galleryItems.length <= 1) return;
 
       if (event.key === "ArrowLeft") {
         setActiveImageIndex((previous) =>
-          previous === 0 ? images.length - 1 : previous - 1,
+          previous === 0 ? galleryItems.length - 1 : previous - 1,
         );
       }
 
       if (event.key === "ArrowRight") {
         setActiveImageIndex((previous) =>
-          previous === images.length - 1 ? 0 : previous + 1,
+          previous === galleryItems.length - 1 ? 0 : previous + 1,
         );
       }
     };
@@ -1556,7 +1555,7 @@ const ProductDetailPage = () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isImageZoomOpen, images.length]);
+  }, [isImageZoomOpen, galleryItems.length]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -1900,15 +1899,15 @@ const ProductDetailPage = () => {
     product?.stockNotificationRequested,
   );
   const showPreviousImage = () => {
-    if (images.length <= 1) return;
+    if (galleryItems.length <= 1) return;
     setActiveImageIndex((previous) =>
-      previous === 0 ? images.length - 1 : previous - 1,
+      previous === 0 ? galleryItems.length - 1 : previous - 1,
     );
   };
   const showNextImage = () => {
-    if (images.length <= 1) return;
+    if (galleryItems.length <= 1) return;
     setActiveImageIndex((previous) =>
-      previous === images.length - 1 ? 0 : previous + 1,
+      previous === galleryItems.length - 1 ? 0 : previous + 1,
     );
   };
 
@@ -1971,7 +1970,7 @@ const ProductDetailPage = () => {
                 <div className="inline-flex items-center gap-2 rounded-full border border-[#eadfd5] bg-white/90 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#6a4b39] backdrop-blur">
                   Product gallery
                 </div>
-                {images.length > 1 ? (
+                {galleryItems.length > 1 ? (
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -1995,48 +1994,89 @@ const ProductDetailPage = () => {
 
               <div className={galleryGridClassName}>
                 <div className={imageStageClassName}>
-                  <button
-                    type="button"
-                    onClick={() => setIsImageZoomOpen(true)}
-                    onKeyDown={(event) => {
-                      if (event.key === "ArrowLeft") showPreviousImage();
-                      if (event.key === "ArrowRight") showNextImage();
-                    }}
-                    onTouchStart={(event) => {
-                      galleryTouchStartXRef.current =
-                        event.touches?.[0]?.clientX ?? null;
-                    }}
-                    onTouchEnd={(event) => {
-                      const startX = galleryTouchStartXRef.current;
-                      const endX = event.changedTouches?.[0]?.clientX ?? null;
-                      galleryTouchStartXRef.current = null;
-                      if (startX == null || endX == null) return;
-                      const delta = endX - startX;
-                      if (Math.abs(delta) < 36) return;
-                      if (delta > 0) showPreviousImage();
-                      else showNextImage();
-                    }}
-                    className="group relative z-10 flex h-full w-full cursor-zoom-in overflow-hidden rounded-[28px]"
-                    aria-label="Open product image zoom"
-                  >
-                    <ProductImage
-                      src={activeImage}
-                      alt={product?.name || product?.title || "Product image"}
-                      responsiveProfile="gallery"
-                      sizes="(max-width: 768px) 92vw, (max-width: 1280px) 54vw, 720px"
-                      eager
-                      fit="cover"
-                      aspect=""
-                      rounded="rounded-[28px]"
-                      className="h-full w-full bg-transparent"
-                      imgClassName="transition duration-300 ease-out group-hover:scale-[1.03]"
-                    />
-                    <span className="pointer-events-none absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/85 px-3 py-1.5 text-xs font-semibold text-[#1d3740] opacity-0 transition group-hover:opacity-100">
-                      <FiMaximize2 className="text-sm" />
-                      Click to zoom
-                    </span>
-                  </button>
-                  {images.length > 1 ? (
+                  {isActiveVideo ? (
+                    <div
+                      className="group relative z-10 flex h-full w-full overflow-hidden rounded-[28px]"
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowLeft") showPreviousImage();
+                        if (event.key === "ArrowRight") showNextImage();
+                      }}
+                      onTouchStart={(event) => {
+                        galleryTouchStartXRef.current =
+                          event.touches?.[0]?.clientX ?? null;
+                      }}
+                      onTouchEnd={(event) => {
+                        const startX = galleryTouchStartXRef.current;
+                        const endX = event.changedTouches?.[0]?.clientX ?? null;
+                        galleryTouchStartXRef.current = null;
+                        if (startX == null || endX == null) return;
+                        const delta = endX - startX;
+                        if (Math.abs(delta) < 36) return;
+                        if (delta > 0) showPreviousImage();
+                        else showNextImage();
+                      }}
+                    >
+                      <video
+                        src={activeImage}
+                        className="h-full w-full rounded-[28px] bg-black object-contain"
+                        controls
+                        playsInline
+                        preload="metadata"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsImageZoomOpen(true)}
+                        className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/88 px-3 py-1.5 text-xs font-semibold text-[#1d3740] transition hover:bg-white"
+                        aria-label="Open product video theater"
+                      >
+                        <FiMaximize2 className="text-sm" />
+                        Theater
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsImageZoomOpen(true)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowLeft") showPreviousImage();
+                        if (event.key === "ArrowRight") showNextImage();
+                      }}
+                      onTouchStart={(event) => {
+                        galleryTouchStartXRef.current =
+                          event.touches?.[0]?.clientX ?? null;
+                      }}
+                      onTouchEnd={(event) => {
+                        const startX = galleryTouchStartXRef.current;
+                        const endX = event.changedTouches?.[0]?.clientX ?? null;
+                        galleryTouchStartXRef.current = null;
+                        if (startX == null || endX == null) return;
+                        const delta = endX - startX;
+                        if (Math.abs(delta) < 36) return;
+                        if (delta > 0) showPreviousImage();
+                        else showNextImage();
+                      }}
+                      className="group relative z-10 flex h-full w-full cursor-zoom-in overflow-hidden rounded-[28px]"
+                      aria-label="Open product image zoom"
+                    >
+                      <ProductImage
+                        src={activeImage}
+                        alt={product?.name || product?.title || "Product image"}
+                        responsiveProfile="gallery"
+                        sizes="(max-width: 768px) 92vw, (max-width: 1280px) 54vw, 720px"
+                        eager
+                        fit="cover"
+                        aspect=""
+                        rounded="rounded-[28px]"
+                        className="h-full w-full bg-transparent"
+                        imgClassName="transition duration-300 ease-out group-hover:scale-[1.03]"
+                      />
+                      <span className="pointer-events-none absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/85 px-3 py-1.5 text-xs font-semibold text-[#1d3740] opacity-0 transition group-hover:opacity-100">
+                        <FiMaximize2 className="text-sm" />
+                        Click to zoom
+                      </span>
+                    </button>
+                  )}
+                  {galleryItems.length > 1 ? (
                     <>
                       <button
                         type="button"
@@ -2102,14 +2142,14 @@ const ProductDetailPage = () => {
               </div>
             </div>
 
-            {images.length > 1 ? (
+            {galleryItems.length > 1 ? (
               <div className="grid grid-cols-4 gap-3">
-                {visibleGalleryImages.map((image, index) => {
+                {visibleGalleryItems.map((item, index) => {
                   const showMoreOverlay =
                     index === 3 && remainingGalleryCount > 0;
                   return (
                     <button
-                      key={`${image}-${index}`}
+                      key={`${item.type}-${item.src}-${index}`}
                       type="button"
                       onClick={() => {
                         setActiveImageIndex(index);
@@ -2123,23 +2163,43 @@ const ProductDetailPage = () => {
                           : "border-[#eadcd1] hover:-translate-y-0.5 hover:border-[#b9d0d8]"
                       }`}
                     >
-                      <ProductImage
-                        src={image}
-                        alt={`Preview ${index + 1}`}
-                        responsiveProfile="thumb"
-                        sizes="98px"
-                        aspect="aspect-square"
-                        fit="cover"
-                        padding="p-1"
-                        rounded="rounded-[16px]"
-                        className="w-full"
-                      >
-                        {showMoreOverlay ? (
-                          <span className="absolute inset-2 flex items-center justify-center rounded-[16px] bg-black/55 text-lg font-semibold text-white">
-                            +{remainingGalleryCount}
+                      {item.type === "video" ? (
+                        <span className="relative block aspect-square overflow-hidden rounded-[16px] bg-black">
+                          <video
+                            src={item.src}
+                            className="h-full w-full object-cover opacity-80"
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/18 text-white">
+                            <FiPlayCircle className="text-2xl" />
                           </span>
-                        ) : null}
-                      </ProductImage>
+                          {showMoreOverlay ? (
+                            <span className="absolute inset-0 flex items-center justify-center rounded-[16px] bg-black/55 text-lg font-semibold text-white">
+                              +{remainingGalleryCount}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <ProductImage
+                          src={item.src}
+                          alt={`Preview ${index + 1}`}
+                          responsiveProfile="thumb"
+                          sizes="98px"
+                          aspect="aspect-square"
+                          fit="cover"
+                          padding="p-1"
+                          rounded="rounded-[16px]"
+                          className="w-full"
+                        >
+                          {showMoreOverlay ? (
+                            <span className="absolute inset-2 flex items-center justify-center rounded-[16px] bg-black/55 text-lg font-semibold text-white">
+                              +{remainingGalleryCount}
+                            </span>
+                          ) : null}
+                        </ProductImage>
+                      )}
                     </button>
                   );
                 })}
@@ -3079,7 +3139,7 @@ const ProductDetailPage = () => {
                       <div className="rounded-[28px] border border-[#e7dad1] bg-[#fbf7f2] p-5">
                         <div className="flex items-center gap-4">
                           <ProductImage
-                            src={activeImage}
+                            src={images[0] || product?.thumbnail || activeImage}
                             alt={product?.name || product?.title}
                             responsiveProfile="thumb"
                             sizes="72px"
@@ -3331,14 +3391,14 @@ const ProductDetailPage = () => {
               <FiX className="text-xl" />
             </button>
 
-            {images.length > 1 ? (
+            {galleryItems.length > 1 ? (
               <>
                 <button
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
                     setActiveImageIndex((previous) =>
-                      previous === 0 ? images.length - 1 : previous - 1,
+                      previous === 0 ? galleryItems.length - 1 : previous - 1,
                     );
                   }}
                   className="slider-nav absolute left-0 transition hover:bg-white"
@@ -3351,7 +3411,7 @@ const ProductDetailPage = () => {
                   onClick={(event) => {
                     event.stopPropagation();
                     setActiveImageIndex((previous) =>
-                      previous === images.length - 1 ? 0 : previous + 1,
+                      previous === galleryItems.length - 1 ? 0 : previous + 1,
                     );
                   }}
                   className="slider-nav absolute right-0 transition hover:bg-white"
@@ -3366,20 +3426,31 @@ const ProductDetailPage = () => {
               100%
             </div>
 
-            <ProductImage
-              src={activeImage}
-              alt={product?.name || product?.title || "Zoomed product image"}
-              responsiveProfile="zoom"
-              sizes="92vw"
-              onClick={(event) => event.stopPropagation()}
-              aspect=""
-              padding="p-0"
-              fit="cover"
-              rounded="rounded-2xl"
-              natural
-              className="flex max-h-[88vh] max-w-[92vw] items-center justify-center bg-transparent"
-              imgClassName="max-h-[88vh] max-w-[92vw] object-contain"
-            />
+            {isActiveVideo ? (
+              <video
+                src={activeImage}
+                className="max-h-[88vh] max-w-[92vw] rounded-2xl bg-black object-contain"
+                controls
+                autoPlay
+                playsInline
+                onClick={(event) => event.stopPropagation()}
+              />
+            ) : (
+              <ProductImage
+                src={activeImage}
+                alt={product?.name || product?.title || "Zoomed product image"}
+                responsiveProfile="zoom"
+                sizes="92vw"
+                onClick={(event) => event.stopPropagation()}
+                aspect=""
+                padding="p-0"
+                fit="cover"
+                rounded="rounded-2xl"
+                natural
+                className="flex max-h-[88vh] max-w-[92vw] items-center justify-center bg-transparent"
+                imgClassName="max-h-[88vh] max-w-[92vw] object-contain"
+              />
+            )}
           </div>
         </div>
       ) : null}

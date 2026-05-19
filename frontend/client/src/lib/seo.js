@@ -1,19 +1,36 @@
 // Lightweight SEO helper for client-side components
 let cached = null;
+let pending = null;
+
+const normalizeApiBase = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/\/+$/, "");
 
 export async function fetchSeoSettings() {
   if (cached) return cached;
-  try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
-    const resp = await fetch(`${apiBase}/api/settings/public`, { cache: "no-store" });
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    cached = json?.data?.seoSettings || null;
-    return cached;
-  } catch (error) {
-    // swallow errors and return null
-    return null;
-  }
+  if (pending) return pending;
+
+  pending = (async () => {
+    try {
+      const apiBase = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
+      const resp = await fetch(`${apiBase}/api/settings/public`, {
+        cache: "no-store",
+      });
+      if (!resp.ok) return null;
+      const json = await resp.json();
+      cached = json?.data?.seoSettings || null;
+      return cached;
+    } catch (error) {
+      // swallow errors and return null
+      return null;
+    } finally {
+      pending = null;
+    }
+  })();
+
+  return pending;
 }
 
 export function resolveAltText(target, seoSettings) {

@@ -15,7 +15,6 @@ const BOT_PROTECTION_EXEMPT_PREFIXES = [
 ];
 const BOT_PROTECTION_ALLOWED_PREFIXES = [
   "/api/about",
-  "/api/api-docs",
   "/api/banners",
   "/api/blogs",
   "/api/categories",

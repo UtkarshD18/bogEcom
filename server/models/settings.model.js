@@ -263,6 +263,32 @@ settingsSchema.statics.defaultSettings = [
     category: "notification",
   },
   {
+    key: "offerCountdownSettings",
+    value: {
+      enabled: false,
+      title: "Limited time offer",
+      subtitle: "Fresh deals are live now.",
+      couponCode: "",
+      discountText: "",
+      endsAt: null,
+      ctaLabel: "Shop offers",
+      ctaHref: "/products",
+    },
+    description: "Homepage offer countdown banner settings",
+    category: "notification",
+  },
+  {
+    key: "homeSlidePanelSettings",
+    value: {
+      enabled: true,
+      minimizeEnabled: true,
+      minimizedLabel: "Show details",
+      restoreAfterSeconds: 60,
+    },
+    description: "Homepage hero slide detail panel behavior",
+    category: "display",
+  },
+  {
     key: "popupSettings",
     value: {
       title: "Limited Time Offer",

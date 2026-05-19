@@ -78,6 +78,16 @@ const DEFAULT_HOMEPAGE_TRUST_SETTINGS = {
   homepage_trust_3_text: "High Protein",
   homepage_trust_4_text: "Fast Moving Picks",
 };
+const DEFAULT_OFFER_COUNTDOWN_SETTINGS = {
+  enabled: false,
+  title: "Limited time offer",
+  subtitle: "Fresh deals are live now.",
+  couponCode: "",
+  discountText: "",
+  endsAt: "",
+  ctaLabel: "Shop offers",
+  ctaHref: "/products",
+};
 const FLAVOUR_BUTTON_FIELDS = [
   {
     label: "Creamy",
@@ -436,6 +446,13 @@ const SettingsPage = () => {
     offerDescription: "Use this code to get a discount on your order!",
     offerDiscountText: "Get Discount",
   });
+  const [offerCountdownSettings, setOfferCountdownSettings] = useState(
+    DEFAULT_OFFER_COUNTDOWN_SETTINGS,
+  );
+  const [offerCountdownDuration, setOfferCountdownDurationState] = useState({
+    hours: "",
+    minutes: "",
+  });
 
   const [storeInfo, setStoreInfo] = useState({
     name: "BuyOneGram",
@@ -472,6 +489,28 @@ const SettingsPage = () => {
       severity,
     });
   }, []);
+
+  const setOfferCountdownDuration = useCallback((hoursValue, minutesValue) => {
+    const hours = Math.max(Number(hoursValue || 0), 0);
+    const minutes = Math.max(Number(minutesValue || 0), 0);
+    const durationMs = (hours * 60 + minutes) * 60 * 1000;
+    if (durationMs <= 0) return;
+    setOfferCountdownSettings((prev) => ({
+      ...prev,
+      endsAt: toDateTimeLocal(new Date(Date.now() + durationMs)),
+    }));
+  }, []);
+
+  const updateOfferCountdownDuration = useCallback(
+    (field, value) => {
+      setOfferCountdownDurationState((prev) => {
+        const next = { ...prev, [field]: value };
+        setOfferCountdownDuration(next.hours, next.minutes);
+        return next;
+      });
+    },
+    [setOfferCountdownDuration],
+  );
 
   const orderSeriesPreview = useMemo(
     () => buildOrderSeriesPreview(orderSettings),
@@ -863,6 +902,34 @@ const SettingsPage = () => {
                 offerDiscountText: String(setting.value || "").trim(),
               }));
               break;
+            case "offerCountdownSettings": {
+              const raw =
+                setting?.value && typeof setting.value === "object"
+                  ? setting.value
+                  : {};
+              setOfferCountdownSettings({
+                ...DEFAULT_OFFER_COUNTDOWN_SETTINGS,
+                enabled: !!raw.enabled,
+                title: String(
+                  raw.title || DEFAULT_OFFER_COUNTDOWN_SETTINGS.title,
+                ).trim(),
+                subtitle: String(
+                  raw.subtitle || DEFAULT_OFFER_COUNTDOWN_SETTINGS.subtitle,
+                ).trim(),
+                couponCode: String(raw.couponCode || "")
+                  .trim()
+                  .toUpperCase(),
+                discountText: String(raw.discountText || "").trim(),
+                endsAt: toDateTimeLocal(raw.endsAt),
+                ctaLabel: String(
+                  raw.ctaLabel || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaLabel,
+                ).trim(),
+                ctaHref: String(
+                  raw.ctaHref || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
+                ).trim(),
+              });
+              break;
+            }
           }
         });
       }
@@ -973,6 +1040,13 @@ const SettingsPage = () => {
         return;
       }
     }
+    if (offerCountdownSettings.enabled) {
+      const end = new Date(offerCountdownSettings.endsAt);
+      if (!offerCountdownSettings.endsAt || Number.isNaN(end.getTime())) {
+        setToast("Offer countdown end time is required.", "error");
+        return;
+      }
+    }
 
     setSaving(true);
     try {
@@ -1037,6 +1111,30 @@ const SettingsPage = () => {
           "offerDiscountText",
           String(offerPopupSettings.offerDiscountText || "").trim(),
         ),
+        saveSetting("offerCountdownSettings", {
+          enabled: !!offerCountdownSettings.enabled,
+          title: String(
+            offerCountdownSettings.title ||
+              DEFAULT_OFFER_COUNTDOWN_SETTINGS.title,
+          ).trim(),
+          subtitle: String(
+            offerCountdownSettings.subtitle ||
+              DEFAULT_OFFER_COUNTDOWN_SETTINGS.subtitle,
+          ).trim(),
+          couponCode: String(offerCountdownSettings.couponCode || "")
+            .trim()
+            .toUpperCase(),
+          discountText: String(offerCountdownSettings.discountText || "").trim(),
+          endsAt: toIsoIfPresent(offerCountdownSettings.endsAt),
+          ctaLabel: String(
+            offerCountdownSettings.ctaLabel ||
+              DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaLabel,
+          ).trim(),
+          ctaHref: String(
+            offerCountdownSettings.ctaHref ||
+              DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
+          ).trim(),
+        }),
       ]);
       const dynamicSaveResults = await Promise.all([
         ...flavourButtonSaveCalls,
@@ -1060,6 +1158,7 @@ const SettingsPage = () => {
         offerTitleSaved,
         offerDescriptionSaved,
         offerDiscountTextSaved,
+        offerCountdownSaved,
       ] = fixedSaveResults;
 
       const flavourButtonSavedResults = dynamicSaveResults.slice(
@@ -1086,6 +1185,7 @@ const SettingsPage = () => {
         offerTitleSaved,
         offerDescriptionSaved,
         offerDiscountTextSaved,
+        offerCountdownSaved,
         ...flavourButtonSavedResults,
         ...homepageTrustSavedResults,
       ].every(Boolean);
@@ -1641,7 +1741,7 @@ const SettingsPage = () => {
             }
             InputProps={{
               startAdornment: (
-                <InputAdornment position="start">â‚¹</InputAdornment>
+                <InputAdornment position="start">₹</InputAdornment>
               ),
             }}
             size="small"
@@ -1874,6 +1974,170 @@ const SettingsPage = () => {
         <p className="text-sm text-gray-500 mt-3">
           This controls the coupon welcome popup shown on storefront load. It is
           separate from Popup Management and separate from manual notifications.
+        </p>
+      </div>
+
+      {/* Offer Countdown */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <MdLocalOffer className="text-2xl text-orange-500" />
+          <h2 className="text-lg font-semibold text-gray-800">
+            Homepage Offer Countdown
+          </h2>
+        </div>
+        <Divider className="mb-4" />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={offerCountdownSettings.enabled}
+                onChange={(e) =>
+                  setOfferCountdownSettings((prev) => ({
+                    ...prev,
+                    enabled: e.target.checked,
+                  }))
+                }
+                color="warning"
+              />
+            }
+            label="Show countdown on homepage"
+          />
+
+          <TextField
+            label="Offer Ends At"
+            type="datetime-local"
+            value={offerCountdownSettings.endsAt}
+            onChange={(e) =>
+              setOfferCountdownSettings((prev) => ({
+                ...prev,
+                endsAt: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+            helperText="The storefront hides this banner after the timer ends"
+          />
+
+          <div className="md:col-span-2 rounded-xl border border-orange-100 bg-orange-50/50 p-3">
+            <p className="mb-3 text-sm font-semibold text-gray-700">
+              Or set countdown duration from now
+            </p>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <TextField
+                label="Hours"
+                type="number"
+                value={offerCountdownDuration.hours}
+                onChange={(e) =>
+                  updateOfferCountdownDuration("hours", e.target.value)
+                }
+                size="small"
+                inputProps={{ min: 0 }}
+                fullWidth
+              />
+              <TextField
+                label="Minutes"
+                type="number"
+                value={offerCountdownDuration.minutes}
+                onChange={(e) =>
+                  updateOfferCountdownDuration("minutes", e.target.value)
+                }
+                size="small"
+                inputProps={{ min: 0 }}
+                fullWidth
+              />
+            </div>
+          </div>
+
+          <TextField
+            label="Countdown Title"
+            value={offerCountdownSettings.title}
+            onChange={(e) =>
+              setOfferCountdownSettings((prev) => ({
+                ...prev,
+                title: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+          />
+
+          <TextField
+            label="Discount Text"
+            value={offerCountdownSettings.discountText}
+            onChange={(e) =>
+              setOfferCountdownSettings((prev) => ({
+                ...prev,
+                discountText: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+            placeholder="Flat 10% off"
+          />
+
+          <TextField
+            label="Subtitle"
+            value={offerCountdownSettings.subtitle}
+            onChange={(e) =>
+              setOfferCountdownSettings((prev) => ({
+                ...prev,
+                subtitle: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+            multiline
+            rows={2}
+          />
+
+          <TextField
+            label="Coupon Code"
+            value={offerCountdownSettings.couponCode}
+            onChange={(e) =>
+              setOfferCountdownSettings((prev) => ({
+                ...prev,
+                couponCode: String(e.target.value || "")
+                  .replace(/\s+/g, "")
+                  .toUpperCase(),
+              }))
+            }
+            size="small"
+            fullWidth
+          />
+
+          <TextField
+            label="CTA Label"
+            value={offerCountdownSettings.ctaLabel}
+            onChange={(e) =>
+              setOfferCountdownSettings((prev) => ({
+                ...prev,
+                ctaLabel: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+          />
+
+          <TextField
+            label="CTA Link"
+            value={offerCountdownSettings.ctaHref}
+            onChange={(e) =>
+              setOfferCountdownSettings((prev) => ({
+                ...prev,
+                ctaHref: e.target.value,
+              }))
+            }
+            size="small"
+            fullWidth
+            helperText="Example: /products or /combo"
+          />
+        </div>
+
+        <p className="text-sm text-gray-500 mt-3">
+          Rates still come from the product, combo, and coupon rules. This timer
+          controls the visible urgency banner and coupon messaging.
         </p>
       </div>
 

@@ -20,6 +20,7 @@ import {
   MdOutlineShoppingBag,
 } from "react-icons/md";
 import Search from "./Search";
+import ThemePickerButton from "./ThemePickerButton";
 
 const resolveUserPhotoUrl = (photo, apiUrl) => {
   const value = String(photo || "").trim();
@@ -1014,6 +1015,7 @@ const Header = () => {
               </div>
               {/* ACTIONS (Icons + Login Button) */}
               <div className="site-header-actions flex items-center justify-end shrink-0 gap-4">
+                <ThemePickerButton />
                 <div className="relative" ref={coinDesktopRef}>
                   <button
                     id="coin-balance-anchor"
@@ -1422,6 +1424,7 @@ const Header = () => {
                       : coinCount}
                 </span>
               </button>
+              <ThemePickerButton variant="mobile" />
             </nav>
 
             {/* Divider */}
@@ -1463,7 +1466,7 @@ const Header = () => {
                   </Link>
                 </div>
               ) : (
-                <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-gray-50/80">
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50/80">
                   {userPhoto ? (
                     <img
                       src={userPhoto}

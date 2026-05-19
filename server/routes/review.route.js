@@ -5,6 +5,7 @@ import optionalAuth from "../middlewares/optionalAuth.js";
 import {
   deleteAdminReview,
   getComboReviews,
+  getFeaturedHomeReviews,
   getMyReviews,
   getProductReviews,
   submitReview,
@@ -18,6 +19,7 @@ router.delete("/:id", auth, admin, deleteAdminReview);
 router.get("/my", auth, getMyReviews);
 
 // Public product reviews
+router.get("/featured/home", getFeaturedHomeReviews);
 router.get("/combo/:comboId", getComboReviews);
 router.get("/:productId", getProductReviews);
 

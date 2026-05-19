@@ -2,7 +2,7 @@
 
 import { useSettings } from "@/context/SettingsContext";
 import { API_BASE_URL, postData } from "@/utils/api";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -14,7 +14,7 @@ import {
   FiShield,
   FiTruck,
 } from "react-icons/fi";
-import { FaFacebookF, FaInstagram, FaLinkedinIn } from "react-icons/fa";
+import { FaFacebook, FaInstagram, FaLinkedin } from "react-icons/fa";
 import { FaXTwitter } from "react-icons/fa6";
 import { IoLocationSharp } from "react-icons/io5";
 import { BiSupport } from "react-icons/bi";
@@ -50,7 +50,6 @@ const normalizePhoneHref = (value) => {
 
 const Footer = () => {
   const { storeInfo: liveStoreInfo } = useSettings();
-  const prefersReducedMotion = useReducedMotion();
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null);
   const [message, setMessage] = useState("");
@@ -125,16 +124,6 @@ const Footer = () => {
   const supportLink = normalizeStoreLink(storeInfo.email);
   const supportPhoneHref = normalizePhoneHref(storeInfo.phone);
 
-  const buildReveal = (delay = 0) =>
-    prefersReducedMotion
-      ? {}
-      : {
-          initial: { opacity: 0, y: 16 },
-          whileInView: { opacity: 1, y: 0 },
-          viewport: { once: true },
-          transition: { duration: 0.22, delay },
-        };
-
   const features = [
     {
       icon: <FiTruck />,
@@ -167,7 +156,7 @@ const Footer = () => {
     <footer
       className="site-footer relative overflow-hidden"
       style={{
-        background: "linear-gradient(180deg, #0b0c10 0%, #111827 100%)",
+        background: "linear-gradient(180deg, #0a0a0a 0%, #111827 100%)",
       }}
     >
       {/* Decorative mesh gradient overlay */}
@@ -178,11 +167,11 @@ const Footer = () => {
         />
         <div
           className="absolute bottom-0 right-1/4 w-80 h-80 rounded-full blur-[120px] opacity-15"
-          style={{ background: "var(--primary)" }}
+          style={{ background: "#7c3aed" }}
         />
         <div
           className="absolute top-1/2 right-0 w-64 h-64 rounded-full blur-[100px] opacity-10"
-          style={{ background: "#0f172a" }}
+          style={{ background: "#ff6b9d" }}
         />
       </div>
 
@@ -192,10 +181,13 @@ const Footer = () => {
           {features.map((item, i) => (
             <motion.div
               key={i}
-              {...buildReveal(i * 0.03)}
-              whileHover={prefersReducedMotion ? undefined : { y: -2 }}
-              whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
-              className="group mx-auto flex h-full w-full max-w-[14rem] cursor-default flex-col items-center rounded-2xl p-4 sm:p-6"
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.24, delay: i * 0.04 }}
+              whileHover={{ y: -2, transition: { duration: 0.16 } }}
+              whileTap={{ scale: 0.98, transition: { duration: 0.12 } }}
+              className="group mx-auto flex h-full w-full max-w-[14rem] cursor-default flex-col items-center rounded-2xl p-4 active:bg-white/[0.08] sm:p-6"
               style={{
                 background: "rgba(255, 255, 255, 0.04)",
                 border: "1px solid rgba(255, 255, 255, 0.06)",
@@ -205,7 +197,8 @@ const Footer = () => {
               <div
                 className="flex h-12 w-12 items-center justify-center rounded-2xl text-[22px] text-[#121212] transition-all duration-200 group-hover:shadow-lg sm:h-14 sm:w-14 sm:text-[26px]"
                 style={{
-                  background: "var(--primary)",
+                  background:
+                    "linear-gradient(135deg, var(--primary), var(--flavor-hover))",
                 }}
               >
                 {item.icon}
@@ -230,11 +223,14 @@ const Footer = () => {
         />
 
         {/* ============ MAIN FOOTER CONTENT ============ */}
-        <div className="grid grid-cols-1 justify-items-center md:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-10 py-10 sm:py-14">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-10 py-10 sm:py-14">
           {/* 1. CONTACT */}
           {/* 1. CONTACT */}
           <motion.div
-            {...buildReveal(0)}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.28 }}
             className="flex flex-col gap-4 sm:gap-5 lg:border-r lg:pr-8 border-white/5"
           >
             <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em]">
@@ -322,7 +318,10 @@ const Footer = () => {
           {/* 2. PRODUCTS */}
           {/* 2. PRODUCTS */}
           <motion.div
-            {...buildReveal(0.06)}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.28, delay: 0.08 }}
           >
             <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-5 sm:mb-7">
               Products
@@ -356,7 +355,10 @@ const Footer = () => {
           {/* 3. COMPANY */}
           {/* 3. COMPANY */}
           <motion.div
-            {...buildReveal(0.1)}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.28, delay: 0.12 }}
           >
             <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-5 sm:mb-7">
               Our Company
@@ -395,7 +397,10 @@ const Footer = () => {
           {/* 4. NEWSLETTER */}
           {/* 4. NEWSLETTER */}
           <motion.div
-            {...buildReveal(0.12)}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.28, delay: 0.16 }}
           >
             <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white uppercase tracking-[0.15em] mb-3 sm:mb-4">
               Stay in the loop
@@ -451,9 +456,8 @@ const Footer = () => {
 
             {status === "success" && (
               <motion.p
-                {...(prefersReducedMotion
-                  ? {}
-                  : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 } })}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
                 className="text-primary text-xs mt-3 font-semibold"
               >
                 {message || "Thank you for subscribing!"}
@@ -461,9 +465,8 @@ const Footer = () => {
             )}
             {status === "error" && (
               <motion.p
-                {...(prefersReducedMotion
-                  ? {}
-                  : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 } })}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
                 className="text-[#ff4757] text-xs mt-3 font-semibold"
               >
                 {message || "Failed to subscribe. Please try again."}
@@ -487,35 +490,53 @@ const Footer = () => {
           <div className="flex gap-2.5 sm:gap-3">
             {[
               {
-                Icon: FaFacebookF,
+                Icon: FaFacebook,
                 link: "https://www.facebook.com/buyonegram/",
+                hoverColor: "#1877F2",
               },
               {
                 Icon: AiOutlineYoutube,
                 link: "https://www.youtube.com/@buyonegram",
+                hoverColor: "#FF0000",
               },
               {
                 Icon: FaInstagram,
                 link: "https://www.instagram.com/buyonegram/",
+                hoverColor: "#E4405F",
               },
               {
-                Icon: FaLinkedinIn,
+                Icon: FaLinkedin,
                 link: "https://www.linkedin.com/company/buy-one-gram-private-limited/",
+                hoverColor: "#0A66C2",
               },
               {
                 Icon: FaXTwitter,
                 link: "https://x.com/buyonegram/",
+                hoverColor: "#ffffff",
               },
-            ].map(({ Icon, link }, i) => (
+            ].map(({ Icon, link, hoverColor }, i) => (
               <motion.a
                 key={i}
                 href={link}
                 target="_blank"
                 rel="noopener noreferrer"
-                {...buildReveal(i * 0.03)}
-                whileHover={prefersReducedMotion ? undefined : { y: -2 }}
-                whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
-                className="w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] flex items-center justify-center rounded-full text-gray-500 transition-colors duration-300 hover:text-white"
+                initial={{ opacity: 0, scale: 0 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.2, delay: i * 0.04 }}
+                whileHover={{
+                  y: -2,
+                  color: hoverColor,
+                  borderColor: `${hoverColor}40`,
+                  transition: { duration: 0.16 },
+                }}
+                whileTap={{
+                  scale: 0.95,
+                  color: hoverColor,
+                  borderColor: `${hoverColor}40`,
+                  boxShadow: `0 4px 15px ${hoverColor}20`,
+                }}
+                className="w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] flex items-center justify-center rounded-full text-gray-500 transition-colors duration-300"
                 style={{
                   background: "rgba(255, 255, 255, 0.05)",
                   border: "1px solid rgba(255, 255, 255, 0.08)",

@@ -2,9 +2,8 @@
 
 import { fetchDataFromApi } from "@/utils/api";
 import { trackEvent } from "@/utils/analyticsTracker";
-import { buildProductHref } from "@/utils/productRouting";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IoSearchOutline } from "react-icons/io5";
 
 const Search = ({
@@ -12,6 +11,7 @@ const Search = ({
   width = "100%",
   onSearch = null,
 }) => {
+  const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -119,7 +119,7 @@ const Search = ({
     setSearchTerm("");
     setSuggestions([]);
     setShowDropdown(false);
-    router.push(buildProductHref(product));
+    router.push(`/product/${product._id || product.id}`);
   };
 
   // Handle click outside to close dropdown
@@ -143,6 +143,46 @@ const Search = ({
     };
   }, []);
 
+  // Dynamic Placeholder Logic
+  const placeholders = useMemo(() => {
+    const seen = new Set();
+    const candidates = [
+      placeholder,
+      "Search for 'High Protein'...",
+      "Try 'Dark Chocolate'...",
+      "Find your favorite flavor...",
+      "Discover 'Sugar Free'...",
+      "Search for anything...",
+    ];
+
+    return candidates.filter((value) => {
+      const normalized = String(value || "").trim();
+      if (!normalized) return false;
+      const key = normalized.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [placeholder]);
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [fadeKey, setFadeKey] = useState(0);
+
+  useEffect(() => {
+    if (placeholders.length <= 1) return undefined;
+
+    const interval = setInterval(() => {
+      setPlaceholderIndex((prev) => (prev + 1) % placeholders.length);
+      setFadeKey((prev) => prev + 1);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [placeholders.length]);
+
+  useEffect(() => {
+    if (placeholderIndex >= placeholders.length) {
+      setPlaceholderIndex(0);
+    }
+  }, [placeholderIndex, placeholders.length]);
+
   return (
     <div
       ref={searchRef}
@@ -153,6 +193,8 @@ const Search = ({
         action="/products"
         method="get"
         onSubmit={handleSubmit}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         className="relative w-full h-full flex items-center group/search"
       >
         {/* Input Field */}
@@ -175,11 +217,14 @@ const Search = ({
             }}
           />
 
-          {/* Static placeholder to avoid continuous animation work */}
+          {/* Dynamic Placeholder (Behind input) */}
           {!searchTerm && (
-            <div className="absolute top-0 left-0 w-full h-full flex items-center pl-6 pointer-events-none">
+            <div
+              key={fadeKey}
+              className="absolute top-0 left-0 w-full h-full flex items-center pl-6 pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-500"
+            >
               <span className="text-gray-400 text-base font-medium truncate">
-                {placeholder}
+                {placeholders[placeholderIndex] || placeholder}
               </span>
             </div>
           )}
@@ -228,8 +273,6 @@ const Search = ({
                         "/product_placeholder.png"
                       }
                       alt={product.name}
-                      loading="lazy"
-                      decoding="async"
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                     />
                   </div>

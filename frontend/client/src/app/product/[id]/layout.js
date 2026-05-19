@@ -1,7 +1,6 @@
 const DEFAULT_SITE_URL = "https://healthyonegram.com";
 const DEMO_PRODUCT_ID = "demo-live";
 const SERVER_FETCH_TIMEOUT_MS = 3000;
-const OBJECT_ID_PATTERN = /^[0-9a-fA-F]{24}$/;
 
 const sanitizeBaseUrl = (value) =>
   String(value || "")
@@ -61,28 +60,6 @@ const safeDecode = (value) => {
   } catch {
     return raw;
   }
-};
-
-const parseCompositeProductRouteId = (value) => {
-  const rawId = String(value || "").trim();
-  if (!rawId) return { rawId: "", lookupId: "" };
-
-  const parts = rawId.split("-");
-  if (
-    parts.length === 2 &&
-    OBJECT_ID_PATTERN.test(parts[0]) &&
-    OBJECT_ID_PATTERN.test(parts[1])
-  ) {
-    return {
-      rawId,
-      lookupId: parts[0],
-    };
-  }
-
-  return {
-    rawId,
-    lookupId: rawId,
-  };
 };
 
 const toCanonicalPath = (value = "") => {
@@ -200,8 +177,7 @@ const fetchProductForMetadata = async (id) => {
 
 export async function generateMetadata({ params }) {
   const resolvedParams = await params;
-  const rawRouteId = safeDecode(resolvedParams?.id).trim();
-  const routeId = parseCompositeProductRouteId(rawRouteId).lookupId;
+  const routeId = safeDecode(resolvedParams?.id).trim();
   const siteUrl = getSiteUrl();
 
   if (!routeId) {
@@ -211,7 +187,7 @@ export async function generateMetadata({ params }) {
     };
   }
 
-  if (rawRouteId.toLowerCase() === DEMO_PRODUCT_ID) {
+  if (routeId.toLowerCase() === DEMO_PRODUCT_ID) {
     const title = "Clean Whey Protein (Isolate), 2.2 lb Chocolate | Healthy One Gram";
     const description =
       "Preview the upgraded storefront product detail experience with demo data, richer visuals, and conversion-focused layout blocks.";
