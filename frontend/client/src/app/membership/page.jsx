@@ -218,21 +218,6 @@ const resolvePresetThemeKey = (styleKey) => {
 const ACCENT_BG_IMAGE_CLASS = "bg-[image:var(--glass-accent)]";
 const ACCENT_TEXT_CLASS = `${ACCENT_BG_IMAGE_CLASS} bg-clip-text text-transparent`;
 
-// Floating particle component
-const FloatingParticle = ({ delay, size, left, duration }) => (
-  <div
-    className="absolute rounded-full bg-gradient-to-br from-emerald-400/30 to-teal-400/20 blur-sm"
-    style={{
-      width: size,
-      height: size,
-      left: `${left}%`,
-      bottom: "-50px",
-      animation: `floatUp ${duration}s ease-in-out infinite`,
-      animationDelay: `${delay}s`,
-    }}
-  />
-);
-
 // Benefit Card Component with liquid glass effect
 const BenefitCard = ({ icon, title, description, index }) => (
   <div
@@ -477,26 +462,17 @@ export default function MembershipPage() {
     <main
       className={`min-h-screen bg-gradient-to-br ${theme.bg} relative overflow-hidden`}
     >
-      {/* Animated background elements */}
+      {/* Soft background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
-          className={`absolute top-20 left-10 w-72 h-72 rounded-full blur-3xl animate-pulse ${theme.glowA}`}
+          className={`absolute top-20 left-10 h-72 w-72 rounded-full blur-3xl ${theme.glowA}`}
         />
         <div
-          className={`absolute top-40 right-20 w-96 h-96 rounded-full blur-3xl animate-pulse ${theme.glowB}`}
-          style={{ animationDelay: "1s" }}
+          className={`absolute top-40 right-20 h-96 w-96 rounded-full blur-3xl ${theme.glowB}`}
         />
         <div
-          className={`absolute bottom-20 left-1/3 w-80 h-80 rounded-full blur-3xl animate-pulse ${theme.glowC}`}
-          style={{ animationDelay: "2s" }}
+          className={`absolute bottom-20 left-1/3 h-80 w-80 rounded-full blur-3xl ${theme.glowC}`}
         />
-
-        {/* Floating particles */}
-        <FloatingParticle delay={0} size={20} left={10} duration={8} />
-        <FloatingParticle delay={2} size={15} left={25} duration={10} />
-        <FloatingParticle delay={1} size={25} left={50} duration={9} />
-        <FloatingParticle delay={3} size={18} left={75} duration={11} />
-        <FloatingParticle delay={4} size={22} left={90} duration={7} />
       </div>
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
@@ -604,7 +580,7 @@ export default function MembershipPage() {
                       {/* Glass card */}
                       <div className="relative rounded-3xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-12 py-8 shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]">
                         {/* Sparkle decoration */}
-                        <IoSparkles className="absolute -top-3 -right-3 text-3xl text-amber-400 animate-pulse" />
+                        <IoSparkles className="absolute -top-3 -right-3 text-3xl text-amber-400" />
 
                         <div className="mb-4">
                           <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
@@ -812,27 +788,6 @@ export default function MembershipPage() {
           </section>
         </MemberGate>
       </div>
-
-      {/* Custom keyframes for floating animation */}
-      <style jsx>{`
-        @keyframes floatUp {
-          0%,
-          100% {
-            transform: translateY(0) rotate(0deg);
-            opacity: 0;
-          }
-          10% {
-            opacity: 0.7;
-          }
-          90% {
-            opacity: 0.7;
-          }
-          100% {
-            transform: translateY(-100vh) rotate(360deg);
-            opacity: 0;
-          }
-        }
-      `}</style>
     </main>
   );
 }

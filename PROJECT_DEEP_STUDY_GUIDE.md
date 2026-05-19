@@ -9,7 +9,7 @@ This guide explains how `bogEcom` works end-to-end, from request flow to scaling
 - `server/`: backend API and domain/business logic
 - `.github/workflows/`: CI/CD automation
 - `scripts/`: repository-level helper scripts
-- `dispatch.yaml`: App Engine dispatch routing across services
+- `firebase.json`: Firebase Hosting routing across services
 - `package.json`: root utility scripts for env validation and orchestration
 
 ## Frontend
@@ -262,7 +262,7 @@ Implemented in order validation + controller:
 ## Deploy workflows
 - Path-scoped triggers reduce unnecessary deploys
 - Secrets are injected into temporary deployment yaml
-- Deploy target: Google App Engine services (`client`, `admin`, `default`)
+- Deploy target: Cloud Run services (`healthyonegram-client`, `healthyonegram-admin`, `healthyonegram-api`) behind Firebase Hosting
 
 ## Why updates appear without manual redeploy
 - Pushes to matching paths in `main/master` auto-trigger deployment workflows.
@@ -273,11 +273,11 @@ Implemented in order validation + controller:
 ## 14. Deployment Model
 
 Current production style:
-- Service-per-app on App Engine:
+- Service-per-app on Cloud Run:
   - client frontend
   - admin frontend
   - backend API
-- Shared custom domain routes through dispatch/service mapping
+- Shared custom domain routes through Firebase Hosting rewrites on `healthyonegram.com`
 
 Container option:
 - Backend container can be built from `server/Dockerfile` for portability.
@@ -285,7 +285,7 @@ Container option:
 ## 15. Scaling to 10k+ Users (Practical Plan)
 
 Phase 1 (immediate):
-- Keep App Engine autoscaling enabled
+- Keep Cloud Run min instances at 0 and cap max instances conservatively
 - Move heavy read patterns to cache (Redis)
 - Convert expensive list endpoints to cursor pagination where needed
 - Introduce centralized structured logging

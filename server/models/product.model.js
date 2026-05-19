@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { getLowStockSummaryUpdate } from "../utils/lowStockSummary.js";
 
 /**
  * Product Model
@@ -252,6 +253,18 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: [0, "Reserved stock cannot be negative"],
+    },
+    availableStock: {
+      type: Number,
+      default: null,
+    },
+    isLowStock: {
+      type: Boolean,
+      default: false,
+    },
+    lowStockUpdatedAt: {
+      type: Date,
+      default: null,
     },
     lowStockThreshold: {
       type: Number,
@@ -577,6 +590,14 @@ productSchema.pre("save", async function () {
       this.reserved_quantity = totalVariantReserved;
     }
   }
+
+  const lowStockSummaryUpdate = getLowStockSummaryUpdate(this);
+  if (lowStockSummaryUpdate?.summary) {
+    this.availableStock = lowStockSummaryUpdate.summary.availableStock;
+    this.isLowStock = lowStockSummaryUpdate.summary.isLowStock;
+    this.lowStockUpdatedAt =
+      lowStockSummaryUpdate.update?.$set?.lowStockUpdatedAt || new Date();
+  }
 });
 
 // Text search index
@@ -597,6 +618,7 @@ productSchema.index({ createdAt: -1 });
 productSchema.index({ soldCount: -1 });
 productSchema.index({ stock_quantity: 1, reserved_quantity: 1 });
 productSchema.index({ track_inventory: 1 });
+productSchema.index({ isLowStock: 1 });
 
 const ProductModel = mongoose.model("Product", productSchema);
 export default ProductModel;

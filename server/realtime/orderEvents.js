@@ -1,5 +1,5 @@
 import { getIO } from "./socket.js";
-import cache from "../services/cache.service.js";
+import { invalidateAdminReadCaches } from "../utils/adminCacheInvalidation.js";
 
 export const emitOrderStatusUpdate = (order, source = "SYSTEM") => {
   const io = getIO();
@@ -59,11 +59,7 @@ export const emitOrderStatusUpdate = (order, source = "SYSTEM") => {
 
   // Invalidate related admin/read caches so dashboard/analytics reflect recent order changes.
   try {
-    // Invalidate dashboard stats cache (by prefix) and order/report caches
-    cache.delPrefix("statistics:");
-    cache.delPrefix("orders:");
-    cache.delPrefix("reports:");
-    cache.delPrefix("analytics:");
+    invalidateAdminReadCaches();
   } catch (e) {
     // Best-effort; don't crash the emitter on cache errors
     // eslint-disable-next-line no-console

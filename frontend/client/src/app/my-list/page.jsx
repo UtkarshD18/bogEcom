@@ -3,6 +3,7 @@
 import AccountSidebar from "@/components/AccountSiderbar";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
+import { buildProductHref } from "@/utils/productRouting";
 import { Alert, Button, CircularProgress, Snackbar } from "@mui/material";
 import Rating from "@mui/material/Rating";
 import Link from "next/link";
@@ -212,7 +213,10 @@ const MyWishlistPage = () => {
                   const itemLink =
                     itemType === "combo"
                       ? `/combo/${itemId}`
-                      : `/product/${itemId}`;
+                      : buildProductHref(entity, {
+                          variantId: item?.variantId,
+                          fallbackId: itemId,
+                        });
 
                   return (
                     <article

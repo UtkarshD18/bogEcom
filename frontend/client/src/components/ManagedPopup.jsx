@@ -3,6 +3,7 @@
 import { API_BASE_URL } from "@/utils/api";
 import { stashPendingCouponCode } from "@/utils/couponIntent";
 import { getImageUrl } from "@/utils/imageUtils";
+import { buildProductHref } from "@/utils/productRouting";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MdClose, MdLocalOffer, MdNorthEast } from "react-icons/md";
 import styles from "./OfferPopup.module.css";
@@ -27,7 +28,7 @@ const resolvePopupTarget = (popup) => {
   const redirectValue = String(popup?.redirectValue || "").trim();
 
   if (redirectType === "product" && redirectValue) {
-    return `/product/${encodeURIComponent(redirectValue)}`;
+    return buildProductHref(redirectValue);
   }
 
   if (redirectType === "category" && redirectValue) {

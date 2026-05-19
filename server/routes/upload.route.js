@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import sharp from "sharp";
 import {
   deleteFromCloudinary,
   uploadMultipleToCloudinary,
@@ -18,14 +19,38 @@ const debugLog = (...args) => {
   }
 };
 
+const WEBP_DEFAULT_QUALITY = 82;
+const WEBP_PRESERVE_QUALITY = 90;
+
+const shouldConvertToWebp = (mimeType = "") => {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (!normalized.startsWith("image/")) return false;
+  if (normalized === "image/webp") return false;
+  if (normalized === "image/svg+xml") return false;
+  return true;
+};
+
+const convertBufferToWebp = async (
+  buffer,
+  mimeType = "image/jpeg",
+  preserveQuality = false,
+) => {
+  const quality = preserveQuality ? WEBP_PRESERVE_QUALITY : WEBP_DEFAULT_QUALITY;
+  return sharp(buffer, {
+    animated: String(mimeType || "").toLowerCase() === "image/gif",
+  })
+    .webp({ quality })
+    .toBuffer();
+};
+
 /**
- * Upload Routes with Cloudinary
+ * Upload Routes with managed media storage
  *
- * Handles file uploads to Cloudinary CDN
- * Benefits: Auto-optimization, global CDN, transformations
+ * Handles file uploads to Firebase Storage / GCS or Cloudinary fallback
+ * Benefits: Auto-optimization, CDN-friendly delivery, transformations
  */
 
-// Multer config for memory storage (files go to Cloudinary, not disk)
+// Multer config for memory storage (files go to media storage, not disk)
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
@@ -89,7 +114,7 @@ const handleUploadError = (err, req, res, next) => {
 };
 
 /**
- * Upload single image to Cloudinary
+ * Upload single image to media storage
  * @route POST /api/upload/single
  */
 router.post(
@@ -136,9 +161,21 @@ router.post(
         folder = "buyonegram/users";
       }
 
-      // Upload to Cloudinary
-      const result = await uploadToCloudinary(req.file.buffer, folder, {
-        mimeType: req.file.mimetype,
+      let uploadBuffer = req.file.buffer;
+      let uploadMimeType = req.file.mimetype;
+
+      if (shouldConvertToWebp(uploadMimeType)) {
+        uploadBuffer = await convertBufferToWebp(
+          uploadBuffer,
+          uploadMimeType,
+          preserveQuality,
+        );
+        uploadMimeType = "image/webp";
+      }
+
+      // Upload to configured media storage provider
+      const result = await uploadToCloudinary(uploadBuffer, folder, {
+        mimeType: uploadMimeType,
         preserveQuality,
       });
 
@@ -146,7 +183,7 @@ router.post(
         return res.status(500).json({
           error: true,
           success: false,
-          message: result.error || "Upload to Cloudinary failed",
+          message: result.error || "Media upload failed",
         });
       }
 
@@ -163,7 +200,8 @@ router.post(
           size: result.size,
           filename: req.file.originalname,
           originalname: req.file.originalname,
-          mimetype: req.file.mimetype,
+          mimetype: uploadMimeType,
+          originalMimetype: req.file.mimetype,
         },
       });
     } catch (error) {
@@ -178,7 +216,7 @@ router.post(
 );
 
 /**
- * Upload multiple images to Cloudinary
+ * Upload multiple images to media storage
  * @route POST /api/upload/multiple
  */
 router.post(
@@ -203,8 +241,28 @@ router.post(
         folder = `buyonegram/${req.body.folder}`;
       }
 
-      // Upload all files to Cloudinary
-      const results = await uploadMultipleToCloudinary(req.files, folder);
+      const preserveQuality =
+        req.body.preserveQuality === true ||
+        req.body.preserveQuality === "true";
+
+      const processedFiles = await Promise.all(
+        req.files.map(async (file) => {
+          let uploadBuffer = file.buffer;
+          let uploadMimeType = file.mimetype;
+          if (shouldConvertToWebp(uploadMimeType)) {
+            uploadBuffer = await convertBufferToWebp(
+              uploadBuffer,
+              uploadMimeType,
+              preserveQuality,
+            );
+            uploadMimeType = "image/webp";
+          }
+          return { ...file, buffer: uploadBuffer, mimetype: uploadMimeType };
+        }),
+      );
+
+      // Upload all files to configured media storage provider
+      const results = await uploadMultipleToCloudinary(processedFiles, folder);
 
       const successfulUploads = results.filter((r) => r.success);
       const failedUploads = results.filter((r) => !r.success);
@@ -226,6 +284,7 @@ router.post(
         size: result.size,
         filename: req.files[index]?.originalname,
         originalname: req.files[index]?.originalname,
+        mimetype: processedFiles[index]?.mimetype,
       }));
 
       res.status(200).json({
@@ -246,7 +305,7 @@ router.post(
 );
 
 /**
- * Upload video to Cloudinary
+ * Upload video to media storage
  * @route POST /api/upload/video
  */
 router.post(
@@ -288,21 +347,21 @@ router.post(
         });
       }
 
-      debugLog("Uploading to Cloudinary...");
-      // Upload to Cloudinary as video
+      debugLog("Uploading video to configured media storage...");
+      // Upload to configured media storage provider as video
       const result = await uploadVideoToCloudinary(
         req.file.buffer,
         "buyonegram/videos",
         { mimeType: req.file.mimetype },
       );
 
-      debugLog("Cloudinary result:", result);
+      debugLog("Media upload result:", result);
 
       if (!result.success) {
         return res.status(500).json({
           error: true,
           success: false,
-          message: result.error || "Video upload to Cloudinary failed",
+          message: result.error || "Video upload failed",
         });
       }
 
@@ -333,7 +392,7 @@ router.post(
 );
 
 /**
- * Delete image from Cloudinary
+ * Delete image from media storage
  * @route DELETE /api/upload
  */
 router.delete("/", auth, admin, async (req, res) => {
@@ -351,13 +410,20 @@ router.delete("/", auth, admin, async (req, res) => {
     // Extract publicId from URL if not provided
     let idToDelete = publicId;
     if (!idToDelete && url) {
-      // Extract public_id from Cloudinary URL
+      // Extract public ID from URL
       // URL format: https://res.cloudinary.com/cloud_name/image/upload/v123/folder/filename.jpg
       const matches = url.match(/\/upload\/(?:v\d+\/)?(.+)\.[a-z]+$/i);
       if (matches && matches[1]) {
         idToDelete = matches[1];
       } else if (
-        ["gcs", "google-cloud-storage", "google_storage"].includes(
+        [
+          "firebase",
+          "firebase-storage",
+          "firebase_storage",
+          "gcs",
+          "google-cloud-storage",
+          "google_storage",
+        ].includes(
           String(process.env.MEDIA_STORAGE_PROVIDER || "")
             .trim()
             .toLowerCase(),

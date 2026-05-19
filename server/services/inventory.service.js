@@ -10,7 +10,9 @@ import {
   markOrderReservationsCompleted,
   markOrderReservationsExpired,
 } from "./stockReservation.service.js";
+import { invalidateAdminReadCaches } from "../utils/adminCacheInvalidation.js";
 import { AppError, logger } from "../utils/errorHandler.js";
+import { getLowStockSummaryUpdate } from "../utils/lowStockSummary.js";
 
 // Atomic inventory updates rely on $inc with $expr guards to avoid race conditions.
 const TRACK_INVENTORY_FILTER = {
@@ -222,6 +224,17 @@ const flushQueuedStockUpdates = (pendingUpdates = []) => {
       }),
     0,
   );
+};
+
+const applyLowStockSummaryUpdate = async (productAfter, session = null) => {
+  if (!productAfter?._id) return;
+  const result = getLowStockSummaryUpdate(productAfter);
+  if (!result) return;
+  const updateOptions = session ? { session } : undefined;
+  await ProductModel.updateOne({ _id: productAfter._id }, result.update, updateOptions);
+  productAfter.availableStock = result.summary.availableStock;
+  productAfter.isLowStock = result.summary.isLowStock;
+  productAfter.lowStockUpdatedAt = result.update.$set.lowStockUpdatedAt;
 };
 
 export const triggerBackInStockNotificationsIfRecovered = async ({
@@ -825,6 +838,8 @@ export const reserveInventory = async (order, source = "ORDER_CREATE") => {
         )
         .lean();
 
+      await applyLowStockSummaryUpdate(productAfter);
+
       const auditBefore = variantObjectId
         ? getVariantFromDoc(productBefore, variantObjectId) || {}
         : productBefore;
@@ -1015,6 +1030,8 @@ export const confirmInventory = async (order, source = "PAYMENT_SUCCESS") => {
         )
         .lean();
 
+      await applyLowStockSummaryUpdate(productAfter);
+
       const auditBefore = variantObjectId
         ? getVariantFromDoc(productBefore, variantObjectId) || {}
         : productBefore;
@@ -1109,13 +1126,38 @@ export const releaseInventory = async (order, source = "PAYMENT_FAILURE") => {
         )
         .lean();
       if (!productBefore) {
-        throw new AppError("PRODUCT_NOT_FOUND", { productId: item.productId });
+        logger.warn(
+          "inventoryReservation",
+          "Skipping release for missing product reference",
+          {
+            orderId: order?._id || null,
+            productId: item.productId,
+            variantId: item.variantId || null,
+            source,
+          },
+        );
+        continue;
       }
       if (!isInventoryTracked(productBefore)) {
         continue;
       }
 
       if (variantObjectId) {
+        const variantBefore = getVariantFromDoc(productBefore, variantObjectId);
+        if (!variantBefore) {
+          logger.warn(
+            "inventoryReservation",
+            "Skipping release for missing product variant reference",
+            {
+              orderId: order?._id || null,
+              productId: item.productId,
+              variantId: item.variantId || null,
+              source,
+            },
+          );
+          continue;
+        }
+
         const filter = {
           _id: item.productId,
           ...TRACK_INVENTORY_FILTER,
@@ -1166,6 +1208,8 @@ export const releaseInventory = async (order, source = "PAYMENT_FAILURE") => {
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
         )
         .lean();
+
+      await applyLowStockSummaryUpdate(productAfter);
 
       const auditBefore = variantObjectId
         ? getVariantFromDoc(productBefore, variantObjectId) || {}
@@ -1218,6 +1262,7 @@ export const releaseInventory = async (order, source = "PAYMENT_FAILURE") => {
     });
     await markOrderReservationsExpired(order, { source });
     flushQueuedStockUpdates(pendingStockUpdates);
+    invalidateAdminReadCaches();
     return { status: "released" };
   } catch (error) {
     if (applied.length > 0) {
@@ -1290,6 +1335,8 @@ export const restoreInventory = async (order, source = "ORDER_CANCELLED") => {
           "stock stock_quantity reserved_quantity low_stock_threshold variants",
         )
         .lean();
+
+      await applyLowStockSummaryUpdate(productAfter);
 
       const auditBefore = variantObjectId
         ? getVariantFromDoc(productBefore, variantObjectId) || {}
@@ -1531,6 +1578,8 @@ export const applyPurchaseOrderInventory = async (
           productAfterQuery.session(session);
         }
         const productAfter = await productAfterQuery.lean();
+
+        await applyLowStockSummaryUpdate(productAfter, session);
 
         const auditBefore = variantObjectId
           ? getVariantFromDoc(productBefore, variantObjectId) || {}

@@ -191,18 +191,18 @@ export default function AdminProfilePage() {
   }
 
   return (
-    <div className="w-full p-4">
-      <div className="bg-white border border-gray-200 shadow-sm rounded-xl p-5 max-w-4xl">
-        <div className="pb-4 border-b border-gray-100">
-          <h1 className="text-[28px] leading-none font-[700] text-gray-800">
+    <div className="min-h-screen bg-slate-50 px-4 py-8">
+      <div className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="pb-4 border-b border-slate-100">
+          <h1 className="text-[26px] leading-tight font-semibold text-slate-800">
             My Profile
           </h1>
-          <p className="text-gray-500 mt-2">
+          <p className="text-slate-500 mt-2">
             Update your admin account details
           </p>
         </div>
 
-        <form className="pt-5" onSubmit={handleSubmit}>
+        <form className="pt-6" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
             <TextField
               label="Full Name"

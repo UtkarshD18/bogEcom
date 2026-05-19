@@ -8,6 +8,10 @@ import StockNotificationButton from "@/components/StockNotificationButton";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import useSeoAlt from "@/hooks/useSeoAlt";
+import {
+  buildProductHref,
+  getPublicProductIdentifier,
+} from "@/utils/productRouting";
 import { subscribeToStockUpdates } from "@/realtime/stockSocket";
 import { applyStockUpdateToProduct } from "@/utils/stockRealtime";
 import {
@@ -117,11 +121,10 @@ const ProductItem = (props) => {
   const isComboItem = resolvedItemType === "combo";
   const productCardId = isComboItem
     ? id || _id || liveProduct?.comboId || liveProduct?._id || liveProduct?.id
-    : liveProduct?.parentProductId ||
-      id ||
-      _id ||
-      liveProduct?._id ||
-      liveProduct?.id;
+    : getPublicProductIdentifier(
+        liveProduct,
+        id || _id || liveProduct?._id || liveProduct?.id,
+      );
   const productVariantId = liveProduct?.variantId || null;
   const alreadyInCart = isComboItem
     ? isComboInCart(productCardId)
@@ -315,14 +318,12 @@ const ProductItem = (props) => {
     displayReviewCount > 0
       ? Number(reviewStatsSource?.avgRating ?? reviewStatsSource?.rating ?? 0)
       : 0;
-  const productHref =
-    isComboItem
-      ? `/combo/${productCardId}`
-      : productVariantId
-        ? `/product/${productCardId}?variantId=${encodeURIComponent(
-            String(productVariantId),
-          )}`
-        : `/product/${productCardId}`;
+  const productHref = isComboItem
+    ? `/combo/${productCardId}`
+    : buildProductHref(liveProduct || productData, {
+        variantId: productVariantId,
+        fallbackId: productCardId,
+      });
 
   const renderStars = () => {
     const stars = [];

@@ -5,7 +5,7 @@ Production-focused MERN commerce platform with:
 - Admin panel (`frontend/admin`)
 - API and background jobs (`server`)
 
-The repository is structured for real-world operations: auth, checkout, coins, membership, shipping, invoices, support tickets, and App Engine deployment.
+The repository is structured for real-world operations: auth, checkout, coins, membership, shipping, invoices, support tickets, and Google App Engine deployment.
 
 ## System Architecture
 ```mermaid
@@ -16,11 +16,14 @@ flowchart LR
   B --> F[(Firebase Admin / FCM)]
   B --> X[(Xpressbees)]
   B --> P[(Paytm)]
-  B --> U[(Cloudinary/Uploads)]
-  GH[GitHub Actions] --> GAE[Google App Engine]
-  GAE --> C
-  GAE --> A
-  GAE --> B
+  B --> U[(Firebase Storage / Cloudinary Fallback)]
+  GH[GitHub Actions] --> AE1[App Engine default]
+  GH --> AE2[App Engine client]
+  GH --> AE3[App Engine admin]
+  GH --> D[App Engine dispatch]
+  D --> C
+  D --> A
+  D --> B
 ```
 
 ## Monorepo Structure
@@ -32,7 +35,7 @@ bogEcom/
   server/                    # Express API, models, services, jobs
   .github/workflows/         # CI + deployment automation
   scripts/                   # Repo-level automation scripts
-  dispatch.yaml              # App Engine dispatch routing
+  dispatch.yaml               # App Engine service routing
 ```
 
 ## Backend Overview
@@ -174,15 +177,16 @@ flowchart TD
 - Runs lint checks (non-blocking step due existing lint debt)
 
 ### Deployment Pipelines
-- `deploy-client.yml`: deploys `frontend/client` to App Engine `client` service
-- `deploy-admin.yml`: deploys `frontend/admin` to App Engine `admin` service
-- `deploy-backend.yml`: deploys `server` to App Engine `default` service
+- `deploy-client.yml`: deploys `frontend/client` to the App Engine `client` service
+- `deploy-admin.yml`: deploys `frontend/admin` to the App Engine `admin` service
+- `deploy-backend.yml`: deploys `server` to the App Engine `default` service
+- `deploy-dispatch.yml`: deploys `dispatch.yaml` routing for the apex domain
 
 All deploy workflows:
 - authenticate using service account secret
-- build temporary deploy yaml with injected env vars
+- render service-specific App Engine deploy manifests with injected env vars
 - deploy via `gcloud app deploy`
-- cleanup generated yaml artifacts
+- update App Engine dispatch routing for the apex domain
 
 ## Environment Variables
 
@@ -201,8 +205,10 @@ All deploy workflows:
 | `EMAIL`, `EMAIL_PASSWORD` | No | SMTP for OTP/support |
 | `PAYTM_*` | Conditional | Paytm integration |
 | `XPRESSBEES_*` | Conditional | Xpressbees integration |
-| `FIREBASE_*` | Conditional | Firebase Admin/FCM |
-| `CLOUDINARY_*` | Optional | Media storage integration |
+| `FIREBASE_*` | Conditional | Firebase Admin/FCM and Firebase Storage bucket config |
+| `MEDIA_STORAGE_PROVIDER` | No | `firebase` by default, `cloudinary` for legacy fallback |
+| `FIREBASE_STORAGE_BUCKET`, `GCS_MEDIA_*` | Conditional | Firebase Storage / GCS media delivery |
+| `CLOUDINARY_*` | Optional | Legacy media storage fallback |
 
 ### Client (`frontend/client/.env.local`)
 | Variable | Required | Purpose |
@@ -251,9 +257,10 @@ node scripts/validate-env-examples.mjs
 ## Production Setup (App Engine)
 
 1. Configure GitHub secrets required by deploy workflows.
-2. Push to `main` (path-based workflows deploy changed service).
-3. Optionally run `workflow_dispatch` for manual deploy.
-4. Verify App Engine traffic split and health checks.
+2. Configure the App Engine custom domain and `dispatch.yaml` routes for `healthyonegram.com`.
+3. Push to `main` (path-based workflows deploy changed service).
+4. Optionally run `workflow_dispatch` for manual deploy.
+5. Verify App Engine service health, routing, and the configured media bucket/CDN URLs.
 
 ## Docker Support
 - Backend container spec added:

@@ -430,25 +430,7 @@ const PartnerApiPage = () => {
     Promise.all([loadPartners(), loadOverview(), loadLive(), loadLogs(), loadAnalytics()]).finally(() => setIsBusy(false));
   }, [token, isAuthenticated, loadPartners, loadOverview, loadLive, loadLogs, loadAnalytics]);
 
-  useEffect(() => {
-    if (!token || !isAuthenticated) return;
-    const interval = setInterval(() => {
-      loadOverview();
-      loadLive();
-      loadPartners();
-      if (detailPartnerId) {
-        loadPartnerDetail(detailPartnerId);
-      }
-      if (section === "logs") {
-        loadLogs();
-      }
-      if (section === "analytics") {
-        loadAnalytics();
-      }
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [token, isAuthenticated, section, detailPartnerId, loadOverview, loadLive, loadPartners, loadPartnerDetail, loadLogs, loadAnalytics]);
+  // Manual refresh only: no automatic polling.
 
   useEffect(() => {
     const validIds = new Set((partners || []).map((partner) => String(partner.id)));

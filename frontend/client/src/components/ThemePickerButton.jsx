@@ -9,7 +9,7 @@ export default function ThemePickerButton({ variant = "desktop" }) {
   const context = useContext(MyContext);
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
-  const isMobile = variant === "mobile";
+  const isPanel = variant === "mobile" || variant === "panel";
   const flavorOptions = useMemo(() => Object.values(FLAVORS), []);
   const selectedFlavor = context?.flavor || flavorOptions[0];
 
@@ -23,7 +23,7 @@ export default function ThemePickerButton({ variant = "desktop" }) {
   };
 
   useEffect(() => {
-    if (!open || isMobile) return undefined;
+    if (!open || isPanel) return undefined;
 
     const handleOutsideClick = (event) => {
       if (!rootRef.current?.contains(event.target)) {
@@ -33,13 +33,17 @@ export default function ThemePickerButton({ variant = "desktop" }) {
 
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [isMobile, open]);
+  }, [isPanel, open]);
 
-  if (isMobile) {
+  if (isPanel) {
     return (
       <div
         ref={rootRef}
-        className="mx-2 mt-2 rounded-2xl border border-[#eadfd4] bg-white/70 px-4 py-3 shadow-sm"
+        className={
+          variant === "panel"
+            ? "rounded-2xl border border-[#eadfd4] bg-white/80 px-4 py-3 shadow-sm"
+            : "mx-2 mt-2 rounded-2xl border border-[#eadfd4] bg-white/70 px-4 py-3 shadow-sm"
+        }
       >
         <div className="mb-3 flex items-center justify-between gap-3">
           <span className="inline-flex items-center gap-3 text-[15px] font-semibold text-gray-700">

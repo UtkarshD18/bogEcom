@@ -3,6 +3,7 @@
 import ZoomableImage from "@/components/ZoomableImage";
 import { fetchDataFromApi } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
+import { buildProductHref } from "@/utils/productRouting";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -29,6 +30,7 @@ function ProductImageZoomContent() {
   const searchParams = useSearchParams();
   const viewType = String(searchParams.get("type") || "product").trim().toLowerCase();
   const productId = String(searchParams.get("productId") || "").trim();
+  const variantId = String(searchParams.get("variantId") || "").trim();
   const comboId = String(searchParams.get("comboId") || "").trim();
   const requestedIndex = Math.max(Number(searchParams.get("index") || 0), 0);
   const embeddedImagesParam = searchParams.get("images") || "";
@@ -139,7 +141,7 @@ function ProductImageZoomContent() {
         ? `/combo/${comboId}`
         : "/combo-deals"
       : productId
-        ? `/product/${productId}`
+        ? buildProductHref(productId, { variantId })
         : "/products";
 
   return (

@@ -1,13 +1,12 @@
 "use client";
 
 import useSeoAlt from "@/hooks/useSeoAlt";
-import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { getBannerImageUrl, isCloudinaryUrl } from "@/utils/imageUtils";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FiChevronLeft,
   FiChevronRight,
@@ -120,8 +119,6 @@ const Banners = ({ initialBanners = [] }) => {
   const scrollerRef = useRef(null);
   const scrollFrameRef = useRef(0);
   const activeBannerIndexRef = useRef(0);
-  const context = useContext(MyContext);
-  const flavor = context?.flavor || FLAVORS.creamy;
 
   useEffect(() => {
     if (initialBanners.length > 0) {
@@ -212,7 +209,7 @@ const Banners = ({ initialBanners = [] }) => {
               <span
                 className="inline-flex items-center rounded-full border px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.24em]"
                 style={{
-                  backgroundColor: flavor.glass,
+                  backgroundColor: "var(--flavor-glass, rgba(90,58,46,0.24))",
                   borderColor: "rgba(255,255,255,0.75)",
                   color: "var(--color-primary)",
                 }}

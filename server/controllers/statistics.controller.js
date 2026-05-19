@@ -44,6 +44,7 @@ export const getDashboardStats = async (req, res) => {
   try {
     const { period = "month" } = req.query; // month, quarter, year, allTime
     const cacheKey = `statistics:dashboard:period=${String(period || "").trim()}`;
+    const lowStockCacheKey = "statistics:low-stock";
     const cached = cache.get(cacheKey);
     if (cached) {
       return res.status(200).json({ error: false, success: true, data: cached });
@@ -88,50 +89,81 @@ export const getDashboardStats = async (req, res) => {
         startDate.setMonth(startDate.getMonth() - 1);
     }
 
+    const getLowStockCount = async () => {
+      const cachedLowStock = cache.get(lowStockCacheKey);
+      if (cachedLowStock !== null && cachedLowStock !== undefined) {
+        return cachedLowStock;
+      }
+
+      const trackInventoryFilter = {
+        $or: [
+          { track_inventory: { $ne: false } },
+          { trackInventory: { $ne: false } },
+          { track_inventory: { $exists: false }, trackInventory: { $exists: false } },
+        ],
+      };
+
+      const count = await ProductModel.countDocuments({
+        ...trackInventoryFilter,
+        isLowStock: true,
+      });
+      cache.set(lowStockCacheKey, count, 60);
+      return count;
+    };
+
     // Fetch all stats in parallel
     const [
       totalOrders,
       pendingOrders,
       successfulOrders,
       failedOrders,
-      revenueAgg,
+      revenueAndMonthlyAgg,
       totalUsers,
       totalProducts,
       totalCategories,
-      // averageOrderValue,
       ordersInPeriod,
       recentOrders,
-      lowStockAggregation,
+      lowStockCount,
     ] = await Promise.all([
       OrderModel.countDocuments(orderBaseFilter),
       OrderModel.countDocuments(pendingOrdersFilter),
       OrderModel.countDocuments(successfulOrdersFilter),
       OrderModel.countDocuments(failedOrdersFilter),
-      // Combined revenue + avg aggregate
+      // Combine revenue + AOV + monthly sales in one aggregate pass
       OrderModel.aggregate([
         { $match: revenueFilter },
         { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
         {
-          $group: {
-            _id: null,
-            total: { $sum: "$effectiveAmount" },
-            average: { $avg: "$effectiveAmount" },
+          $facet: {
+            revenue: [
+              {
+                $group: {
+                  _id: null,
+                  total: { $sum: "$effectiveAmount" },
+                  average: { $avg: "$effectiveAmount" },
+                },
+              },
+            ],
+            monthlySales: [
+              { $match: { createdAt: { $gte: startDate } } },
+              {
+                $group: {
+                  _id: {
+                    month: { $month: "$createdAt" },
+                    year: { $year: "$createdAt" },
+                  },
+                  total: { $sum: "$effectiveAmount" },
+                  count: { $sum: 1 },
+                },
+              },
+              { $sort: { "_id.year": 1, "_id.month": 1 } },
+            ],
           },
         },
       ]),
       UserModel.countDocuments(),
       ProductModel.countDocuments(),
       CategoryModel.countDocuments(),
-      OrderModel.aggregate([
-        { $match: revenueFilter },
-        { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
-        {
-          $group: {
-            _id: null,
-            average: { $avg: "$effectiveAmount" },
-          },
-        },
-      ]),
       OrderModel.countDocuments({
         ...orderBaseFilter,
         createdAt: { $gte: startDate },
@@ -141,98 +173,15 @@ export const getDashboardStats = async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(5)
         .lean(),
-      ProductModel.aggregate([
-        {
-          $addFields: {
-            trackFlag: {
-              $ifNull: [
-                "$track_inventory",
-                { $ifNull: ["$trackInventory", true] },
-              ],
-            },
-            threshold: {
-              $ifNull: [
-                "$low_stock_threshold",
-                { $ifNull: ["$lowStockThreshold", 5] },
-              ],
-            },
-          },
-        },
-        { $match: { trackFlag: { $ne: false } } },
-        {
-          $addFields: {
-            productAvailable: {
-              $ifNull: ["$stock_quantity", "$stock"],
-            },
-            variantAvailables: {
-              $map: {
-                input: { $ifNull: ["$variants", []] },
-                as: "v",
-                in: { $ifNull: ["$$v.stock_quantity", "$$v.stock"] },
-              },
-            },
-          },
-        },
-        {
-          $addFields: {
-            hasVariants: { $gt: [{ $size: "$variantAvailables" }, 0] },
-            variantLowStock: {
-              $cond: [
-                { $gt: [{ $size: "$variantAvailables" }, 0] },
-                {
-                  $anyElementTrue: {
-                    $map: {
-                      input: "$variantAvailables",
-                      as: "available",
-                      in: { $lte: ["$$available", "$threshold"] },
-                    },
-                  },
-                },
-                false,
-              ],
-            },
-            productLowStock: {
-              $lte: ["$productAvailable", "$threshold"],
-            },
-          },
-        },
-        {
-          $addFields: {
-            lowStockFlag: {
-              $cond: ["$hasVariants", "$variantLowStock", "$productLowStock"],
-            },
-          },
-        },
-        { $match: { lowStockFlag: true } },
-        { $count: "lowStockCount" },
-      ]),
+      getLowStockCount(),
     ]);
 
-    const lowStockCount = lowStockAggregation?.[0]?.lowStockCount || 0;
+    const revenueAgg = revenueAndMonthlyAgg?.[0]?.revenue || [];
+    const monthlySales = revenueAndMonthlyAgg?.[0]?.monthlySales || [];
     const totalRevenue = revenueAgg?.[0]?.total || 0;
-    const averageOrderValue = parseFloat((revenueAgg?.[0]?.average || 0).toFixed(2));
-
-    // Monthly sales aggregation for dashboard graph
-    // Limit monthly sales to requested date range to avoid full-collection scan
-    const monthlyMatch = {
-      ...revenueFilter,
-      createdAt: { $gte: startDate },
-    };
-    const monthlySales = await OrderModel.aggregate([
-      { $match: monthlyMatch },
-      { $addFields: { effectiveAmount: getEffectiveAmountExpression } },
-      {
-        $group: {
-          _id: {
-            month: { $month: "$createdAt" },
-            year: { $year: "$createdAt" },
-          },
-          total: { $sum: "$effectiveAmount" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.year": 1, "_id.month": 1 } },
-    ]);
+    const averageOrderValue = parseFloat(
+      (revenueAgg?.[0]?.average || 0).toFixed(2),
+    );
 
     const responsePayload = {
       totalOrders,

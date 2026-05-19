@@ -23,6 +23,7 @@ const Register = () => (
           src={withAdminBasePath("/logo.png")}
           alt="logo"
           className="w-[150px]"
+          loading="lazy"
         />
 
         <div className="flex gap-3">

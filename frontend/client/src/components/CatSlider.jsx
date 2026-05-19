@@ -1,7 +1,5 @@
 "use client";
 
-import FlavorSwitcherBar from "./FlavorSwitcherBar";
-
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
 import { fetchDataFromApi } from "@/utils/api";
 import { getCategoryImageUrl } from "@/utils/imageUtils";
@@ -148,7 +146,6 @@ const CatSlider = () => {
 
   return (
     <div>
-      <FlavorSwitcherBar />
       <PopularProducts />
 
       <section

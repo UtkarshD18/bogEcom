@@ -6,7 +6,6 @@ export const useLiveRefresh = (
   refreshFn,
   {
     minIntervalMs = 1000,
-    fallbackIntervalMs = 30000,
   } = {},
 ) => {
   const refreshRef = useRef(refreshFn);
@@ -46,16 +45,6 @@ export const useLiveRefresh = (
     },
     [minIntervalMs],
   );
-
-  useEffect(() => {
-    const fallbackInterval = Number(fallbackIntervalMs);
-    if (!Number.isFinite(fallbackInterval) || fallbackInterval <= 0) {
-      return undefined;
-    }
-
-    const intervalId = setInterval(() => trigger(true), fallbackInterval);
-    return () => clearInterval(intervalId);
-  }, [fallbackIntervalMs, trigger]);
 
   useEffect(() => clearPending, [clearPending]);
 

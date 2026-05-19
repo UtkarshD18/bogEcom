@@ -20,8 +20,9 @@ import {
   formatWeight,
   normalizeVariantWeight,
 } from "../utils/weightNormalization.js";
+import { invalidateAdminReadCaches } from "../utils/adminCacheInvalidation.js";
 import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
-import cache from "../services/cache.service.js";
+import { getLowStockSummaryUpdate } from "../utils/lowStockSummary.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 const PRODUCT_RESPONSE_CACHE_NAMESPACES = ["products"];
@@ -35,6 +36,15 @@ const debugLog = (...args) => {
 
 const invalidateProductResponseCache = async (namespaces) => {
   await invalidatePublicResponseCache(namespaces);
+};
+
+const applyLowStockSummaryUpdate = async (product) => {
+  const result = getLowStockSummaryUpdate(product);
+  if (!result) return;
+  await ProductModel.updateOne({ _id: product._id }, result.update);
+  product.availableStock = result.summary.availableStock;
+  product.isLowStock = result.summary.isLowStock;
+  product.lowStockUpdatedAt = result.update.$set.lowStockUpdatedAt;
 };
 
 const canRequestViewExclusive = async (req) => {
@@ -1731,7 +1741,7 @@ export const createProduct = async (req, res) => {
       $inc: { productCount: 1 },
     });
     await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
-    await cache.delPrefix("statistics:dashboard");
+    invalidateAdminReadCaches();
 
     res.status(201).json({
       error: false,
@@ -1961,6 +1971,8 @@ export const updateProduct = async (req, res) => {
       )
       .lean();
 
+    await applyLowStockSummaryUpdate(updatedProductForNotifications);
+
     const variantIdsToCheck = Array.isArray(updatedProductForNotifications?.variants)
       ? updatedProductForNotifications.variants.map((variant) => variant?._id)
       : [];
@@ -1988,7 +2000,7 @@ export const updateProduct = async (req, res) => {
       source: "ADMIN_PRODUCT_UPDATE",
     });
     await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
-    await cache.delPrefix("statistics:dashboard");
+    invalidateAdminReadCaches();
 
     res.status(200).json({
       error: false,
@@ -2034,7 +2046,7 @@ export const deleteProduct = async (req, res) => {
 
     await ProductModel.findByIdAndDelete(id);
     await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
-    await cache.delPrefix("statistics:dashboard");
+    invalidateAdminReadCaches();
 
     res.status(200).json({
       error: false,
@@ -2120,6 +2132,8 @@ export const bulkUpdateProducts = async (req, res) => {
         const productAfter = productsAfterMap.get(String(productBefore?._id || ""));
         if (!productAfter) continue;
 
+        await applyLowStockSummaryUpdate(productAfter);
+
         await triggerBackInStockNotificationsIfRecovered({
           productBefore,
           productAfter,
@@ -2134,7 +2148,7 @@ export const bulkUpdateProducts = async (req, res) => {
       }
     }
     await invalidateProductResponseCache(CATALOG_RESPONSE_CACHE_NAMESPACES);
-    await cache.delPrefix("statistics:dashboard");
+    invalidateAdminReadCaches();
 
     res.status(200).json({
       error: false,
@@ -2193,6 +2207,8 @@ export const updateStock = async (req, res) => {
         "track_inventory trackInventory stock stock_quantity reserved_quantity variants",
       )
       .lean();
+
+    await applyLowStockSummaryUpdate(updatedProductForNotifications);
 
     await triggerBackInStockNotificationsIfRecovered({
       productBefore,
@@ -2271,7 +2287,7 @@ export const addReview = async (req, res) => {
 
     await product.save();
     await invalidateProductResponseCache(PRODUCT_RESPONSE_CACHE_NAMESPACES);
-    await cache.delPrefix("statistics:dashboard");
+    invalidateAdminReadCaches();
 
     res.status(201).json({
       error: false,
@@ -2328,7 +2344,7 @@ export const deleteReview = async (req, res) => {
     product.reviews.pull(reviewId);
     await product.save();
     await invalidateProductResponseCache(PRODUCT_RESPONSE_CACHE_NAMESPACES);
-    await cache.delPrefix("statistics:dashboard");
+    invalidateAdminReadCaches();
 
     res.status(200).json({
       error: false,

@@ -28,6 +28,7 @@ import { normalizePincode } from "@/utils/addressForm";
 import { trackEvent } from "@/utils/analyticsTracker";
 import { fetchDataFromApi, postData } from "@/utils/api";
 import { getImageUrl } from "@/utils/imageUtils";
+import { parseCompositeProductRouteId } from "@/utils/productRouting";
 import { sanitizeHTML } from "@/utils/sanitize";
 import {
   applyStockUpdateToProduct,
@@ -41,7 +42,7 @@ import {
 } from "@/utils/weightDisplay";
 import { Alert, CircularProgress, Rating, Snackbar } from "@mui/material";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   startTransition,
   useCallback,
@@ -459,9 +460,15 @@ const ReviewCard = ({ review, compact = false }) => (
 
 const ProductDetailPage = () => {
   const { id } = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const routeId = String(id || "").trim();
-  const isDemoPreview = routeId.toLowerCase() === DEMO_PRODUCT_ID;
+  const rawRouteId = String(id || "").trim();
+  const parsedRouteId = parseCompositeProductRouteId(rawRouteId);
+  const routeId = parsedRouteId.lookupId || rawRouteId;
+  const requestedVariantId = String(
+    searchParams.get("variantId") || parsedRouteId.variantId || "",
+  ).trim();
+  const isDemoPreview = rawRouteId.toLowerCase() === DEMO_PRODUCT_ID;
   const { addToCart, removeFromCart, isInCart, cartItems, isComboCartItem } =
     useCart();
 
@@ -1091,6 +1098,18 @@ const ProductDetailPage = () => {
               return null;
             }
 
+            if (requestedVariantId) {
+              const requestedVariant =
+                resolvedProduct.variants.find(
+                  (variant) =>
+                    String(variant?._id || variant?.id || "") ===
+                    String(requestedVariantId),
+                ) || null;
+              if (requestedVariant) {
+                return requestedVariant;
+              }
+            }
+
             const previousVariantId = previous?._id || previous?.id;
             if (previousVariantId) {
               const matchedVariant =
@@ -1159,7 +1178,12 @@ const ProductDetailPage = () => {
         }
       }
     },
-    [fetchFrequentlyBought, fetchRecommendedCombos, routeId],
+    [
+      fetchFrequentlyBought,
+      fetchRecommendedCombos,
+      requestedVariantId,
+      routeId,
+    ],
   );
 
   const stopFallbackPolling = useCallback(() => {
@@ -1269,6 +1293,25 @@ const ProductDetailPage = () => {
   useEffect(() => {
     if (!product?.hasVariants || !Array.isArray(product?.variants)) return;
 
+    if (requestedVariantId) {
+      const requestedVariant =
+        product.variants.find(
+          (variant) =>
+            String(variant?._id || variant?.id || "") ===
+            String(requestedVariantId),
+        ) || null;
+      if (requestedVariant) {
+        setSelectedVariant((previous) => {
+          const previousVariantId = previous?._id || previous?.id;
+          return String(previousVariantId || "") ===
+            String(requestedVariantId || "")
+            ? previous
+            : requestedVariant;
+        });
+      }
+      return;
+    }
+
     setSelectedVariant((previous) => {
       const currentVariantId = previous?._id || previous?.id;
       if (!currentVariantId) return previous;
@@ -1282,7 +1325,7 @@ const ProductDetailPage = () => {
 
       return nextVariant || previous;
     });
-  }, [product]);
+  }, [product, requestedVariantId]);
 
   useEffect(() => {
     if (!routeId || isDemoPreview) return undefined;
