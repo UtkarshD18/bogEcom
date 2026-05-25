@@ -1,7 +1,7 @@
 "use client";
 
 import { useSettings } from "@/context/SettingsContext";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FaWhatsapp } from "react-icons/fa";
 
 const normalizePhoneForWhatsapp = (value = "") =>
@@ -11,7 +11,12 @@ const normalizePhoneForWhatsapp = (value = "") =>
 
 export default function WhatsAppFloatingButton() {
   const { storeInfo } = useSettings();
+  const [isMounted, setIsMounted] = useState(false);
   const phone = normalizePhoneForWhatsapp(storeInfo?.whatsapp || storeInfo?.phone);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const href = useMemo(() => {
     if (!phone) return "";
@@ -21,7 +26,7 @@ export default function WhatsAppFloatingButton() {
     return `https://wa.me/${phone}?text=${message}`;
   }, [phone]);
 
-  if (!href) return null;
+  if (!isMounted || !href) return null;
 
   return (
     <a

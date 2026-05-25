@@ -107,6 +107,16 @@ const MIME_EXTENSION_MAP = {
   "video/webm": "webm",
 };
 
+const isLikelyMissingBucketError = (error) => {
+  const message = String(error?.message || "").toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+  return (
+    message.includes("specified bucket does not exist") ||
+    message.includes("bucket") && message.includes("not exist") ||
+    code === "404"
+  );
+};
+
 const normalizeFolder = (folder = "buyonegram") =>
   String(folder || "buyonegram")
     .trim()
@@ -218,7 +228,21 @@ export const uploadToCloudinary = async (
 ) => {
   try {
     if (useGcsMediaStorage) {
-      return await uploadToGcsMediaStorage(file, folder, { mimeType });
+      try {
+        return await uploadToGcsMediaStorage(file, folder, { mimeType });
+      } catch (error) {
+        if (!cloudinaryConfigured || !isLikelyMissingBucketError(error)) {
+          return {
+            success: false,
+            error: error?.message || "Firebase Storage upload failed",
+          };
+        }
+
+        console.warn(
+          "Firebase Storage upload failed; falling back to Cloudinary:",
+          error?.message || error,
+        );
+      }
     }
 
     // Verify Cloudinary is configured
@@ -331,9 +355,23 @@ export const uploadVideoToCloudinary = async (
 ) => {
   try {
     if (useGcsMediaStorage) {
-      return await uploadToGcsMediaStorage(file, folder, {
-        mimeType,
-      });
+      try {
+        return await uploadToGcsMediaStorage(file, folder, {
+          mimeType,
+        });
+      } catch (error) {
+        if (!cloudinaryConfigured || !isLikelyMissingBucketError(error)) {
+          return {
+            success: false,
+            error: error?.message || "Firebase Storage upload failed",
+          };
+        }
+
+        console.warn(
+          "Firebase Storage video upload failed; falling back to Cloudinary:",
+          error?.message || error,
+        );
+      }
     }
 
     // Verify Cloudinary is configured
@@ -399,16 +437,28 @@ export const deleteFromCloudinary = async (publicId) => {
   try {
     if (useGcsMediaStorage) {
       const objectPath = extractGcsObjectPath(publicId);
-      if (!objectPath || !gcsMediaBucketName) {
-        return { success: false, error: "Could not determine GCS object path" };
+      if (objectPath && gcsMediaBucketName) {
+        try {
+          await gcsStorage
+            .bucket(gcsMediaBucketName)
+            .file(objectPath)
+            .delete({ ignoreNotFound: true });
+
+          return { success: true, result: "ok" };
+        } catch (error) {
+          if (!cloudinaryConfigured || !isLikelyMissingBucketError(error)) {
+            return {
+              success: false,
+              error: error?.message || "Failed to delete from Firebase Storage",
+            };
+          }
+
+          console.warn(
+            "Firebase Storage delete failed; falling back to Cloudinary:",
+            error?.message || error,
+          );
+        }
       }
-
-      await gcsStorage
-        .bucket(gcsMediaBucketName)
-        .file(objectPath)
-        .delete({ ignoreNotFound: true });
-
-      return { success: true, result: "ok" };
     }
 
     const result = await cloudinary.uploader.destroy(publicId);

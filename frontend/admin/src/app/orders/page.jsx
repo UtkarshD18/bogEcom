@@ -3,13 +3,11 @@ import { useAdmin } from "@/context/AdminContext";
 import { useAdminRealtime } from "@/hooks/useAdminRealtime";
 import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useLiveRefreshSetting } from "@/hooks/useLiveRefreshSetting";
-import { hasAdminPermission } from "@/utils/adminPermissions";
 import {
   API_BASE_URL,
   deleteData,
   getData,
   patchData,
-  postData,
 } from "@/utils/api";
 import { withAdminBasePath } from "@/utils/basePath";
 import { Button } from "@mui/material";
@@ -1336,7 +1334,7 @@ const OrdersTable = ({ orders, token }) => (
 );
 
 const Orders = () => {
-  const { token, isAuthenticated, loading, admin } = useAdmin();
+  const { token, isAuthenticated, loading } = useAdmin();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1347,12 +1345,6 @@ const Orders = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [backfillingPaymentIds, setBackfillingPaymentIds] = useState(false);
-  const [repairingPaidOrders, setRepairingPaidOrders] = useState(false);
-  const canRunOrderMaintenanceActions = hasAdminPermission(
-    admin,
-    "manage_shipping",
-  );
   const { intervalMs } = useLiveRefreshSetting();
   const refreshConfig = useMemo(
     () => ({
@@ -1495,84 +1487,6 @@ const Orders = () => {
     router.replace(query ? `/orders?${query}` : "/orders");
   };
 
-  const handleRepairPaidOrders = async () => {
-    if (!token) {
-      toast.error("Admin session missing");
-      return;
-    }
-    const confirmed =
-      typeof window === "undefined"
-        ? true
-        : window.confirm(
-            "Repair paid orders missing shipment/invoice? This may take a minute.",
-          );
-    if (!confirmed) return;
-
-    setRepairingPaidOrders(true);
-    try {
-      const response = await postData(
-        "/api/orders/admin/repair-paid?limit=50",
-        {},
-        token,
-      );
-      if (response?.success) {
-        const stats = response?.data || {};
-        toast.success(
-          `Repair completed: ${stats.repaired || 0} repaired, ${stats.skipped || 0} skipped.`,
-        );
-        fetchOrders();
-      } else {
-        toast.error(response?.message || "Repair failed");
-      }
-    } catch (error) {
-      toast.error("Repair failed");
-    } finally {
-      setRepairingPaidOrders(false);
-    }
-  };
-
-  const handleBackfillSuccessfulPaymentIds = async () => {
-    if (!token) {
-      toast.error("Admin session missing");
-      return;
-    }
-
-    const confirmed =
-      typeof window === "undefined"
-        ? true
-        : window.confirm(
-            "Backfill Payment App Txn IDs for successful orders only? This updates payment ID only when provider transaction IDs already exist.",
-          );
-    if (!confirmed) return;
-
-    setBackfillingPaymentIds(true);
-    try {
-      const response = await postData(
-        "/api/orders/admin/backfill-payment-ids?limit=250",
-        {},
-        token,
-      );
-
-      if (response?.success) {
-        const stats = response?.data || {};
-        const updated = Number(stats?.updated || 0);
-        const skipped = Number(stats?.skipped || 0);
-        const remaining = Number(stats?.remaining || 0);
-
-        toast.success(
-          `Backfill completed: ${updated} updated, ${skipped} skipped, ${remaining} remaining.`,
-        );
-        fetchOrders();
-      } else {
-        toast.error(response?.message || "Backfill failed");
-      }
-    } catch {
-      toast.error("Backfill failed");
-    } finally {
-      setBackfillingPaymentIds(false);
-    }
-  };
-
   if (loading || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1599,42 +1513,6 @@ const Orders = () => {
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {canRunOrderMaintenanceActions ? (
-              <>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={handleBackfillSuccessfulPaymentIds}
-                  disabled={backfillingPaymentIds || repairingPaidOrders}
-                  sx={{
-                    textTransform: "none",
-                    borderRadius: "10px",
-                    px: 2,
-                    py: 0.8,
-                  }}
-                >
-                  {backfillingPaymentIds
-                    ? "Backfilling Txn IDs..."
-                    : "Backfill Successful Txn IDs"}
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={handleRepairPaidOrders}
-                  disabled={backfillingPaymentIds || repairingPaidOrders}
-                  sx={{
-                    textTransform: "none",
-                    borderRadius: "10px",
-                    px: 2,
-                    py: 0.8,
-                  }}
-                >
-                  {repairingPaidOrders
-                    ? "Repairing Paid Orders..."
-                    : "Repair Paid Orders"}
-                </Button>
-              </>
-            ) : null}
             <Button
               variant="outlined"
               size="small"

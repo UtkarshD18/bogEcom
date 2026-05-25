@@ -136,3 +136,63 @@ test("blog detail media renders images fully and stale video posts as videos", a
   await expect(video).toBeVisible();
   await expect(video).toHaveAttribute("controls", "");
 });
+
+test("blog detail renders imported HTML blog documents inside an article frame", async ({
+  page,
+}) => {
+  const htmlDocument = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Imported Peanut Butter Story</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 32px; color: #111827; }
+        h1 { color: #92400e; margin-bottom: 16px; }
+        p { line-height: 1.7; }
+      </style>
+    </head>
+    <body>
+      <h1>Imported Peanut Butter Story</h1>
+      <p>This article was uploaded as a full HTML document.</p>
+    </body>
+  </html>`;
+
+  await mockBlogApis(
+    page,
+    buildBlog({
+      slug: "blog-imported-html-test",
+      contentFormat: "html",
+      contentHtml: htmlDocument,
+      contentHtmlFileName: "imported-peanut-butter-story.html",
+      content:
+        "Imported Peanut Butter Story This article was uploaded as a full HTML document.",
+      excerpt: "Imported HTML article smoke test.",
+      image: "",
+    }),
+  );
+
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/blogs/blog-imported-html-test", {
+    waitUntil: "domcontentloaded",
+  });
+
+  const frame = page.frameLocator(
+    'iframe[title="Blog Media Test imported HTML article"]',
+  );
+  await expect(frame.locator("body")).toContainText(
+    "This article was uploaded as a full HTML document.",
+  );
+
+  const iframeMetrics = await page
+    .locator('iframe[title="Blog Media Test imported HTML article"]')
+    .evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+
+  expect(iframeMetrics.width).toBeGreaterThan(1200);
+  expect(iframeMetrics.height).toBeGreaterThan(520);
+});

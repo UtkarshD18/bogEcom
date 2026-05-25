@@ -154,7 +154,8 @@ const defaultSettings = {
   storeInfo: {
     name: "HealthyOneGram",
     email: "healthyonegram.com",
-    phone: "+91 9876541234",
+    phone: "+91 8619641968",
+    whatsapp: "+918619641968",
     address: "",
     gstNumber: "",
     currency: "INR",
