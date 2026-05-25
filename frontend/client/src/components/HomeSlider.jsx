@@ -276,7 +276,7 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
   return (
     <section className="relative z-10 px-0">
       <div className="w-full">
-        <div className="overflow-hidden rounded-[1.6rem] bg-[#120c09] shadow-[0_32px_90px_rgba(26,18,13,0.16)] sm:rounded-[2rem] md:rounded-none">
+        <div className="overflow-hidden rounded-[1.6rem] bg-[#f3ece4] shadow-[0_32px_90px_rgba(26,18,13,0.16)] sm:rounded-[2rem] md:rounded-none">
           <div className="relative aspect-video w-full">
             <Swiper
               speed={motionEnabled ? 850 : 500}
@@ -316,7 +316,7 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
                   className="relative h-full w-full"
                   data-swiper-autoplay={slide.stayDurationMs || 5600}
                 >
-                  <div className="relative h-full w-full overflow-hidden bg-[#120c09]">
+                  <div className="relative h-full w-full overflow-hidden bg-[#f3ece4]">
                     <div
                       className="absolute inset-0 z-0"
                     >
@@ -351,10 +351,10 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
                       className="absolute inset-0 z-10"
                       style={{
                         background:
-                          "linear-gradient(90deg, rgba(12,9,7,0.76) 0%, rgba(12,9,7,0.48) 24%, rgba(12,9,7,0.14) 58%, rgba(12,9,7,0.24) 100%), linear-gradient(to top, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.08) 42%, transparent 72%)",
+                          "linear-gradient(90deg, rgba(12,9,7,0.68) 0%, rgba(12,9,7,0.4) 24%, rgba(12,9,7,0.1) 58%, rgba(12,9,7,0.14) 100%), linear-gradient(to top, rgba(24,16,11,0.2) 0%, rgba(24,16,11,0.04) 28%, transparent 58%)",
                       }}
                     />
-                    <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#1d140f]/50 to-transparent" />
+                    <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-[#1d140f]/14 to-transparent" />
 
                     {slide.offerEnabled &&
                     getOfferTimeLeft(slide.offerEndsAt, nowMs) ? (
@@ -558,7 +558,7 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
         </div>
 
         {heroTrustItems.length ? (
-          <div className="relative z-20 mx-auto mt-3 max-w-7xl px-4 sm:mt-4 md:-mt-6">
+          <div className="relative z-20 mx-auto -mt-10 max-w-7xl px-4 sm:-mt-12 md:-mt-8">
             <div className="mx-auto w-full max-w-5xl rounded-[1.4rem] border border-white/16 bg-[rgba(18,12,9,0.78)] px-2.5 py-3 text-white/88 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur-xl md:max-w-fit md:rounded-full md:px-4">
               <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden md:flex-wrap md:justify-center md:gap-2 md:overflow-visible">
                 {heroTrustItems.map((item) => (
