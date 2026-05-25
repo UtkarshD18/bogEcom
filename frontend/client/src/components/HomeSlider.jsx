@@ -497,82 +497,81 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
                 ) : null}
               </div>
             </div>
-          </div>
-        </div>
-
-        <div className="relative z-20 mx-auto -mt-8 max-w-7xl px-4 md:hidden">
-          {activeSlideHasNarrative && isHeroPanelDismissed ? (
-            <button
-              type="button"
-              onClick={() => setIsHeroPanelDismissed(false)}
-              className="inline-flex items-center rounded-full border border-[#2c1e15]/12 bg-[#1a120d] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_26px_rgba(0,0,0,0.12)]"
-            >
-              Show slide details
-            </button>
-          ) : activeSlide && activeSlideHasNarrative ? (
-            <div className="rounded-[1.45rem] border border-[#2c1e15]/10 bg-white p-4 shadow-[0_18px_50px_rgba(26,18,13,0.08)]">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <span className="inline-flex items-center rounded-full bg-[#f3ebe5] px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#7c5b49]">
-                    Bestseller Range
-                  </span>
-                  {activeSlide.title ? (
-                    <h1 className="mt-3 text-[1.55rem] font-black leading-[0.96] tracking-[-0.04em] text-[#2d1a11]">
-                      {activeSlide.title}
-                    </h1>
-                  ) : null}
-                </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-14 md:hidden">
+              {activeSlideHasNarrative && isHeroPanelDismissed ? (
                 <button
                   type="button"
-                  onClick={() => setIsHeroPanelDismissed(true)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#2c1e15]/10 bg-[#f7f2ed] text-[#2d1a11]"
-                  aria-label="Hide slide details"
+                  onClick={() => setIsHeroPanelDismissed(false)}
+                  className="pointer-events-auto inline-flex items-center rounded-full border border-white/16 bg-[rgba(20,14,10,0.7)] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_26px_rgba(0,0,0,0.18)] backdrop-blur-sm"
                 >
-                  <FiX size={15} />
+                  Show slide details
                 </button>
-              </div>
+              ) : activeSlide && activeSlideHasNarrative ? (
+                <div className="pointer-events-auto rounded-[1.35rem] border border-white/14 bg-[linear-gradient(150deg,rgba(255,255,255,0.94)_0%,rgba(255,249,242,0.88)_100%)] p-4 text-[#2d1a11] shadow-[0_18px_50px_rgba(26,18,13,0.12)] backdrop-blur-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="inline-flex items-center rounded-full bg-[#f3ebe5] px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#7c5b49]">
+                        Bestseller Range
+                      </span>
+                      {activeSlide.title ? (
+                        <h1 className="mt-3 text-[1.4rem] font-black leading-[0.96] tracking-[-0.04em] text-[#2d1a11]">
+                          {activeSlide.title}
+                        </h1>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsHeroPanelDismissed(true)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#2c1e15]/10 bg-[#f7f2ed] text-[#2d1a11]"
+                      aria-label="Hide slide details"
+                    >
+                      <FiX size={15} />
+                    </button>
+                  </div>
 
-              {activeSlide.subtitle ? (
-                <p className="mt-3 text-sm leading-6 text-[#6a5447]">
-                  {activeSlide.subtitle}
-                </p>
+                  {activeSlide.subtitle ? (
+                    <p className="mt-3 text-sm leading-6 text-[#6a5447]">
+                      {activeSlide.subtitle}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <Link
+                      href={activeSlide.link}
+                      className="inline-flex items-center gap-2 rounded-full bg-[#2d1a11] px-5 py-3 text-sm font-bold text-white"
+                    >
+                      {activeSlide.cta}
+                      <FiArrowUpRight size={16} />
+                    </Link>
+                    <Link
+                      href="/products"
+                      className="inline-flex items-center gap-2 rounded-full border border-[#2d1a11]/12 bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-[#2d1a11]"
+                    >
+                      View catalog
+                    </Link>
+                  </div>
+                </div>
               ) : null}
-
-              <div className="mt-4 flex flex-wrap gap-3">
-                <Link
-                  href={activeSlide.link}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#2d1a11] px-5 py-3 text-sm font-bold text-white"
-                >
-                  {activeSlide.cta}
-                  <FiArrowUpRight size={16} />
-                </Link>
-                <Link
-                  href="/products"
-                  className="inline-flex items-center gap-2 rounded-full border border-[#2d1a11]/12 bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-[#2d1a11]"
-                >
-                  View catalog
-                </Link>
-              </div>
             </div>
-          ) : null}
-        </div>
 
-        {heroTrustItems.length ? (
-          <div className="relative z-20 mx-auto -mt-10 max-w-7xl px-4 sm:-mt-12 md:-mt-8">
-            <div className="mx-auto w-full max-w-5xl rounded-[1.4rem] border border-white/16 bg-[rgba(18,12,9,0.78)] px-2.5 py-3 text-white/88 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur-xl md:max-w-fit md:rounded-full md:px-4">
-              <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden md:flex-wrap md:justify-center md:gap-2 md:overflow-visible">
-                {heroTrustItems.map((item) => (
-                  <span
-                    key={item}
-                    className="rounded-full bg-white/10 px-2.5 py-1.5 text-[8px] font-extrabold uppercase tracking-[0.12em] sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.2em]"
-                  >
-                    {item}
-                  </span>
-                ))}
+            {heroTrustItems.length ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-4">
+                <div className="pointer-events-auto mx-auto w-full max-w-5xl rounded-[1.4rem] border border-white/16 bg-[rgba(18,12,9,0.78)] px-2.5 py-3 text-white/88 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur-xl md:max-w-fit md:rounded-full md:px-4">
+                  <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden md:flex-wrap md:justify-center md:gap-2 md:overflow-visible">
+                    {heroTrustItems.map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-full bg-white/10 px-2.5 py-1.5 text-[8px] font-extrabold uppercase tracking-[0.12em] sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.2em]"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
 
       <style jsx global>{`
