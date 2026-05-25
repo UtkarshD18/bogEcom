@@ -276,17 +276,26 @@ export const getBannerImageUrl = (imageUrl) => {
   });
 };
 
+export const getMobileBannerImageUrl = (imageUrl) => {
+  return getOptimizedImageUrl(imageUrl, {
+    width: 960,
+    height: 540,
+    crop: "fill",
+    gravity: "auto",
+  });
+};
+
 export const getHeroImageUrl = (imageUrl) =>
   getOptimizedImageUrl(imageUrl, {
-    width: 1800,
-    height: 1200,
+    width: 1920,
+    height: 1080,
     crop: "fit",
   });
 
 export const getHeroMobileImageUrl = (imageUrl) =>
   getOptimizedImageUrl(imageUrl, {
-    width: 900,
-    height: 1200,
+    width: 1280,
+    height: 720,
     crop: "fit",
   });
 
@@ -362,12 +371,13 @@ export const isCloudinaryUrl = (imageUrl) => {
   return imageUrl && imageUrl.includes("res.cloudinary.com");
 };
 
-export default {
+const imageUtils = {
   getImageUrl,
   getOptimizedImageUrl,
   getThumbnailUrl,
   getProductImageUrl,
   getBannerImageUrl,
+  getMobileBannerImageUrl,
   getHeroImageUrl,
   getHeroMobileImageUrl,
   getCategoryImageUrl,
@@ -375,3 +385,5 @@ export default {
   getResponsiveImageSet,
   isCloudinaryUrl,
 };
+
+export default imageUtils;

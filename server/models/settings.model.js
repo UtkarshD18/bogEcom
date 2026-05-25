@@ -274,7 +274,7 @@ settingsSchema.statics.defaultSettings = [
       ctaLabel: "Shop offers",
       ctaHref: "/products",
     },
-    description: "Homepage offer countdown banner settings",
+    description: "Homepage offer countdown strip configuration",
     category: "notification",
   },
   {

@@ -29,6 +29,13 @@ const DEFAULT_HOMEPAGE_HOT_PATH_CACHE_TTL_MS = Math.max(
   ) || 120000,
   0,
 );
+export const PUBLIC_SECTION_REQUEST_TIMEOUT_MS = Math.max(
+  Number.parseInt(
+    String(process.env.NEXT_PUBLIC_PUBLIC_SECTION_REQUEST_TIMEOUT_MS ?? "5000"),
+    10,
+  ) || 5000,
+  1000,
+);
 
 const PUBLIC_GET_CACHE_PATH_REGEX =
   /^\/api\/(?:products|categories|banners|home-slides|combos|settings\/public)(?:\/|\?|$)/i;
@@ -403,6 +410,9 @@ export const fetchDataFromApi = async (url, options = {}) => {
     {
       method: "get",
       url: normalizedUrl,
+      timeout: Number.isFinite(Number(options?.timeoutMs))
+        ? Math.max(Number(options.timeoutMs), 1)
+        : undefined,
     },
     "Failed to fetch data",
   )

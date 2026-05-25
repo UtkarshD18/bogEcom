@@ -8,6 +8,11 @@ import StockNotificationButton from "@/components/StockNotificationButton";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import useSeoAlt from "@/hooks/useSeoAlt";
+import { resolveAvailability } from "@/utils/productAvailability";
+import {
+  buildProductHref,
+  getPublicProductIdentifier,
+} from "@/utils/productRouting";
 import { subscribeToStockUpdates } from "@/realtime/stockSocket";
 import { applyStockUpdateToProduct } from "@/utils/stockRealtime";
 import {
@@ -16,7 +21,7 @@ import {
   replaceWeightRange,
 } from "@/utils/weightDisplay";
 import Link from "next/link";
-import { startTransition, useEffect, useState } from "react";
+import { memo, startTransition, useEffect, useState } from "react";
 import {
   IoIosStar,
   IoIosStarHalf,
@@ -26,45 +31,6 @@ import {
   IoMdHeartEmpty,
 } from "react-icons/io";
 import { MdDeleteOutline } from "react-icons/md";
-
-const toNumber = (value, fallback = 0) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const isInventoryTracked = (entry, fallbackEntry = null) => {
-  const source = entry || fallbackEntry || {};
-  if (source?.track_inventory === false || source?.trackInventory === false) {
-    return false;
-  }
-  return true;
-};
-
-const resolveAvailability = (entry, fallbackEntry = null) => {
-  const source = entry || fallbackEntry || {};
-  const tracked = isInventoryTracked(entry, fallbackEntry);
-  const explicitAvailable = [
-    source?.available_quantity,
-    source?.available_stock,
-    source?.availableStock,
-  ]
-    .map((value) => Number(value))
-    .find((value) => Number.isFinite(value));
-  const stock = toNumber(source?.stock_quantity ?? source?.stock, 0);
-  const reserved = toNumber(source?.reserved_quantity, 0);
-  const available = tracked
-    ? Number.isFinite(explicitAvailable)
-      ? Math.max(explicitAvailable, 0)
-      : Math.max(stock - reserved, 0)
-    : Number.MAX_SAFE_INTEGER;
-
-  return {
-    tracked,
-    stock,
-    reserved,
-    available,
-  };
-};
 
 const ProductItem = (props) => {
   const {
@@ -212,8 +178,15 @@ const ProductItem = (props) => {
   const notifyVariantName = defaultVariant?.name || "";
   const notifyRequested = Boolean(
     productData?.stockNotificationRequested ||
-    defaultVariant?.stockNotificationRequested,
+      defaultVariant?.stockNotificationRequested,
   );
+  const lowStockLabel =
+    !isComboItem &&
+    availability.tracked &&
+    availableQuantity > 0 &&
+    availableQuantity <= 3
+      ? `Only ${availableQuantity} left`
+      : "";
   const actionLabel = alreadyInCart
     ? "Remove from cart"
     : showNotifyAction
@@ -316,14 +289,15 @@ const ProductItem = (props) => {
     displayReviewCount > 0
       ? Number(reviewStatsSource?.avgRating ?? reviewStatsSource?.rating ?? 0)
       : 0;
-  const productHref =
-    isComboItem
-      ? `/combo/${productCardId}`
-      : productVariantId
-        ? `/product/${productCardId}?variantId=${encodeURIComponent(
-            String(productVariantId),
-          )}`
-        : `/product/${productCardId}`;
+  const productHref = isComboItem
+    ? `/combo/${productCardId}`
+    : buildProductHref(productData, {
+        variantId: productVariantId,
+        fallbackId: productCardId,
+        fallbackHref: productCardId
+          ? `/product/${encodeURIComponent(String(productCardId))}`
+          : "/products",
+      });
 
   const renderStars = () => {
     const stars = [];
@@ -344,8 +318,10 @@ const ProductItem = (props) => {
   };
 
   return (
-    <Link
-      href={productHref}
+    <div
+      data-product-card
+      data-product-card-id={productCardId || ""}
+      data-product-card-type={resolvedItemType}
       className={`group relative flex w-full min-w-0 flex-col border bg-white shadow-[0_6px_16px_rgba(0,0,0,0.08)] transition-all ${
         compactListing
           ? "h-full max-sm:h-[390px] rounded-[18px] p-2 sm:rounded-[22px] sm:p-3"
@@ -356,6 +332,14 @@ const ProductItem = (props) => {
           : "border-gray-100 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
       }`}
     >
+      <Link
+        href={productHref}
+        aria-label={`Open ${displayProductName || productData.name}`}
+        className="absolute inset-0 z-0 rounded-[inherit]"
+      >
+        <span className="sr-only">{displayProductName || productData.name}</span>
+      </Link>
+
       {/* Image Container */}
       <ProductImage
         src={productData.images?.[0]}
@@ -363,7 +347,7 @@ const ProductItem = (props) => {
         cardImage
         aspect={compactListing ? "aspect-square sm:aspect-square" : "aspect-square"}
         fit="cover"
-        className={compactListing ? "mb-1.5 w-full bg-[#f5f5f5] sm:mb-3" : "mb-3 w-full bg-[#f5f5f5]"}
+        className={compactListing ? "relative z-10 mb-1.5 w-full bg-[#f5f5f5] sm:mb-3" : "relative z-10 mb-3 w-full bg-[#f5f5f5]"}
         imgClassName={`object-cover transition-all duration-300 ${
           isOutOfStock
             ? "grayscale-[0.45] saturate-50 opacity-70"
@@ -427,7 +411,7 @@ const ProductItem = (props) => {
       </ProductImage>
 
       {/* Content */}
-      <div className="flex flex-1 flex-col">
+      <div className="relative z-10 flex flex-1 flex-col">
         <p className={compactListing ? "mb-0.5 min-h-[20px] text-[8px] font-semibold uppercase tracking-[0.15em] text-gray-400 line-clamp-2 sm:mb-1 sm:min-h-0 sm:text-[10px]" : "mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400"}>
           {productData.brand}
         </p>
@@ -461,6 +445,14 @@ const ProductItem = (props) => {
             ({displayReviewCount})
           </span>
         </div>
+
+        {lowStockLabel ? (
+          <div className={compactListing ? "mt-1 sm:mt-2" : "mt-2"}>
+            <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-amber-700">
+              {lowStockLabel}
+            </span>
+          </div>
+        ) : null}
 
         {/* Price & Cart */}
         <div className={compactListing ? "mt-auto border-t border-[#f3ece6] pt-2 sm:pt-3" : "mt-auto border-t border-[#f3ece6] pt-3"}>
@@ -530,8 +522,8 @@ const ProductItem = (props) => {
           </div>
         </div>
       </div>
-    </Link>
+    </div>
   );
 };
 
-export default ProductItem;
+export default memo(ProductItem);

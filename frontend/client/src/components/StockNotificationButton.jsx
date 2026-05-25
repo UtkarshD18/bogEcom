@@ -46,7 +46,6 @@ const StockNotificationButton = ({
 
   const stopNavigation = (event) => {
     if (!preventNavigation) return;
-    event.preventDefault();
     event.stopPropagation();
   };
 

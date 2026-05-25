@@ -1,6 +1,9 @@
 "use client";
 
-import { fetchDataFromApi } from "@/utils/api";
+import {
+  fetchDataFromApi,
+  PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+} from "@/utils/api";
 import {
   createContext,
   useCallback,
@@ -77,7 +80,9 @@ export const ProductProvider = ({ children }) => {
 
   const fetchCategories = useCallback(async () => {
     try {
-      const response = await fetchDataFromApi("/api/categories");
+      const response = await fetchDataFromApi("/api/categories", {
+        timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+      });
       if (response?.error !== true) {
         setCategories(response?.data || []);
       }
@@ -92,6 +97,9 @@ export const ProductProvider = ({ children }) => {
     try {
       const response = await fetchDataFromApi(
         "/api/products?bestSeller=true&sortBy=createdAt&order=desc",
+        {
+          timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+        },
       );
       if (response?.error !== true) {
         setFeaturedProducts(response?.data || []);
@@ -105,7 +113,9 @@ export const ProductProvider = ({ children }) => {
 
   const fetchHomeSlides = useCallback(async () => {
     try {
-      const response = await fetchDataFromApi("/api/home-slides");
+      const response = await fetchDataFromApi("/api/home-slides", {
+        timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+      });
       if (response?.error !== true) {
         setHomeSlides(response?.data || []);
       }
@@ -118,7 +128,9 @@ export const ProductProvider = ({ children }) => {
 
   const fetchBanners = useCallback(async () => {
     try {
-      const response = await fetchDataFromApi("/api/banners");
+      const response = await fetchDataFromApi("/api/banners", {
+        timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+      });
       if (response?.error !== true) {
         setBanners(response?.data || []);
       }

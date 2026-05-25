@@ -10,8 +10,13 @@ import {
 } from "@/utils/imageUtils";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { FiArrowUpRight, FiMaximize2, FiMinimize2 } from "react-icons/fi";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  FiArrowLeft,
+  FiArrowRight,
+  FiArrowUpRight,
+  FiX,
+} from "react-icons/fi";
 import { Swiper, SwiperSlide } from "swiper/react";
 
 import "swiper/css";
@@ -27,6 +32,7 @@ const fallbackSlides = [
     subtitle: "100% Natural Peanut Butter",
     cta: "Shop Now",
     link: "/products",
+    stayDurationMs: 5600,
   },
   {
     image: "/slide_2.webp",
@@ -34,6 +40,7 @@ const fallbackSlides = [
     subtitle: "High Protein | No Sugar",
     cta: "Explore",
     link: "/products?category=protein-peanut-butter",
+    stayDurationMs: 5600,
   },
   {
     image: "/slide_3.webp",
@@ -41,24 +48,9 @@ const fallbackSlides = [
     subtitle: "No Palm Oil | No Preservatives",
     cta: "Discover",
     link: "/products?category=organic-natural",
+    stayDurationMs: 5600,
   },
 ];
-
-const formatSlides = (slides = []) =>
-  slides.map((slide) => ({
-    image: slide.image,
-    mobileImage: slide.mobileImage || slide.image,
-    title: slide.title,
-    subtitle: slide.subtitle || slide.description,
-    cta: slide.buttonText || "Shop Now",
-    link: slide.buttonLink || "/products",
-    backgroundColor: slide.backgroundColor || "#f5f5f5",
-    stayDurationMs: Number(slide.stayDurationMs || 0) || 5600,
-    offerEnabled: Boolean(slide.offerEnabled),
-    offerBadgeText: slide.offerBadgeText || "",
-    offerEndsAt: slide.offerEndsAt || null,
-    offerTimerPosition: slide.offerTimerPosition || "top-right",
-  }));
 
 const HERO_TRUST_DEFAULTS = [
   "100% Natural",
@@ -74,6 +66,42 @@ const HERO_TRUST_SETTING_KEYS = [
   "homepage_trust_4_text",
 ];
 
+const normalizeSlideText = (value, fallback = "") =>
+  String(value ?? fallback).trim() || fallback;
+
+const normalizeSlideLink = (value) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "/products";
+  if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  return `/${trimmed.replace(/^\/+/, "")}`;
+};
+
+const formatSlides = (slides = []) =>
+  slides.map((slide) => ({
+    image: slide.image,
+    mobileImage: slide.mobileImage || slide.image,
+    title: normalizeSlideText(slide.title, "Featured Pick"),
+    subtitle: normalizeSlideText(slide.subtitle || slide.description, ""),
+    cta: normalizeSlideText(slide.buttonText, "Shop Now"),
+    link: normalizeSlideLink(slide.buttonLink),
+    backgroundColor: slide.backgroundColor || "#f5f5f5",
+    stayDurationMs: Math.max(
+      Number(
+        slide.stayDurationMs ||
+          (Number(slide.stayDuration || 0) > 0
+            ? Number(slide.stayDuration) * 1000
+            : 5600),
+      ) || 5600,
+      2000,
+    ),
+    offerEnabled: Boolean(slide.offerEnabled || slide.offerEndsAt),
+    offerBadgeText: slide.offerBadgeText || "",
+    offerEndsAt: slide.offerEndsAt || null,
+    offerTimerPosition: slide.offerTimerPosition || "top-right",
+  }));
+
 const HERO_STATS = [
   { label: "Best Seller", value: "Top Rated" },
   { label: "Clean Label", value: "No Nasties" },
@@ -84,11 +112,21 @@ const getOfferTimeLeft = (endsAt, nowMs) => {
   const endMs = new Date(endsAt || "").getTime();
   const remainingMs = endMs - nowMs;
   if (!Number.isFinite(endMs) || remainingMs <= 0) return "";
+
   const totalSeconds = Math.floor(remainingMs / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+
+  if (days > 0) {
+    return `${days}d ${String(hours).padStart(2, "0")}h`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  }
+
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 };
 
@@ -97,22 +135,36 @@ const getTimerPositionClass = (position) => {
     case "top-left":
       return "left-4 top-4 sm:left-6 sm:top-6";
     case "bottom-left":
-      return "bottom-24 left-4 sm:bottom-28 sm:left-6";
+      return "bottom-16 left-4 sm:bottom-20 sm:left-6";
     case "bottom-right":
-      return "bottom-24 right-4 sm:bottom-28 sm:right-6";
+      return "bottom-16 right-4 sm:bottom-20 sm:right-6";
     case "top-right":
     default:
       return "right-4 top-4 sm:right-6 sm:top-6";
   }
 };
 
-const HomeSlider = ({ initialSlides = [] }) => {
+const getSlideAutoplayDelay = (slides, slideIndex) =>
+  Math.max(Number(slides?.[slideIndex]?.stayDurationMs) || 5600, 2000);
+
+const syncAutoplayDelay = (swiper, slides, slideIndex) => {
+  if (!swiper?.params?.autoplay) return;
+
+  swiper.params.autoplay.delay = getSlideAutoplayDelay(slides, slideIndex);
+  if (swiper.autoplay) {
+    swiper.autoplay.stop();
+    swiper.autoplay.start();
+  }
+};
+
+const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
   const { homeSlides = [], fetchHomeSlides } = useProducts();
   const { settings } = useSettings();
   const [activeIndex, setActiveIndex] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  const [isPanelMinimized, setIsPanelMinimized] = useState(false);
+  const [isHeroPanelDismissed, setIsHeroPanelDismissed] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const swiperRef = useRef(null);
 
   const displaySlides = useMemo(() => {
     if (homeSlides?.length > 0) {
@@ -127,20 +179,16 @@ const HomeSlider = ({ initialSlides = [] }) => {
   }, [homeSlides, initialSlides]);
 
   const motionEnabled = !prefersReducedMotion;
-  const panelSettings = settings?.homeSlidePanelSettings || {};
-  const showPanel = panelSettings.enabled !== false;
-  const panelMinimizeEnabled = panelSettings.minimizeEnabled !== false;
-  const panelRestoreMs =
-    Math.max(Number(panelSettings.restoreAfterSeconds || 60), 5) * 1000;
-  const minimizedLabel =
-    String(panelSettings.minimizedLabel || "").trim() || "Show details";
+  const hasMultipleSlides = displaySlides.length > 1;
+  const activeSlide = displaySlides[activeIndex] || displaySlides[0] || null;
   const heroTrustItems = useMemo(
     () =>
       HERO_TRUST_SETTING_KEYS.map(
         (key, index) =>
-          String(settings?.[key] ?? "").trim() || HERO_TRUST_DEFAULTS[index],
-      ),
-    [settings],
+          String(initialSettings?.[key] ?? settings?.[key] ?? "").trim() ||
+          HERO_TRUST_DEFAULTS[index],
+      ).filter(Boolean),
+    [initialSettings, settings],
   );
 
   useEffect(() => {
@@ -164,283 +212,415 @@ const HomeSlider = ({ initialSlides = [] }) => {
   }, []);
 
   useEffect(() => {
-    if (!homeSlides?.length && !initialSlides?.length) {
-      fetchHomeSlides();
+    if (!homeSlides?.length) {
+      void fetchHomeSlides();
     }
-  }, [fetchHomeSlides, homeSlides?.length, initialSlides?.length]);
+  }, [fetchHomeSlides, homeSlides?.length]);
 
   useEffect(() => {
     const hasActiveOffer = displaySlides.some(
       (slide) => slide.offerEnabled && slide.offerEndsAt,
     );
     if (!hasActiveOffer) return undefined;
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
     return () => window.clearInterval(timer);
   }, [displaySlides]);
 
   useEffect(() => {
-    if (!isPanelMinimized) return undefined;
-    const timer = window.setTimeout(() => {
-      setIsPanelMinimized(false);
-    }, panelRestoreMs);
-    return () => window.clearTimeout(timer);
-  }, [isPanelMinimized, panelRestoreMs]);
+    if (!swiperRef.current || !displaySlides.length) return;
+    syncAutoplayDelay(
+      swiperRef.current,
+      displaySlides,
+      swiperRef.current.realIndex || 0,
+    );
+  }, [displaySlides]);
+
+  useEffect(() => {
+    if (!displaySlides.length) {
+      setActiveIndex(0);
+      return;
+    }
+
+    setActiveIndex((currentIndex) =>
+      currentIndex >= displaySlides.length ? 0 : currentIndex,
+    );
+  }, [displaySlides.length]);
+
+  const handlePreviousSlide = () => {
+    swiperRef.current?.slidePrev();
+  };
+
+  const handleNextSlide = () => {
+    swiperRef.current?.slideNext();
+  };
 
   return (
-    <section className="relative overflow-hidden rounded-b-[1.5rem] bg-[#1a120d] shadow-[0_40px_120px_rgba(26,18,13,0.16)] md:rounded-b-[3rem]">
-      <Swiper
-        speed={motionEnabled ? 520 : 320}
-        spaceBetween={0}
-        slidesPerView={1}
-        loop={true}
-        effect="fade"
-        fadeEffect={{ crossFade: true }}
-        autoplay={
-          motionEnabled
-            ? {
-                delay: 5600,
-                disableOnInteraction: false,
+    <section className="relative z-10 px-3 sm:px-4 md:px-0">
+      <div className="w-full">
+        <div className="overflow-hidden rounded-[1.6rem] bg-[#120c09] shadow-[0_32px_90px_rgba(26,18,13,0.16)] sm:rounded-[2rem] md:rounded-none">
+          <div className="relative aspect-[4/3] w-full sm:aspect-[5/4] md:aspect-[16/9]">
+            <Swiper
+              speed={motionEnabled ? 850 : 500}
+              spaceBetween={0}
+              slidesPerView={1}
+              loop={hasMultipleSlides}
+              effect="fade"
+              fadeEffect={{ crossFade: true }}
+              autoplay={
+                motionEnabled && hasMultipleSlides
+                  ? {
+                      delay: displaySlides[0]?.stayDurationMs || 5600,
+                      disableOnInteraction: false,
+                    }
+                  : false
               }
-            : false
-        }
-        pagination={{
-          clickable: true,
-          bulletClass: "swiper-pagination-bullet home-slide-bullet",
-          bulletActiveClass:
-            "swiper-pagination-bullet-active home-slide-bullet-active",
-        }}
-        modules={[Autoplay, Pagination, EffectFade]}
-        className="homeSlider h-[calc(100svh-var(--header-height,128px))] min-h-[25rem] w-full sm:min-h-[36rem] md:h-[88vh] md:min-h-[46rem]"
-        onSlideChange={(swiper) => setActiveIndex(swiper.realIndex)}
-      >
-        {displaySlides.map((slide, index) => (
-          <SwiperSlide
-            key={`${slide.title || "slide"}-${index}`}
-            className="relative h-full w-full"
-            data-swiper-autoplay={slide.stayDurationMs || undefined}
-          >
-            <div className="relative h-full w-full overflow-hidden">
-              <motion.div
-                className="absolute inset-0"
-                initial={false}
-                animate={{ scale: 1 }}
-                transition={{ duration: 0.18 }}
-              >
-                {(() => {
-                  const desktopSrc = getHeroImageUrl(slide.image);
-                  const mobileSrc = getHeroMobileImageUrl(
-                    slide.mobileImage || slide.image,
-                  );
-                  const desktopCloudinary = isCloudinaryUrl(desktopSrc);
-                  const mobileCloudinary = isCloudinaryUrl(mobileSrc);
-
-                  return (
-                    <>
-                      <div
-                        className="absolute inset-0 hidden md:block"
-                        style={{
-                          backgroundColor: slide.backgroundColor || "#f5f5f5",
-                        }}
-                      >
-                        <SeoImage
-                          src={desktopSrc}
-                          fallbackAlt={slide.title}
-                          fill
-                          priority={index === 0}
-                          sizes="100vw"
-                          fetchPriority={index === 0 ? "high" : undefined}
-                          loading={index === 0 ? "eager" : "lazy"}
-                          unoptimized={desktopCloudinary}
-                          className="object-cover object-center"
-                        />
-                      </div>
-                      <div
-                        className="absolute inset-0 md:hidden"
-                        style={{
-                          backgroundColor: slide.backgroundColor || "#f5f5f5",
-                        }}
-                      >
-                        <SeoImage
-                          src={mobileSrc}
-                          fallbackAlt={slide.title}
-                          fill
-                          priority={index === 0}
-                          sizes="100vw"
-                          fetchPriority={index === 0 ? "high" : undefined}
-                          loading={index === 0 ? "eager" : "lazy"}
-                          unoptimized={mobileCloudinary}
-                          className="object-cover object-center"
-                        />
-                      </div>
-                    </>
-                  );
-                })()}
-              </motion.div>
-
-              <div
-                className="absolute inset-0 hidden md:block"
-                style={{
-                  background:
-                    "linear-gradient(115deg, rgba(15,10,7,0.78) 0%, rgba(15,10,7,0.44) 34%, rgba(15,10,7,0.18) 62%, transparent 82%), linear-gradient(to top, rgba(0,0,0,0.74) 0%, rgba(0,0,0,0.24) 38%, transparent 72%)",
-                }}
-              />
-              <div
-                className="absolute inset-0 md:hidden"
-                style={{
-                  background:
-                    "linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.18) 30%, rgba(0,0,0,0.7) 100%), linear-gradient(105deg, rgba(15,10,7,0.72) 0%, rgba(15,10,7,0.28) 54%, transparent 100%)",
-                }}
-              />
-              <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#1d140f]/60 to-transparent" />
-            </div>
-
-            {slide.offerEnabled && getOfferTimeLeft(slide.offerEndsAt, nowMs) ? (
-              <div
-                className={`pointer-events-none absolute z-30 ${getTimerPositionClass(
-                  slide.offerTimerPosition,
-                )}`}
-              >
-                <div className="rounded-2xl border border-white/20 bg-black/48 px-3 py-2 text-right text-white shadow-xl backdrop-blur-md">
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ffe2a8]">
-                    {slide.offerBadgeText || "Offer ends in"}
-                  </p>
-                  <p className="mt-0.5 text-sm font-black">
-                    {getOfferTimeLeft(slide.offerEndsAt, nowMs)}
-                  </p>
-                </div>
-              </div>
-            ) : null}
-
-            {showPanel ? (
-            <div className="home-slide-content-layer pointer-events-none absolute inset-0">
-              <div className="mx-auto flex h-full max-w-7xl items-end px-4 pb-28 pt-8 sm:pb-32 md:items-center md:pb-20 md:pt-24">
-                {isPanelMinimized ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsPanelMinimized(false)}
-                    className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/52 px-4 py-3 text-sm font-black text-white shadow-xl backdrop-blur-md transition hover:bg-black/64"
-                    aria-label="Show home slide details"
-                  >
-                    <FiMaximize2 />
-                    {minimizedLabel}
-                  </button>
-                ) : (
-                <motion.div
-                  key={`hero-panel-${activeIndex}-${index}`}
-                  initial={
-                    motionEnabled
-                      ? { opacity: 0, y: 12, scale: 0.995 }
-                      : { opacity: 0 }
-                  }
-                  animate={
-                    motionEnabled
-                      ? { opacity: 1, y: 0, scale: 1 }
-                      : { opacity: 1 }
-                  }
-                  transition={
-                    motionEnabled
-                      ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] }
-                      : { duration: 0.18 }
-                  }
-                  className="pointer-events-auto relative w-full max-w-[22.5rem] overflow-hidden rounded-[1.35rem] border border-white/24 bg-[linear-gradient(145deg,rgba(44,30,22,0.82)_0%,rgba(62,43,32,0.74)_46%,rgba(88,62,46,0.68)_100%)] px-3.5 py-3.5 text-white shadow-[0_32px_90px_-44px_rgba(0,0,0,0.82)] backdrop-blur-[6px] sm:max-w-[35rem] sm:rounded-[2rem] sm:px-6 sm:py-6 sm:backdrop-blur-md md:rounded-[2.25rem] md:px-8 md:py-8"
+              pagination={{
+                clickable: true,
+                bulletClass: "swiper-pagination-bullet home-slide-bullet",
+                bulletActiveClass:
+                  "swiper-pagination-bullet-active home-slide-bullet-active",
+              }}
+              modules={[Autoplay, Pagination, EffectFade]}
+              className="homeSlider h-full w-full"
+              onSwiper={(swiper) => {
+                swiperRef.current = swiper;
+                syncAutoplayDelay(swiper, displaySlides, swiper.realIndex || 0);
+              }}
+              onSlideChange={(swiper) => {
+                setActiveIndex(swiper.realIndex);
+                syncAutoplayDelay(swiper, displaySlides, swiper.realIndex);
+              }}
+            >
+              {displaySlides.map((slide, index) => (
+                <SwiperSlide
+                  key={`${slide.title || "slide"}-${index}`}
+                  className="relative h-full w-full"
+                  data-swiper-autoplay={slide.stayDurationMs || 5600}
                 >
-                  <div className="pointer-events-none absolute inset-0">
-                    <div className="absolute left-[-8%] top-[-16%] h-28 w-32 rounded-full bg-white/24 blur-2xl" />
-                    <div className="absolute bottom-[-20%] right-[-8%] h-32 w-36 rounded-full bg-[rgba(255,255,255,0.14)] blur-3xl" />
-                    <div className="absolute inset-x-7 top-0 h-px bg-white/30" />
-                  </div>
+                  <div className="relative h-full w-full overflow-hidden bg-[#120c09]">
+                    <motion.div
+                      className="absolute inset-0 z-0"
+                      initial={false}
+                      animate={{ scale: motionEnabled ? 1.02 : 1 }}
+                      transition={
+                        motionEnabled
+                          ? {
+                              duration: Math.max(
+                                (slide.stayDurationMs || 5600) / 1000,
+                                0.2,
+                              ),
+                              ease: "easeOut",
+                            }
+                          : { duration: 0.18 }
+                      }
+                    >
+                      {(() => {
+                        const desktopSrc = getHeroImageUrl(slide.image);
+                        const mobileSrc = getHeroMobileImageUrl(
+                          slide.mobileImage || slide.image,
+                        );
+                        const desktopCloudinary = isCloudinaryUrl(desktopSrc);
+                        const mobileCloudinary = isCloudinaryUrl(mobileSrc);
 
-                  <div className="relative z-10">
-                    {panelMinimizeEnabled ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsPanelMinimized(true)}
-                        className="absolute right-0 top-0 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/18 bg-white/12 text-white transition hover:bg-white/20"
-                        aria-label="Minimize home slide details"
-                      >
-                        <FiMinimize2 />
-                      </button>
-                    ) : null}
-                    <span className="inline-flex items-center rounded-full border border-white/15 bg-[rgba(121,80,41,0.24)] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-white/90 sm:px-3 sm:text-[11px] sm:tracking-[0.22em]">
-                      Bestseller Range
-                    </span>
+                        return (
+                          <>
+                            <div
+                              className="absolute inset-0 hidden md:block"
+                              style={{
+                                backgroundColor:
+                                  slide.backgroundColor || "#f5f5f5",
+                              }}
+                            >
+                              <SeoImage
+                                src={desktopSrc}
+                                fallbackAlt={slide.title}
+                                fill
+                                aria-hidden="true"
+                                priority={index === 0}
+                                sizes="100vw"
+                                fetchPriority={index === 0 ? "high" : undefined}
+                                loading={index === 0 ? "eager" : "lazy"}
+                                unoptimized={desktopCloudinary}
+                                className="object-cover object-center"
+                              />
+                              <SeoImage
+                                src={desktopSrc}
+                                fallbackAlt={slide.title}
+                                fill
+                                priority={index === 0}
+                                sizes="100vw"
+                                fetchPriority={index === 0 ? "high" : undefined}
+                                loading={index === 0 ? "eager" : "lazy"}
+                                unoptimized={desktopCloudinary}
+                                className="object-contain object-center"
+                              />
+                            </div>
+                            <div
+                              className="absolute inset-0 md:hidden"
+                              style={{
+                                backgroundColor:
+                                  slide.backgroundColor || "#f5f5f5",
+                              }}
+                            >
+                              <SeoImage
+                                src={mobileSrc}
+                                fallbackAlt={slide.title}
+                                fill
+                                aria-hidden="true"
+                                priority={index === 0}
+                                sizes="100vw"
+                                fetchPriority={index === 0 ? "high" : undefined}
+                                loading={index === 0 ? "eager" : "lazy"}
+                                unoptimized={mobileCloudinary}
+                                className="object-cover object-top"
+                              />
+                              <SeoImage
+                                src={mobileSrc}
+                                fallbackAlt={slide.title}
+                                fill
+                                priority={index === 0}
+                                sizes="100vw"
+                                fetchPriority={index === 0 ? "high" : undefined}
+                                loading={index === 0 ? "eager" : "lazy"}
+                                unoptimized={mobileCloudinary}
+                                className="object-contain object-top"
+                              />
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </motion.div>
 
-                    <h1 className="mt-2.5 text-[1.65rem] font-black leading-[1.05] tracking-normal text-white drop-shadow-[0_12px_32px_rgba(0,0,0,0.28)] sm:mt-4 sm:text-[2.9rem] md:text-[3.45rem]">
-                      {slide.title}
-                    </h1>
+                    <div
+                      className="absolute inset-0 z-10"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(12,9,7,0.76) 0%, rgba(12,9,7,0.48) 24%, rgba(12,9,7,0.14) 58%, rgba(12,9,7,0.24) 100%), linear-gradient(to top, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.08) 42%, transparent 72%)",
+                      }}
+                    />
+                    <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#1d140f]/50 to-transparent" />
 
-                    <p className="mt-2.5 max-w-[28rem] text-sm font-semibold leading-5 text-white/86 sm:mt-4 sm:text-base sm:font-medium sm:leading-6 sm:text-white/82">
-                      {slide.subtitle}
-                    </p>
-
-                    <div className="mt-4 flex flex-wrap items-center gap-2.5 sm:mt-6 sm:gap-3">
+                    {slide.offerEnabled &&
+                    getOfferTimeLeft(slide.offerEndsAt, nowMs) ? (
                       <Link
                         href={slide.link}
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-[#352116] shadow-[0_18px_45px_-30px_rgba(255,255,255,0.4)] transition duration-300 hover:-translate-y-0.5 hover:bg-[#fff6ea] sm:px-6 sm:py-3"
+                        className={`absolute z-20 transition duration-300 hover:-translate-y-0.5 ${getTimerPositionClass(
+                          slide.offerTimerPosition,
+                        )}`}
+                        aria-label={`View ${slide.title} offer`}
                       >
-                        {slide.cta}
-                        <FiArrowUpRight size={16} />
-                      </Link>
-
-                      <Link
-                        href="/products"
-                        className="inline-flex items-center gap-2 rounded-full border border-white/24 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white/90 transition duration-300 hover:bg-white/16 sm:py-3"
-                      >
-                        View catalog
-                      </Link>
-                    </div>
-
-                    <div className="mx-auto mt-6 hidden max-w-[31rem] grid-cols-3 gap-3 sm:grid">
-                      {HERO_STATS.map((item) => (
-                        <div
-                          key={item.label}
-                          className="rounded-[0.9rem] border border-white/12 bg-white/8 px-2.5 py-2.5 sm:rounded-[1.1rem] sm:px-4 sm:py-3"
-                        >
-                          <p className="text-[8px] font-extrabold uppercase tracking-[0.14em] text-white/62 sm:text-[10px] sm:tracking-[0.2em] sm:text-white/58">
-                            {item.label}
+                        <div className="rounded-2xl border border-white/20 bg-black/46 px-3 py-2 text-right text-white shadow-xl backdrop-blur-md">
+                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ffe2a8]">
+                            {slide.offerBadgeText || "Offer ends in"}
                           </p>
-                          <p className="mt-1 text-xs font-semibold leading-tight text-white/92 sm:text-sm">
-                            {item.value}
+                          <p className="mt-0.5 text-sm font-black">
+                            {getOfferTimeLeft(slide.offerEndsAt, nowMs)}
                           </p>
                         </div>
-                      ))}
+                      </Link>
+                    ) : null}
+
+                  </div>
+                </SwiperSlide>
+              ))}
+            </Swiper>
+
+            {hasMultipleSlides ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handlePreviousSlide}
+                  className="absolute left-4 top-1/2 z-30 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/18 bg-black/28 text-white shadow-[0_16px_36px_rgba(0,0,0,0.24)] backdrop-blur-md transition hover:-translate-y-[52%] hover:bg-black/40 md:inline-flex lg:left-5"
+                  aria-label="Previous home slide"
+                >
+                  <FiArrowLeft size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextSlide}
+                  className="absolute right-4 top-1/2 z-30 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/18 bg-black/28 text-white shadow-[0_16px_36px_rgba(0,0,0,0.24)] backdrop-blur-md transition hover:-translate-y-[52%] hover:bg-black/40 md:inline-flex lg:right-5"
+                  aria-label="Next home slide"
+                >
+                  <FiArrowRight size={18} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePreviousSlide}
+                  className="absolute left-4 top-1/2 z-30 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/18 bg-black/38 text-white shadow-[0_14px_30px_rgba(0,0,0,0.24)] backdrop-blur-md transition hover:bg-black/48 md:hidden"
+                  aria-label="Previous home slide"
+                >
+                  <FiArrowLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextSlide}
+                  className="absolute right-4 top-1/2 z-30 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/18 bg-black/38 text-white shadow-[0_14px_30px_rgba(0,0,0,0.24)] backdrop-blur-md transition hover:bg-black/48 md:hidden"
+                  aria-label="Next home slide"
+                >
+                  <FiArrowRight size={16} />
+                </button>
+              </>
+            ) : null}
+
+            <div className="pointer-events-none absolute inset-0 z-20 hidden md:block">
+              <div className="flex h-full items-center px-6 py-8 lg:px-10 xl:px-14">
+                {!isHeroPanelDismissed && activeSlide ? (
+                  <div
+                    key={`hero-panel-${activeIndex}`}
+                    className="pointer-events-auto relative max-w-[24rem] overflow-hidden rounded-[1.5rem] border border-white/14 bg-[linear-gradient(150deg,rgba(20,14,10,0.78)_0%,rgba(20,14,10,0.48)_100%)] px-5 py-5 text-white shadow-[0_26px_70px_-38px_rgba(0,0,0,0.82)] backdrop-blur-sm lg:max-w-[28rem] lg:rounded-[1.8rem] lg:px-6 lg:py-6"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setIsHeroPanelDismissed(true)}
+                      className="absolute right-3 top-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/14 bg-black/20 text-white/84 transition hover:bg-black/35"
+                      aria-label="Hide hero details"
+                    >
+                      <FiX size={15} />
+                    </button>
+
+                    <div className="relative z-10">
+                      <span className="inline-flex items-center rounded-full border border-white/12 bg-[rgba(121,80,41,0.2)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-white/88">
+                        Bestseller Range
+                      </span>
+
+                      <h1 className="mt-4 max-w-[14ch] text-[2rem] font-black leading-[0.92] tracking-[-0.05em] text-white drop-shadow-[0_12px_32px_rgba(0,0,0,0.28)] lg:text-[2.5rem]">
+                        {activeSlide.title}
+                      </h1>
+
+                      <p className="mt-3 max-w-[28rem] text-sm font-medium leading-6 text-white/78 lg:text-[15px]">
+                        {activeSlide.subtitle}
+                      </p>
+
+                      <div className="mt-5 flex flex-wrap items-center gap-3">
+                        <Link
+                          href={activeSlide.link}
+                          className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-[#352116] shadow-[0_18px_45px_-30px_rgba(255,255,255,0.4)] transition duration-300 hover:-translate-y-0.5 hover:bg-[#fff6ea]"
+                        >
+                          {activeSlide.cta}
+                          <FiArrowUpRight size={16} />
+                        </Link>
+
+                        <Link
+                          href="/products"
+                          className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/8 px-4 py-3 text-sm font-semibold text-white/90 transition duration-300 hover:bg-white/14"
+                        >
+                          View catalog
+                        </Link>
+                      </div>
+
+                      <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-3">
+                        {HERO_STATS.map((item) => (
+                          <div
+                            key={item.label}
+                            className="rounded-[1rem] border border-white/10 bg-white/6 px-4 py-3"
+                          >
+                            <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-white/56">
+                              {item.label}
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-white/88">
+                              {item.value}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </motion.div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsHeroPanelDismissed(false)}
+                    className="pointer-events-auto inline-flex items-center rounded-full border border-white/16 bg-[rgba(20,14,10,0.62)] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_40px_rgba(0,0,0,0.26)] backdrop-blur-sm transition hover:bg-[rgba(20,14,10,0.78)]"
+                  >
+                    Show slide details
+                  </button>
                 )}
               </div>
             </div>
-            ) : null}
-          </SwiperSlide>
-        ))}
-      </Swiper>
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-12 z-20 px-2 sm:px-4">
-        <div className="mx-auto flex max-w-[24rem] flex-nowrap items-center justify-center gap-1.5 rounded-full border border-white/18 bg-black/28 px-2 py-2 text-white/92 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur-xl sm:max-w-5xl sm:gap-3 sm:bg-black/20 sm:px-4 sm:py-3 sm:text-white/88 md:w-fit md:max-w-none md:bg-black/30 md:px-5 md:py-3">
-          {heroTrustItems.map((item) => (
-            <span
-              key={item}
-              className="whitespace-nowrap rounded-full bg-white/12 px-2 py-1.5 text-[7px] font-extrabold uppercase tracking-[0.08em] sm:bg-white/10 sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.2em]"
-            >
-              {item}
-            </span>
-          ))}
+          </div>
         </div>
+
+        <div className="relative z-20 mx-auto -mt-14 max-w-7xl px-4 md:hidden">
+          {isHeroPanelDismissed ? (
+            <button
+              type="button"
+              onClick={() => setIsHeroPanelDismissed(false)}
+              className="inline-flex items-center rounded-full border border-[#2c1e15]/12 bg-[#1a120d] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_26px_rgba(0,0,0,0.12)]"
+            >
+              Show slide details
+            </button>
+          ) : activeSlide ? (
+            <div className="rounded-[1.45rem] border border-[#2c1e15]/10 bg-white p-4 shadow-[0_18px_50px_rgba(26,18,13,0.08)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="inline-flex items-center rounded-full bg-[#f3ebe5] px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#7c5b49]">
+                    Bestseller Range
+                  </span>
+                  <h1 className="mt-3 text-[1.55rem] font-black leading-[0.96] tracking-[-0.04em] text-[#2d1a11]">
+                    {activeSlide.title}
+                  </h1>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsHeroPanelDismissed(true)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#2c1e15]/10 bg-[#f7f2ed] text-[#2d1a11]"
+                  aria-label="Hide slide details"
+                >
+                  <FiX size={15} />
+                </button>
+              </div>
+
+              <p className="mt-3 text-sm leading-6 text-[#6a5447]">
+                {activeSlide.subtitle}
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link
+                  href={activeSlide.link}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#2d1a11] px-5 py-3 text-sm font-bold text-white"
+                >
+                  {activeSlide.cta}
+                  <FiArrowUpRight size={16} />
+                </Link>
+                <Link
+                  href="/products"
+                  className="inline-flex items-center gap-2 rounded-full border border-[#2d1a11]/12 bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-[#2d1a11]"
+                >
+                  View catalog
+                </Link>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {heroTrustItems.length ? (
+          <div className="relative z-20 mx-auto mt-3 max-w-7xl px-4 sm:mt-4 md:-mt-6">
+            <div className="mx-auto w-full max-w-5xl rounded-[1.4rem] border border-white/16 bg-[rgba(18,12,9,0.78)] px-2.5 py-3 text-white/88 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur-xl md:max-w-fit md:rounded-full md:px-4">
+              <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden md:flex-wrap md:justify-center md:gap-2 md:overflow-visible">
+                {heroTrustItems.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full bg-white/10 px-2.5 py-1.5 text-[8px] font-extrabold uppercase tracking-[0.12em] sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.2em]"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <style jsx global>{`
-        .homeSlider .home-slide-content-layer {
-          opacity: 0;
-          transition: opacity 0.2s ease;
-        }
-        .homeSlider .swiper-slide-active .home-slide-content-layer {
-          opacity: 1;
-        }
         .homeSlider .swiper-pagination {
-          bottom: 18px !important;
+          bottom: 12px !important;
         }
         .home-slide-bullet {
-          width: 32px !important;
+          width: 24px !important;
           height: 4px !important;
           border-radius: 4px !important;
           background: rgba(255, 255, 255, 0.35) !important;
@@ -452,7 +632,7 @@ const HomeSlider = ({ initialSlides = [] }) => {
           margin: 0 4px !important;
         }
         .home-slide-bullet-active {
-          width: 48px !important;
+          width: 36px !important;
           background: var(--color-primary, #00d89e) !important;
           box-shadow: 0 0 12px var(--color-primary, #00d89e) !important;
         }

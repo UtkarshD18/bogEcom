@@ -2,14 +2,14 @@ const ASPECT_RATIO_TOLERANCE = 0.1;
 
 export const HOME_SLIDE_DESKTOP_SPEC = {
   label: "Desktop hero",
-  width: 1800,
-  height: 1200,
+  width: 1920,
+  height: 1080,
 };
 
 export const HOME_SLIDE_MOBILE_SPEC = {
   label: "Mobile hero",
-  width: 900,
-  height: 1200,
+  width: 1280,
+  height: 720,
 };
 
 const roundToTwo = (value) => Math.round(Number(value || 0) * 100) / 100;

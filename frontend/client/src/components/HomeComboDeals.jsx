@@ -2,21 +2,33 @@
 
 import ComboCard from "@/components/ComboCard";
 import { trackEvent } from "@/utils/analyticsTracker";
-import { fetchDataFromApi } from "@/utils/api";
+import {
+  fetchDataFromApi,
+  PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+} from "@/utils/api";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const HomeComboDeals = () => {
-  const [combos, setCombos] = useState([]);
-  const [loading, setLoading] = useState(false);
+const HomeComboDeals = ({ initialCombos = [] }) => {
+  const [combos, setCombos] = useState(initialCombos);
+  const [loading, setLoading] = useState(initialCombos.length === 0);
   const viewTracker = useRef(new Set());
 
   useEffect(() => {
+    if (initialCombos.length > 0) {
+      setCombos(initialCombos);
+      setLoading(false);
+      return undefined;
+    }
+
     const fetchCombos = async () => {
       setLoading(true);
       try {
         const response = await fetchDataFromApi(
           "/api/combos?sort=priority&limit=10",
+          {
+            timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+          },
         );
         if (response?.success) {
           const items = Array.isArray(response?.data?.items)
@@ -34,7 +46,7 @@ const HomeComboDeals = () => {
     };
 
     fetchCombos();
-  }, []);
+  }, [initialCombos]);
 
   useEffect(() => {
     combos.forEach((combo) => {

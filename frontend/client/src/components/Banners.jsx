@@ -1,13 +1,19 @@
 "use client";
 
 import useSeoAlt from "@/hooks/useSeoAlt";
-import { FLAVORS, MyContext } from "@/context/ThemeContext";
-import { fetchDataFromApi } from "@/utils/api";
-import { getBannerImageUrl, isCloudinaryUrl } from "@/utils/imageUtils";
+import {
+  fetchDataFromApi,
+  PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+} from "@/utils/api";
+import {
+  getBannerImageUrl,
+  getMobileBannerImageUrl,
+  isCloudinaryUrl,
+} from "@/utils/imageUtils";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FiChevronLeft,
   FiChevronRight,
@@ -51,7 +57,7 @@ const BannerMedia = ({ banner, isMuted }) => {
 
   const desktopSrc = banner.image ? getBannerImageUrl(banner.image) : null;
   const mobileSrc = banner.image
-    ? getBannerImageUrl(banner.mobileImage || banner.image)
+    ? getMobileBannerImageUrl(banner.mobileImage || banner.image)
     : null;
   const desktopAlt = useSeoAlt(desktopSrc || banner.title, banner.title);
   const mobileAlt = useSeoAlt(mobileSrc || banner.title, banner.title);
@@ -91,9 +97,8 @@ const BannerMedia = ({ banner, isMuted }) => {
             alt={desktopAlt}
             fill
             sizes="100vw"
-            loading="lazy"
             unoptimized={isCloudinaryUrl(desktopSrc)}
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            className="object-cover transition-transform duration-700 group-hover:scale-105"
           />
         </div>
         <div className="absolute inset-0 md:hidden">
@@ -102,9 +107,8 @@ const BannerMedia = ({ banner, isMuted }) => {
             alt={mobileAlt}
             fill
             sizes="100vw"
-            loading="lazy"
             unoptimized={isCloudinaryUrl(mobileSrc)}
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            className="object-cover transition-transform duration-700 group-hover:scale-105"
           />
         </div>
       </div>
@@ -122,8 +126,6 @@ const Banners = ({ initialBanners = [] }) => {
   const scrollerRef = useRef(null);
   const scrollFrameRef = useRef(0);
   const activeBannerIndexRef = useRef(0);
-  const context = useContext(MyContext);
-  const flavor = context?.flavor || FLAVORS.creamy;
 
   useEffect(() => {
     if (initialBanners.length > 0) {
@@ -134,7 +136,9 @@ const Banners = ({ initialBanners = [] }) => {
 
     const fetchBanners = async () => {
       try {
-        const response = await fetchDataFromApi("/api/banners");
+        const response = await fetchDataFromApi("/api/banners", {
+          timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+        });
         if (response.success && response.data) setBanners(response.data);
       } catch (error) {
         console.error("Failed to fetch banners:", error);
@@ -206,7 +210,7 @@ const Banners = ({ initialBanners = [] }) => {
   };
 
   return (
-    <section className="relative z-20 -mt-7 bg-transparent pb-8 sm:-mt-10 sm:pb-12 md:-mt-14 md:pb-14">
+    <section className="relative z-20 mt-0 bg-transparent pb-8 sm:mt-1 sm:pb-12 md:-mt-2 md:pb-14">
       <div className="mx-auto max-w-7xl px-4">
         <div className="overflow-hidden rounded-[2rem] border border-white/80 bg-white/88 p-4 shadow-[0_30px_80px_rgba(90,58,34,0.10)] backdrop-blur-xl sm:rounded-[2.4rem] sm:p-5 lg:p-6">
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
@@ -214,7 +218,7 @@ const Banners = ({ initialBanners = [] }) => {
               <span
                 className="inline-flex items-center rounded-full border px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.24em]"
                 style={{
-                  backgroundColor: flavor.glass,
+                  backgroundColor: "var(--flavor-glass, rgba(90,58,46,0.24))",
                   borderColor: "rgba(255,255,255,0.75)",
                   color: "var(--color-primary)",
                 }}
@@ -294,7 +298,7 @@ const Banners = ({ initialBanners = [] }) => {
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
-                    transition={{ duration: 0.28, delay: Math.min(index * 0.04, 0.16) }}
+                    transition={{ duration: 0.5, delay: index * 0.08 }}
                     className="min-w-full snap-center md:min-w-[calc(50%_-_10px)]"
                   >
                     <div className="relative">
@@ -311,8 +315,8 @@ const Banners = ({ initialBanners = [] }) => {
                         data-banner-campaign={bannerCampaign}
                       >
                         <motion.div
-                          whileHover={{ y: -2 }}
-                          transition={{ duration: 0.16 }}
+                          whileHover={{ y: -4 }}
+                          transition={{ duration: 0.24 }}
                           className="relative overflow-hidden rounded-[1.8rem] border border-black/5 bg-white shadow-[0_18px_44px_rgba(90,58,34,0.10)]"
                         >
                           <BannerMedia

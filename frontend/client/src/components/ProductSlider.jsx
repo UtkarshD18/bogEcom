@@ -1,7 +1,10 @@
 "use client";
 
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
-import { fetchDataFromApi } from "@/utils/api";
+import {
+  fetchDataFromApi,
+  PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+} from "@/utils/api";
 import { useContext, useEffect, useRef, useState } from "react";
 import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { Autoplay, Navigation } from "swiper/modules";
@@ -79,6 +82,77 @@ const toComboCardPayload = (combo) => {
   };
 };
 
+const normalizeProductCards = (items = []) =>
+  prioritizeNewArrivals(
+    Array.isArray(items)
+      ? items.filter(
+          (product) =>
+            product?.isExclusive !== true &&
+            String(product?.itemType || "product") !== "combo",
+        )
+      : [],
+  );
+
+const normalizeAvailableCombos = (items = []) =>
+  (Array.isArray(items) ? items : []).filter((combo) => {
+    const status = String(combo?.status || "")
+      .trim()
+      .toLowerCase();
+    const source = String(combo?.source || "")
+      .trim()
+      .toLowerCase();
+    const comboType = String(combo?.comboType || "")
+      .trim()
+      .toLowerCase();
+    const hasItems = Array.isArray(combo?.items) && combo.items.length > 0;
+
+    if (combo?.isActive === false || combo?.isVisible === false) return false;
+    if (status && status !== "active") return false;
+    if (source === "ai" || comboType === "ai_suggested") return false;
+    if (!hasItems) return false;
+
+    const available = Number(
+      combo?.availableStock ?? combo?.availability?.available ?? combo?.stockQuantity ?? 0,
+    );
+    return Number.isFinite(available) ? available > 0 : true;
+  });
+
+const rankCombos = (items = []) =>
+  [...normalizeAvailableCombos(items)].sort((a, b) => {
+    const bestSellerWeight =
+      Number(Boolean(b?.isBestSeller)) - Number(Boolean(a?.isBestSeller));
+    if (bestSellerWeight !== 0) return bestSellerWeight;
+    const priorityDelta = toNumber(b?.priority, 0) - toNumber(a?.priority, 0);
+    if (priorityDelta !== 0) return priorityDelta;
+    return (
+      new Date(b?.createdAt || 0).getTime() -
+      new Date(a?.createdAt || 0).getTime()
+    );
+  });
+
+const buildSliderItems = ({
+  fetchedProducts = [],
+  fetchedCombos = [],
+  includeCombos = false,
+  productLimit = 5,
+  comboLimit = 2,
+}) => {
+  const prioritizedProducts = normalizeProductCards(fetchedProducts);
+  if (!includeCombos) {
+    return prioritizedProducts;
+  }
+
+  const topProducts = prioritizedProducts.slice(
+    0,
+    Math.max(Number(productLimit) || 0, 0),
+  );
+  const topCombos = rankCombos(fetchedCombos)
+    .slice(0, Math.max(Number(comboLimit) || 0, 0))
+    .map(toComboCardPayload);
+
+  return [...topProducts, ...topCombos];
+};
+
 const ProductSlider = ({
   title,
   categorySlug,
@@ -89,9 +163,21 @@ const ProductSlider = ({
   sortBy = "createdAt",
   order = "desc",
   separateVariants = false,
+  initialProducts = [],
+  initialCombos = [],
 }) => {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState(() =>
+    buildSliderItems({
+      fetchedProducts: initialProducts,
+      fetchedCombos: initialCombos,
+      includeCombos,
+      productLimit,
+      comboLimit,
+    }),
+  );
+  const [loading, setLoading] = useState(
+    initialProducts.length === 0 && initialCombos.length === 0,
+  );
   const context = useContext(MyContext);
   const flavor = context?.flavor || FLAVORS.creamy;
   const prevRef = useRef(null);
@@ -101,6 +187,20 @@ const ProductSlider = ({
   const [hoverNext, setHoverNext] = useState(false);
 
   useEffect(() => {
+    if (initialProducts.length > 0 || initialCombos.length > 0) {
+      setProducts(
+        buildSliderItems({
+          fetchedProducts: initialProducts,
+          fetchedCombos: initialCombos,
+          includeCombos,
+          productLimit,
+          comboLimit,
+        }),
+      );
+      setLoading(false);
+      return undefined;
+    }
+
     const fetchProducts = async () => {
       try {
         const params = [];
@@ -117,88 +217,44 @@ const ProductSlider = ({
         params.push(`limit=${encodeURIComponent(String(limit || 10))}`);
 
         const productsUrl = `/api/products?${params.join("&")}`;
-        const productsRequest = fetchDataFromApi(productsUrl);
+        const productsRequest = fetchDataFromApi(productsUrl, {
+          timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+        });
         const combosRequest = includeCombos
           ? fetchDataFromApi(
               `/api/combos?sort=priority&limit=${Math.max(comboLimit * 5, 10)}`,
+              {
+                timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+              },
             )
           : Promise.resolve(null);
 
-        const [productResponse, combosResponse] = await Promise.all([
+        const [productResult, combosResult] = await Promise.allSettled([
           productsRequest,
           combosRequest,
         ]);
-
+        const productResponse =
+          productResult.status === "fulfilled" ? productResult.value : null;
+        const combosResponse =
+          combosResult.status === "fulfilled" ? combosResult.value : null;
         const fetchedProducts =
           productResponse?.success && Array.isArray(productResponse?.data)
-            ? productResponse.data.filter(
-                (product) =>
-                  product?.isExclusive !== true &&
-                  String(product?.itemType || "product") !== "combo",
-              )
+            ? productResponse.data
             : [];
-        const prioritizedProducts = prioritizeNewArrivals(fetchedProducts);
-
-        if (!includeCombos) {
-          setProducts(prioritizedProducts);
-          return;
-        }
         const comboItemsRaw =
           combosResponse?.success && Array.isArray(combosResponse?.data?.items)
             ? combosResponse.data.items
             : [];
 
-        const availableCombos = comboItemsRaw.filter((combo) => {
-          const status = String(combo?.status || "")
-            .trim()
-            .toLowerCase();
-          const source = String(combo?.source || "")
-            .trim()
-            .toLowerCase();
-          const comboType = String(combo?.comboType || "")
-            .trim()
-            .toLowerCase();
-          const hasItems =
-            Array.isArray(combo?.items) && combo.items.length > 0;
-
-          // Keep only storefront-real combos.
-          if (combo?.isActive === false || combo?.isVisible === false)
-            return false;
-          if (status && status !== "active") return false;
-          if (source === "ai" || comboType === "ai_suggested") return false;
-          if (!hasItems) return false;
-
-          const available = Number(
-            combo?.availableStock ??
-              combo?.availability?.available ??
-              combo?.stockQuantity ??
-              0,
-          );
-          return Number.isFinite(available) ? available > 0 : true;
-        });
-
-        const rankedCombos = [...availableCombos].sort((a, b) => {
-          const bestSellerWeight =
-            Number(Boolean(b?.isBestSeller)) - Number(Boolean(a?.isBestSeller));
-          if (bestSellerWeight !== 0) return bestSellerWeight;
-          const priorityDelta =
-            toNumber(b?.priority, 0) - toNumber(a?.priority, 0);
-          if (priorityDelta !== 0) return priorityDelta;
-          return (
-            new Date(b?.createdAt || 0).getTime() -
-            new Date(a?.createdAt || 0).getTime()
-          );
-        });
-
-        const topProducts = prioritizedProducts.slice(
-          0,
-          Math.max(Number(productLimit) || 0, 0),
+        setProducts(
+          buildSliderItems({
+            fetchedProducts,
+            fetchedCombos: comboItemsRaw,
+            includeCombos,
+            productLimit,
+            comboLimit,
+          }),
         );
-        const topCombos = rankedCombos
-          .slice(0, Math.max(Number(comboLimit) || 0, 0))
-          .map(toComboCardPayload);
-
-        setProducts([...topProducts, ...topCombos]);
       } catch (error) {
         console.error("Failed to fetch products:", error);
       } finally {
@@ -216,6 +272,8 @@ const ProductSlider = ({
     sortBy,
     order,
     separateVariants,
+    initialProducts,
+    initialCombos,
   ]);
 
   if (loading) {

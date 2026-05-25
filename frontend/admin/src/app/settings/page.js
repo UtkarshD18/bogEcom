@@ -194,6 +194,17 @@ const DEFAULT_MAINTENANCE_SETTINGS = {
   showCountdown: true,
 };
 
+const DEFAULT_OFFER_COUNTDOWN_SETTINGS = {
+  enabled: false,
+  title: "Limited time offer",
+  subtitle: "Fresh deals are live now.",
+  couponCode: "",
+  discountText: "",
+  endsAt: "",
+  ctaLabel: "Shop offers",
+  ctaHref: "/products",
+};
+
 const buildOrderSeriesPreview = (settings = {}) => {
   const prefix =
     String(settings.orderSeriesPrefix || "H1G")
@@ -608,6 +619,38 @@ const SettingsPage = () => {
     return { valid: true, message: "" };
   }, []);
 
+  const validateOfferCountdownSettings = useCallback((value) => {
+    const hasEndsAt = Boolean(String(value.endsAt || "").trim());
+
+    if (hasEndsAt) {
+      const endsAt = new Date(value.endsAt);
+      if (Number.isNaN(endsAt.getTime())) {
+        return {
+          valid: false,
+          message: "Homepage offer countdown end time must be valid.",
+        };
+      }
+
+      if (value.enabled && endsAt <= new Date()) {
+        return {
+          valid: false,
+          message:
+            "Homepage offer countdown end time must be in the future when enabled.",
+        };
+      }
+    }
+
+    if (value.enabled && !hasEndsAt) {
+      return {
+        valid: false,
+        message:
+          "Homepage offer countdown end time is required when the strip is enabled.",
+      };
+    }
+
+    return { valid: true, message: "" };
+  }, []);
+
   const mapPopupPayloadToState = useCallback((popupData) => {
     if (!popupData) return defaultPopupSettings;
     return {
@@ -924,9 +967,11 @@ const SettingsPage = () => {
                 ctaLabel: String(
                   raw.ctaLabel || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaLabel,
                 ).trim(),
-                ctaHref: String(
-                  raw.ctaHref || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
-                ).trim(),
+                ctaHref:
+                  String(
+                    raw.ctaHref ||
+                      DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
+                  ).trim() || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
               });
               break;
             }
@@ -971,6 +1016,12 @@ const SettingsPage = () => {
     const popupValidation = validatePopupConfig(popupSettings);
     if (!popupValidation.valid) {
       setToast(popupValidation.message, "error");
+      return;
+    }
+    const offerCountdownValidation =
+      validateOfferCountdownSettings(offerCountdownSettings);
+    if (!offerCountdownValidation.valid) {
+      setToast(offerCountdownValidation.message, "error");
       return;
     }
     if (
@@ -1125,15 +1176,16 @@ const SettingsPage = () => {
             .trim()
             .toUpperCase(),
           discountText: String(offerCountdownSettings.discountText || "").trim(),
-          endsAt: toIsoIfPresent(offerCountdownSettings.endsAt),
+          endsAt: toIsoIfPresent(offerCountdownSettings.endsAt) || null,
           ctaLabel: String(
             offerCountdownSettings.ctaLabel ||
               DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaLabel,
           ).trim(),
-          ctaHref: String(
-            offerCountdownSettings.ctaHref ||
-              DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
-          ).trim(),
+          ctaHref:
+            String(
+              offerCountdownSettings.ctaHref ||
+                DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
+            ).trim() || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
         }),
       ]);
       const dynamicSaveResults = await Promise.all([
@@ -1158,7 +1210,7 @@ const SettingsPage = () => {
         offerTitleSaved,
         offerDescriptionSaved,
         offerDiscountTextSaved,
-        offerCountdownSaved,
+        offerCountdownSettingsSaved,
       ] = fixedSaveResults;
 
       const flavourButtonSavedResults = dynamicSaveResults.slice(
@@ -1185,7 +1237,7 @@ const SettingsPage = () => {
         offerTitleSaved,
         offerDescriptionSaved,
         offerDiscountTextSaved,
-        offerCountdownSaved,
+        offerCountdownSettingsSaved,
         ...flavourButtonSavedResults,
         ...homepageTrustSavedResults,
       ].every(Boolean);
@@ -1977,12 +2029,11 @@ const SettingsPage = () => {
         </p>
       </div>
 
-      {/* Offer Countdown */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
           <MdLocalOffer className="text-2xl text-orange-500" />
           <h2 className="text-lg font-semibold text-gray-800">
-            Homepage Offer Countdown
+            Homepage Offer Countdown Strip
           </h2>
         </div>
         <Divider className="mb-4" />
@@ -2001,11 +2052,11 @@ const SettingsPage = () => {
                 color="warning"
               />
             }
-            label="Show countdown on homepage"
+            label="Show countdown strip on homepage"
           />
 
           <TextField
-            label="Offer Ends At"
+            label="Ends At"
             type="datetime-local"
             value={offerCountdownSettings.endsAt}
             onChange={(e) =>
@@ -2051,7 +2102,7 @@ const SettingsPage = () => {
           </div>
 
           <TextField
-            label="Countdown Title"
+            label="Title"
             value={offerCountdownSettings.title}
             onChange={(e) =>
               setOfferCountdownSettings((prev) => ({
@@ -2064,7 +2115,7 @@ const SettingsPage = () => {
           />
 
           <TextField
-            label="Discount Text"
+            label="Discount Badge Text"
             value={offerCountdownSettings.discountText}
             onChange={(e) =>
               setOfferCountdownSettings((prev) => ({
@@ -2075,6 +2126,7 @@ const SettingsPage = () => {
             size="small"
             fullWidth
             placeholder="Flat 10% off"
+            helperText="Shown above the strip title"
           />
 
           <TextField
@@ -2089,7 +2141,8 @@ const SettingsPage = () => {
             size="small"
             fullWidth
             multiline
-            rows={2}
+            rows={3}
+            className="md:col-span-2"
           />
 
           <TextField
@@ -2105,6 +2158,7 @@ const SettingsPage = () => {
             }
             size="small"
             fullWidth
+            helperText="Optional, but must match an existing coupon if used"
           />
 
           <TextField
@@ -2131,13 +2185,14 @@ const SettingsPage = () => {
             }
             size="small"
             fullWidth
-            helperText="Example: /products or /combo"
+            className="md:col-span-2"
+            helperText="Use a storefront path like /products or a full URL."
           />
         </div>
 
         <p className="text-sm text-gray-500 mt-3">
-          Rates still come from the product, combo, and coupon rules. This timer
-          controls the visible urgency banner and coupon messaging.
+          This powers the promotional strip shown below the homepage hero. The
+          strip hides itself automatically once the end time passes.
         </p>
       </div>
 

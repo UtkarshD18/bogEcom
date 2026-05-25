@@ -1,29 +1,12 @@
+import { headers } from "next/headers";
 import HomeSlider from "@/components/HomeSlider";
+import Banners from "@/components/Banners";
+import CatSlider from "@/components/CatSlider";
+import HomeComboDeals from "@/components/HomeComboDeals";
 import dynamic from "next/dynamic";
 
-const Banners = dynamic(() => import("@/components/Banners"), {
-  loading: () => null,
-});
-const CatSlider = dynamic(() => import("@/components/CatSlider"), {
-  loading: () => null,
-});
-const HomeComboDeals = dynamic(() => import("@/components/HomeComboDeals"), {
-  loading: () => null,
-});
-const HomeCustomerReviews = dynamic(
-  () => import("@/components/HomeCustomerReviews"),
-  {
-    loading: () => null,
-  },
-);
 const OfferCountdownStrip = dynamic(
   () => import("@/components/OfferCountdownStrip"),
-  {
-    loading: () => null,
-  },
-);
-const WhatsAppFloatingButton = dynamic(
-  () => import("@/components/WhatsAppFloatingButton"),
   {
     loading: () => null,
   },
@@ -47,9 +30,9 @@ const LOCAL_DEV_API_BASE_URL = sanitizeBaseUrl(
 );
 const HOMEPAGE_FETCH_TIMEOUT_MS = Math.max(
   Number.parseInt(
-    String(process.env.NEXT_PUBLIC_HOMEPAGE_FETCH_TIMEOUT_MS || "1800"),
+    String(process.env.NEXT_PUBLIC_HOMEPAGE_FETCH_TIMEOUT_MS || "12000"),
     10,
-  ) || 1800,
+  ) || 12000,
   500,
 );
 
@@ -67,22 +50,52 @@ const fetchWithTimeout = async (url, timeoutMs) => {
   }
 };
 
-const getHomepageBaseCandidates = () => {
+const sanitizeOrigin = (value) => {
+  const normalized = sanitizeBaseUrl(value);
+  if (!/^https?:\/\//i.test(normalized)) {
+    return "";
+  }
+  return normalized;
+};
+
+const getRequestOrigin = async () => {
+  try {
+    const headerStore = await headers();
+    const host = String(
+      headerStore.get("x-forwarded-host") || headerStore.get("host") || "",
+    ).trim();
+    if (!host) return "";
+
+    const proto = String(
+      headerStore.get("x-forwarded-proto") ||
+        (process.env.NODE_ENV === "production" ? "https" : "http"),
+    ).trim();
+
+    return sanitizeOrigin(`${proto}://${host}`);
+  } catch {
+    return "";
+  }
+};
+
+const getHomepageBaseCandidates = (requestOrigin = "") => {
   if (process.env.NODE_ENV === "production") {
-    return [API_BASE_URL].filter(Boolean);
+    return [requestOrigin, API_BASE_URL].filter(
+      (candidate, index, arr) =>
+        candidate && arr.indexOf(candidate) === index,
+    );
   }
 
-  const candidates = [LOCAL_DEV_API_BASE_URL, API_BASE_URL].filter(
+  const candidates = [requestOrigin, LOCAL_DEV_API_BASE_URL, API_BASE_URL].filter(
     (candidate, index, arr) => candidate && arr.indexOf(candidate) === index,
   );
 
   return candidates;
 };
 
-const getHomepageData = async (path) => {
-  const baseCandidates = getHomepageBaseCandidates();
+const getHomepagePayload = async (path, requestOrigin = "") => {
+  const baseCandidates = getHomepageBaseCandidates(requestOrigin);
   if (!baseCandidates.length) {
-    return [];
+    return null;
   }
 
   for (const base of baseCandidates) {
@@ -97,23 +110,63 @@ const getHomepageData = async (path) => {
       }
 
       const payload = await response.json();
-      const data = Array.isArray(payload?.data) ? payload.data : [];
-      if (data.length > 0 || process.env.NODE_ENV === "production") {
-        return data;
-      }
+      if (payload && typeof payload === "object") return payload;
     } catch {
       // Fall through to next candidate.
     }
   }
 
-  return [];
+  return null;
+};
+
+const getHomepageData = async (path, requestOrigin = "") => {
+  const payload = await getHomepagePayload(path, requestOrigin);
+  return Array.isArray(payload?.data) ? payload.data : [];
+};
+
+const getHomepageSettings = async (requestOrigin = "") => {
+  const payload = await getHomepagePayload("/api/settings/public", requestOrigin);
+  return payload?.data && typeof payload.data === "object" ? payload.data : null;
+};
+
+const getHomepageCategories = async (requestOrigin = "") => {
+  const payload = await getHomepagePayload("/api/categories", requestOrigin);
+  const items = Array.isArray(payload?.data) ? payload.data : [];
+  return items.filter((category) => !category?.parent);
+};
+
+const getHomepagePopularProducts = async (requestOrigin = "") => {
+  const payload = await getHomepagePayload(
+    "/api/products?sortBy=popular&order=desc&includeCombos=false&limit=10",
+    requestOrigin,
+  );
+  return Array.isArray(payload?.data) ? payload.data : [];
+};
+
+const getHomepageCombos = async (requestOrigin = "") => {
+  const payload = await getHomepagePayload(
+    "/api/combos?sort=priority&limit=10",
+    requestOrigin,
+  );
+  return Array.isArray(payload?.data?.items) ? payload.data.items.slice(0, 4) : [];
 };
 
 export default async function Home() {
-  const [homeSlides, banners, featuredReviews] = await Promise.all([
-    getHomepageData("/api/home-slides"),
-    getHomepageData("/api/banners"),
-    getHomepageData("/api/reviews/featured/home?limit=6"),
+  const requestOrigin = await getRequestOrigin();
+  const [
+    homeSlides,
+    banners,
+    homepageSettings,
+    homepageCategories,
+    homepagePopularProducts,
+    homepageCombos,
+  ] = await Promise.all([
+    getHomepageData("/api/home-slides", requestOrigin),
+    getHomepageData("/api/banners", requestOrigin),
+    getHomepageSettings(requestOrigin),
+    getHomepageCategories(requestOrigin),
+    getHomepagePopularProducts(requestOrigin),
+    getHomepageCombos(requestOrigin),
   ]);
 
   return (
@@ -127,15 +180,22 @@ export default async function Home() {
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[140rem] bg-[radial-gradient(circle_at_top,rgba(255,241,214,0.5),transparent_46%)]" />
       <div className="relative z-10">
-        <HomeSlider initialSlides={homeSlides} />
-        <OfferCountdownStrip />
+        <HomeSlider
+          initialSlides={homeSlides}
+          initialSettings={homepageSettings}
+        />
+        <OfferCountdownStrip
+          initialConfig={homepageSettings?.offerCountdownSettings || null}
+        />
         <Banners initialBanners={banners} />
-        <CatSlider />
-        <HomeComboDeals />
-        <HomeCustomerReviews initialReviews={featuredReviews} />
+        <CatSlider
+          initialCategories={homepageCategories}
+          initialPopularProducts={homepagePopularProducts}
+          initialPopularCombos={homepageCombos}
+        />
+        <HomeComboDeals initialCombos={homepageCombos} />
         <MembershipCTA />
       </div>
-      <WhatsAppFloatingButton />
     </main>
   );
 }

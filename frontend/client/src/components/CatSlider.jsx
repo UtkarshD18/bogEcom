@@ -1,7 +1,10 @@
 "use client";
 
 import { FLAVORS, MyContext } from "@/context/ThemeContext";
-import { fetchDataFromApi } from "@/utils/api";
+import {
+  fetchDataFromApi,
+  PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+} from "@/utils/api";
 import { getCategoryImageUrl } from "@/utils/imageUtils";
 import { motion } from "framer-motion";
 import Image from "next/image";
@@ -15,9 +18,13 @@ import PopularProducts from "./PopularProducts";
 import "swiper/css";
 import "swiper/css/navigation";
 
-const CatSlider = () => {
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
+const CatSlider = ({
+  initialCategories = [],
+  initialPopularProducts = [],
+  initialPopularCombos = [],
+}) => {
+  const [categories, setCategories] = useState(initialCategories);
+  const [loading, setLoading] = useState(initialCategories.length === 0);
   const context = useContext(MyContext);
   const flavor = context?.flavor || FLAVORS.creamy;
   const prevRef = useRef(null);
@@ -46,9 +53,17 @@ const CatSlider = () => {
   };
 
   useEffect(() => {
+    if (initialCategories.length > 0) {
+      setCategories(initialCategories);
+      setLoading(false);
+      return undefined;
+    }
+
     const fetchCategories = async () => {
       try {
-        const response = await fetchDataFromApi("/api/categories");
+        const response = await fetchDataFromApi("/api/categories", {
+          timeoutMs: PUBLIC_SECTION_REQUEST_TIMEOUT_MS,
+        });
         if (response.success && response.data) {
           const parentCategories = response.data.filter((cat) => !cat.parent);
           setCategories(parentCategories);
@@ -61,7 +76,7 @@ const CatSlider = () => {
     };
 
     fetchCategories();
-  }, []);
+  }, [initialCategories]);
 
   if (loading) {
     return (
@@ -146,7 +161,10 @@ const CatSlider = () => {
 
   return (
     <div>
-      <PopularProducts />
+      <PopularProducts
+        initialProducts={initialPopularProducts}
+        initialCombos={initialPopularCombos}
+      />
 
       <section
         className="relative overflow-hidden border-y border-black/[0.03] py-12 sm:py-16"

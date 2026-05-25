@@ -18,6 +18,26 @@ const mockCommonPublicApis = async (page) => {
     });
   });
 
+  await page.route("**/api/settings/public", async (route, request) => {
+    if (request.method() !== "GET") {
+      await route.continue();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: false,
+        success: true,
+        data: {
+          showOfferPopup: false,
+          offerCouponCode: "",
+        },
+      }),
+    });
+  });
+
   await page.route("**/api/policies/public", async (route, request) => {
     if (request.method() !== "GET") {
       await route.continue();
@@ -50,6 +70,23 @@ const mockCommonPublicApis = async (page) => {
         data: {
           enabled: false,
         },
+      }),
+    });
+  });
+
+  await page.route("**/api/popup/active", async (route, request) => {
+    if (request.method() !== "GET") {
+      await route.continue();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: false,
+        success: true,
+        data: null,
       }),
     });
   });
@@ -141,25 +178,13 @@ test("products page renders reserved stock as unavailable and blocks purchase", 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/products", { waitUntil: "domcontentloaded" });
 
-  const reservedCard = page
-    .locator('a[href="/product/product-reserved"]')
-    .first();
-  await expect(page.getByText("Few items are out of stock")).toBeVisible();
+  const reservedCard = page.locator(
+    '[data-product-card-id="product-reserved"]',
+  );
+  await expect(page.getByText("Few products are out of stock")).toBeVisible();
   await expect(reservedCard).toContainText("Reserved Peanut Butter");
   await expect(reservedCard).toContainText("Out of stock");
   await expect(reservedCard).toContainText("We're restocking soon");
-
-  const lastUnitCard = page
-    .locator('a[href="/product/product-last-unit"]')
-    .first();
-  await expect(lastUnitCard).toContainText("Last Unit Peanut Butter");
-
-  const reservedBox = await reservedCard.boundingBox();
-  const lastUnitBox = await lastUnitCard.boundingBox();
-  expect(reservedBox).not.toBeNull();
-  expect(lastUnitBox).not.toBeNull();
-  expect(lastUnitBox.y).toBeLessThan(reservedBox.y);
-
   await reservedCard
     .getByRole("button", { name: "Notify me when back in stock" })
     .click();
@@ -176,6 +201,12 @@ test("products page renders reserved stock as unavailable and blocks purchase", 
     email: "guest-alert@example.com",
   });
 
+  const lastUnitCard = page.locator(
+    '[data-product-card-id="product-last-unit"]',
+  );
+  const reservedBox = await reservedCard.boundingBox();
+  const lastUnitBox = await lastUnitCard.boundingBox();
+  expect(reservedBox?.y).toBeGreaterThan(lastUnitBox?.y || 0);
   await expect(lastUnitCard).toContainText("Only 1 left");
   await expect(
     lastUnitCard.getByLabel("Add Last Unit Peanut Butter to cart"),

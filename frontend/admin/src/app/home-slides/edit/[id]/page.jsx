@@ -20,12 +20,12 @@ const TIMER_POSITIONS = [
   { value: "bottom-left", label: "Bottom left" },
 ];
 
-const toDateTimeLocal = (value) => {
+const formatDateTimeInputValue = (value) => {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const timezoneOffsetMs = parsed.getTimezoneOffset() * 60 * 1000;
+  return new Date(parsed.getTime() - timezoneOffsetMs).toISOString().slice(0, 16);
 };
 
 const EditHomeSlide = () => {
@@ -46,10 +46,24 @@ const EditHomeSlide = () => {
   const [offerBadgeText, setOfferBadgeText] = useState("Offer ends in");
   const [offerEndsAt, setOfferEndsAt] = useState("");
   const [offerTimerPosition, setOfferTimerPosition] = useState("top-right");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [image, setImage] = useState(null);
   const [mobileImage, setMobileImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const handleOfferToggle = (checked) => {
+    setOfferEnabled(checked);
+    if (!checked) {
+      setOfferEndsAt("");
+    }
+  };
+
+  const handleOfferEndsAtChange = (value) => {
+    setOfferEndsAt(value);
+    setOfferEnabled(Boolean(value));
+  };
 
   const fetchSlide = useCallback(async () => {
     setIsLoading(true);
@@ -64,13 +78,25 @@ const EditHomeSlide = () => {
         setLink(slide.link || slide.buttonLink || "");
         setOrder(slide.sortOrder || slide.order || 0);
         setStayDurationSeconds(
-          Math.max(Math.round(Number(slide.stayDurationMs || 5600) / 1000), 2),
+          Math.max(
+            Math.round(
+              Number(
+                slide.stayDurationMs ||
+                  (Number(slide.stayDuration || 0) > 0
+                    ? Number(slide.stayDuration) * 1000
+                    : 5600),
+              ) / 1000,
+            ),
+            2,
+          ),
         );
         setIsActive(slide.isActive !== false);
-        setOfferEnabled(Boolean(slide.offerEnabled));
+        setOfferEnabled(Boolean(slide.offerEnabled || slide.offerEndsAt));
         setOfferBadgeText(slide.offerBadgeText || "Offer ends in");
-        setOfferEndsAt(toDateTimeLocal(slide.offerEndsAt));
+        setOfferEndsAt(formatDateTimeInputValue(slide.offerEndsAt));
         setOfferTimerPosition(slide.offerTimerPosition || "top-right");
+        setStartDate(formatDateTimeInputValue(slide.startDate));
+        setEndDate(formatDateTimeInputValue(slide.endDate));
         if (slide.image) {
           const desktopAsset = await buildHomeSlideImageAsset({
             src: slide.image,
@@ -165,6 +191,14 @@ const EditHomeSlide = () => {
       toast.error("Please upload a slide image");
       return;
     }
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      toast.error("End date must be after start date");
+      return;
+    }
+    if (offerEnabled && !offerEndsAt) {
+      toast.error("Please set when the offer ends");
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -203,11 +237,13 @@ const EditHomeSlide = () => {
         buttonLink: link,
         sortOrder: Number(order) || 0,
         stayDurationMs: Math.max(Number(stayDurationSeconds) || 6, 2) * 1000,
-        offerEnabled,
+        offerEnabled: Boolean(offerEnabled && offerEndsAt),
         offerBadgeText,
         offerEndsAt: offerEndsAt || null,
         offerTimerPosition,
         isActive,
+        startDate: startDate || null,
+        endDate: endDate || null,
       };
 
       const response = await putData(
@@ -341,6 +377,7 @@ const EditHomeSlide = () => {
               type="number"
               value={stayDurationSeconds}
               onChange={(e) => setStayDurationSeconds(e.target.value)}
+              placeholder="6"
               min="2"
               max="60"
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
@@ -362,6 +399,30 @@ const EditHomeSlide = () => {
               </span>
             </div>
           </div>
+
+          <div className="form-group flex flex-col gap-1">
+            <span className="text-[15px] text-gray-800 font-medium">
+              Start Date
+            </span>
+            <input
+              type="datetime-local"
+              value={formatDateTimeInputValue(startDate)}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+            />
+          </div>
+
+          <div className="form-group flex flex-col gap-1">
+            <span className="text-[15px] text-gray-800 font-medium">
+              End Date
+            </span>
+            <input
+              type="datetime-local"
+              value={formatDateTimeInputValue(endDate)}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
+            />
+          </div>
         </div>
 
         <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
@@ -371,13 +432,12 @@ const EditHomeSlide = () => {
                 Time Limited Offer On This Slide
               </h3>
               <p className="text-sm text-gray-500">
-                Show a live offer timer on this slide and control where it
-                appears.
+                Show a live offer timer on this slide and control where it appears.
               </p>
             </div>
             <Switch
               checked={offerEnabled}
-              onChange={(e) => setOfferEnabled(e.target.checked)}
+              onChange={(e) => handleOfferToggle(e.target.checked)}
               color="warning"
             />
           </div>
@@ -402,7 +462,7 @@ const EditHomeSlide = () => {
               <input
                 type="datetime-local"
                 value={offerEndsAt}
-                onChange={(e) => setOfferEndsAt(e.target.value)}
+                onChange={(e) => handleOfferEndsAtChange(e.target.value)}
                 className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
               />
             </div>
@@ -432,7 +492,7 @@ const EditHomeSlide = () => {
           onRemove={removeImage}
           spec={HOME_SLIDE_DESKTOP_SPEC}
           required
-          hint="Use this for desktop and tablet hero banners. If the ratio is very different, it will be stretched to fill the banner."
+          hint="Use a 16:9 image here. The homepage hero now behaves like a media player frame, so wide landscape slides will fit best."
         />
 
         <HomeSlideImageField
@@ -441,7 +501,7 @@ const EditHomeSlide = () => {
           onChange={handleMobileImageUpload}
           onRemove={removeMobileImage}
           spec={HOME_SLIDE_MOBILE_SPEC}
-          hint="Optional, but strongly recommended for phones if the desktop image is wide. Without it, the desktop image will be stretched to fit the mobile banner."
+          hint="Optional, but recommended if you want a separately cropped 16:9 mobile-safe composition."
         />
 
         <div className="mt-8 flex gap-3">

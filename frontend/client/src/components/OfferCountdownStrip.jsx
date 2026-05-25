@@ -23,9 +23,18 @@ const getTimeParts = (endsAt) => {
 
 const pad = (value) => String(Math.max(Number(value || 0), 0)).padStart(2, "0");
 
-export default function OfferCountdownStrip() {
+export default function OfferCountdownStrip({ initialConfig = null }) {
   const { settings } = useSettings();
-  const config = settings?.offerCountdownSettings || {};
+  const config = useMemo(() => {
+    const liveConfig = settings?.offerCountdownSettings;
+    if (liveConfig && typeof liveConfig === "object") {
+      return liveConfig;
+    }
+    if (initialConfig && typeof initialConfig === "object") {
+      return initialConfig;
+    }
+    return {};
+  }, [initialConfig, settings?.offerCountdownSettings]);
   const [parts, setParts] = useState(null);
 
   useEffect(() => {

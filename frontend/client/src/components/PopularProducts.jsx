@@ -6,9 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import { FiArrowRight } from "react-icons/fi";
 import ProductSlider from "./ProductSlider";
 
-const PopularProducts = () => {
+const PopularProducts = ({ initialProducts = [], initialCombos = [] }) => {
   const sectionRef = useRef(null);
-  const [isVisible, setIsVisible] = useState(false);
+  const hasInitialContent =
+    initialProducts.length > 0 || initialCombos.length > 0;
+  const [isVisible, setIsVisible] = useState(hasInitialContent);
 
   useEffect(() => {
     if (isVisible) return;
@@ -140,6 +142,8 @@ const PopularProducts = () => {
                   includeCombos={true}
                   productLimit={10}
                   comboLimit={4}
+                  initialProducts={initialProducts}
+                  initialCombos={initialCombos}
                 />
               ) : (
                 <div className="flex gap-4 overflow-hidden py-4">

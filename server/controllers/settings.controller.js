@@ -75,6 +75,68 @@ const getSafeHeaderSettings = (value) => {
   };
 };
 
+const DEFAULT_OFFER_COUNTDOWN_SETTINGS = Object.freeze({
+  enabled: false,
+  title: "Limited time offer",
+  subtitle: "Fresh deals are live now.",
+  couponCode: "",
+  discountText: "",
+  endsAt: null,
+  ctaLabel: "Shop offers",
+  ctaHref: "/products",
+});
+
+const normalizeOfferCountdownSettings = async (value) => {
+  const source = value && typeof value === "object" ? value : {};
+  const enabled = Boolean(source.enabled);
+  const couponCode = String(source.couponCode || "")
+    .trim()
+    .toUpperCase();
+  const parsedEndsAt = source.endsAt ? new Date(source.endsAt) : null;
+
+  if (couponCode) {
+    const couponExists = await CouponModel.exists({ code: couponCode });
+    if (!couponExists) {
+      throw new Error(
+        "Offer countdown coupon code must match an existing coupon.",
+      );
+    }
+  }
+
+  if (source.endsAt && (!parsedEndsAt || Number.isNaN(parsedEndsAt.getTime()))) {
+    throw new Error("Offer countdown end time must be a valid date.");
+  }
+
+  if (enabled && !parsedEndsAt) {
+    throw new Error(
+      "Offer countdown end time is required when the strip is enabled.",
+    );
+  }
+
+  return {
+    enabled,
+    title:
+      String(source.title || DEFAULT_OFFER_COUNTDOWN_SETTINGS.title).trim() ||
+      DEFAULT_OFFER_COUNTDOWN_SETTINGS.title,
+    subtitle:
+      String(
+        source.subtitle || DEFAULT_OFFER_COUNTDOWN_SETTINGS.subtitle,
+      ).trim() || DEFAULT_OFFER_COUNTDOWN_SETTINGS.subtitle,
+    couponCode,
+    discountText: String(source.discountText || "").trim(),
+    endsAt:
+      parsedEndsAt && !Number.isNaN(parsedEndsAt.getTime())
+        ? parsedEndsAt.toISOString()
+        : null,
+    ctaLabel:
+      String(source.ctaLabel || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaLabel)
+        .trim() || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaLabel,
+    ctaHref:
+      String(source.ctaHref || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref)
+        .trim() || DEFAULT_OFFER_COUNTDOWN_SETTINGS.ctaHref,
+  };
+};
+
 /**
  * Settings Controller
  * Manages site-wide configuration settings
@@ -394,6 +456,21 @@ export const updateSetting = async (req, res) => {
       req.body.isActive = true;
     }
 
+    if (key === "offerCountdownSettings") {
+      try {
+        req.body.value = await normalizeOfferCountdownSettings(req.body.value);
+      } catch (validationError) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message:
+            validationError?.message ||
+            "Invalid homepage offer countdown settings",
+        });
+      }
+      req.body.isActive = true;
+    }
+
     if (FLAVOUR_BUTTON_TEXT_KEYS.has(key)) {
       req.body.value = String(req.body.value ?? "").trim();
     }
@@ -566,6 +643,20 @@ export const createSetting = async (req, res) => {
       );
     }
 
+    if (key === "offerCountdownSettings") {
+      try {
+        safeValue = await normalizeOfferCountdownSettings(value);
+      } catch (validationError) {
+        return res.status(400).json({
+          error: true,
+          success: false,
+          message:
+            validationError?.message ||
+            "Invalid homepage offer countdown settings",
+        });
+      }
+    }
+
     const setting = new SettingsModel({
       key,
       value: safeValue,
@@ -615,8 +706,8 @@ export const deleteSetting = async (req, res) => {
       "orderSettings",
       "storeInfo",
       "discountSettings",
-      "popupSettings",
       "offerCountdownSettings",
+      "popupSettings",
       "homeSlidePanelSettings",
       "headerSettings",
       "reviewSettings",

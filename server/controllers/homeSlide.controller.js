@@ -51,6 +51,23 @@ const clearHomeSlidesPublicCache = () => {
   homeSlidesInFlightRequests.clear();
 };
 
+const normalizeStayDurationMs = (durationMs, durationSeconds) => {
+  const parsedMilliseconds = Number(durationMs);
+  if (Number.isFinite(parsedMilliseconds) && parsedMilliseconds >= 1500) {
+    return Math.min(Math.round(parsedMilliseconds), 60000);
+  }
+
+  const parsedSeconds = Number(durationSeconds);
+  if (Number.isFinite(parsedSeconds) && parsedSeconds >= 2) {
+    return Math.min(Math.round(parsedSeconds * 1000), 60000);
+  }
+
+  return 5600;
+};
+
+const toStayDurationSeconds = (durationMs) =>
+  Math.max(Math.round(Number(durationMs || 5600) / 1000), 2);
+
 /**
  * Home Slide Controller
  *
@@ -94,7 +111,7 @@ export const getHomeSlides = async (req, res) => {
 
       const slides = await HomeSlideModel.find(filter)
         .select(
-          "title subtitle description image mobileImage buttonText buttonLink secondaryButtonText secondaryButtonLink backgroundColor textColor textPosition overlayOpacity sortOrder stayDurationMs offerEnabled offerBadgeText offerEndsAt offerTimerPosition",
+          "title subtitle description image mobileImage buttonText buttonLink secondaryButtonText secondaryButtonLink backgroundColor textColor textPosition overlayOpacity sortOrder stayDurationMs stayDuration offerEnabled offerBadgeText offerEndsAt offerTimerPosition",
         )
         .sort({ sortOrder: 1, createdAt: -1 })
         .limit(limit)
@@ -222,6 +239,7 @@ export const createSlide = async (req, res) => {
       isActive,
       sortOrder,
       stayDurationMs,
+      stayDuration,
       offerEnabled,
       offerBadgeText,
       offerEndsAt,
@@ -237,6 +255,11 @@ export const createSlide = async (req, res) => {
         message: "Title and image are required",
       });
     }
+
+    const normalizedStayDurationMs = normalizeStayDurationMs(
+      stayDurationMs,
+      stayDuration,
+    );
 
     const slide = new HomeSlideModel({
       title,
@@ -254,7 +277,8 @@ export const createSlide = async (req, res) => {
       overlayOpacity: overlayOpacity || 0,
       isActive: isActive !== false,
       sortOrder: sortOrder || 0,
-      stayDurationMs: Number(stayDurationMs) || 5600,
+      stayDurationMs: normalizedStayDurationMs,
+      stayDuration: toStayDurationSeconds(normalizedStayDurationMs),
       offerEnabled: Boolean(offerEnabled),
       offerBadgeText,
       offerEndsAt: offerEndsAt || null,
@@ -325,6 +349,27 @@ export const updateSlide = async (req, res) => {
           console.warn("Failed to delete old mobile image:", oldPublicId, err);
         });
       }
+    }
+
+    if ("stayDurationMs" in updateData || "stayDuration" in updateData) {
+      const normalizedStayDurationMs = normalizeStayDurationMs(
+        updateData.stayDurationMs,
+        updateData.stayDuration,
+      );
+      updateData.stayDurationMs = normalizedStayDurationMs;
+      updateData.stayDuration = toStayDurationSeconds(normalizedStayDurationMs);
+    }
+
+    if ("offerEnabled" in updateData) {
+      updateData.offerEnabled = Boolean(updateData.offerEnabled);
+    }
+
+    if ("offerEndsAt" in updateData && !updateData.offerEndsAt) {
+      updateData.offerEndsAt = null;
+    }
+
+    if ("offerTimerPosition" in updateData && !updateData.offerTimerPosition) {
+      updateData.offerTimerPosition = "top-right";
     }
 
     const slide = await HomeSlideModel.findByIdAndUpdate(

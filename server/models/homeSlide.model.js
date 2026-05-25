@@ -82,6 +82,12 @@ const homeSlideSchema = new mongoose.Schema(
       min: 1500,
       max: 60000,
     },
+    stayDuration: {
+      type: Number,
+      default: 6,
+      min: 2,
+      max: 60,
+    },
     offerEnabled: {
       type: Boolean,
       default: false,
