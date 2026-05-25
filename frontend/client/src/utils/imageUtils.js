@@ -47,6 +47,42 @@ const RESPONSIVE_IMAGE_PROFILES = {
     quality: "auto:good",
     sizes: "(max-width: 768px) 92vw, (max-width: 1280px) 64vw, 920px",
   },
+  heroDesktop: {
+    widths: [960, 1280, 1600, 1920, 2200],
+    width: 1920,
+    height: 1080,
+    crop: "fill",
+    gravity: "auto",
+    quality: "auto:good",
+    sizes: "100vw",
+  },
+  heroMobile: {
+    widths: [480, 720, 960, 1280],
+    width: 1280,
+    height: 720,
+    crop: "fill",
+    gravity: "auto",
+    quality: "auto:good",
+    sizes: "100vw",
+  },
+  bannerDesktop: {
+    widths: [640, 960, 1280, 1600, 1920],
+    width: 1600,
+    height: 400,
+    crop: "fill",
+    gravity: "auto",
+    quality: "auto:good",
+    sizes: "100vw",
+  },
+  bannerMobile: {
+    widths: [480, 640, 828, 960, 1080],
+    width: 960,
+    height: 540,
+    crop: "fill",
+    gravity: "auto",
+    quality: "auto:good",
+    sizes: "100vw",
+  },
   zoom: {
     widths: [720, 1080, 1440, 1800, 2200],
     width: 2200,
@@ -289,14 +325,16 @@ export const getHeroImageUrl = (imageUrl) =>
   getOptimizedImageUrl(imageUrl, {
     width: 1920,
     height: 1080,
-    crop: "fit",
+    crop: "fill",
+    gravity: "auto",
   });
 
 export const getHeroMobileImageUrl = (imageUrl) =>
   getOptimizedImageUrl(imageUrl, {
     width: 1280,
     height: 720,
-    crop: "fit",
+    crop: "fill",
+    gravity: "auto",
   });
 
 export const getCategoryImageUrl = (imageUrl) =>
@@ -336,6 +374,7 @@ export const getResponsiveImageSet = (
   const imageOptions = {
     height: selectedProfile.height,
     crop: selectedProfile.crop || "limit",
+    gravity: selectedProfile.gravity || "",
     quality: selectedProfile.quality || "auto:good",
     format: "auto",
     dpr: "auto",

@@ -75,6 +75,25 @@ const normalizeApiBase = (value) =>
     .trim()
     .replace(/^["']|["']$/g, "")
     .replace(/\/+$/, "");
+const PUBLIC_SETTINGS_REVALIDATE_SECONDS = 300;
+const PUBLIC_SETTINGS_FETCH_TIMEOUT_MS = 2500;
+
+const fetchWithTimeout = async (url, options = {}) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    PUBLIC_SETTINGS_FETCH_TIMEOUT_MS,
+  );
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 
 const headerBackgroundBootstrapScript = `(function () {
   try {
@@ -99,7 +118,9 @@ export async function generateMetadata({ request }) {
   try {
     const pathname = request?.nextUrl?.pathname || "/";
     const apiBase = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL || siteUrl);
-    const resp = await fetch(`${apiBase}/api/settings/public`, { cache: "no-store" });
+    const resp = await fetchWithTimeout(`${apiBase}/api/settings/public`, {
+      next: { revalidate: PUBLIC_SETTINGS_REVALIDATE_SECONDS },
+    });
     if (!resp.ok) return defaultMetadata;
     const json = await resp.json();
     const seo = json?.data?.seoSettings;

@@ -1,9 +1,15 @@
 import { headers } from "next/headers";
 import HomeSlider from "@/components/HomeSlider";
-import Banners from "@/components/Banners";
-import CatSlider from "@/components/CatSlider";
-import HomeComboDeals from "@/components/HomeComboDeals";
 import dynamic from "next/dynamic";
+const Banners = dynamic(() => import("@/components/Banners"), {
+  loading: () => null,
+});
+const CatSlider = dynamic(() => import("@/components/CatSlider"), {
+  loading: () => null,
+});
+const HomeComboDeals = dynamic(() => import("@/components/HomeComboDeals"), {
+  loading: () => null,
+});
 const HomeCustomerReviews = dynamic(
   () => import("@/components/HomeCustomerReviews"),
   {
@@ -164,6 +170,11 @@ const getHomepageCombos = async (requestOrigin = "") => {
   return Array.isArray(payload?.data?.items) ? payload.data.items.slice(0, 4) : [];
 };
 
+const deferredSectionStyle = {
+  contentVisibility: "auto",
+  containIntrinsicSize: "900px",
+};
+
 export default async function Home() {
   const requestOrigin = await getRequestOrigin();
   const [
@@ -202,15 +213,25 @@ export default async function Home() {
         <OfferCountdownStrip
           initialConfig={homepageSettings?.offerCountdownSettings || null}
         />
-        <Banners initialBanners={banners} />
-        <CatSlider
-          initialCategories={homepageCategories}
-          initialPopularProducts={homepagePopularProducts}
-          initialPopularCombos={homepageCombos}
-        />
-        <HomeComboDeals initialCombos={homepageCombos} />
-        <HomeCustomerReviews initialReviews={featuredReviews} />
-        <MembershipCTA />
+        <div style={deferredSectionStyle}>
+          <Banners initialBanners={banners} />
+        </div>
+        <div style={deferredSectionStyle}>
+          <CatSlider
+            initialCategories={homepageCategories}
+            initialPopularProducts={homepagePopularProducts}
+            initialPopularCombos={homepageCombos}
+          />
+        </div>
+        <div style={deferredSectionStyle}>
+          <HomeComboDeals initialCombos={homepageCombos} />
+        </div>
+        <div style={deferredSectionStyle}>
+          <HomeCustomerReviews initialReviews={featuredReviews} />
+        </div>
+        <div style={deferredSectionStyle}>
+          <MembershipCTA />
+        </div>
       </div>
       <WhatsAppFloatingButton />
     </main>

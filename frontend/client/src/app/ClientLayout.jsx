@@ -370,7 +370,64 @@ export default function ClientLayout({ children }) {
 
   useEffect(() => {
     if (isAffiliateRoute) return;
-    startStockSocket();
+
+    let socketStarted = false;
+    let idleId = null;
+    let timeoutId = null;
+
+    const startSocketWhenReady = () => {
+      if (socketStarted || document.hidden) return;
+      socketStarted = true;
+      startStockSocket();
+      window.removeEventListener("pointerdown", startSocketWhenReady);
+      window.removeEventListener("keydown", startSocketWhenReady);
+      window.removeEventListener("scroll", startSocketWhenReady);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        startSocketWhenReady();
+      }
+    };
+
+    window.addEventListener("pointerdown", startSocketWhenReady, {
+      once: true,
+      passive: true,
+    });
+    window.addEventListener("keydown", startSocketWhenReady, {
+      once: true,
+      passive: true,
+    });
+    window.addEventListener("scroll", startSocketWhenReady, {
+      once: true,
+      passive: true,
+    });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestIdleCallback === "function"
+    ) {
+      idleId = window.requestIdleCallback(startSocketWhenReady, {
+        timeout: 1800,
+      });
+    } else {
+      timeoutId = window.setTimeout(startSocketWhenReady, 900);
+    }
+
+    return () => {
+      if (idleId !== null) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      window.removeEventListener("pointerdown", startSocketWhenReady);
+      window.removeEventListener("keydown", startSocketWhenReady);
+      window.removeEventListener("scroll", startSocketWhenReady);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [isAffiliateRoute]);
 
   useEffect(() => {

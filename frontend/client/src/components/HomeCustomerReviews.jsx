@@ -70,6 +70,10 @@ export default function HomeCustomerReviews({ initialReviews = [] }) {
   const [showAllReviews, setShowAllReviews] = useState(false);
 
   useEffect(() => {
+    if (Array.isArray(initialReviews) && initialReviews.length > 0) {
+      return undefined;
+    }
+
     let cancelled = false;
 
     const loadReviews = async () => {
@@ -87,7 +91,7 @@ export default function HomeCustomerReviews({ initialReviews = [] }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialReviews]);
 
   const visibleReviews = useMemo(
     () => (showAllReviews ? reviews.slice(0, 12) : reviews.slice(0, 3)),
