@@ -79,10 +79,10 @@ const getRequestOrigin = async () => {
 
 const getHomepageBaseCandidates = (requestOrigin = "") => {
   if (process.env.NODE_ENV === "production") {
-    return [requestOrigin, API_BASE_URL].filter(
-      (candidate, index, arr) =>
-        candidate && arr.indexOf(candidate) === index,
-    );
+    // In production, never derive the fetch base from client-controlled headers
+    // (x-forwarded-host / host) to prevent host-header injection / SSRF.
+    // Only use the trusted configured API_BASE_URL.
+    return [API_BASE_URL].filter(Boolean);
   }
 
   const candidates = [requestOrigin, LOCAL_DEV_API_BASE_URL, API_BASE_URL].filter(
