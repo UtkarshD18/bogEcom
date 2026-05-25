@@ -4,10 +4,11 @@ import { fetchUnresolvedSupportCount } from "@/services/supportApi";
 import { hasAdminPermission } from "@/utils/adminPermissions";
 import { withAdminBasePath } from "@/utils/basePath";
 import { Button } from "@mui/material";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { FiSearch, FiX } from "react-icons/fi";
+import { FiSearch, FiStar, FiX } from "react-icons/fi";
 import { IoIosLogOut } from "react-icons/io";
 import { IoBagCheckOutline } from "react-icons/io5";
 import { LiaImageSolid } from "react-icons/lia";
@@ -144,6 +145,12 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       icon: <MdSupportAgent size={22} />,
       href: "/customer-care",
       badgeCount: openTicketCount,
+      requiredPermission: "manage_crm",
+    },
+    {
+      name: "Reviews",
+      icon: <FiStar size={20} />,
+      href: "/reviews",
       requiredPermission: "manage_crm",
     },
     {
@@ -329,12 +336,12 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       {/* Logo */}
       <div className="p-4 border-b border-gray-100 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
-          <img
+          <Image
             src={withAdminBasePath("/logo.png")}
             alt="Logo"
-            className="h-10 w-auto"
             width={140}
             height={40}
+            className="h-10 w-auto"
             loading="eager"
           />
         </Link>
