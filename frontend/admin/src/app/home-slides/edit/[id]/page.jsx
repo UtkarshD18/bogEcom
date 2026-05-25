@@ -1,9 +1,12 @@
 "use client";
+import HomeSlideFrameControls from "@/components/HomeSlideFrameControls";
+import HomeSlideFramePreview from "@/components/HomeSlideFramePreview";
 import HomeSlideImageField from "@/components/HomeSlideImageField";
 import { useAdmin } from "@/context/AdminContext";
 import { getData, putData, uploadFile } from "@/utils/api";
 import {
   buildHomeSlideImageAsset,
+  DEFAULT_HOME_SLIDE_FRAME_SETTINGS,
   HOME_SLIDE_DESKTOP_SPEC,
   HOME_SLIDE_MOBILE_SPEC,
 } from "@/utils/homeSlideImage";
@@ -50,8 +53,18 @@ const EditHomeSlide = () => {
   const [endDate, setEndDate] = useState("");
   const [image, setImage] = useState(null);
   const [mobileImage, setMobileImage] = useState(null);
+  const [frameSettings, setFrameSettings] = useState(
+    DEFAULT_HOME_SLIDE_FRAME_SETTINGS,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const updateFrameSetting = (key, value) => {
+    setFrameSettings((current) => ({
+      ...current,
+      [key]: Number(value),
+    }));
+  };
 
   const handleOfferToggle = (checked) => {
     setOfferEnabled(checked);
@@ -97,6 +110,26 @@ const EditHomeSlide = () => {
         setOfferTimerPosition(slide.offerTimerPosition || "top-right");
         setStartDate(formatDateTimeInputValue(slide.startDate));
         setEndDate(formatDateTimeInputValue(slide.endDate));
+        setFrameSettings({
+          desktopImageScale:
+            Number(slide.desktopImageScale) ||
+            DEFAULT_HOME_SLIDE_FRAME_SETTINGS.desktopImageScale,
+          desktopImagePositionX:
+            Number(slide.desktopImagePositionX) ||
+            DEFAULT_HOME_SLIDE_FRAME_SETTINGS.desktopImagePositionX,
+          desktopImagePositionY:
+            Number(slide.desktopImagePositionY) ||
+            DEFAULT_HOME_SLIDE_FRAME_SETTINGS.desktopImagePositionY,
+          mobileImageScale:
+            Number(slide.mobileImageScale) ||
+            DEFAULT_HOME_SLIDE_FRAME_SETTINGS.mobileImageScale,
+          mobileImagePositionX:
+            Number(slide.mobileImagePositionX) ||
+            DEFAULT_HOME_SLIDE_FRAME_SETTINGS.mobileImagePositionX,
+          mobileImagePositionY:
+            Number(slide.mobileImagePositionY) ||
+            DEFAULT_HOME_SLIDE_FRAME_SETTINGS.mobileImagePositionY,
+        });
         if (slide.image) {
           const desktopAsset = await buildHomeSlideImageAsset({
             src: slide.image,
@@ -206,9 +239,11 @@ const EditHomeSlide = () => {
       let imageUrl = image.preview;
 
       if (!image.isExisting && image.file) {
-        const uploadResult = await uploadFile(image.file, token);
+        const uploadResult = await uploadFile(image.file, token, {
+          folder: "slides",
+        });
         if (!uploadResult.success || !uploadResult.data?.url) {
-          toast.error("Failed to upload image");
+          toast.error(uploadResult.message || "Failed to upload image");
           setIsSubmitting(false);
           return;
         }
@@ -217,9 +252,11 @@ const EditHomeSlide = () => {
 
       let mobileImageUrl = mobileImage?.preview || "";
       if (mobileImage?.file && !mobileImage.isExisting) {
-        const mobileUploadResult = await uploadFile(mobileImage.file, token);
+        const mobileUploadResult = await uploadFile(mobileImage.file, token, {
+          folder: "slides",
+        });
         if (!mobileUploadResult.success || !mobileUploadResult.data?.url) {
-          toast.error("Failed to upload mobile image");
+          toast.error(mobileUploadResult.message || "Failed to upload mobile image");
           setIsSubmitting(false);
           return;
         }
@@ -233,6 +270,7 @@ const EditHomeSlide = () => {
         buttonText,
         image: imageUrl,
         mobileImage: mobileImageUrl,
+        ...frameSettings,
         link,
         buttonLink: link,
         sortOrder: Number(order) || 0,
@@ -298,7 +336,7 @@ const EditHomeSlide = () => {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter slide title"
+              placeholder="Enter slide title (optional)"
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
             />
           </div>
@@ -311,7 +349,7 @@ const EditHomeSlide = () => {
               type="text"
               value={subtitle}
               onChange={(e) => setSubtitle(e.target.value)}
-              placeholder="Enter subtitle"
+              placeholder="Enter subtitle (optional)"
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
             />
           </div>
@@ -323,7 +361,7 @@ const EditHomeSlide = () => {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Enter description"
+              placeholder="Enter description (optional)"
               rows={3}
               className="w-full border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 py-2 text-[14px]"
             />
@@ -337,7 +375,7 @@ const EditHomeSlide = () => {
               type="text"
               value={buttonText}
               onChange={(e) => setButtonText(e.target.value)}
-              placeholder="e.g., Shop Now"
+              placeholder="e.g., Shop Now (optional)"
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
             />
           </div>
@@ -350,7 +388,7 @@ const EditHomeSlide = () => {
               type="text"
               value={link}
               onChange={(e) => setLink(e.target.value)}
-              placeholder="e.g., /products"
+              placeholder="e.g., /products (optional)"
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
             />
           </div>
@@ -492,7 +530,10 @@ const EditHomeSlide = () => {
           onRemove={removeImage}
           spec={HOME_SLIDE_DESKTOP_SPEC}
           required
-          hint="Use a 16:9 image here. The homepage hero now behaves like a media player frame, so wide landscape slides will fit best."
+          hint="Use a 16:9 image here. The homepage hero now uses one fixed media-player frame across screen sizes, so keep key text, logo, and product inside the center safe zone."
+          previewScale={frameSettings.desktopImageScale}
+          previewPositionX={frameSettings.desktopImagePositionX}
+          previewPositionY={frameSettings.desktopImagePositionY}
         />
 
         <HomeSlideImageField
@@ -501,7 +542,27 @@ const EditHomeSlide = () => {
           onChange={handleMobileImageUpload}
           onRemove={removeMobileImage}
           spec={HOME_SLIDE_MOBILE_SPEC}
-          hint="Optional, but recommended if you want a separately cropped 16:9 mobile-safe composition."
+          hint="Optional, but recommended when the desktop creative feels too tight on phones. Keep important content inside the center 60-70% of the frame."
+          previewScale={frameSettings.mobileImageScale}
+          previewPositionX={frameSettings.mobileImagePositionX}
+          previewPositionY={frameSettings.mobileImagePositionY}
+        />
+
+        <HomeSlideFramePreview
+          title={title}
+          subtitle={subtitle || description}
+          buttonText={buttonText}
+          desktopAsset={image}
+          mobileAsset={mobileImage}
+          frameSettings={frameSettings}
+          offerEnabled={Boolean(offerEnabled && offerEndsAt)}
+          offerBadgeText={offerBadgeText}
+          offerTimerPosition={offerTimerPosition}
+        />
+
+        <HomeSlideFrameControls
+          values={frameSettings}
+          onChange={updateFrameSetting}
         />
 
         <div className="mt-8 flex gap-3">

@@ -1,9 +1,12 @@
 "use client";
+import HomeSlideFrameControls from "@/components/HomeSlideFrameControls";
+import HomeSlideFramePreview from "@/components/HomeSlideFramePreview";
 import HomeSlideImageField from "@/components/HomeSlideImageField";
 import { useAdmin } from "@/context/AdminContext";
 import { postData, uploadFile } from "@/utils/api";
 import {
   buildHomeSlideImageAsset,
+  DEFAULT_HOME_SLIDE_FRAME_SETTINGS,
   HOME_SLIDE_DESKTOP_SPEC,
   HOME_SLIDE_MOBILE_SPEC,
 } from "@/utils/homeSlideImage";
@@ -45,7 +48,17 @@ const AddHomeSlide = () => {
   const [endDate, setEndDate] = useState("");
   const [image, setImage] = useState(null);
   const [mobileImage, setMobileImage] = useState(null);
+  const [frameSettings, setFrameSettings] = useState(
+    DEFAULT_HOME_SLIDE_FRAME_SETTINGS,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const updateFrameSetting = (key, value) => {
+    setFrameSettings((current) => ({
+      ...current,
+      [key]: Number(value),
+    }));
+  };
 
   const handleOfferToggle = (checked) => {
     setOfferEnabled(checked);
@@ -131,18 +144,22 @@ const AddHomeSlide = () => {
     setIsSubmitting(true);
 
     try {
-      const uploadResult = await uploadFile(image.file, token);
+      const uploadResult = await uploadFile(image.file, token, {
+        folder: "slides",
+      });
       if (!uploadResult.success || !uploadResult.data?.url) {
-        toast.error("Failed to upload image");
+        toast.error(uploadResult.message || "Failed to upload image");
         setIsSubmitting(false);
         return;
       }
 
       let mobileImageUrl = "";
       if (mobileImage?.file) {
-        const mobileUploadResult = await uploadFile(mobileImage.file, token);
+        const mobileUploadResult = await uploadFile(mobileImage.file, token, {
+          folder: "slides",
+        });
         if (!mobileUploadResult.success || !mobileUploadResult.data?.url) {
-          toast.error("Failed to upload mobile image");
+          toast.error(mobileUploadResult.message || "Failed to upload mobile image");
           setIsSubmitting(false);
           return;
         }
@@ -154,6 +171,7 @@ const AddHomeSlide = () => {
         subtitle,
         image: uploadResult.data.url,
         mobileImage: mobileImageUrl,
+        ...frameSettings,
         link,
         buttonLink: link,
         sortOrder: Number(order) || 0,
@@ -375,7 +393,10 @@ const AddHomeSlide = () => {
           onRemove={removeImage}
           spec={HOME_SLIDE_DESKTOP_SPEC}
           required
-          hint="Use a 16:9 image here. The homepage hero now behaves like a media player frame, so wide landscape slides will fit best."
+          hint="Use a 16:9 image here. The homepage hero now uses one fixed media-player frame across screen sizes, so keep key text, logo, and product inside the center safe zone."
+          previewScale={frameSettings.desktopImageScale}
+          previewPositionX={frameSettings.desktopImagePositionX}
+          previewPositionY={frameSettings.desktopImagePositionY}
         />
 
         <HomeSlideImageField
@@ -384,7 +405,27 @@ const AddHomeSlide = () => {
           onChange={handleMobileImageUpload}
           onRemove={removeMobileImage}
           spec={HOME_SLIDE_MOBILE_SPEC}
-          hint="Optional, but recommended if you want a separately cropped 16:9 mobile-safe composition."
+          hint="Optional, but recommended when the desktop creative feels too tight on phones. Keep important content inside the center 60-70% of the frame."
+          previewScale={frameSettings.mobileImageScale}
+          previewPositionX={frameSettings.mobileImagePositionX}
+          previewPositionY={frameSettings.mobileImagePositionY}
+        />
+
+        <HomeSlideFramePreview
+          title={title}
+          subtitle={subtitle}
+          buttonText="Shop now"
+          desktopAsset={image}
+          mobileAsset={mobileImage}
+          frameSettings={frameSettings}
+          offerEnabled={Boolean(offerEnabled && offerEndsAt)}
+          offerBadgeText={offerBadgeText}
+          offerTimerPosition={offerTimerPosition}
+        />
+
+        <HomeSlideFrameControls
+          values={frameSettings}
+          onChange={updateFrameSetting}
         />
 
         <div className="mt-8 flex gap-3">

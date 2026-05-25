@@ -15,6 +15,9 @@ const HomeSlideImageField = ({
   spec,
   required = false,
   hint = "",
+  previewScale = 1,
+  previewPositionX = 50,
+  previewPositionY = 50,
 }) => {
   const hasWarnings = Array.isArray(asset?.warnings) && asset.warnings.length > 0;
 
@@ -32,7 +35,11 @@ const HomeSlideImageField = ({
               <img
                 src={asset.preview}
                 alt={`${label} preview`}
-                className="h-full w-full object-contain"
+                className="h-full w-full object-cover"
+                style={{
+                  objectPosition: `${previewPositionX}% ${previewPositionY}%`,
+                  transform: `scale(${previewScale})`,
+                }}
               />
               <button
                 type="button"
@@ -81,7 +88,11 @@ const HomeSlideImageField = ({
                   ))}
                 </ul>
               ) : (
-                <p>This image matches the banner fit guidance well.</p>
+                <p>
+                  This file matches the recommended size guidance. Please still
+                  verify the composition works as a banner, because this check
+                  only validates resolution and aspect ratio.
+                </p>
               )}
             </div>
           </div>

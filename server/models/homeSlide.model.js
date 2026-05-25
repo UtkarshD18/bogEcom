@@ -10,7 +10,7 @@ const homeSlideSchema = new mongoose.Schema(
   {
     title: {
       type: String,
-      required: [true, "Slide title is required"],
+      default: "",
       trim: true,
       maxLength: [100, "Title cannot exceed 100 characters"],
     },
@@ -31,6 +31,42 @@ const homeSlideSchema = new mongoose.Schema(
     mobileImage: {
       type: String,
       default: "",
+    },
+    desktopImageScale: {
+      type: Number,
+      default: 1.08,
+      min: 1,
+      max: 1.4,
+    },
+    desktopImagePositionX: {
+      type: Number,
+      default: 50,
+      min: 0,
+      max: 100,
+    },
+    desktopImagePositionY: {
+      type: Number,
+      default: 50,
+      min: 0,
+      max: 100,
+    },
+    mobileImageScale: {
+      type: Number,
+      default: 1.04,
+      min: 1,
+      max: 1.4,
+    },
+    mobileImagePositionX: {
+      type: Number,
+      default: 50,
+      min: 0,
+      max: 100,
+    },
+    mobileImagePositionY: {
+      type: Number,
+      default: 50,
+      min: 0,
+      max: 100,
     },
     buttonText: {
       type: String,

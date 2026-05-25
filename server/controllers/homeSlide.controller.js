@@ -68,6 +68,21 @@ const normalizeStayDurationMs = (durationMs, durationSeconds) => {
 const toStayDurationSeconds = (durationMs) =>
   Math.max(Math.round(Number(durationMs || 5600) / 1000), 2);
 
+const clampNumber = (value, min, max) =>
+  Math.min(Math.max(value, min), max);
+
+const normalizeImageScale = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampNumber(Math.round(parsed * 100) / 100, 1, 1.4);
+};
+
+const normalizeImagePosition = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampNumber(Math.round(parsed), 0, 100);
+};
+
 /**
  * Home Slide Controller
  *
@@ -111,7 +126,7 @@ export const getHomeSlides = async (req, res) => {
 
       const slides = await HomeSlideModel.find(filter)
         .select(
-          "title subtitle description image mobileImage buttonText buttonLink secondaryButtonText secondaryButtonLink backgroundColor textColor textPosition overlayOpacity sortOrder stayDurationMs stayDuration offerEnabled offerBadgeText offerEndsAt offerTimerPosition",
+          "title subtitle description image mobileImage desktopImageScale desktopImagePositionX desktopImagePositionY mobileImageScale mobileImagePositionX mobileImagePositionY buttonText buttonLink secondaryButtonText secondaryButtonLink backgroundColor textColor textPosition overlayOpacity sortOrder stayDurationMs stayDuration offerEnabled offerBadgeText offerEndsAt offerTimerPosition",
         )
         .sort({ sortOrder: 1, createdAt: -1 })
         .limit(limit)
@@ -228,6 +243,12 @@ export const createSlide = async (req, res) => {
       description,
       image,
       mobileImage,
+      desktopImageScale,
+      desktopImagePositionX,
+      desktopImagePositionY,
+      mobileImageScale,
+      mobileImagePositionX,
+      mobileImagePositionY,
       buttonText,
       buttonLink,
       secondaryButtonText,
@@ -248,11 +269,11 @@ export const createSlide = async (req, res) => {
       endDate,
     } = req.body;
 
-    if (!title || !image) {
+    if (!image) {
       return res.status(400).json({
         error: true,
         success: false,
-        message: "Title and image are required",
+        message: "Slide image is required",
       });
     }
 
@@ -267,6 +288,12 @@ export const createSlide = async (req, res) => {
       description,
       image,
       mobileImage,
+      desktopImageScale: normalizeImageScale(desktopImageScale, 1.08),
+      desktopImagePositionX: normalizeImagePosition(desktopImagePositionX, 50),
+      desktopImagePositionY: normalizeImagePosition(desktopImagePositionY, 50),
+      mobileImageScale: normalizeImageScale(mobileImageScale, 1.04),
+      mobileImagePositionX: normalizeImagePosition(mobileImagePositionX, 50),
+      mobileImagePositionY: normalizeImagePosition(mobileImagePositionY, 50),
       buttonText: buttonText || "Shop Now",
       buttonLink: buttonLink || "/products",
       secondaryButtonText,
@@ -362,6 +389,48 @@ export const updateSlide = async (req, res) => {
 
     if ("offerEnabled" in updateData) {
       updateData.offerEnabled = Boolean(updateData.offerEnabled);
+    }
+
+    if ("desktopImageScale" in updateData) {
+      updateData.desktopImageScale = normalizeImageScale(
+        updateData.desktopImageScale,
+        existingSlide.desktopImageScale || 1.08,
+      );
+    }
+
+    if ("desktopImagePositionX" in updateData) {
+      updateData.desktopImagePositionX = normalizeImagePosition(
+        updateData.desktopImagePositionX,
+        existingSlide.desktopImagePositionX || 50,
+      );
+    }
+
+    if ("desktopImagePositionY" in updateData) {
+      updateData.desktopImagePositionY = normalizeImagePosition(
+        updateData.desktopImagePositionY,
+        existingSlide.desktopImagePositionY || 50,
+      );
+    }
+
+    if ("mobileImageScale" in updateData) {
+      updateData.mobileImageScale = normalizeImageScale(
+        updateData.mobileImageScale,
+        existingSlide.mobileImageScale || 1.04,
+      );
+    }
+
+    if ("mobileImagePositionX" in updateData) {
+      updateData.mobileImagePositionX = normalizeImagePosition(
+        updateData.mobileImagePositionX,
+        existingSlide.mobileImagePositionX || 50,
+      );
+    }
+
+    if ("mobileImagePositionY" in updateData) {
+      updateData.mobileImagePositionY = normalizeImagePosition(
+        updateData.mobileImagePositionY,
+        existingSlide.mobileImagePositionY || 50,
+      );
     }
 
     if ("offerEndsAt" in updateData && !updateData.offerEndsAt) {

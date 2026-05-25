@@ -1,13 +1,22 @@
 const ASPECT_RATIO_TOLERANCE = 0.1;
 
+export const DEFAULT_HOME_SLIDE_FRAME_SETTINGS = {
+  desktopImageScale: 1.08,
+  desktopImagePositionX: 50,
+  desktopImagePositionY: 50,
+  mobileImageScale: 1.04,
+  mobileImagePositionX: 50,
+  mobileImagePositionY: 50,
+};
+
 export const HOME_SLIDE_DESKTOP_SPEC = {
-  label: "Desktop hero",
+  label: "Desktop 16:9 hero",
   width: 1920,
   height: 1080,
 };
 
 export const HOME_SLIDE_MOBILE_SPEC = {
-  label: "Mobile hero",
+  label: "Mobile 16:9 hero",
   width: 1280,
   height: 720,
 };
@@ -73,7 +82,7 @@ export const getHomeSlideImageWarnings = (dimensions, spec) => {
 
   if (aspectRatioDelta > ASPECT_RATIO_TOLERANCE) {
     warnings.push(
-      `${spec.label} aspect ratio should be close to ${formatAspectRatio(recommendedAspectRatio)}. This upload is ${formatAspectRatio(dimensions.aspectRatio)}, so it may look stretched in the banner or need a separate optimized image.`,
+      `${spec.label} aspect ratio should be close to ${formatAspectRatio(recommendedAspectRatio)}. This upload is ${formatAspectRatio(dimensions.aspectRatio)}, so it may crop awkwardly in the fixed hero frame or need a separate optimized image.`,
     );
   }
 
