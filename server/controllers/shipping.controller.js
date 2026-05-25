@@ -24,8 +24,14 @@ import {
   getShippingQuote,
   validateIndianPincode,
 } from "../services/shippingRate.service.js";
+import { emitOrderStatusUpdate } from "../realtime/orderEvents.js";
+import { syncShipmentStateOnOrder } from "../services/automatedShipping.service.js";
 import { syncOrderToFirestore } from "../utils/orderFirestoreSync.js";
-import { mapExpressbeesToShipmentStatus } from "../utils/orderStatus.js";
+import {
+  applyOrderStatusTransition,
+  mapExpressbeesToOrderStatus,
+  mapExpressbeesToShipmentStatus,
+} from "../utils/orderStatus.js";
 
 const normalizeShipmentStatus = (status) => {
   const mapped = mapExpressbeesToShipmentStatus(status);
@@ -218,6 +224,91 @@ const updateOrderShipping = async (orderId, updates, context = "shipping") => {
   return order;
 };
 
+const snapshotOrderShippingState = (order) => ({
+  order_status: order?.order_status || null,
+  awb_number: order?.awb_number || null,
+  awbNumber: order?.awbNumber || null,
+  shipment_status: order?.shipment_status || null,
+  shipmentStatus: order?.shipmentStatus || null,
+  trackingUrl: order?.trackingUrl || null,
+  manifestId: order?.manifestId || null,
+  shipmentId: order?.shipmentId || null,
+  shipping_provider: order?.shipping_provider || null,
+  courierName: order?.courierName || null,
+});
+
+const hasShippingStateChanged = (beforeState, order) => {
+  const afterState = snapshotOrderShippingState(order);
+  return Object.keys(beforeState).some(
+    (key) => beforeState[key] !== afterState[key],
+  );
+};
+
+const syncCarrierStateToOrder = async ({
+  orderId,
+  awb = null,
+  status = null,
+  manifestId = null,
+  trackingUrl = null,
+  shipmentId = null,
+  courierName = "Xpressbees",
+  source = "XPRESSBEES_ADMIN_SYNC",
+}) => {
+  if (!orderId) return null;
+  validateMongoId(orderId, "orderId");
+
+  const order = await OrderModel.findById(orderId);
+  if (!order) {
+    throw new AppError("ORDER_NOT_FOUND");
+  }
+
+  if (order.isDemoOrder) {
+    throw new AppError("FORBIDDEN", {
+      message: "Shipping updates are disabled for demo test orders",
+      orderId,
+    });
+  }
+
+  const previousState = snapshotOrderShippingState(order);
+
+  await syncShipmentStateOnOrder({
+    order,
+    awb,
+    status,
+    manifestId,
+    trackingUrl,
+    shipmentId,
+    courierName,
+    source,
+  });
+
+  const mappedOrderStatus = mapExpressbeesToOrderStatus(status);
+  const transitionResult = mappedOrderStatus
+    ? applyOrderStatusTransition(order, mappedOrderStatus, {
+        source,
+        timestamp: new Date(),
+      })
+    : { updated: false, reason: "no_status_mapping" };
+
+  const shipmentChanged = hasShippingStateChanged(previousState, order);
+  if (!shipmentChanged && !transitionResult.updated) {
+    return order;
+  }
+
+  order.updatedAt = new Date();
+  await order.save();
+
+  syncOrderToFirestore(order, "update").catch((err) =>
+    logger.error(source, "Failed to sync order to Firestore", {
+      orderId,
+      error: err.message,
+    }),
+  );
+  emitOrderStatusUpdate(order, source);
+
+  return order;
+};
+
 export const getShippingQuoteController = asyncHandler(async (req, res) => {
   try {
     const { pincode, subtotal = 0, paymentType = "prepaid" } = req.body || {};
@@ -396,12 +487,23 @@ export const xpressbeesBookShipment = asyncHandler(async (req, res) => {
     const data = await bookShipment(normalizedShipment);
 
     if (orderId && data?.status && data?.data?.awb_number) {
-      await updateOrderShipping(orderId, {
-        shipping_provider: "XPRESSBEES",
-        awb_number: data.data.awb_number,
-        shipment_status: normalizeShipmentStatus(data.data.status),
-        shipment_created_at: new Date(),
+      const order = await syncCarrierStateToOrder({
+        orderId,
+        awb: data.data.awb_number,
+        status: data?.data?.status || "PP",
+        manifestId: data?.data?.manifest_id || data?.data?.manifestId || null,
+        trackingUrl:
+          data?.data?.tracking_url || data?.data?.trackingUrl || null,
+        shipmentId:
+          data?.data?.shipment_id || data?.data?.shipmentId || null,
+        courierName: "Xpressbees",
+        source: "XPRESSBEES_BOOK",
       });
+
+      if (order) {
+        order.shipment_created_at = new Date();
+        await order.save();
+      }
     }
 
     return sendSuccess(res, data, "Shipment booked");
@@ -430,8 +532,18 @@ export const xpressbeesTrackShipment = asyncHandler(async (req, res) => {
         data?.status_code ||
         data?.status;
 
-      await updateOrderShipping(orderId, {
-        shipment_status: normalizeShipmentStatus(status),
+      await syncCarrierStateToOrder({
+        orderId,
+        awb,
+        status,
+        manifestId:
+          data?.data?.manifest_id || data?.data?.manifestId || null,
+        trackingUrl:
+          data?.data?.tracking_url || data?.data?.trackingUrl || null,
+        shipmentId:
+          data?.data?.shipment_id || data?.data?.shipmentId || null,
+        courierName: "Xpressbees",
+        source: "XPRESSBEES_TRACK",
       });
     }
 
@@ -480,8 +592,22 @@ export const xpressbeesCancelShipment = asyncHandler(async (req, res) => {
     const data = await cancelShipment(awb);
 
     if (orderId && data?.status) {
-      await updateOrderShipping(orderId, {
-        shipment_status: "cancelled",
+      await syncCarrierStateToOrder({
+        orderId,
+        awb,
+        status:
+          data?.data?.status ||
+          data?.data?.shipment_status ||
+          data?.status_code ||
+          "cancelled",
+        manifestId:
+          data?.data?.manifest_id || data?.data?.manifestId || null,
+        trackingUrl:
+          data?.data?.tracking_url || data?.data?.trackingUrl || null,
+        shipmentId:
+          data?.data?.shipment_id || data?.data?.shipmentId || null,
+        courierName: "Xpressbees",
+        source: "XPRESSBEES_CANCEL",
       });
     }
 

@@ -164,13 +164,17 @@ const ShippingAdminPage = () => {
         toast.error("Please enter AWB number");
         return;
       }
+      if (!String(cancelOrderId || "").trim()) {
+        toast.error("Order ID is required when cancelling a shipment");
+        return;
+      }
       setLoadingAction(true);
       const response = await request(
         "/api/shipping/xpressbees/cancel",
         "POST",
         {
           awb: cancelAwb,
-          orderId: includeOrderSync ? cancelOrderId : null,
+          orderId: String(cancelOrderId || "").trim(),
         },
       );
       setCancelResponse(response);
@@ -580,10 +584,12 @@ const ShippingAdminPage = () => {
               fullWidth
             />
             <TextField
-              label="Order ID (optional)"
+              label="Order ID (required)"
               value={cancelOrderId}
               onChange={(e) => setCancelOrderId(e.target.value)}
               size="small"
+              required
+              helperText="Cancellation always syncs the linked order status in admin."
               fullWidth
             />
           </div>
