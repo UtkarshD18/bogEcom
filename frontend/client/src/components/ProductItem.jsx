@@ -9,10 +9,7 @@ import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import useSeoAlt from "@/hooks/useSeoAlt";
 import { resolveAvailability } from "@/utils/productAvailability";
-import {
-  buildProductHref,
-  getPublicProductIdentifier,
-} from "@/utils/productRouting";
+import { buildProductHref } from "@/utils/productRouting";
 import { subscribeToStockUpdates } from "@/realtime/stockSocket";
 import { applyStockUpdateToProduct } from "@/utils/stockRealtime";
 import {

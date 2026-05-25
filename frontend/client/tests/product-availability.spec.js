@@ -206,7 +206,9 @@ test("products page renders reserved stock as unavailable and blocks purchase", 
   );
   const reservedBox = await reservedCard.boundingBox();
   const lastUnitBox = await lastUnitCard.boundingBox();
-  expect(reservedBox?.y).toBeGreaterThan(lastUnitBox?.y || 0);
+  expect(reservedBox).not.toBeNull();
+  expect(lastUnitBox).not.toBeNull();
+  expect(reservedBox.y).toBeGreaterThan(lastUnitBox.y);
   await expect(lastUnitCard).toContainText("Only 1 left");
   await expect(
     lastUnitCard.getByLabel("Add Last Unit Peanut Butter to cart"),

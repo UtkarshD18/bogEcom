@@ -406,7 +406,7 @@ const EditHomeSlide = () => {
             </span>
             <input
               type="datetime-local"
-              value={formatDateTimeInputValue(startDate)}
+              value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
             />
@@ -418,7 +418,7 @@ const EditHomeSlide = () => {
             </span>
             <input
               type="datetime-local"
-              value={formatDateTimeInputValue(endDate)}
+              value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               className="w-full h-[40px] border border-[rgba(0,0,0,0.2)] outline-none rounded-md focus:border-blue-500 px-3 text-[14px]"
             />

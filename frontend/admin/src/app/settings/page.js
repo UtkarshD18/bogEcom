@@ -194,17 +194,6 @@ const DEFAULT_MAINTENANCE_SETTINGS = {
   showCountdown: true,
 };
 
-const DEFAULT_OFFER_COUNTDOWN_SETTINGS = {
-  enabled: false,
-  title: "Limited time offer",
-  subtitle: "Fresh deals are live now.",
-  couponCode: "",
-  discountText: "",
-  endsAt: "",
-  ctaLabel: "Shop offers",
-  ctaHref: "/products",
-};
-
 const buildOrderSeriesPreview = (settings = {}) => {
   const prefix =
     String(settings.orderSeriesPrefix || "H1G")

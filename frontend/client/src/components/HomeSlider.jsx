@@ -335,17 +335,12 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
                                   slide.backgroundColor || "#f5f5f5",
                               }}
                             >
-                              <SeoImage
-                                src={desktopSrc}
-                                fallbackAlt={slide.title}
-                                fill
+                              <div
                                 aria-hidden="true"
-                                priority={index === 0}
-                                sizes="100vw"
-                                fetchPriority={index === 0 ? "high" : undefined}
-                                loading={index === 0 ? "eager" : "lazy"}
-                                unoptimized={desktopCloudinary}
-                                className="object-cover object-center"
+                                className="absolute inset-0 scale-110 bg-cover bg-center opacity-70 blur-2xl"
+                                style={{
+                                  backgroundImage: `url("${desktopSrc}")`,
+                                }}
                               />
                               <SeoImage
                                 src={desktopSrc}
@@ -356,7 +351,7 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
                                 fetchPriority={index === 0 ? "high" : undefined}
                                 loading={index === 0 ? "eager" : "lazy"}
                                 unoptimized={desktopCloudinary}
-                                className="object-contain object-center"
+                                className="object-cover object-center"
                               />
                             </div>
                             <div
@@ -366,17 +361,12 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
                                   slide.backgroundColor || "#f5f5f5",
                               }}
                             >
-                              <SeoImage
-                                src={mobileSrc}
-                                fallbackAlt={slide.title}
-                                fill
+                              <div
                                 aria-hidden="true"
-                                priority={index === 0}
-                                sizes="100vw"
-                                fetchPriority={index === 0 ? "high" : undefined}
-                                loading={index === 0 ? "eager" : "lazy"}
-                                unoptimized={mobileCloudinary}
-                                className="object-cover object-top"
+                                className="absolute inset-0 scale-110 bg-cover bg-top opacity-75 blur-2xl"
+                                style={{
+                                  backgroundImage: `url("${mobileSrc}")`,
+                                }}
                               />
                               <SeoImage
                                 src={mobileSrc}
