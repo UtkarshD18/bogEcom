@@ -16,6 +16,7 @@ const mergeWithDefaults = (page) => {
     sections: { ...defaults.sections, ...(data.sections || {}) },
     hero: { ...defaults.hero, ...(data.hero || {}) },
     newsletter: { ...defaults.newsletter, ...(data.newsletter || {}) },
+    article: { ...defaults.article, ...(data.article || {}) },
   };
 };
 
@@ -91,7 +92,7 @@ export const getBlogPageAdmin = async (req, res) => {
 export const updateBlogPage = async (req, res) => {
   try {
     const adminId = req.userId || req.user?._id || req.user;
-    const { theme, sections, hero, newsletter, isActive } = req.body || {};
+    const { theme, sections, hero, newsletter, article, isActive } = req.body || {};
 
     let page = await BlogPageModel.findOne();
 
@@ -103,6 +104,7 @@ export const updateBlogPage = async (req, res) => {
     if (sections !== undefined) updateData.sections = sections;
     if (hero !== undefined) updateData.hero = hero;
     if (newsletter !== undefined) updateData.newsletter = newsletter;
+    if (article !== undefined) updateData.article = article;
     if (isActive !== undefined) updateData.isActive = isActive;
 
     if (page) {

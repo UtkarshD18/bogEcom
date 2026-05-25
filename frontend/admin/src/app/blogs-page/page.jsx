@@ -37,7 +37,19 @@ const DEFAULT_CONTENT = {
     buttonText: "Subscribe",
     note: "We respect your privacy. Unsubscribe at any time.",
   },
+  article: {
+    bannerStartColor: "#f97316",
+    bannerEndColor: "#ec4899",
+    fontFamily: "modern-sans",
+  },
 };
+
+const BLOG_FONT_OPTIONS = [
+  { value: "modern-sans", label: "Modern Sans" },
+  { value: "editorial-serif", label: "Editorial Serif" },
+  { value: "clean-serif", label: "Clean Serif" },
+  { value: "compact-sans", label: "Compact Sans" },
+];
 
 export default function BlogsPageEditor() {
   const { token, isAuthenticated, loading } = useAdmin();
@@ -75,6 +87,10 @@ export default function BlogsPageEditor() {
           newsletter: {
             ...DEFAULT_CONTENT.newsletter,
             ...(response.data.newsletter || {}),
+          },
+          article: {
+            ...DEFAULT_CONTENT.article,
+            ...(response.data.article || {}),
           },
         });
       } else {
@@ -451,6 +467,70 @@ export default function BlogsPageEditor() {
                 fullWidth
                 size="small"
               />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h3 className="font-semibold text-gray-800 mb-4">
+              Blog Article Appearance
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TextField
+                label="Banner Start Color"
+                type="color"
+                value={content.article.bannerStartColor}
+                onChange={(e) =>
+                  setContent({
+                    ...content,
+                    article: {
+                      ...content.article,
+                      bannerStartColor: e.target.value,
+                    },
+                  })
+                }
+                fullWidth
+                size="small"
+                InputLabelProps={{ shrink: true }}
+              />
+              <TextField
+                label="Banner End Color"
+                type="color"
+                value={content.article.bannerEndColor}
+                onChange={(e) =>
+                  setContent({
+                    ...content,
+                    article: {
+                      ...content.article,
+                      bannerEndColor: e.target.value,
+                    },
+                  })
+                }
+                fullWidth
+                size="small"
+                InputLabelProps={{ shrink: true }}
+              />
+              <FormControl fullWidth size="small" className="md:col-span-2">
+                <InputLabel>Article Font</InputLabel>
+                <Select
+                  label="Article Font"
+                  value={content.article.fontFamily}
+                  onChange={(e) =>
+                    setContent({
+                      ...content,
+                      article: {
+                        ...content.article,
+                        fontFamily: e.target.value,
+                      },
+                    })
+                  }
+                >
+                  {BLOG_FONT_OPTIONS.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </div>
           </div>
         </div>

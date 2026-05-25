@@ -1,6 +1,8 @@
 "use client";
+import BlogTypographyControls from "@/components/BlogTypographyControls";
 import { useAdmin } from "@/context/AdminContext";
 import { postData, uploadFile, uploadVideoFile } from "@/utils/api";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -13,6 +15,8 @@ const AddBlog = () => {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [contentFontFamily, setContentFontFamily] = useState("modern-sans");
+  const [contentFontSize, setContentFontSize] = useState("base");
   const [excerpt, setExcerpt] = useState("");
   const [isPublished, setIsPublished] = useState(true);
   const [referenceLink, setReferenceLink] = useState("");
@@ -24,6 +28,8 @@ const AddBlog = () => {
   const [videoFile, setVideoFile] = useState(null);
   const [mediaType, setMediaType] = useState("image");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const shouldBypassImageOptimization = (src) =>
+    /^(blob:|data:)/i.test(String(src || ""));
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -113,6 +119,8 @@ const AddBlog = () => {
       const blogData = {
         title: title.trim(),
         content: content.trim(),
+        contentFontFamily,
+        contentFontSize,
         excerpt: excerpt.trim(),
         referenceLink: referenceLink.trim(),
         image: imageUrlFinal,
@@ -256,9 +264,12 @@ const AddBlog = () => {
 
               {imagePreview && (
                 <div className="relative mt-3">
-                  <img
+                  <Image
                     src={imagePreview}
                     alt="preview"
+                    width={960}
+                    height={384}
+                    unoptimized={shouldBypassImageOptimization(imagePreview)}
                     className="w-full h-48 object-cover rounded-xl"
                   />
                   <button
@@ -289,11 +300,14 @@ const AddBlog = () => {
               />
 
               {imageUrl && (
-                <img
-                  src={imageUrl}
-                  alt="preview"
-                  className="mt-3 w-full h-48 object-cover rounded-xl"
-                />
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imageUrl}
+                    alt="preview"
+                    className="mt-3 w-full h-48 object-cover rounded-xl"
+                  />
+                </>
               )}
             </div>
           </div>
@@ -328,9 +342,12 @@ const AddBlog = () => {
               </div>
               {imagePreview && (
                 <div className="relative mt-3">
-                  <img
+                  <Image
                     src={imagePreview}
                     alt="thumbnail"
+                    width={960}
+                    height={256}
+                    unoptimized={shouldBypassImageOptimization(imagePreview)}
                     className="w-full h-32 object-cover rounded-xl"
                   />
                   <button
@@ -429,6 +446,13 @@ const AddBlog = () => {
             {excerpt.length}/150 characters
           </p>
         </div>
+
+        <BlogTypographyControls
+          contentFontFamily={contentFontFamily}
+          contentFontSize={contentFontSize}
+          onFontFamilyChange={setContentFontFamily}
+          onFontSizeChange={setContentFontSize}
+        />
 
         {/* BLOG CONTENT */}
         <div>

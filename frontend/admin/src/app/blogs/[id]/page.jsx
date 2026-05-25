@@ -1,7 +1,9 @@
 "use client";
 
 import { API_BASE_URL, uploadFile, uploadVideoFile } from "@/utils/api";
+import BlogTypographyControls from "@/components/BlogTypographyControls";
 import { useAdmin } from "@/context/AdminContext";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { MdSave } from "react-icons/md";
@@ -15,6 +17,8 @@ const EditBlog = () => {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [contentFontFamily, setContentFontFamily] = useState("modern-sans");
+  const [contentFontSize, setContentFontSize] = useState("base");
   const [excerpt, setExcerpt] = useState("");
   const [category, setCategory] = useState("");
   const [image, setImage] = useState("");
@@ -29,6 +33,8 @@ const EditBlog = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const shouldBypassImageOptimization = (src) =>
+    /^(blob:|data:)/i.test(String(src || ""));
 
   const fetchBlogDetails = useCallback(async () => {
     try {
@@ -47,6 +53,8 @@ const EditBlog = () => {
       if (data.success) {
         setTitle(data.blog.title || "");
         setContent(data.blog.content || "");
+        setContentFontFamily(data.blog.contentFontFamily || "modern-sans");
+        setContentFontSize(data.blog.contentFontSize || "base");
         setExcerpt(data.blog.excerpt || "");
         setCategory(data.blog.category || "");
         setImage(data.blog.image || "");
@@ -130,6 +138,8 @@ const EditBlog = () => {
         body: JSON.stringify({
           title: title?.trim() || "",
           content: content?.trim() || "",
+          contentFontFamily,
+          contentFontSize,
           excerpt: excerpt?.trim() || "",
           category: category?.trim() || "",
           image: imageUrlFinal || "",
@@ -246,6 +256,13 @@ const EditBlog = () => {
             />
           </div>
 
+          <BlogTypographyControls
+            contentFontFamily={contentFontFamily}
+            contentFontSize={contentFontSize}
+            onFontFamilyChange={setContentFontFamily}
+            onFontSizeChange={setContentFontSize}
+          />
+
           {/* Reference Link */}
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Reference / External Link</label>
@@ -288,9 +305,22 @@ const EditBlog = () => {
                 className="w-full"
               />
               {imagePreview ? (
-                <img src={imagePreview} alt="preview" className="mt-2 w-full h-28 object-cover rounded-lg" />
+                <Image
+                  src={imagePreview}
+                  alt="preview"
+                  width={960}
+                  height={224}
+                  unoptimized={shouldBypassImageOptimization(imagePreview)}
+                  className="mt-2 w-full h-28 object-cover rounded-lg"
+                />
               ) : image ? (
-                <img src={image} alt="current" className="mt-2 w-full h-28 object-cover rounded-lg" />
+                <Image
+                  src={image}
+                  alt="current"
+                  width={960}
+                  height={224}
+                  className="mt-2 w-full h-28 object-cover rounded-lg"
+                />
               ) : null}
             </div>
 
@@ -346,9 +376,11 @@ const EditBlog = () => {
               <label className="block text-sm font-medium text-gray-600 mb-2">
                 Current Image
               </label>
-              <img
+              <Image
                 src={image}
                 alt="Blog cover"
+                width={480}
+                height={320}
                 className="max-w-xs rounded-lg"
               />
             </div>

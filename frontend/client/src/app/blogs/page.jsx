@@ -2,6 +2,7 @@
 
 import { fetchDataFromApi, postData } from "@/utils/api";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -22,6 +23,11 @@ const DEFAULT_PAGE = {
     inputPlaceholder: "Enter your email address",
     buttonText: "Subscribe",
     note: "We respect your privacy. Unsubscribe at any time.",
+  },
+  article: {
+    bannerStartColor: "#f97316",
+    bannerEndColor: "#ec4899",
+    fontFamily: "modern-sans",
   },
 };
 
@@ -170,7 +176,16 @@ export default function BlogPage() {
     }
 
     if (blog.image) {
-      return <img src={blog.image} alt={blog.title} className={className} />;
+      return (
+        <Image
+          src={blog.image}
+          alt={blog.title}
+          width={960}
+          height={540}
+          sizes="(max-width: 1024px) 100vw, 50vw"
+          className={className}
+        />
+      );
     }
 
     return null;
@@ -300,6 +315,10 @@ export default function BlogPage() {
         newsletter: {
           ...DEFAULT_PAGE.newsletter,
           ...(response.data.newsletter || {}),
+        },
+        article: {
+          ...DEFAULT_PAGE.article,
+          ...(response.data.article || {}),
         },
       });
     };

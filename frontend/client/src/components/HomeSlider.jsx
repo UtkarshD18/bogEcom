@@ -109,6 +109,7 @@ const HERO_STATS = [
 ];
 
 const getOfferTimeLeft = (endsAt, nowMs) => {
+  if (!Number.isFinite(nowMs)) return "";
   const endMs = new Date(endsAt || "").getTime();
   const remainingMs = endMs - nowMs;
   if (!Number.isFinite(endMs) || remainingMs <= 0) return "";
@@ -163,7 +164,7 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [isHeroPanelDismissed, setIsHeroPanelDismissed] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(null);
   const swiperRef = useRef(null);
 
   const displaySlides = useMemo(() => {
@@ -221,7 +222,12 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
     const hasActiveOffer = displaySlides.some(
       (slide) => slide.offerEnabled && slide.offerEndsAt,
     );
-    if (!hasActiveOffer) return undefined;
+    if (!hasActiveOffer) {
+      setNowMs(null);
+      return undefined;
+    }
+
+    setNowMs(Date.now());
 
     const timer = window.setInterval(() => {
       setNowMs(Date.now());

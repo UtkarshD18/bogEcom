@@ -8,6 +8,15 @@ const slugifyText = (value = "") =>
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "");
 
+const BLOG_CONTENT_FONT_FAMILIES = [
+  "modern-sans",
+  "editorial-serif",
+  "clean-serif",
+  "compact-sans",
+];
+
+const BLOG_CONTENT_FONT_SIZES = ["sm", "base", "lg", "xl"];
+
 const blogSchema = new mongoose.Schema(
   {
     title: {
@@ -24,6 +33,16 @@ const blogSchema = new mongoose.Schema(
     content: {
       type: String,
       default: "",
+    },
+    contentFontFamily: {
+      type: String,
+      enum: BLOG_CONTENT_FONT_FAMILIES,
+      default: "modern-sans",
+    },
+    contentFontSize: {
+      type: String,
+      enum: BLOG_CONTENT_FONT_SIZES,
+      default: "base",
     },
     excerpt: {
       type: String,

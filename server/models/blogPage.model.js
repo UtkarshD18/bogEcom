@@ -60,6 +60,20 @@ const blogPageSchema = new mongoose.Schema(
         default: "We respect your privacy. Unsubscribe at any time.",
       },
     },
+    article: {
+      bannerStartColor: {
+        type: String,
+        default: "#f97316",
+      },
+      bannerEndColor: {
+        type: String,
+        default: "#ec4899",
+      },
+      fontFamily: {
+        type: String,
+        default: "modern-sans",
+      },
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -97,6 +111,11 @@ blogPageSchema.statics.getDefaultContent = function () {
       inputPlaceholder: "Enter your email address",
       buttonText: "Subscribe",
       note: "We respect your privacy. Unsubscribe at any time.",
+    },
+    article: {
+      bannerStartColor: "#f97316",
+      bannerEndColor: "#ec4899",
+      fontFamily: "modern-sans",
     },
   };
 };

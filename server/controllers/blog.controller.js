@@ -4,6 +4,15 @@ import BlogModel from "../models/blog.model.js";
 import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
 
 const BLOG_RESPONSE_CACHE_NAMESPACES = ["blogs"];
+const BLOG_CONTENT_FONT_FAMILIES = [
+  "modern-sans",
+  "editorial-serif",
+  "clean-serif",
+  "compact-sans",
+];
+const BLOG_CONTENT_FONT_SIZES = ["sm", "base", "lg", "xl"];
+const DEFAULT_BLOG_CONTENT_FONT_FAMILY = "modern-sans";
+const DEFAULT_BLOG_CONTENT_FONT_SIZE = "base";
 
 const normalizeText = (value, fallback = "") => {
   if (typeof value !== "string") return fallback;
@@ -46,6 +55,11 @@ const normalizePublishFlag = (value, fallback = true) => {
   if (["false", "0", "no", "off"].includes(normalized)) return false;
 
   return fallback;
+};
+
+const normalizeEnumValue = (value, allowedValues, fallback) => {
+  const normalized = normalizeText(value, "");
+  return allowedValues.includes(normalized) ? normalized : fallback;
 };
 
 const resolvePublicBlogQuery = (identifier) => {
@@ -242,6 +256,8 @@ export const createBlog = async (req, res) => {
     const {
       title,
       content,
+      contentFontFamily,
+      contentFontSize,
       excerpt,
       image,
       referenceLink,
@@ -266,6 +282,16 @@ export const createBlog = async (req, res) => {
     const blog = new BlogModel({
       title: normalizedTitle,
       content: normalizedContent,
+      contentFontFamily: normalizeEnumValue(
+        contentFontFamily,
+        BLOG_CONTENT_FONT_FAMILIES,
+        DEFAULT_BLOG_CONTENT_FONT_FAMILY,
+      ),
+      contentFontSize: normalizeEnumValue(
+        contentFontSize,
+        BLOG_CONTENT_FONT_SIZES,
+        DEFAULT_BLOG_CONTENT_FONT_SIZE,
+      ),
       excerpt: normalizedExcerpt,
       image: normalizeText(image, "") || null,
       referenceLink: normalizeText(referenceLink, "") || null,
@@ -306,6 +332,8 @@ export const updateBlog = async (req, res) => {
     const {
       title,
       content,
+      contentFontFamily,
+      contentFontSize,
       excerpt,
       image,
       referenceLink,
@@ -342,6 +370,20 @@ export const updateBlog = async (req, res) => {
       blog.title = resolveBlogTitle(title, content ?? blog.content, excerpt ?? blog.excerpt, referenceLink ?? blog.referenceLink);
     }
     if (content !== undefined) blog.content = normalizeText(content, "");
+    if (contentFontFamily !== undefined) {
+      blog.contentFontFamily = normalizeEnumValue(
+        contentFontFamily,
+        BLOG_CONTENT_FONT_FAMILIES,
+        blog.contentFontFamily || DEFAULT_BLOG_CONTENT_FONT_FAMILY,
+      );
+    }
+    if (contentFontSize !== undefined) {
+      blog.contentFontSize = normalizeEnumValue(
+        contentFontSize,
+        BLOG_CONTENT_FONT_SIZES,
+        blog.contentFontSize || DEFAULT_BLOG_CONTENT_FONT_SIZE,
+      );
+    }
     if (excerpt !== undefined) blog.excerpt = normalizeText(excerpt, "");
     if (image !== undefined) blog.image = normalizeText(image, "") || null;
     if (referenceLink !== undefined) {
