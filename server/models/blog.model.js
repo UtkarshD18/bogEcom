@@ -34,6 +34,19 @@ const blogSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    contentFormat: {
+      type: String,
+      enum: ["plain", "html"],
+      default: "plain",
+    },
+    contentHtml: {
+      type: String,
+      default: "",
+    },
+    contentHtmlFileName: {
+      type: String,
+      trim: true,
+    },
     contentFontFamily: {
       type: String,
       enum: BLOG_CONTENT_FONT_FAMILIES,

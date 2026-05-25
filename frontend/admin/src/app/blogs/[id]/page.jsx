@@ -1,8 +1,13 @@
 "use client";
 
 import { API_BASE_URL, uploadFile, uploadVideoFile } from "@/utils/api";
+import BlogHtmlImportPanel from "@/components/BlogHtmlImportPanel";
 import BlogTypographyControls from "@/components/BlogTypographyControls";
 import { useAdmin } from "@/context/AdminContext";
+import {
+  extractBlogHtmlImportData,
+  readBlogHtmlFile,
+} from "@/utils/blogHtmlImport";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -17,6 +22,10 @@ const EditBlog = () => {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [contentFormat, setContentFormat] = useState("plain");
+  const [contentHtml, setContentHtml] = useState("");
+  const [contentHtmlFileName, setContentHtmlFileName] = useState("");
+  const [htmlImportSummary, setHtmlImportSummary] = useState(null);
   const [contentFontFamily, setContentFontFamily] = useState("modern-sans");
   const [contentFontSize, setContentFontSize] = useState("base");
   const [excerpt, setExcerpt] = useState("");
@@ -53,6 +62,17 @@ const EditBlog = () => {
       if (data.success) {
         setTitle(data.blog.title || "");
         setContent(data.blog.content || "");
+        setContentFormat(data.blog.contentFormat || (data.blog.contentHtml ? "html" : "plain"));
+        setContentHtml(data.blog.contentHtml || "");
+        setContentHtmlFileName(data.blog.contentHtmlFileName || "");
+        setHtmlImportSummary(
+          data.blog.contentHtml
+            ? extractBlogHtmlImportData(
+                data.blog.contentHtml,
+                data.blog.contentHtmlFileName || data.blog.title || "",
+              )
+            : null,
+        );
         setContentFontFamily(data.blog.contentFontFamily || "modern-sans");
         setContentFontSize(data.blog.contentFontSize || "base");
         setExcerpt(data.blog.excerpt || "");
@@ -101,6 +121,67 @@ const EditBlog = () => {
     setVideoPreview(URL.createObjectURL(file));
   };
 
+  const handleHtmlImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const html = await readBlogHtmlFile(file);
+      const importData = extractBlogHtmlImportData(html, file.name);
+
+      setContentFormat("html");
+      setContentHtml(html);
+      setContentHtmlFileName(file.name);
+      setHtmlImportSummary(importData);
+
+      if (!title.trim() && importData.documentTitle) {
+        setTitle(importData.documentTitle);
+      }
+      if (!excerpt.trim() && importData.excerpt) {
+        setExcerpt(importData.excerpt);
+      }
+      if (!content.trim() && importData.plainText) {
+        setContent(importData.plainText);
+      }
+      if (!imagePreview && !image.trim() && importData.imageCandidates?.[0]) {
+        setImage(importData.imageCandidates[0]);
+      }
+    } catch (importError) {
+      console.error("Failed to import blog HTML:", importError);
+      setError("Failed to read blog HTML file");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const clearImportedHtml = () => {
+    setContentFormat("plain");
+    setContentHtml("");
+    setContentHtmlFileName("");
+    setHtmlImportSummary(null);
+  };
+
+  const handleSelectImportedPreviewImage = (candidate) => {
+    setImage(String(candidate || "").trim());
+    setImageFile(null);
+    setImagePreview("");
+  };
+
+  const handleSelectImportedPreviewFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setImage("");
+    event.target.value = "";
+  };
+
+  const clearManualImportedPreviewImage = () => {
+    setImageFile(null);
+    setImagePreview("");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -138,6 +219,10 @@ const EditBlog = () => {
         body: JSON.stringify({
           title: title?.trim() || "",
           content: content?.trim() || "",
+          contentFormat,
+          contentHtml: contentFormat === "html" ? contentHtml : "",
+          contentHtmlFileName:
+            contentFormat === "html" ? contentHtmlFileName : "",
           contentFontFamily,
           contentFontSize,
           excerpt: excerpt?.trim() || "",
@@ -256,12 +341,61 @@ const EditBlog = () => {
             />
           </div>
 
-          <BlogTypographyControls
-            contentFontFamily={contentFontFamily}
-            contentFontSize={contentFontSize}
-            onFontFamilyChange={setContentFontFamily}
-            onFontSizeChange={setContentFontSize}
-          />
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+            <label className="block text-sm font-medium text-gray-600 mb-3">
+              Content Source
+            </label>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setContentFormat("plain")}
+                className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                  contentFormat === "plain"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                Write In Editor
+              </button>
+              <button
+                type="button"
+                onClick={() => setContentFormat("html")}
+                className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                  contentFormat === "html"
+                    ? "bg-amber-500 text-white shadow-sm"
+                    : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                Import HTML File
+              </button>
+            </div>
+            <p className="mt-3 text-sm text-gray-500">
+              Keep using the editor for standard posts, or attach a full `.html` blog file to preserve an external layout.
+            </p>
+          </div>
+
+          {contentFormat === "html" ? (
+            <BlogHtmlImportPanel
+              contentHtml={contentHtml}
+              contentHtmlFileName={contentHtmlFileName}
+              importSummary={htmlImportSummary}
+              selectedPreviewImage={image || ""}
+              manualPreviewImage={imagePreview || ""}
+              manualPreviewFileName={imageFile?.name || ""}
+              onSelectPreviewImage={handleSelectImportedPreviewImage}
+              onManualPreviewFileChange={handleSelectImportedPreviewFile}
+              onClearManualPreview={clearManualImportedPreviewImage}
+              onFileChange={handleHtmlImport}
+              onClear={clearImportedHtml}
+            />
+          ) : (
+            <BlogTypographyControls
+              contentFontFamily={contentFontFamily}
+              contentFontSize={contentFontSize}
+              onFontFamilyChange={setContentFontFamily}
+              onFontSizeChange={setContentFontSize}
+            />
+          )}
 
           {/* Reference Link */}
           <div>

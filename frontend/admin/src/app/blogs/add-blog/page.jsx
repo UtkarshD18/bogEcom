@@ -1,6 +1,11 @@
 "use client";
+import BlogHtmlImportPanel from "@/components/BlogHtmlImportPanel";
 import BlogTypographyControls from "@/components/BlogTypographyControls";
 import { useAdmin } from "@/context/AdminContext";
+import {
+  extractBlogHtmlImportData,
+  readBlogHtmlFile,
+} from "@/utils/blogHtmlImport";
 import { postData, uploadFile, uploadVideoFile } from "@/utils/api";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -15,6 +20,10 @@ const AddBlog = () => {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [contentFormat, setContentFormat] = useState("plain");
+  const [contentHtml, setContentHtml] = useState("");
+  const [contentHtmlFileName, setContentHtmlFileName] = useState("");
+  const [htmlImportSummary, setHtmlImportSummary] = useState(null);
   const [contentFontFamily, setContentFontFamily] = useState("modern-sans");
   const [contentFontSize, setContentFontSize] = useState("base");
   const [excerpt, setExcerpt] = useState("");
@@ -51,6 +60,69 @@ const AddBlog = () => {
     }
     setVideoFile(file);
     setVideoPreview(URL.createObjectURL(file));
+  };
+
+  const handleHtmlImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const html = await readBlogHtmlFile(file);
+      const importData = extractBlogHtmlImportData(html, file.name);
+
+      setContentFormat("html");
+      setContentHtml(html);
+      setContentHtmlFileName(file.name);
+      setHtmlImportSummary(importData);
+
+      if (!title.trim() && importData.documentTitle) {
+        setTitle(importData.documentTitle);
+      }
+      if (!excerpt.trim() && importData.excerpt) {
+        setExcerpt(importData.excerpt);
+      }
+      if (!content.trim() && importData.plainText) {
+        setContent(importData.plainText);
+      }
+      if (!imagePreview && !imageUrl.trim() && importData.imageCandidates?.[0]) {
+        setImageUrl(importData.imageCandidates[0]);
+      }
+
+      toast.success("HTML blog file imported");
+    } catch (error) {
+      console.error("Failed to import blog HTML:", error);
+      toast.error("Failed to read blog HTML file");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const clearImportedHtml = () => {
+    setContentFormat("plain");
+    setContentHtml("");
+    setContentHtmlFileName("");
+    setHtmlImportSummary(null);
+  };
+
+  const handleSelectImportedPreviewImage = (candidate) => {
+    setImageUrl(String(candidate || "").trim());
+    setImageFile(null);
+    setImagePreview(null);
+  };
+
+  const handleSelectImportedPreviewFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setImageUrl("");
+    event.target.value = "";
+  };
+
+  const clearManualImportedPreviewImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
   };
 
   const handleSubmit = async (e) => {
@@ -119,6 +191,10 @@ const AddBlog = () => {
       const blogData = {
         title: title.trim(),
         content: content.trim(),
+        contentFormat,
+        contentHtml: contentFormat === "html" ? contentHtml : "",
+        contentHtmlFileName:
+          contentFormat === "html" ? contentHtmlFileName : "",
         contentFontFamily,
         contentFontSize,
         excerpt: excerpt.trim(),
@@ -447,27 +523,77 @@ const AddBlog = () => {
           </p>
         </div>
 
-        <BlogTypographyControls
-          contentFontFamily={contentFontFamily}
-          contentFontSize={contentFontSize}
-          onFontFamilyChange={setContentFontFamily}
-          onFontSizeChange={setContentFontSize}
-        />
-
-        {/* BLOG CONTENT */}
-        <div>
-          <label className="font-semibold text-gray-700">Blog Content</label>
-          <textarea
-            rows="8"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="Write full blog content here..."
-            className="w-full border rounded-xl px-4 py-3 mt-2 outline-none focus:border-blue-500"
-          />
-          <p className="text-sm text-gray-500 mt-1">
-            Content is optional, but the post can still publish with the other details you enter.
+        <div className="bg-gray-50 rounded-xl p-6">
+          <label className="font-semibold text-gray-700 block mb-4">
+            Content Source
+          </label>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setContentFormat("plain")}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                contentFormat === "plain"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              Write In Editor
+            </button>
+            <button
+              type="button"
+              onClick={() => setContentFormat("html")}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                contentFormat === "html"
+                  ? "bg-amber-500 text-white shadow-sm"
+                  : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              Import HTML File
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-gray-500">
+            Use the editor for regular text posts, or import a full `.html` article file when you want to preserve an external blog layout.
           </p>
         </div>
+
+        {contentFormat === "html" ? (
+          <BlogHtmlImportPanel
+            contentHtml={contentHtml}
+            contentHtmlFileName={contentHtmlFileName}
+            importSummary={htmlImportSummary}
+            selectedPreviewImage={imageUrl}
+            manualPreviewImage={imagePreview || ""}
+            manualPreviewFileName={imageFile?.name || ""}
+            onSelectPreviewImage={handleSelectImportedPreviewImage}
+            onManualPreviewFileChange={handleSelectImportedPreviewFile}
+            onClearManualPreview={clearManualImportedPreviewImage}
+            onFileChange={handleHtmlImport}
+            onClear={clearImportedHtml}
+          />
+        ) : (
+          <>
+            <BlogTypographyControls
+              contentFontFamily={contentFontFamily}
+              contentFontSize={contentFontSize}
+              onFontFamilyChange={setContentFontFamily}
+              onFontSizeChange={setContentFontSize}
+            />
+
+            <div>
+              <label className="font-semibold text-gray-700">Blog Content</label>
+              <textarea
+                rows="8"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Write full blog content here..."
+                className="w-full border rounded-xl px-4 py-3 mt-2 outline-none focus:border-blue-500"
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                Content is optional, but the post can still publish with the other details you enter.
+              </p>
+            </div>
+          </>
+        )}
 
         {/* PUBLISH STATUS */}
         <div className="flex items-center gap-4">

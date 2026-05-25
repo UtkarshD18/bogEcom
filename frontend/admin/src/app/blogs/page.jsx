@@ -1,6 +1,7 @@
 "use client";
 import { useAdmin } from "@/context/AdminContext";
 import { deleteData, getData } from "@/utils/api";
+import { extractImageCandidatesFromBlogHtml } from "@/utils/blogHtmlImport";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -72,6 +73,12 @@ const BlogsPage = () => {
     }
   };
 
+  const getBlogPreviewImage = (blog) => {
+    if (blog?.image) return blog.image;
+    const candidates = extractImageCandidatesFromBlogHtml(blog?.contentHtml || "");
+    return candidates[0] || "";
+  };
+
   if (loading || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -132,13 +139,13 @@ const BlogsPage = () => {
               {blog.videoUrl ? (
                 <video
                   src={blog.videoUrl}
-                  poster={blog.image || undefined}
+                  poster={getBlogPreviewImage(blog) || undefined}
                   controls
                   className="w-full h-40 object-cover bg-black"
                 />
-              ) : blog.image ? (
+              ) : getBlogPreviewImage(blog) ? (
                 <img
-                  src={blog.image}
+                  src={getBlogPreviewImage(blog)}
                   alt={blog.title}
                   className="w-full h-40 object-cover"
                 />

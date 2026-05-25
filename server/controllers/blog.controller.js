@@ -1,6 +1,13 @@
 import { deleteFromCloudinary } from "../config/cloudinary.js";
 import { invalidatePublicResponseCache } from "../middlewares/publicResponseCache.js";
 import BlogModel from "../models/blog.model.js";
+import {
+  extractImageCandidatesFromBlogHtml,
+  extractTitleFromBlogHtml,
+  resolveBlogContentFormat,
+  sanitizeBlogHtmlDocument,
+  stripTextFromBlogHtml,
+} from "../utils/blogHtml.js";
 import { extractPublicIdFromUrl } from "../utils/imageUtils.js";
 
 const BLOG_RESPONSE_CACHE_NAMESPACES = ["blogs"];
@@ -35,10 +42,13 @@ const normalizeTags = (value) => {
   return [];
 };
 
-const resolveBlogTitle = (title, content, excerpt, referenceLink) =>
+const resolveBlogTitle = (title, content, excerpt, referenceLink, htmlTitle = "") =>
   normalizeText(
     title,
-    normalizeText(content, normalizeText(excerpt, normalizeText(referenceLink, "Untitled Blog"))).slice(0, 120) ||
+    normalizeText(
+      htmlTitle,
+      normalizeText(content, normalizeText(excerpt, normalizeText(referenceLink, "Untitled Blog"))),
+    ).slice(0, 120) ||
       "Untitled Blog",
   );
 
@@ -256,6 +266,9 @@ export const createBlog = async (req, res) => {
     const {
       title,
       content,
+      contentFormat,
+      contentHtml,
+      contentHtmlFileName,
       contentFontFamily,
       contentFontSize,
       excerpt,
@@ -269,12 +282,24 @@ export const createBlog = async (req, res) => {
       isPublished,
     } = req.body;
 
-    const normalizedTitle = resolveBlogTitle(title, content, excerpt, referenceLink);
-    const normalizedContent = normalizeText(content, "");
+    const normalizedContentHtml = sanitizeBlogHtmlDocument(contentHtml);
+    const extractedHtmlTitle = extractTitleFromBlogHtml(normalizedContentHtml);
+    const extractedHtmlText = stripTextFromBlogHtml(normalizedContentHtml);
+    const normalizedTitle = resolveBlogTitle(
+      title,
+      content,
+      excerpt,
+      referenceLink,
+      extractedHtmlTitle,
+    );
+    const normalizedContent = normalizeText(content, extractedHtmlText);
     const normalizedExcerpt = normalizeText(
       excerpt,
       normalizedContent ? normalizedContent.slice(0, 500) : "",
     );
+    const normalizedImage = normalizeText(image, "");
+    const extractedImageCandidates =
+      extractImageCandidatesFromBlogHtml(normalizedContentHtml);
     const normalizedVideoUrl = normalizeText(videoUrl, "");
     const normalizedMediaType =
       mediaType === "video" || normalizedVideoUrl ? "video" : "image";
@@ -282,6 +307,9 @@ export const createBlog = async (req, res) => {
     const blog = new BlogModel({
       title: normalizedTitle,
       content: normalizedContent,
+      contentFormat: resolveBlogContentFormat(contentFormat, normalizedContentHtml),
+      contentHtml: normalizedContentHtml,
+      contentHtmlFileName: normalizeText(contentHtmlFileName, "") || null,
       contentFontFamily: normalizeEnumValue(
         contentFontFamily,
         BLOG_CONTENT_FONT_FAMILIES,
@@ -293,7 +321,7 @@ export const createBlog = async (req, res) => {
         DEFAULT_BLOG_CONTENT_FONT_SIZE,
       ),
       excerpt: normalizedExcerpt,
-      image: normalizeText(image, "") || null,
+      image: normalizedImage || extractedImageCandidates[0] || null,
       referenceLink: normalizeText(referenceLink, "") || null,
       mediaType: normalizedMediaType,
       videoUrl: normalizedVideoUrl || null,
@@ -332,6 +360,9 @@ export const updateBlog = async (req, res) => {
     const {
       title,
       content,
+      contentFormat,
+      contentHtml,
+      contentHtmlFileName,
       contentFontFamily,
       contentFontSize,
       excerpt,
@@ -366,10 +397,37 @@ export const updateBlog = async (req, res) => {
     }
 
     // Update fields
+    const nextContentHtml =
+      contentHtml !== undefined
+        ? sanitizeBlogHtmlDocument(contentHtml)
+        : blog.contentHtml || "";
+    const extractedImageCandidates =
+      extractImageCandidatesFromBlogHtml(nextContentHtml);
+
     if (title !== undefined) {
-      blog.title = resolveBlogTitle(title, content ?? blog.content, excerpt ?? blog.excerpt, referenceLink ?? blog.referenceLink);
+      blog.title = resolveBlogTitle(
+        title,
+        content ?? blog.content,
+        excerpt ?? blog.excerpt,
+        referenceLink ?? blog.referenceLink,
+        extractTitleFromBlogHtml(nextContentHtml),
+      );
     }
-    if (content !== undefined) blog.content = normalizeText(content, "");
+    if (content !== undefined || contentHtml !== undefined) {
+      blog.content = normalizeText(content, stripTextFromBlogHtml(nextContentHtml));
+    }
+    if (contentHtml !== undefined) {
+      blog.contentHtml = nextContentHtml;
+    }
+    if (contentFormat !== undefined || contentHtml !== undefined) {
+      blog.contentFormat = resolveBlogContentFormat(
+        contentFormat,
+        contentHtml !== undefined ? blog.contentHtml : blog.contentHtml || "",
+      );
+    }
+    if (contentHtmlFileName !== undefined) {
+      blog.contentHtmlFileName = normalizeText(contentHtmlFileName, "") || null;
+    }
     if (contentFontFamily !== undefined) {
       blog.contentFontFamily = normalizeEnumValue(
         contentFontFamily,
@@ -385,7 +443,12 @@ export const updateBlog = async (req, res) => {
       );
     }
     if (excerpt !== undefined) blog.excerpt = normalizeText(excerpt, "");
-    if (image !== undefined) blog.image = normalizeText(image, "") || null;
+    if (image !== undefined) {
+      blog.image =
+        normalizeText(image, "") || extractedImageCandidates[0] || null;
+    } else if (!normalizeText(blog.image, "") && extractedImageCandidates[0]) {
+      blog.image = extractedImageCandidates[0];
+    }
     if (referenceLink !== undefined) {
       blog.referenceLink = normalizeText(referenceLink, "") || null;
     }

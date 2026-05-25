@@ -1,7 +1,9 @@
 "use client";
 
+import BlogHtmlDocumentFrame from "@/components/BlogHtmlDocumentFrame";
 import { useProducts } from "@/context/ProductContext";
 import { fetchDataFromApi } from "@/utils/api";
+import { extractImageCandidatesFromBlogHtml } from "@/utils/blogHtml";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -253,8 +255,14 @@ export default function BlogDetailPage() {
   const relatedBlogs = (Array.isArray(blogs) ? blogs : []).filter(
     (item) => item.category === blog.category && item._id !== blog._id,
   );
+  const hasImportedHtmlDocument =
+    blog.contentFormat === "html" && Boolean(blog.contentHtml);
+  const getBlogPreviewImage = (item) => {
+    if (item?.image) return item.image;
+    return extractImageCandidatesFromBlogHtml(item?.contentHtml || "")?.[0] || "";
+  };
   const shouldRenderVideo = (item) => Boolean(item?.videoUrl);
-  const shouldRenderImage = (item) => Boolean(item?.image);
+  const shouldRenderImage = (item) => Boolean(getBlogPreviewImage(item));
   const articleSettings = pageConfig?.article || DEFAULT_PAGE.article;
   const articleBannerStartColor = normalizeHexColor(
     articleSettings.bannerStartColor,
@@ -337,178 +345,231 @@ export default function BlogDetailPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-6xl px-4 py-10 md:py-12">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <article className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
-              {shouldRenderVideo(blog) ? (
-                <div className="border-b border-slate-100 bg-black/95 p-3 md:p-4">
-                  <div className="overflow-hidden rounded-[24px] bg-black">
-                    <video
-                      src={blog.videoUrl}
-                      controls
-                      playsInline
-                      poster={blog.image || undefined}
-                      preload="metadata"
-                      className="max-h-[70vh] w-full bg-black object-contain"
-                    />
-                  </div>
-                </div>
-              ) : shouldRenderImage(blog) ? (
-                <div className="border-b border-slate-100 bg-white p-3 md:p-4">
-                  <div className="overflow-hidden rounded-[24px] bg-white">
-                    <Image
-                      src={blog.image}
-                      alt={blog.title}
-                      width={1600}
-                      height={900}
-                      sizes="(max-width: 1024px) 100vw, 66vw"
-                      className="max-h-[70vh] w-full object-contain"
-                    />
-                  </div>
+      <div
+        className={
+          hasImportedHtmlDocument
+            ? "mx-auto max-w-[min(100vw-1rem,1700px)] px-2 py-6 md:px-4 md:py-8"
+            : "mx-auto max-w-6xl px-4 py-10 md:py-12"
+        }
+      >
+        {hasImportedHtmlDocument ? (
+          <article className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
+            <div className="px-5 py-6 md:px-8 md:py-8">
+              {blog.excerpt ? (
+                <div className="mb-6 rounded-[24px] border border-orange-100 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-5 py-5">
+                  <p
+                    className="text-slate-700 italic"
+                    style={{
+                      fontFamily: blogContentFontFamily,
+                      fontSize: "1.14rem",
+                      lineHeight: "1.9",
+                    }}
+                  >
+                    {blog.excerpt}
+                  </p>
                 </div>
               ) : null}
 
-              <div className="px-6 py-8 md:px-10 md:py-10">
-                {blog.excerpt && (
-                  <div className="mb-8 rounded-[24px] border border-orange-100 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-5 py-5">
-                    <p
-                      className="text-slate-700 italic"
+              {blog.referenceLink ? (
+                <div className="mb-6 rounded-[22px] border border-orange-200 bg-orange-50/80 px-5 py-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
+                    Reference Link
+                  </p>
+                  <a
+                    href={blog.referenceLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-start gap-3 break-all text-sm font-medium text-orange-700 transition hover:text-orange-800"
+                  >
+                    <FiLink2 className="mt-0.5 shrink-0" />
+                    <span>{blog.referenceLink}</span>
+                  </a>
+                </div>
+              ) : null}
+
+            </div>
+
+            <div className="px-2 pb-2 md:px-3 md:pb-3">
+              <BlogHtmlDocumentFrame
+                html={blog.contentHtml}
+                title={blog.title}
+                immersive
+              />
+            </div>
+          </article>
+        ) : (
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <article className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
+                {shouldRenderVideo(blog) ? (
+                  <div className="border-b border-slate-100 bg-black/95 p-3 md:p-4">
+                    <div className="overflow-hidden rounded-[24px] bg-black">
+                      <video
+                        src={blog.videoUrl}
+                        controls
+                        playsInline
+                        poster={getBlogPreviewImage(blog) || undefined}
+                        preload="metadata"
+                        className="max-h-[70vh] w-full bg-black object-contain"
+                      />
+                    </div>
+                  </div>
+                ) : shouldRenderImage(blog) ? (
+                  <div className="border-b border-slate-100 bg-white p-3 md:p-4">
+                    <div className="overflow-hidden rounded-[24px] bg-white">
+                      <Image
+                        src={getBlogPreviewImage(blog)}
+                        alt={blog.title}
+                        width={1600}
+                        height={900}
+                        sizes="(max-width: 1024px) 100vw, 66vw"
+                        className="max-h-[70vh] w-full object-contain"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="px-6 py-8 md:px-10 md:py-10">
+                  {blog.excerpt && (
+                    <div className="mb-8 rounded-[24px] border border-orange-100 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-5 py-5">
+                      <p
+                        className="text-slate-700 italic"
+                        style={{
+                          fontFamily: blogContentFontFamily,
+                          fontSize: "1.14rem",
+                          lineHeight: "1.9",
+                        }}
+                      >
+                        {blog.excerpt}
+                      </p>
+                    </div>
+                  )}
+
+                  {blog.referenceLink && (
+                    <div className="mb-8 rounded-[22px] border border-orange-200 bg-orange-50/80 px-5 py-4">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
+                        Reference Link
+                      </p>
+                      <a
+                        href={blog.referenceLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-start gap-3 break-all text-sm font-medium text-orange-700 transition hover:text-orange-800"
+                      >
+                        <FiLink2 className="mt-0.5 shrink-0" />
+                        <span>{blog.referenceLink}</span>
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="mb-8 flex flex-wrap gap-3 border-b border-slate-100 pb-6 text-sm text-slate-500">
+                    <span className="rounded-full bg-slate-100 px-4 py-2">
+                      Reader style: {blogContentFontFamilyLabel}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-4 py-2">
+                      Size: {blogContentFontSizeLabel}
+                    </span>
+                  </div>
+
+                  <div className="max-w-none">
+                    <div
+                      className="whitespace-pre-wrap text-slate-800"
                       style={{
                         fontFamily: blogContentFontFamily,
-                        fontSize: "1.14rem",
-                        lineHeight: "1.9",
+                        ...blogContentTypography,
                       }}
                     >
-                      {blog.excerpt}
-                    </p>
-                  </div>
-                )}
-
-                {blog.referenceLink && (
-                  <div className="mb-8 rounded-[22px] border border-orange-200 bg-orange-50/80 px-5 py-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
-                      Reference Link
-                    </p>
-                    <a
-                      href={blog.referenceLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-start gap-3 break-all text-sm font-medium text-orange-700 transition hover:text-orange-800"
-                    >
-                      <FiLink2 className="mt-0.5 shrink-0" />
-                      <span>{blog.referenceLink}</span>
-                    </a>
-                  </div>
-                )}
-
-                <div className="mb-8 flex flex-wrap gap-3 border-b border-slate-100 pb-6 text-sm text-slate-500">
-                  <span className="rounded-full bg-slate-100 px-4 py-2">
-                    Reader style: {blogContentFontFamilyLabel}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-4 py-2">
-                    Size: {blogContentFontSizeLabel}
-                  </span>
-                </div>
-
-                <div className="max-w-none">
-                  <div
-                    className="whitespace-pre-wrap text-slate-800"
-                    style={{
-                      fontFamily: blogContentFontFamily,
-                      ...blogContentTypography,
-                    }}
-                  >
-                    {blog.content}
+                      {blog.content}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {blog.tags && blog.tags.length > 0 && (
-                <div className="border-t border-slate-100 px-6 py-6 md:px-10">
-                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    Tags
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {blog.tags.map((tag, idx) => (
-                      <span
-                        key={idx}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700"
+                {blog.tags && blog.tags.length > 0 && (
+                  <div className="border-t border-slate-100 px-6 py-6 md:px-10">
+                    <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
+                      Tags
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {blog.tags.map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </article>
+            </div>
+
+            <div className="lg:col-span-1">
+              {relatedBlogs.length > 0 ? (
+                <div className="sticky top-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-orange-600">
+                    Keep Reading
+                  </p>
+                  <h3 className="mb-5 text-2xl font-bold text-slate-900">Related Blogs</h3>
+                  <div className="space-y-5">
+                    {relatedBlogs.slice(0, 3).map((relatedBlog) => (
+                      <Link
+                        key={relatedBlog._id}
+                        href={`/blogs/${relatedBlog.slug || relatedBlog._id}`}
+                        className="group block rounded-[22px] border border-slate-200 bg-slate-50/70 p-3 transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-white hover:shadow-sm"
                       >
-                        #{tag}
-                      </span>
+                        {shouldRenderVideo(relatedBlog) ? (
+                          <div className="mb-3 overflow-hidden rounded-2xl bg-black">
+                            <video
+                              src={relatedBlog.videoUrl}
+                              poster={getBlogPreviewImage(relatedBlog) || undefined}
+                              preload="metadata"
+                              className="h-36 w-full object-contain"
+                            />
+                          </div>
+                        ) : shouldRenderImage(relatedBlog) ? (
+                          <div className="mb-3 overflow-hidden rounded-2xl bg-white">
+                            <Image
+                              src={getBlogPreviewImage(relatedBlog)}
+                              alt={relatedBlog.title}
+                              width={720}
+                              height={288}
+                              sizes="(max-width: 1024px) 100vw, 24vw"
+                              className="h-36 w-full bg-white object-contain transition-transform duration-300 group-hover:scale-[1.03]"
+                            />
+                          </div>
+                        ) : null}
+
+                        <h4 className="line-clamp-2 text-base font-semibold text-slate-900 transition group-hover:text-orange-600">
+                          {relatedBlog.title}
+                        </h4>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {new Date(relatedBlog.createdAt).toLocaleDateString("en-IN", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </p>
+                      </Link>
                     ))}
                   </div>
                 </div>
-              )}
-            </article>
-          </div>
-
-          <div className="lg:col-span-1">
-            {relatedBlogs.length > 0 ? (
-              <div className="sticky top-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-orange-600">
-                  Keep Reading
-                </p>
-                <h3 className="mb-5 text-2xl font-bold text-slate-900">Related Blogs</h3>
-                <div className="space-y-5">
-                  {relatedBlogs.slice(0, 3).map((relatedBlog) => (
-                    <Link
-                      key={relatedBlog._id}
-                      href={`/blogs/${relatedBlog.slug || relatedBlog._id}`}
-                      className="group block rounded-[22px] border border-slate-200 bg-slate-50/70 p-3 transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-white hover:shadow-sm"
-                    >
-                      {shouldRenderVideo(relatedBlog) ? (
-                        <div className="mb-3 overflow-hidden rounded-2xl bg-black">
-                          <video
-                            src={relatedBlog.videoUrl}
-                            poster={relatedBlog.image || undefined}
-                            preload="metadata"
-                            className="h-36 w-full object-contain"
-                          />
-                        </div>
-                      ) : shouldRenderImage(relatedBlog) ? (
-                        <div className="mb-3 overflow-hidden rounded-2xl bg-white">
-                          <Image
-                            src={relatedBlog.image}
-                            alt={relatedBlog.title}
-                            width={720}
-                            height={288}
-                            sizes="(max-width: 1024px) 100vw, 24vw"
-                            className="h-36 w-full bg-white object-contain transition-transform duration-300 group-hover:scale-[1.03]"
-                          />
-                        </div>
-                      ) : null}
-
-                      <h4 className="line-clamp-2 text-base font-semibold text-slate-900 transition group-hover:text-orange-600">
-                        {relatedBlog.title}
-                      </h4>
-                      <p className="mt-2 text-xs text-slate-500">
-                        {new Date(relatedBlog.createdAt).toLocaleDateString("en-IN", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </p>
-                    </Link>
-                  ))}
+              ) : (
+                <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-600">
+                    Article Notes
+                  </p>
+                  <h3 className="mt-2 text-xl font-bold text-slate-900">
+                    This story stands on its own
+                  </h3>
+                  <p className="mt-3 text-sm leading-7 text-slate-600">
+                    There are no closely related posts in this category yet, so this page keeps the focus on the full article experience.
+                  </p>
                 </div>
-              </div>
-            ) : (
-              <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-600">
-                  Article Notes
-                </p>
-                <h3 className="mt-2 text-xl font-bold text-slate-900">
-                  This story stands on its own
-                </h3>
-                <p className="mt-3 text-sm leading-7 text-slate-600">
-                  There are no closely related posts in this category yet, so this page keeps the focus on the full article experience.
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
