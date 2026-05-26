@@ -42,6 +42,22 @@ const ProductZoom = ({
     );
   };
 
+  const handleMouseMove = (e, index) => {
+    // Only zoom if this is the active slide
+    if (activeIndex !== index) return;
+    
+    // Get the container dimensions 
+    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+    
+    // Calculate mouse position relative to image (handle window scroll as well)
+    const x = ((e.clientX - left) / width) * 100;
+    const y = ((e.clientY - top) / height) * 100;
+
+    // Apply the position to custom properties for smooth CSS zoom
+    e.currentTarget.style.setProperty("--zoom-x", `${x}%`);
+    e.currentTarget.style.setProperty("--zoom-y", `${y}%`);
+  };
+
   return (
     <div className="w-full">
       {/* Main Product Image */}
@@ -55,17 +71,24 @@ const ProductZoom = ({
       >
         <Swiper
           ref={bigSliderRef}
-          className="productBigSlider h-full"
+          className="productBigSlider h-full group"
           onSlideChange={(swiper) => setActiveIndex(swiper.activeIndex)}
         >
           {normalizedImages.map((img, index) => (
             <SwiperSlide key={index}>
-              <div className="relative h-full w-full overflow-hidden">
+              <div 
+                className="relative h-full w-full overflow-hidden zoom-container cursor-zoom-in"
+                onMouseMove={(e) => handleMouseMove(e, index)}
+                onClick={() => openFullImageView(index)}
+                style={{
+                  "--zoom-x": "50%",
+                  "--zoom-y": "50%",
+                }}
+              >
                 <SeoImg
                   src={img}
                   fallbackAlt={`Product Image ${index + 1}`}
-                  className="h-full w-full object-cover transition-transform duration-300 ease-out hover:scale-[1.03] cursor-zoom-in"
-                  onClick={() => openFullImageView(index)}
+                  className="h-full w-full object-cover transition-all duration-300 ease-out origin-[var(--zoom-x,50%)_var(--zoom-y,50%)] group-hover:scale-[2.5]"
                 />
               </div>
             </SwiperSlide>
