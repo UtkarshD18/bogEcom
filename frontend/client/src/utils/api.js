@@ -98,6 +98,25 @@ const getConfiguredEnvBaseUrl = ({ includeLocalDevBaseUrl = false } = {}) => {
   );
 };
 
+const normalizeLocalFallbacks = () => {
+  const localDevBase = sanitizeBaseUrl(process.env.NEXT_PUBLIC_LOCAL_API_URL);
+  if (!localDevBase) return [];
+
+  const candidates = [normalizeApiBaseUrl(localDevBase)];
+
+  try {
+    const parsed = new URL(localDevBase);
+    if (isLocalhostUrl(localDevBase)) {
+      parsed.hostname = "127.0.0.1";
+      candidates.push(normalizeApiBaseUrl(parsed.toString()));
+    }
+  } catch {
+    // Ignore malformed local URLs and continue with the sanitized value.
+  }
+
+  return [...new Set(candidates.filter(Boolean))];
+};
+
 const getGetCacheKey = (url) => `GET:${String(url || "").trim()}`;
 
 const getDefaultPublicGetCacheTtlMs = (url) => {
@@ -290,8 +309,9 @@ const getApiBaseCandidates = () => {
       if (preferred && isLocalhostUrl(preferred)) {
         candidates.push(preferred);
       }
-      if (localDevBase) {
-        candidates.push(localDevBase);
+      const normalizedLocalDevBase = normalizeApiBaseUrl(localDevBase);
+      if (normalizedLocalDevBase) {
+        candidates.push(normalizedLocalDevBase);
       }
       candidates.push(...normalizeLocalFallbacks());
 

@@ -4,6 +4,7 @@ import dnsPromises from "node:dns/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
+import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -102,6 +103,23 @@ const resolveSrvWithTimeout = async (hostname, timeoutMs = 4000) => {
   ]);
 };
 
+const probeMongoConnection = async (mongoUri, timeoutMs = 5000) => {
+  const connection = mongoose.createConnection(mongoUri, {
+    serverSelectionTimeoutMS: timeoutMs,
+    connectTimeoutMS: timeoutMs,
+    maxPoolSize: 1,
+  });
+
+  try {
+    await connection.asPromise();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  } finally {
+    await connection.close().catch(() => {});
+  }
+};
+
 const shouldUseMemoryMongo = async (mongoUri, forceMemory) => {
   if (forceMemory) {
     return { useMemory: true, reason: "forced by --memory flag" };
@@ -119,7 +137,15 @@ const shouldUseMemoryMongo = async (mongoUri, forceMemory) => {
   try {
     const records = await resolveSrvWithTimeout(srvHostname);
     if (Array.isArray(records) && records.length > 0) {
-      return { useMemory: false, reason: "Atlas SRV lookup succeeded" };
+      const probe = await probeMongoConnection(mongoUri);
+      if (probe.ok) {
+        return { useMemory: false, reason: "Atlas SRV lookup and auth probe succeeded" };
+      }
+
+      return {
+        useMemory: true,
+        reason: `Atlas auth probe failed locally (${probe.error?.message || probe.error?.code || "unknown error"})`,
+      };
     }
     return { useMemory: true, reason: "Atlas SRV lookup returned no records" };
   } catch (error) {

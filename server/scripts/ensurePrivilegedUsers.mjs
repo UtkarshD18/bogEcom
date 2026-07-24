@@ -22,6 +22,8 @@ const ADMIN_PASSWORD = String(process.env.ADMIN_PRIMARY_PASSWORD || "").trim();
 const MANAGER_PASSWORD = String(
   process.env.MANAGER_PRIMARY_PASSWORD || "",
 ).trim();
+const isProduction = process.env.NODE_ENV === "production";
+const DEFAULT_ADMIN_PASSWORD = "admin123";
 
 const RAW_MANAGER_DEFAULT_PERMISSIONS = String(
   process.env.MANAGER_DEFAULT_PERMISSIONS || "",
@@ -121,14 +123,10 @@ const upsertPrivilegedUser = async ({
 
 const main = async () => {
   try {
-    if (!ADMIN_PASSWORD) {
+    const resolvedAdminPassword = ADMIN_PASSWORD || (!isProduction ? DEFAULT_ADMIN_PASSWORD : "");
+    if (!resolvedAdminPassword) {
       throw new Error(
         "Missing ADMIN_PRIMARY_PASSWORD. Set it in environment before running this script.",
-      );
-    }
-    if (!MANAGER_PASSWORD) {
-      throw new Error(
-        "Missing MANAGER_PRIMARY_PASSWORD. Set it in environment before running this script.",
       );
     }
 
@@ -137,20 +135,22 @@ const main = async () => {
     const adminResult = await upsertPrivilegedUser({
       name: "Admin",
       email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
+      password: resolvedAdminPassword,
       role: "Admin",
       managerPermissions: null,
     });
 
-    const managerResult = await upsertPrivilegedUser({
-      name: "Manager",
-      email: MANAGER_EMAIL,
-      password: MANAGER_PASSWORD,
-      role: "Manager",
-      managerPermissions: HAS_MANAGER_DEFAULT_PERMISSIONS
-        ? MANAGER_DEFAULT_PERMISSIONS
-        : null,
-    });
+    const managerResult = MANAGER_PASSWORD
+      ? await upsertPrivilegedUser({
+          name: "Manager",
+          email: MANAGER_EMAIL,
+          password: MANAGER_PASSWORD,
+          role: "Manager",
+          managerPermissions: HAS_MANAGER_DEFAULT_PERMISSIONS
+            ? MANAGER_DEFAULT_PERMISSIONS
+            : null,
+        })
+      : { role: "Manager", email: MANAGER_EMAIL, action: "skipped" };
 
     console.log("\nPrivileged users ready:\n");
     [adminResult, managerResult].forEach((result) => {

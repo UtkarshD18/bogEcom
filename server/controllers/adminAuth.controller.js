@@ -74,6 +74,12 @@ const ADMIN_PRIMARY_EMAIL = normalizeEmail(
 const MANAGER_PRIMARY_EMAIL = normalizeEmail(
   process.env.MANAGER_PRIMARY_EMAIL || "manager@buyonegram.com",
 );
+const ADMIN_PRIMARY_PASSWORD = String(
+  process.env.ADMIN_PRIMARY_PASSWORD || "",
+).trim();
+const MANAGER_PRIMARY_PASSWORD = String(
+  process.env.MANAGER_PRIMARY_PASSWORD || "",
+).trim();
 
 const ADMIN_ALLOWED_EMAILS = new Set(
   String(process.env.ADMIN_ALLOWED_EMAILS || "")
@@ -94,6 +100,11 @@ const isAllowedAdminEmail = (email) =>
 
 const resolvePrivilegedRoleForEmail = (email) =>
   normalizeEmail(email) === ADMIN_PRIMARY_EMAIL ? "Admin" : "Manager";
+
+const resolveBootstrapPasswordForEmail = (email) =>
+  normalizeEmail(email) === ADMIN_PRIMARY_EMAIL
+    ? ADMIN_PRIMARY_PASSWORD
+    : MANAGER_PRIMARY_PASSWORD;
 
 const resolveIsActiveMember = (user) => {
   if (!user) return false;
@@ -126,7 +137,7 @@ export const adminLoginController = async (req, res) => {
       });
     }
 
-    const user = await UserModel.findOne({ email: normalizedEmail });
+    let user = await UserModel.findOne({ email: normalizedEmail });
     if (!user) {
       if (!isAllowedAdminEmail(normalizedEmail)) {
         return res.status(403).json({
@@ -136,11 +147,38 @@ export const adminLoginController = async (req, res) => {
         });
       }
 
-      return res.status(403).json({
-        success: false,
-        error: true,
-        message: "Privileged account not found",
+      const bootstrapPassword = resolveBootstrapPasswordForEmail(normalizedEmail);
+      if (!bootstrapPassword) {
+        return res.status(403).json({
+          success: false,
+          error: true,
+          message:
+            "Privileged account not found. Set the bootstrap password and run the privileged-user seeder.",
+        });
+      }
+
+      if (password !== bootstrapPassword) {
+        return res.status(400).json({
+          success: false,
+          error: true,
+          message: "Check your password",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(bootstrapPassword, 10);
+      user = new UserModel({
+        name: normalizedEmail === ADMIN_PRIMARY_EMAIL ? "Admin" : "Manager",
+        email: normalizedEmail,
+        password: hashedPassword,
+        role: resolvePrivilegedRoleForEmail(normalizedEmail),
+        verifyEmail: true,
+        status: "active",
+        managerPermissions:
+          normalizeEmail(normalizedEmail) === ADMIN_PRIMARY_EMAIL
+            ? []
+            : normalizeManagerPermissions([]),
       });
+      await user.save();
     }
 
     if (user.status !== "active") {

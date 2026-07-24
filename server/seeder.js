@@ -90,6 +90,8 @@ const ADMIN_SEED_PASSWORD = String(
 const MANAGER_SEED_PASSWORD = String(
   process.env.MANAGER_PRIMARY_PASSWORD || "",
 ).trim();
+const isProduction = process.env.NODE_ENV === "production";
+const DEFAULT_ADMIN_PASSWORD = "admin123";
 
 // Peanut Butter Categories
 const categories = [
@@ -798,7 +800,10 @@ const seedPrivilegedUser = async ({
 };
 
 const seedAdminUser = async () => {
-  if (!ADMIN_SEED_PASSWORD) {
+  const resolvedAdminPassword =
+    ADMIN_SEED_PASSWORD || (!isProduction ? DEFAULT_ADMIN_PASSWORD : "");
+
+  if (!resolvedAdminPassword) {
     console.log(
       "⚠️  Skipping Admin user seed: ADMIN_PRIMARY_PASSWORD is not set.",
     );
@@ -808,7 +813,7 @@ const seedAdminUser = async () => {
   await seedPrivilegedUser({
     name: "Admin",
     email: ADMIN_SEED_EMAIL,
-    password: ADMIN_SEED_PASSWORD,
+    password: resolvedAdminPassword,
     role: "Admin",
     managerPermissions: null,
   });
