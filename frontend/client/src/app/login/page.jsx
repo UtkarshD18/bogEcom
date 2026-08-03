@@ -412,7 +412,7 @@ const LoginForm = () => {
           <div className="my-4 w-full relative">
             <Button
               type="submit"
-              className="w-full btn-g py-4! text-base!"
+              className="w-full btn-primary !py-4 !text-base shadow-sm"
               disabled={!validateValue}
             >
               {isLoading === true ? <CircularProgress /> : "SIGN IN"}
@@ -446,7 +446,7 @@ const LoginForm = () => {
               ? "Google Sign-In not configured. Add Firebase credentials to .env.local"
               : "Sign in with Google"
           }
-          className="w-full bg-gray-200! text-gray-800! font-semibold! py-3! border! border-[rgba(0,0,0,0.1)]! hover:bg-gray-300! disabled:opacity-50 disabled:cursor-not-allowed!"
+          className="w-full btn-outline !bg-bg-primary !text-text-primary !border-border-medium hover:!bg-bg-secondary !py-3 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={signInWithGoogle}
         >
           {googleLoading ? "Signing in with Google..." : "Sign in with Google"}

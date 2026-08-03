@@ -243,7 +243,7 @@ const Login = () => {
         <Button
           onClick={signInWithGoogle}
           disabled={googleLoading}
-          className="!bg-white !px-6 !py-3 !rounded-full !border !border-gray-300 !text-gray-900 !font-semibold !flex !items-center !gap-2 shadow-sm hover:!bg-gray-50 disabled:!opacity-50"
+          className="w-full max-w-[420px] btn-outline !bg-bg-primary !text-text-primary !border-border-medium hover:!bg-bg-secondary !py-3 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {googleLoading ? (
             <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-gray-600"></div>
@@ -344,7 +344,7 @@ const Login = () => {
           <Button
             type="submit"
             disabled={isLoading}
-            className="!bg-gradient-to-r !from-blue-600 !to-indigo-600 !text-white !font-bold !py-3 !rounded-xl !shadow-lg hover:!shadow-xl hover:!scale-[1.02] !transition-all !duration-300 !w-full !mt-2 !text-[16px] !normal-case disabled:!opacity-50"
+            className="w-full btn-primary !py-3 shadow-md"
           >
             {isLoading ? "SIGNING IN..." : "SIGN IN"}
           </Button>

@@ -513,9 +513,9 @@ const ProductItem = (props) => {
                     : "min-h-11 rounded-2xl px-4 py-3 text-sm"
                 } ${
                   alreadyInCart
-                    ? "border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                    ? "border border-error/25 bg-error/5 text-error hover:bg-error/10"
                     : isOutOfStock
-                      ? "border border-[#e4d6ca] bg-[#f4ede7] text-[#a08979]"
+                      ? "border border-border-medium bg-bg-secondary text-text-muted"
                       : "hover:-translate-y-0.5 hover:brightness-[1.03] active:brightness-95"
                 }`}
                 style={
