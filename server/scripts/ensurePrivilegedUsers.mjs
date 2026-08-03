@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
-import connectDb from "../config/connectDB.js";
+import connectDb from "../config/connectDb.js";
 import UserModel from "../models/user.model.js";
 import { normalizeManagerPermissions } from "../utils/adminPermissions.js";
 
