@@ -4,8 +4,42 @@
 /* ========== THEME INTEGRATION ========== */
 @theme {
   --color-primary: var(--color-primary);
-  --color-secondary: var(--color-secondary);
+  --color-primary-light: var(--color-primary-light);
+  --color-primary-dark: var(--color-primary-dark);
   --color-accent: var(--color-accent);
+  --color-accent-light: var(--color-accent-light);
+  --color-accent-dark: var(--color-accent-dark);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-light: var(--color-secondary-light);
+  --color-secondary-dark: var(--color-secondary-dark);
+
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-light: var(--color-text-light);
+
+  --color-bg-primary: var(--color-bg-primary);
+  --color-bg-secondary: var(--color-bg-secondary);
+  --color-bg-tertiary: var(--color-bg-tertiary);
+  --color-bg-accent: var(--color-bg-accent);
+
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-error: var(--color-error);
+  --color-info: var(--color-info);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-card: var(--shadow-card);
+  --shadow-card-hover: var(--shadow-card-hover);
 }
 
 :root {
@@ -609,3 +643,136 @@ input[type="number"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ========== SHARED DESIGN SYSTEM COMPONENT LIBRARY ========== */
+@utility btn-primary {
+  background-color: var(--color-primary) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
+  border-radius: var(--radius-md) !important;
+  transition: all var(--transition-fast) !important;
+  border: 1px solid var(--color-primary) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+
+  &:hover {
+    background-color: var(--color-primary-light) !important;
+    border-color: var(--color-primary-light) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: var(--shadow-md) !important;
+  }
+  &:active {
+    transform: translateY(0) !important;
+  }
+}
+
+@utility btn-secondary {
+  background-color: var(--color-accent) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
+  border-radius: var(--radius-md) !important;
+  transition: all var(--transition-fast) !important;
+  border: 1px solid var(--color-accent) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+
+  &:hover {
+    background-color: var(--color-accent-dark) !important;
+    border-color: var(--color-accent-dark) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: var(--shadow-md) !important;
+  }
+  &:active {
+    transform: translateY(0) !important;
+  }
+}
+
+@utility btn-outline {
+  background-color: transparent !important;
+  color: var(--color-primary) !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--color-primary) !important;
+  transition: all var(--transition-fast) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+
+  &:hover {
+    background-color: var(--color-bg-secondary) !important;
+    transform: translateY(-1px) !important;
+  }
+  &:active {
+    transform: translateY(0) !important;
+  }
+}
+
+@utility input-premium {
+  width: 100% !important;
+  height: 48px !important;
+  padding: 0 16px !important;
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--color-border-medium) !important;
+  background-color: var(--color-bg-primary) !important;
+  color: var(--color-text-primary) !important;
+  font-size: var(--text-base) !important;
+  outline: none !important;
+  transition: all var(--transition-fast) !important;
+
+  &:focus {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 0 3px rgba(90, 58, 34, 0.1) !important;
+  }
+}
+
+@utility card-premium {
+  background-color: var(--color-bg-primary) !important;
+  border: 1px solid var(--color-border-light) !important;
+  border-radius: var(--radius-xl) !important;
+  padding: var(--spacing-lg) !important;
+  box-shadow: var(--shadow-card) !important;
+  transition: all var(--transition-normal) !important;
+
+  &:hover {
+    box-shadow: var(--shadow-card-hover) !important;
+    border-color: var(--color-border-medium) !important;
+  }
+}
+
+@utility badge-premium {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 4px 10px !important;
+  font-size: var(--text-xs) !important;
+  font-weight: 700 !important;
+  border-radius: var(--radius-full) !important;
+  text-transform: uppercase !important;
+  letter-spacing: var(--tracking-wide) !important;
+}
+
+@utility badge-success {
+  background-color: rgba(31, 122, 99, 0.1) !important;
+  color: var(--color-secondary) !important;
+  border: 1px solid rgba(31, 122, 99, 0.2) !important;
+}
+
+@utility badge-warning {
+  background-color: rgba(245, 166, 35, 0.1) !important;
+  color: var(--color-warning) !important;
+  border: 1px solid rgba(245, 166, 35, 0.2) !important;
+}
+
+@utility badge-error {
+  background-color: rgba(212, 70, 56, 0.1) !important;
+  color: var(--color-error) !important;
+  border: 1px solid rgba(212, 70, 56, 0.2) !important;
+}
+
