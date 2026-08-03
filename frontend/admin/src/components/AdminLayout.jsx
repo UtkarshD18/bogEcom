@@ -49,13 +49,13 @@ const resolveRequiredManagerPermission = (pathname) => {
 const Sidebar = dynamic(() => import("@/components/Sidebar"), {
   ssr: false,
   loading: () => (
-    <div className="hidden lg:block fixed top-0 left-0 h-screen w-[250px] border-r border-gray-100 bg-white" />
+    <div className="hidden lg:block fixed top-0 left-0 h-screen w-[250px] border-r border-border-light bg-bg-primary" />
   ),
 });
 
 const Header = dynamic(() => import("@/components/Header"), {
   ssr: false,
-  loading: () => <div className="h-[60px] w-full bg-white shadow-md" />,
+  loading: () => <div className="h-[60px] w-full bg-bg-primary border-b border-border-light shadow-sm" />,
 });
 
 const publicPages = [
@@ -160,28 +160,28 @@ export default function AdminLayout({ children }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="h-11 w-11 animate-spin rounded-full border-4 border-gray-200 border-t-[#5a3a2e]" />
+      <div className="min-h-screen flex items-center justify-center bg-bg-secondary">
+        <div className="h-11 w-11 animate-spin rounded-full border-4 border-border-light border-t-primary" />
       </div>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="h-11 w-11 animate-spin rounded-full border-4 border-gray-200 border-t-[#5a3a2e]" />
+      <div className="min-h-screen flex items-center justify-center bg-bg-secondary">
+        <div className="h-11 w-11 animate-spin rounded-full border-4 border-border-light border-t-primary" />
       </div>
     );
   }
 
   if (!hasRoutePermission) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="max-w-md w-full rounded-xl border border-red-200 bg-white p-6 text-center shadow-sm">
-          <h1 className="text-lg font-semibold text-gray-900">
+      <div className="min-h-screen flex items-center justify-center bg-bg-secondary px-4">
+        <div className="max-w-md w-full rounded-xl border border-error/20 bg-bg-primary p-6 text-center shadow-card">
+          <h1 className="text-lg font-semibold text-text-primary">
             Access Restricted
           </h1>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-2 text-sm text-text-secondary">
             You do not have permission to open this admin module.
           </p>
         </div>
@@ -200,7 +200,7 @@ export default function AdminLayout({ children }) {
         />
       ) : null}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 min-h-screen bg-gray-50 lg:ml-[250px]">
+      <div className="flex-1 min-h-screen bg-bg-secondary lg:ml-[250px]">
         <Header onMenuClick={() => setSidebarOpen(true)} />
         {children}
       </div>

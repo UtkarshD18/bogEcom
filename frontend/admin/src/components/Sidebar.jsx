@@ -329,12 +329,12 @@ const Sidebar = ({ isOpen = false, onClose }) => {
 
   return (
     <aside
-      className={`w-[250px] bg-white shadow-md h-screen fixed top-0 left-0 z-40 flex flex-col transform transition-transform duration-200 ${
+      className={`w-[250px] bg-bg-primary border-r border-border-light shadow-sm h-screen fixed top-0 left-0 z-40 flex flex-col transform transition-transform duration-200 ${
         isOpen ? "translate-x-0" : "-translate-x-full"
       } lg:translate-x-0`}
     >
       {/* Logo */}
-      <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+      <div className="p-4 border-b border-border-light flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <Image
             src={withAdminBasePath("/logo.png")}
@@ -349,7 +349,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
         <button
           type="button"
           onClick={onClose}
-          className="lg:hidden text-gray-500 hover:text-gray-900"
+          className="lg:hidden text-text-muted hover:text-text-primary"
           aria-label="Close navigation"
         >
           <FiX size={22} />
@@ -357,33 +357,33 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       </div>
 
       {/* Admin Info */}
-      <div className="px-4 py-3 border-b border-gray-100">
+      <div className="px-4 py-3 border-b border-border-light">
         <button
           type="button"
           onClick={handleAdminHomeRefresh}
           className="w-full text-left"
           title="Go to admin home and refresh"
         >
-          <p className="text-base font-semibold text-gray-900 hover:text-blue-700 transition-colors">
+          <p className="text-base font-semibold text-text-primary hover:text-primary transition-colors">
             Admin Panel
           </p>
         </button>
-        <p className="text-sm font-medium text-gray-800 truncate">
+        <p className="text-sm font-medium text-text-secondary truncate">
           {admin?.name || admin?.userName || "Admin"}
         </p>
-        <p className="text-xs text-gray-500 truncate">{admin?.email || ""}</p>
+        <p className="text-xs text-text-muted truncate">{admin?.email || ""}</p>
       </div>
 
       {/* Search */}
       <div className="px-3 pt-3">
         <label className="relative block">
-          <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-light" />
           <input
             type="search"
             value={navQuery}
             onChange={(event) => setNavQuery(event.target.value)}
             placeholder="Search admin pages..."
-            className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm font-medium text-gray-800 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
+            className="h-10 w-full rounded-xl border border-border-medium bg-bg-secondary pl-9 pr-3 text-sm font-medium text-text-secondary outline-none transition focus:border-primary focus:bg-bg-primary focus:ring-2 focus:ring-primary/10"
           />
         </label>
       </div>
@@ -391,7 +391,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       {/* Navigation */}
       <div className="flex flex-col gap-1 mt-4 px-3 flex-1 overflow-y-auto">
         {searchedSidebarTabs.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-4 text-center text-sm font-medium text-gray-500">
+          <div className="rounded-xl border border-dashed border-border-medium bg-bg-secondary px-3 py-4 text-center text-sm font-medium text-text-muted">
             No pages found
           </div>
         ) : null}
@@ -415,16 +415,16 @@ const Sidebar = ({ isOpen = false, onClose }) => {
                 onClick={handleNavClick}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                   tabActive
-                    ? "bg-blue-50 text-blue-600 font-semibold"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                    ? "bg-bg-accent text-primary font-semibold"
+                    : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary"
                 }`}
               >
-                <span className={tabActive ? "text-blue-600" : "text-gray-500"}>
+                <span className={tabActive ? "text-primary" : "text-text-muted"}>
                   {tab.icon}
                 </span>
                 <span className="font-medium">{tab.name}</span>
                 {tab.badgeCount > 0 && (
-                  <span className="ml-auto min-w-[24px] h-[24px] px-2 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold flex items-center justify-center">
+                  <span className="ml-auto min-w-[24px] h-[24px] px-2 rounded-full bg-error/10 text-error text-[11px] font-semibold flex items-center justify-center">
                     {tab.badgeCount > 99 ? "99+" : tab.badgeCount}
                   </span>
                 )}
@@ -441,8 +441,8 @@ const Sidebar = ({ isOpen = false, onClose }) => {
                         onClick={handleNavClick}
                         className={`px-3 py-1.5 rounded-md text-sm transition-all ${
                           childIsActive
-                            ? "text-blue-700 bg-blue-100 font-semibold"
-                            : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                            ? "text-primary bg-primary/10 font-semibold"
+                            : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary"
                         }`}
                       >
                         {child.name}
@@ -464,7 +464,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
           fullWidth
           variant="outlined"
           color="error"
-          className="!py-2"
+          className="!py-2 !rounded-xl !border-error/30 hover:!bg-error/5"
         >
           Logout
         </Button>

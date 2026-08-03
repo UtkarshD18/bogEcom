@@ -61,7 +61,7 @@ const Header = ({ onMenuClick }) => {
   };
 
   return (
-    <header className="w-full h-[60px] bg-white shadow-md flex items-center justify-between px-4 sm:px-5 sticky top-0 z-50">
+    <header className="w-full h-[60px] bg-bg-primary border-b border-border-light shadow-sm flex items-center justify-between px-4 sm:px-5 sticky top-0 z-50">
       <div className="flex items-center gap-3">
         <Button
           onClick={onMenuClick}
@@ -73,19 +73,19 @@ const Header = ({ onMenuClick }) => {
         <span
           className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
             liveConnected
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              ? "border-success/20 bg-success/5 text-success"
               : liveConnecting
-                ? "border-sky-200 bg-sky-50 text-sky-700"
-              : "border-amber-200 bg-amber-50 text-amber-700"
+                ? "border-info/20 bg-info/5 text-info"
+              : "border-warning/20 bg-warning/5 text-warning"
           }`}
         >
           <span
             className={`h-2 w-2 rounded-full ${
               liveConnected
-                ? "bg-emerald-500"
+                ? "bg-success"
                 : liveConnecting
-                  ? "bg-sky-500"
-                  : "bg-amber-500"
+                  ? "bg-info"
+                  : "bg-warning"
             }`}
           />
           {liveConnected
