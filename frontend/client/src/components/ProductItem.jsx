@@ -321,14 +321,14 @@ const ProductItem = (props) => {
       data-product-card
       data-product-card-id={productCardId || ""}
       data-product-card-type={resolvedItemType}
-      className={`group relative flex w-full min-w-0 flex-col border bg-white shadow-[0_6px_16px_rgba(0,0,0,0.08)] transition-all ${
+      className={`group relative flex w-full min-w-0 flex-col border bg-[var(--color-bg-primary)] shadow-[var(--shadow-card)] transition-all ${
         compactListing
-          ? "h-full max-sm:h-[390px] rounded-[18px] p-2 sm:rounded-[22px] sm:p-3"
-          : "h-full rounded-[22px] p-3"
+          ? "h-full max-sm:h-[390px] rounded-[var(--radius-lg)] p-2 sm:rounded-[var(--radius-xl)] sm:p-3"
+          : "h-full rounded-[var(--radius-xl)] p-3"
       } ${
         isOutOfStock
-          ? "border-gray-100"
-          : "border-gray-100 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
+          ? "border-[var(--color-border-light)]"
+          : "border-[var(--color-border-light)] hover:-translate-y-1 hover:shadow-[var(--shadow-card-hover)]"
       }`}
     >
       <Link
