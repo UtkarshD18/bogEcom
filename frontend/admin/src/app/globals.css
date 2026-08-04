@@ -222,6 +222,25 @@ textarea::placeholder {
   }
 }
 
+@utility select-premium {
+  width: 100% !important;
+  height: 48px !important;
+  padding: 0 16px !important;
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--color-border-medium) !important;
+  background-color: var(--color-bg-primary) !important;
+  color: var(--color-text-primary) !important;
+  font-size: var(--text-base) !important;
+  outline: none !important;
+  transition: all var(--transition-fast) !important;
+  cursor: pointer !important;
+
+  &:focus {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 0 3px rgba(90, 58, 34, 0.1) !important;
+  }
+}
+
 @utility card-premium {
   background-color: var(--color-bg-primary) !important;
   border: 1px solid var(--color-border-light) !important;
