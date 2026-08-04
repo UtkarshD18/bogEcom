@@ -36,7 +36,7 @@ const OtpBox = ({ length, onChange }) => {
             value={otp[index]}
             onChange={(e) => handleChange(e.target, index)}
             onKeyDown={(e) => handleKeyDown(e, index)}
-            className="w-[45px] h-[45px] sm:w-[55px] sm:h-[55px] text-center text-[17px] rounded-md border border-[rgba(0,0,0,0.2)]"
+            className="w-[45px] h-[45px] sm:w-[55px] sm:h-[55px] text-center text-[17px] rounded-md border border-[var(--color-border-medium)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] transition-all outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[rgba(90,58,34,0.15)]"
           />
         );
       })}
