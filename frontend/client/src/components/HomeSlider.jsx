@@ -610,8 +610,12 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
           }
         }
 
-        .homeSlider .swiper-pagination {
+         .homeSlider .swiper-pagination {
           bottom: 12px !important;
+        }
+        .homeSlider button:focus-visible {
+          outline: 2px solid var(--color-accent, #FF8C42) !important;
+          outline-offset: 2px !important;
         }
         .home-slide-bullet {
           width: 24px !important;
@@ -624,6 +628,10 @@ const HomeSlider = ({ initialSlides = [], initialSettings = null }) => {
             background-color 0.24s ease,
             box-shadow 0.24s ease !important;
           margin: 0 4px !important;
+        }
+        .home-slide-bullet:focus-visible {
+          outline: 2px solid var(--color-accent, #FF8C42) !important;
+          outline-offset: 2px !important;
         }
         .home-slide-bullet-active {
           width: 36px !important;
