@@ -32,12 +32,6 @@ const WhatsAppFloatingButton = nextDynamic(
     loading: () => null,
   },
 );
-const DeveloperShowcase = nextDynamic(
-  () => import("@/components/DeveloperShowcase"),
-  {
-    loading: () => null,
-  },
-);
 // PopularProducts removed from homepage per layout change; replaced by CatSlider
 const MembershipCTA = nextDynamic(() => import("@/components/MembershipCTA"), {
   loading: () => null,
@@ -249,7 +243,6 @@ export default async function Home() {
         </div>
       </div>
       <WhatsAppFloatingButton />
-      <DeveloperShowcase />
     </main>
   );
 }

@@ -4,12 +4,13 @@ import { useState, useEffect } from "react";
 import { FiCode, FiX, FiCheckCircle, FiDatabase, FiCpu, FiLayout, FiBookOpen } from "react-icons/fi";
 import { io } from "socket.io-client";
 
-export default function DeveloperShowcase() {
-  const [isOpen, setIsOpen] = useState(false);
+export default function DeveloperShowcase({ isOpen, onClose }) {
   const [socketStatus, setSocketStatus] = useState("connecting");
   const [eventCount, setEventCount] = useState(0);
 
   useEffect(() => {
+    if (!isOpen) return undefined;
+
     // Attempt to connect to the backend socket to show live developer metrics
     const socketUrl = process.env.NEXT_PUBLIC_APP_API_URL || "https://healthyonegram-api-v2-xb7znoco6a-uc.a.run.app";
     const socket = io(socketUrl, {
@@ -37,34 +38,21 @@ export default function DeveloperShowcase() {
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [isOpen]);
+
+  if (!isOpen) return null;
 
   return (
     <>
-      {/* Floating Action Button */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 left-6 z-50 flex items-center gap-2 rounded-full bg-[#5A3A22] px-4 py-3 text-sm font-black text-[#FFF9F0] shadow-[0_12px_36px_rgba(90,58,34,0.3)] transition-all duration-300 hover:-translate-y-1 hover:bg-[#7A5A3A] hover:shadow-[0_16px_40px_rgba(90,58,34,0.4)] cursor-pointer"
-        aria-label="Open Developer Showcase Panel"
-      >
-        <FiCode className="text-base animate-pulse" />
-        <span className="hidden sm:inline">Engineering Showcase</span>
-      </button>
-
       {/* Slide-over Drawer Backdrop */}
-      {isOpen && (
-        <div
-          onClick={() => setIsOpen(false)}
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
-        />
-      )}
+      <div
+        onClick={onClose}
+        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
+      />
 
       {/* Slide-over Drawer Panel */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-full max-w-md bg-white/95 backdrop-blur-xl shadow-2xl transition-transform duration-500 ease-out border-r border-[#5A3A22]/10 flex flex-col ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 w-full max-w-md bg-white/95 backdrop-blur-xl shadow-2xl transition-transform duration-500 ease-out border-r border-[#5A3A22]/10 flex flex-col translate-x-0`}
       >
         {/* Drawer Header */}
         <div className="p-6 border-b border-[#5A3A22]/10 flex items-center justify-between bg-[#F8F6F2]">
@@ -79,7 +67,7 @@ export default function DeveloperShowcase() {
           </div>
           <button
             type="button"
-            onClick={() => setIsOpen(false)}
+            onClick={onClose}
             className="p-2 rounded-full hover:bg-gray-200/50 text-gray-500 hover:text-gray-900 transition-colors"
           >
             <FiX className="text-xl" />
