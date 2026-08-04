@@ -2551,7 +2551,7 @@ const Checkout = () => {
                   value={orderNote}
                   onChange={(e) => setOrderNote(e.target.value)}
                   placeholder="Any special instructions for delivery?"
-                  className="w-full p-5 rounded-3xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all resize-none h-32 text-gray-700 bg-white"
+                  className="textarea-premium resize-none h-32"
                 />
               </div>
             </div>
