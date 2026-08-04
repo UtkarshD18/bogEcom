@@ -1003,8 +1003,8 @@ const Header = () => {
                   <div
                     className="relative shadow-sm border rounded-full overflow-hidden transition-all duration-300 focus-within:shadow-md"
                     style={{
-                      backgroundColor: "rgba(255,255,255,0.96)",
-                      borderColor: "rgba(15,23,42,0.14)",
+                      backgroundColor: "var(--color-bg-primary)",
+                      borderColor: "var(--color-border-medium)",
                     }}
                   >
                     <div className="site-header-desktop-search h-12 flex items-center">
