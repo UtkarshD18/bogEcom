@@ -4,14 +4,9 @@ import { useSettings } from "@/context/SettingsContext";
 import { API_BASE_URL, postData } from "@/utils/api";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { AiOutlineYoutube } from "react-icons/ai";
-
-const DeveloperShowcase = dynamic(() => import("./DeveloperShowcase"), {
-  ssr: false,
-});
 import {
   FiCreditCard,
   FiGift,
@@ -60,7 +55,6 @@ const Footer = () => {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null);
   const [message, setMessage] = useState("");
-  const [isDevShowcaseOpen, setIsDevShowcaseOpen] = useState(false);
   const [policyLinks, setPolicyLinks] = useState({
     terms: { name: "Terms & Conditions", link: "/policy/terms-and-conditions" },
   });
@@ -382,39 +376,21 @@ const Footer = () => {
                 { name: "About Us", link: "/about-us" },
                 { name: "Contact us", link: "/contact" },
                 { name: "Our Blogs", link: "/blogs" },
-                { name: "Engineering Case Study", onClick: () => setIsDevShowcaseOpen(true) },
               ].map((item, i) => (
                 <li key={i}>
-                  {item.onClick ? (
-                    <button
-                      type="button"
-                      onClick={item.onClick}
-                      className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-[#5A3A22] active:text-[#5A3A22] transition-all duration-300 bg-transparent border-none cursor-pointer p-0 text-left"
-                    >
-                      <span
-                        className="w-0 h-0.5 mr-0 transition-all duration-300 group-hover:w-4 group-hover:mr-2.5 group-active:w-4 group-active:mr-2.5 rounded-full"
-                        style={{
-                          background:
-                            "linear-gradient(90deg, var(--color-primary), var(--color-accent))",
-                        }}
-                      ></span>
-                      {item.name}
-                    </button>
-                  ) : (
-                    <Link
-                      href={item.link || "#"}
-                      className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-primary active:text-primary transition-all duration-300"
-                    >
-                      <span
-                        className="w-0 h-0.5 mr-0 transition-all duration-300 group-hover:w-4 group-hover:mr-2.5 group-active:w-4 group-active:mr-2.5 rounded-full"
-                        style={{
-                          background:
-                            "linear-gradient(90deg, var(--primary), var(--flavor-hover))",
-                        }}
-                      ></span>
-                      {item.name}
-                    </Link>
-                  )}
+                  <Link
+                    href={item.link}
+                    className="group flex items-center text-[14px] font-medium text-gray-500 hover:text-primary active:text-primary transition-all duration-300"
+                  >
+                    <span
+                      className="w-0 h-0.5 mr-0 transition-all duration-300 group-hover:w-4 group-hover:mr-2.5 group-active:w-4 group-active:mr-2.5 rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, var(--primary), var(--flavor-hover))",
+                      }}
+                    ></span>
+                    {item.name}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -578,10 +554,6 @@ const Footer = () => {
           </p>
         </div>
       </div>
-      <DeveloperShowcase
-        isOpen={isDevShowcaseOpen}
-        onClose={() => setIsDevShowcaseOpen(false)}
-      />
     </footer>
   );
 };
