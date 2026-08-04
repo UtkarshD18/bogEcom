@@ -2221,12 +2221,6 @@ const Checkout = () => {
                       helperText={guestErrors.fullName}
                       variant="outlined"
                       fullWidth
-                      InputProps={{
-                        sx: {
-                          borderRadius: "16px",
-                          bgcolor: "rgba(255,255,255,0.5)",
-                        },
-                      }}
                     />
                     <TextField
                       label="Phone *"
@@ -2237,12 +2231,6 @@ const Checkout = () => {
                       helperText={guestErrors.mobileNumber}
                       variant="outlined"
                       fullWidth
-                      InputProps={{
-                        sx: {
-                          borderRadius: "16px",
-                          bgcolor: "rgba(255,255,255,0.5)",
-                        },
-                      }}
                     />
                     <TextField
                       label="Email *"
@@ -2253,12 +2241,6 @@ const Checkout = () => {
                       helperText={guestErrors.email}
                       variant="outlined"
                       fullWidth
-                      InputProps={{
-                        sx: {
-                          borderRadius: "16px",
-                          bgcolor: "rgba(255,255,255,0.5)",
-                        },
-                      }}
                     />
                     <div className="md:col-span-2 space-y-4 p-5 bg-gray-50/50 rounded-3xl border border-gray-100">
                       <div className="flex items-center gap-3">
@@ -2305,9 +2287,6 @@ const Checkout = () => {
                           variant="outlined"
                           fullWidth
                           size="small"
-                          InputProps={{
-                            sx: { borderRadius: "16px", bgcolor: "white" },
-                          }}
                         />
                         <TextField
                           label="Flat / House / Building *"
@@ -2319,9 +2298,6 @@ const Checkout = () => {
                           variant="outlined"
                           fullWidth
                           size="small"
-                          InputProps={{
-                            sx: { borderRadius: "16px", bgcolor: "white" },
-                          }}
                         />
                       </div>
 
@@ -2336,9 +2312,6 @@ const Checkout = () => {
                           variant="outlined"
                           fullWidth
                           sx={{ mb: 2 }}
-                          InputProps={{
-                            sx: { borderRadius: "16px", bgcolor: "white" },
-                          }}
                         />
 
                         <TextField
@@ -2350,9 +2323,6 @@ const Checkout = () => {
                           fullWidth
                           size="small"
                           sx={{ mb: 2 }}
-                          InputProps={{
-                            sx: { borderRadius: "16px", bgcolor: "white" },
-                          }}
                         />
                       </div>
 
@@ -2367,9 +2337,6 @@ const Checkout = () => {
                           variant="outlined"
                           fullWidth
                           size="small"
-                          InputProps={{
-                            sx: { borderRadius: "16px", bgcolor: "white" },
-                          }}
                         />
                         <FormControl
                           fullWidth
@@ -2817,7 +2784,7 @@ const Checkout = () => {
                             setCouponError("");
                           }}
                           placeholder="ENTER CODE"
-                          className="flex-1 text-sm font-bold uppercase p-3 bg-white rounded-xl border border-gray-200 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                          className="input-premium flex-1 text-sm font-bold uppercase !h-[45px] !py-2"
                         />
                         <button
                           onClick={handleApplyCoupon}
@@ -2849,7 +2816,7 @@ const Checkout = () => {
                       onChange={handleGstChange}
                       onBlur={handleGstBlur}
                       placeholder="15-digit GSTIN"
-                      className="w-full text-sm font-medium uppercase p-3 bg-white rounded-xl border border-gray-200 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      className="input-premium text-sm font-medium uppercase !h-[45px] !py-2"
                     />
                     {gstSavedValue && (
                       <p className="text-primary text-[10px] font-bold mt-1 ml-1 flex items-center gap-1">
@@ -2946,7 +2913,6 @@ const Checkout = () => {
                 helperText={formErrors.fullName}
                 fullWidth
                 size="medium"
-                InputProps={{ sx: { borderRadius: "12px" } }}
               />
               <TextField
                 name="mobileNumber"
@@ -2957,7 +2923,6 @@ const Checkout = () => {
                 helperText={formErrors.mobileNumber}
                 fullWidth
                 size="medium"
-                InputProps={{ sx: { borderRadius: "12px" } }}
               />
             </div>
 
@@ -2995,7 +2960,6 @@ const Checkout = () => {
                 }
                 fullWidth
                 size="small"
-                InputProps={{ sx: { borderRadius: "12px" } }}
               />
               <TextField
                 name="flatHouse"
@@ -3006,7 +2970,6 @@ const Checkout = () => {
                 helperText={formErrors.flatHouse}
                 fullWidth
                 size="small"
-                InputProps={{ sx: { borderRadius: "12px" } }}
               />
             </div>
 
@@ -3022,7 +2985,6 @@ const Checkout = () => {
                 multiline
                 rows={2}
                 sx={{ mb: 2 }}
-                InputProps={{ sx: { borderRadius: "12px" } }}
               />
 
               <TextField
@@ -3033,7 +2995,6 @@ const Checkout = () => {
                 fullWidth
                 size="small"
                 sx={{ mb: 2 }}
-                InputProps={{ sx: { borderRadius: "12px" } }}
               />
             </div>
 
@@ -3047,7 +3008,6 @@ const Checkout = () => {
                 helperText={formErrors.city}
                 fullWidth
                 size="small"
-                InputProps={{ sx: { borderRadius: "12px" } }}
               />
               <FormControl fullWidth size="small" error={!!formErrors.state}>
                 <InputLabel sx={{ bgcolor: "white", px: 0.5 }}>
