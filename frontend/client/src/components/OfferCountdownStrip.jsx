@@ -63,8 +63,8 @@ export default function OfferCountdownStrip({ initialConfig = null }) {
   const ctaHref = String(config.ctaHref || "/products").trim() || "/products";
 
   return (
-    <section className="bg-[#24160f] px-4 py-4 text-white">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,#3a2115_0%,#6b4327_58%,#94611e_100%)] px-5 py-4 shadow-[0_24px_70px_-48px_rgba(40,20,8,0.75)] sm:flex-row sm:items-center sm:justify-between">
+    <section className="bg-[var(--color-primary-dark)] px-4 py-4 text-white">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 rounded-[var(--radius-2xl)] border border-[var(--color-border-light)] bg-[linear-gradient(135deg,var(--color-primary-dark)_0%,var(--color-primary)_100%)] px-5 py-4 shadow-[var(--shadow-xl)] sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <span className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/14">
             <FiClock />

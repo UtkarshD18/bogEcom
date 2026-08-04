@@ -202,14 +202,14 @@ const Banners = ({ initialBanners = [] }) => {
   return (
     <section className="relative z-20 mt-0 bg-transparent pb-8 sm:mt-1 sm:pb-12 md:-mt-2 md:pb-14">
       <div className="mx-auto max-w-7xl px-4 xl:px-6">
-        <div className="mx-auto overflow-hidden rounded-[2rem] border border-white/85 bg-white/90 p-4 shadow-[0_28px_75px_rgba(90,58,34,0.10)] backdrop-blur-xl sm:rounded-[2.4rem] sm:p-5 md:max-w-[900px] md:rounded-[2.25rem] lg:max-w-[980px] lg:rounded-[2.6rem] lg:border-white/90 lg:p-6 lg:shadow-[0_34px_90px_rgba(90,58,34,0.12)] xl:max-w-[1020px] xl:px-7 xl:py-6">
+        <div className="mx-auto overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-bg-primary)] p-4 shadow-[var(--shadow-md)] backdrop-blur-xl sm:rounded-[var(--radius-2xl)] sm:p-5 md:max-w-[900px] lg:max-w-[980px] lg:p-6 lg:shadow-[var(--shadow-lg)] xl:max-w-[1020px] xl:px-7 xl:py-6">
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
             <div className="max-w-2xl space-y-2">
               <span
                 className="inline-flex items-center rounded-full border px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.24em]"
                 style={{
-                  backgroundColor: "var(--flavor-glass, rgba(90,58,46,0.24))",
-                  borderColor: "rgba(255,255,255,0.75)",
+                  backgroundColor: "var(--color-bg-secondary)",
+                  borderColor: "var(--color-border-light)",
                   color: "var(--color-primary)",
                 }}
               >
@@ -307,7 +307,7 @@ const Banners = ({ initialBanners = [] }) => {
                         <motion.div
                           whileHover={{ y: -4 }}
                           transition={{ duration: 0.24 }}
-                          className="relative overflow-hidden rounded-[1.8rem] border border-black/5 bg-white shadow-[0_18px_44px_rgba(90,58,34,0.10)] lg:rounded-[2.1rem] lg:shadow-[0_22px_52px_rgba(90,58,34,0.12)]"
+                          className="relative overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-bg-primary)] shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)]"
                         >
                           <BannerMedia
                             banner={banner}
