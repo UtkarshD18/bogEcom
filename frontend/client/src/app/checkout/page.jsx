@@ -2344,7 +2344,7 @@ const Checkout = () => {
                           variant="outlined"
                           error={!!guestErrors.state}
                         >
-                          <InputLabel sx={{ bgcolor: "white", px: 0.5 }}>
+                          <InputLabel sx={{ bgcolor: "var(--color-bg-primary)", px: 0.5 }}>
                             State *
                           </InputLabel>
                           <Select
@@ -2352,7 +2352,6 @@ const Checkout = () => {
                             value={guestDetails.state}
                             label="State *"
                             onChange={handleGuestChange}
-                            sx={{ borderRadius: "16px", bgcolor: "white" }}
                           >
                             {INDIAN_STATES.map((state) => (
                               <MenuItem key={state} value={state}>
@@ -3010,7 +3009,7 @@ const Checkout = () => {
                 size="small"
               />
               <FormControl fullWidth size="small" error={!!formErrors.state}>
-                <InputLabel sx={{ bgcolor: "white", px: 0.5 }}>
+                <InputLabel sx={{ bgcolor: "var(--color-bg-primary)", px: 0.5 }}>
                   State
                 </InputLabel>
                 <Select
@@ -3018,7 +3017,6 @@ const Checkout = () => {
                   value={formData.state}
                   onChange={handleFormChange}
                   label="State"
-                  sx={{ borderRadius: "12px" }}
                 >
                   {INDIAN_STATES.map((state) => (
                     <MenuItem key={state} value={state}>
@@ -3037,7 +3035,6 @@ const Checkout = () => {
                   value={formData.addressType}
                   onChange={handleFormChange}
                   label="Type"
-                  sx={{ borderRadius: "12px" }}
                 >
                   <MenuItem value="Home">Home</MenuItem>
                   <MenuItem value="Work">Work</MenuItem>
