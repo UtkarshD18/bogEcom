@@ -269,37 +269,37 @@ const Login = () => {
           className="w-full max-w-[420px] mx-auto flex flex-col gap-5"
         >
           <div className="w-full">
-            <span className="text-[15px] font-medium text-gray-700 mb-2 block">
+            <span className="text-[15px] font-medium text-text-secondary mb-2 block">
               Email
             </span>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <MdEmail className="text-gray-400 text-lg" />
+                <MdEmail className="text-text-light text-lg" />
               </div>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter admin email"
-                className="w-full h-[45px] pl-10 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all duration-200"
+                className="input-premium !pl-10 !h-[45px] !text-sm"
               />
             </div>
           </div>
 
           <div className="w-full">
-            <span className="text-[15px] font-medium text-gray-700 mb-2 block">
+            <span className="text-[15px] font-medium text-text-secondary mb-2 block">
               Password
             </span>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <MdLock className="text-gray-400 text-lg" />
+                <MdLock className="text-text-light text-lg" />
               </div>
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                className="w-full h-[45px] pl-10 pr-10 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all duration-200"
+                className="input-premium !pl-10 !pr-10 !h-[45px] !text-sm"
               />
               <button
                 type="button"
