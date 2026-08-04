@@ -86,7 +86,7 @@ const QtyBox = ({
         min={min}
         max={max}
         disabled={disabled}
-        className="w-full h-full text-center font-semibold border-x border-gray-200 outline-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className="w-full h-full text-center font-semibold border-x border-[var(--color-border-medium)] outline-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
 
       {/* Increase Button */}
