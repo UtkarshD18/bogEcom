@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FiCode, FiX, FiCheckCircle, FiDatabase, FiCpu, FiLayout, FiBookOpen } from "react-icons/fi";
+import { FiCode, FiX, FiCheckCircle, FiDatabase, FiCpu, FiLayout, FiBookOpen, FiArrowRight, FiShield, FiSliders } from "react-icons/fi";
 import { io } from "socket.io-client";
 
 export default function DeveloperShowcase({ isOpen, onClose }) {
@@ -11,7 +11,6 @@ export default function DeveloperShowcase({ isOpen, onClose }) {
   useEffect(() => {
     if (!isOpen) return undefined;
 
-    // Attempt to connect to the backend socket to show live developer metrics
     const socketUrl = process.env.NEXT_PUBLIC_APP_API_URL || "https://healthyonegram-api-v2-xb7znoco6a-uc.a.run.app";
     const socket = io(socketUrl, {
       transports: ["websocket", "polling"],
@@ -30,7 +29,6 @@ export default function DeveloperShowcase({ isOpen, onClose }) {
       setSocketStatus("error");
     });
 
-    // Listen to real-time events to increment showcase counter
     socket.onAny(() => {
       setEventCount((prev) => prev + 1);
     });
@@ -52,7 +50,7 @@ export default function DeveloperShowcase({ isOpen, onClose }) {
 
       {/* Slide-over Drawer Panel */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-full max-w-md bg-white/95 backdrop-blur-xl shadow-2xl transition-transform duration-500 ease-out border-r border-[#5A3A22]/10 flex flex-col translate-x-0`}
+        className="fixed inset-y-0 left-0 z-50 w-full max-w-md bg-white/95 backdrop-blur-xl shadow-2xl transition-transform duration-500 ease-out border-r border-[#5A3A22]/10 flex flex-col translate-x-0"
       >
         {/* Drawer Header */}
         <div className="p-6 border-b border-[#5A3A22]/10 flex items-center justify-between bg-[#F8F6F2]">
@@ -61,8 +59,8 @@ export default function DeveloperShowcase({ isOpen, onClose }) {
               <FiCode className="text-lg" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900 leading-none">System Architecture</h2>
-              <span className="text-[10px] uppercase font-bold tracking-wider text-[#FF8C42] mt-1 block">Recruiter Walkthrough</span>
+              <h2 className="text-lg font-bold text-gray-900 leading-none">Engineering Case Study</h2>
+              <span className="text-[10px] uppercase font-bold tracking-wider text-[#FF8C42] mt-1 block">Architecture & Design</span>
             </div>
           </div>
           <button
@@ -76,50 +74,87 @@ export default function DeveloperShowcase({ isOpen, onClose }) {
 
         {/* Drawer Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Section: Overview */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Platform Purpose</h3>
-            <p className="text-sm text-gray-700 leading-relaxed">
-              This storefront showcases a production-ready SaaS setup built with strict design systems, robust databases, and secure transactional pipelines.
-            </p>
+          {/* Section: What this project demonstrates */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#5A3A22]">What This Project Demonstrates</h3>
+            <div className="p-4 rounded-xl border border-[#5A3A22]/10 bg-[#FFF9F0]/50 space-y-2">
+              <ul className="space-y-2 text-xs text-gray-700">
+                <li className="flex items-start gap-2">
+                  <FiCheckCircle className="text-[#1F7A63] mt-0.5 shrink-0" />
+                  <span><strong>Design System Alignment:</strong> Enforced tokens for colors, typography, margins, and custom utility classes.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <FiCheckCircle className="text-[#1F7A63] mt-0.5 shrink-0" />
+                  <span><strong>Material UI Integration:</strong> Seamless global overrides without breaking built-in framework layers.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <FiCheckCircle className="text-[#1F7A63] mt-0.5 shrink-0" />
+                  <span><strong>Robust Security:</strong> HMAC-SHA256 signature verification, server-only API credentials, and JWT authorization.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <FiCheckCircle className="text-[#1F7A63] mt-0.5 shrink-0" />
+                  <span><strong>Build stability:</strong> Compilation safety on static caching, routes, and Turbopack builds.</span>
+                </li>
+              </ul>
+            </div>
           </div>
 
-          {/* Section: Technology Stack */}
+          {/* Section: System Architecture Visual */}
           <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Core SaaS Stack</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-start gap-2.5 p-3 rounded-xl border border-gray-100 bg-gray-50/50">
-                <FiCpu className="text-[#FF8C42] mt-0.5 text-base shrink-0" />
-                <div>
-                  <h4 className="text-xs font-black text-gray-900">Next.js 16</h4>
-                  <p className="text-[10px] text-gray-500">Turbopack, SSR</p>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">System Architecture Flow</h3>
+            <div className="p-4 rounded-xl border border-gray-100 bg-gray-50 flex flex-col items-center gap-3">
+              {/* Architecture Diagram blocks */}
+              <div className="w-full flex items-center justify-between gap-1 text-[11px] font-bold">
+                <div className="px-2.5 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-center shrink-0">
+                  Client <br/> (Next.js)
                 </div>
-              </div>
-              <div className="flex items-start gap-2.5 p-3 rounded-xl border border-gray-100 bg-gray-50/50">
-                <FiDatabase className="text-[#1F7A63] mt-0.5 text-base shrink-0" />
-                <div>
-                  <h4 className="text-xs font-black text-gray-900">MongoDB</h4>
-                  <p className="text-[10px] text-gray-500">Indexing, Schemas</p>
+                <div className="flex flex-col items-center">
+                  <FiArrowRight className="text-gray-400 text-sm" />
+                  <span className="text-[9px] text-gray-400 font-normal">HTTP/WS</span>
                 </div>
-              </div>
-              <div className="flex items-start gap-2.5 p-3 rounded-xl border border-gray-100 bg-gray-50/50">
-                <FiCpu className="text-[#3B82F6] mt-0.5 text-base shrink-0" />
-                <div>
-                  <h4 className="text-xs font-black text-gray-900">Node / Express</h4>
-                  <p className="text-[10px] text-gray-500">Secure Web APIs</p>
+                <div className="px-2.5 py-1.5 rounded-lg bg-green-50 border border-green-200 text-green-800 text-center shrink-0">
+                  Server <br/> (Express)
                 </div>
-              </div>
-              <div className="flex items-start gap-2.5 p-3 rounded-xl border border-gray-100 bg-gray-50/50">
-                <FiLayout className="text-[#5A3A22] mt-0.5 text-base shrink-0" />
-                <div>
-                  <h4 className="text-xs font-black text-gray-900">Design System</h4>
-                  <p className="text-[10px] text-gray-500">Tokens & Utilities</p>
+                <div className="flex flex-col items-center">
+                  <FiArrowRight className="text-gray-400 text-sm" />
+                  <span className="text-[9px] text-gray-400 font-normal">Mongoose</span>
+                </div>
+                <div className="px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-center shrink-0">
+                  Database <br/> (MongoDB)
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Section: Live WebSocket Sync Status */}
+          {/* Section: Tech Stack Choices */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Tech Stack & Rationale</h3>
+            <div className="space-y-3 text-xs text-gray-700 leading-relaxed">
+              <div className="flex gap-2.5">
+                <FiCpu className="text-[#3B82F6] text-lg shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-gray-900">Next.js 16 Storefront</h4>
+                  <p className="text-gray-600 mt-0.5">Leverages server components, static pre-rendering, and Turbopack pipelines to achieve fast Largest Contentful Paint (LCP) and zero Cumulative Layout Shift (CLS).</p>
+                </div>
+              </div>
+              <div className="flex gap-2.5">
+                <FiDatabase className="text-[#1F7A63] text-lg shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-gray-900">MongoDB Database</h4>
+                  <p className="text-gray-600 mt-0.5">Optimized collections with targeted index mappings for rapid catalog retrieval, and transactional enums ensuring data integrity.</p>
+                </div>
+              </div>
+              <div className="flex gap-2.5">
+                <FiShield className="text-[#FF8C42] text-lg shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-gray-900">Secured Back-office</h4>
+                  <p className="text-gray-600 mt-0.5">Integrated Razorpay with server-only verification webhooks and state controls, completely preventing client-side data tampering.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section: WebSocket Status */}
           <div className="space-y-3 p-4 rounded-xl border border-[#1F7A63]/20 bg-[#1F7A63]/5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#1F7A63] flex items-center gap-1.5">
               <span className="relative flex h-2.5 w-2.5">
@@ -128,11 +163,11 @@ export default function DeveloperShowcase({ isOpen, onClose }) {
                 )}
                 <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${socketStatus === "connected" ? "bg-[#1F7A63]" : "bg-red-500"}`}></span>
               </span>
-              Real-time synchronization
+              Live Sync Syncing
             </h3>
             <div className="space-y-2 text-xs text-gray-700">
               <div className="flex justify-between">
-                <span>Socket status:</span>
+                <span>Socket connection:</span>
                 <span className="font-bold capitalize">{socketStatus}</span>
               </div>
               <div className="flex justify-between">
@@ -140,22 +175,6 @@ export default function DeveloperShowcase({ isOpen, onClose }) {
                 <span className="font-bold">{eventCount}</span>
               </div>
             </div>
-          </div>
-
-          {/* Section: Design Guidelines & Rules */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Engineering Disciplines</h3>
-            <ul className="space-y-2 text-xs text-gray-600">
-              <li className="flex items-center gap-2">
-                <FiCheckCircle className="text-[#1F7A63]" /> Component-first layout migration
-              </li>
-              <li className="flex items-center gap-2">
-                <FiCheckCircle className="text-[#1F7A63]" /> Clean separation of UI styles via tokens
-              </li>
-              <li className="flex items-center gap-2">
-                <FiCheckCircle className="text-[#1F7A63]" /> Strict keyboard accessibility compliance
-              </li>
-            </ul>
           </div>
         </div>
 

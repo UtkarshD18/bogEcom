@@ -382,7 +382,7 @@ const Footer = () => {
                 { name: "About Us", link: "/about-us" },
                 { name: "Contact us", link: "/contact" },
                 { name: "Our Blogs", link: "/blogs" },
-                { name: "System Engineering Case Study", onClick: () => setIsDevShowcaseOpen(true) },
+                { name: "Engineering Case Study", onClick: () => setIsDevShowcaseOpen(true) },
               ].map((item, i) => (
                 <li key={i}>
                   {item.onClick ? (
