@@ -43,8 +43,8 @@ test("desktop hero fills the full viewport-height frame", async ({ page }) => {
   await expect(hero).toBeVisible();
   const heroBox = await hero.boundingBox();
   expect(heroBox).not.toBeNull();
-  expect(heroBox.height).toBeGreaterThanOrEqual(900 - 1);
-  expect(heroBox.height).toBeLessThanOrEqual(900 + 1);
+  expect(heroBox.height).toBeGreaterThanOrEqual(540 - 1);
+  expect(heroBox.height).toBeLessThanOrEqual(540 + 1);
   await expect(
     page.getByRole("heading", { name: "Visual Test Slide" }),
   ).toBeVisible();

@@ -7,6 +7,7 @@ const buildHeaderSettingsPayload = (color) => ({
   success: true,
   data: {
     headerBackgroundColor: color,
+    searchPlaceholder: "Weight Gainer Peanut Butter",
   },
 });
 
@@ -146,7 +147,7 @@ test("mobile header keeps logo shield behavior on same configured color", async 
 
   await expect(
     page.locator(
-      'input[placeholder="Weight Gainer Peanut Butter"]:visible',
+      'input[placeholder="India\'s Most Honest Peanut Butter"]:visible',
     ).first(),
   ).toBeVisible();
 
