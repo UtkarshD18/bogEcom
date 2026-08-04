@@ -109,7 +109,7 @@ export default function OfferCountdownStrip({ initialConfig = null }) {
 
           <Link
             href={ctaHref}
-            className="inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-black text-[#3a2115] transition hover:bg-[#fff3df]"
+            className="inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-black text-[#3a2115] transition hover:bg-[#fff3df] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-accent)]"
           >
             {ctaLabel}
           </Link>

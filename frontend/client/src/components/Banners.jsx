@@ -247,7 +247,7 @@ const Banners = ({ initialBanners = [] }) => {
                 <button
                   type="button"
                   onClick={() => scrollToBanner(activeBannerIndex - 1)}
-                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/80 bg-white text-slate-700 shadow-[0_10px_24px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5"
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/80 bg-white text-slate-700 shadow-[0_10px_24px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
                   aria-label="Previous banner"
                 >
                   <FiChevronLeft size={20} />
@@ -255,7 +255,7 @@ const Banners = ({ initialBanners = [] }) => {
                 <button
                   type="button"
                   onClick={() => scrollToBanner(activeBannerIndex + 1)}
-                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/80 bg-white text-slate-700 shadow-[0_10px_24px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5"
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/80 bg-white text-slate-700 shadow-[0_10px_24px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
                   aria-label="Next banner"
                 >
                   <FiChevronRight size={20} />
@@ -406,7 +406,7 @@ const Banners = ({ initialBanners = [] }) => {
                     key={`${banner?._id || "banner"}-dot-${index}`}
                     type="button"
                     onClick={() => scrollToBanner(index)}
-                    className={`h-2.5 rounded-full transition-all ${
+                    className={`h-2.5 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${
                       activeBannerIndex === index
                         ? "w-8 bg-primary"
                         : "w-2.5 bg-gray-300 hover:bg-gray-400"
