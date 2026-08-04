@@ -152,7 +152,22 @@ const Banners = ({ initialBanners = [] }) => {
     };
   }, []);
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <section className="relative z-20 mt-0 bg-transparent pb-8 sm:mt-1 sm:pb-12 md:-mt-2 md:pb-14 animate-pulse">
+        <div className="mx-auto max-w-7xl px-4 xl:px-6">
+          <div className="mx-auto overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-bg-primary)] p-4 shadow-[var(--shadow-md)] sm:rounded-[var(--radius-2xl)] sm:p-5 md:max-w-[900px] lg:max-w-[980px] lg:p-6 lg:shadow-[var(--shadow-lg)] xl:max-w-[1020px] xl:px-7 xl:py-6">
+            <div className="h-6 w-32 bg-gray-200 rounded mb-4" />
+            <div className="h-10 w-64 bg-gray-200 rounded mb-6" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="h-56 w-full bg-gray-200 rounded-[var(--radius-xl)]" />
+              <div className="h-56 w-full bg-gray-200 rounded-[var(--radius-xl)]" />
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
   if (banners.length === 0) return null;
 
   const scrollToBanner = (nextIndex) => {
