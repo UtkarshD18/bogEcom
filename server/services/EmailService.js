@@ -500,6 +500,20 @@ export const renderEmailTemplate = async (templateFile, data = {}) => {
   return renderTemplateString(raw, data, { escapeValues: true });
 };
 
+const writeToLocalEmailLog = async ({ to, subject, text, html }) => {
+  try {
+    const logDir = path.resolve(process.cwd(), "logs");
+    await fs.mkdir(logDir, { recursive: true });
+    const logPath = path.join(logDir, "emails.log");
+    const logEntry = `[${new Date().toISOString()}] To: ${to} | Subject: ${subject}\nText: ${text}\nHTML: ${html}\n-----------------------------------\n`;
+    await fs.appendFile(logPath, logEntry, "utf8");
+  } catch (err) {
+    logger.error("EmailService", "Failed to write email to fallback log", {
+      error: err?.message || String(err),
+    });
+  }
+};
+
 export const sendEmail = async ({
   to,
   subject,
@@ -520,11 +534,13 @@ export const sendEmail = async ({
       subject,
       reason,
     });
+    await writeToLocalEmailLog({ to, subject, text, html });
     return { success: false, error: reason || "SMTP not configured" };
   }
 
   const canSend = await verifyTransporter(config);
   if (!canSend) {
+    await writeToLocalEmailLog({ to, subject, text, html });
     return { success: false, error: "SMTP verification failed" };
   }
 
@@ -580,6 +596,7 @@ export const sendEmail = async ({
     attachmentCount,
     error: lastError?.message || String(lastError),
   });
+  await writeToLocalEmailLog({ to, subject, text, html });
   return { success: false, error: lastError?.message || "Email send failed" };
 };
 

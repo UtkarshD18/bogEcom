@@ -1987,6 +1987,112 @@ const Checkout = () => {
     }
   };
 
+  const handleProceedWithDemoPayment = async () => {
+    if (isCreatingDemoOrder) return;
+    setIsCreatingDemoOrder(true);
+    try {
+      const { items: checkoutItemsForSubmit, changed: refreshedCartDiffers } =
+        await getCheckoutItemsForSubmit();
+
+      if (refreshedCartDiffers) {
+        setSnackbar({
+          open: true,
+          message:
+            "Cart prices were updated from server. Please review total and retry demo payment.",
+          severity: "info",
+        });
+        return;
+      }
+
+      if (isGuestCheckout && !validateGuestCheckoutForm()) {
+        throw new Error("Please complete all required guest details");
+      }
+      if (!isGuestCheckout && !selectedAddress) {
+        throw new Error("Please select or add a delivery address");
+      }
+
+      const insufficientItems = (checkoutItemsForSubmit || [])
+        .map((item) => getItemData(item))
+        .filter((data) => data.quantity > data.availableQuantity);
+      if (insufficientItems.length > 0) {
+        const first = insufficientItems[0];
+        throw new Error(
+          `Only ${first.availableQuantity} left for ${first.name}. Update your cart to continue.`,
+        );
+      }
+
+      const token = authToken;
+      const isValidObjectId =
+        selectedAddress && /^[a-f\d]{24}$/i.test(selectedAddress);
+      const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
+
+      const currentAffiliate = getStoredAffiliateData();
+      const effectivePricing = previewPricing || null;
+      const orderTotalForSubmit = round2(
+        Number(effectivePricing?.finalAmount ?? total),
+      );
+      const shippingForSubmit = round2(
+        Number(effectivePricing?.shipping ?? shipping),
+      );
+      const taxForSubmit = round2(Number(effectivePricing?.gstAmount ?? tax));
+      const couponDiscountForSubmit = round2(
+        Number(effectivePricing?.discountBreakdown?.coupon ?? couponDiscount),
+      );
+      const originalAmount = round2(
+        Number(effectivePricing?.originalAmount ?? originalAmountForSubmit),
+      );
+
+      const orderData = {
+        products: buildOrderProductsPayload(checkoutItemsForSubmit),
+        combos: buildOrderCombosPayload(checkoutItemsForSubmit),
+        totalAmt: orderTotalForSubmit,
+        originalAmount,
+        finalAmount: orderTotalForSubmit,
+        delivery_address: isValidObjectId ? selectedAddress : null,
+        location: isGuestCheckout ? guestLocationPayload : null,
+        notes: orderNote || "Placed via Demo Mode",
+        tax: taxForSubmit,
+        shipping: shippingForSubmit,
+        couponCode: appliedCoupon?.code || null,
+        discountAmount: couponDiscountForSubmit,
+        influencerCode: activeInfluencerCode || null,
+        affiliateCode: currentAffiliate?.code || null,
+        affiliateSource: currentAffiliate?.source || null,
+        coinRedeem: {
+          coins: 0,
+        },
+        paymentType: "prepaid",
+        paymentProvider: "TEST",
+        guestDetails: buildGuestDetailsPayload(),
+        shippingAddress: buildShippingAddressPayload(selectedAddrObj),
+      };
+
+      const data = await postData("/api/orders", orderData);
+      if (!data?.success) {
+        throw new Error(data?.message || "Demo payment placement failed");
+      }
+
+      clearCart();
+      setShowPaymentModal(false);
+      setSnackbar({
+        open: true,
+        message: "Running in Demo Mode: Demo payment completed successfully!",
+        severity: "success",
+      });
+      setTimeout(() => {
+        router.push(`/orders/${data.data.orderId}`);
+      }, 1500);
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: error.message || "Failed to place order in Demo Mode",
+        severity: "error",
+      });
+    } finally {
+      setIsCreatingDemoOrder(false);
+    }
+  };
+
   const handleCreateDemoInfluencerOrder = async () => {
     if (isCreatingDemoOrder) return;
 
@@ -2853,10 +2959,10 @@ const Checkout = () => {
         isOpen={showPaymentModal}
         onClose={handleCloseModal}
         onSaveOrder={handleSaveOrder}
-        onCreateDemoOrder={handleCreateDemoInfluencerOrder}
+        onCreateDemoOrder={handleProceedWithDemoPayment}
         isSaving={isSavingOrder}
         isCreatingDemoOrder={isCreatingDemoOrder}
-        showDemoOrderAction={!isGuestCheckout && Boolean(activeInfluencerCode)}
+        showDemoOrderAction={true}
         orderTotal={total}
       />
 

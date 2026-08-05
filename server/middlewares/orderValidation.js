@@ -257,11 +257,11 @@ export const validateCreateOrderRequest = (req, res, next) => {
       : null;
     if (
       normalizedPaymentProvider &&
-      !["PAYTM", "PHONEPE"].includes(normalizedPaymentProvider)
+      !["PAYTM", "PHONEPE", "TEST"].includes(normalizedPaymentProvider)
     ) {
       throw new AppError("INVALID_FORMAT", {
         field: "paymentProvider",
-        validValues: ["PAYTM", "PHONEPE"],
+        validValues: ["PAYTM", "PHONEPE", "TEST"],
       });
     }
 
@@ -504,11 +504,11 @@ export const validateSaveOrderRequest = (req, res, next) => {
       : null;
     if (
       normalizedPaymentProvider &&
-      !["PAYTM", "PHONEPE"].includes(normalizedPaymentProvider)
+      !["PAYTM", "PHONEPE", "TEST"].includes(normalizedPaymentProvider)
     ) {
       throw new AppError("INVALID_FORMAT", {
         field: "paymentProvider",
-        validValues: ["PAYTM", "PHONEPE"],
+        validValues: ["PAYTM", "PHONEPE", "TEST"],
       });
     }
 

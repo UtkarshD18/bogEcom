@@ -132,6 +132,7 @@ import {
 const PAYMENT_PROVIDERS = Object.freeze({
   PHONEPE: "PHONEPE",
   PAYTM: "PAYTM",
+  TEST: "TEST",
 });
 const DEFAULT_PAYMENT_PROVIDER = PAYMENT_PROVIDERS.PHONEPE;
 const configuredPaymentProvider = String(
@@ -169,6 +170,7 @@ const PAYMENT_PROVIDER_ENV_ENABLED = Object.freeze({
     PHONEPE_CLIENT_ID &&
     PHONEPE_CLIENT_SECRET,
   ),
+  TEST: true,
 });
 const getEnabledPaymentProviders = () =>
   Object.entries(PAYMENT_PROVIDER_ENV_ENABLED)
@@ -6157,6 +6159,45 @@ export const createOrder = asyncHandler(async (req, res) => {
           paytmGatewayUrl: paytmResponse.gatewayUrl,
         },
         "Order created successfully",
+        201,
+      );
+    }
+    if (selectedPaymentProvider === PAYMENT_PROVIDERS.TEST) {
+      order.payment_status = "paid";
+      order.order_status = "accepted";
+      order.paymentMethod = "TEST";
+      order.paymentId = "DEMO-PAY-" + Date.now();
+      order.final_id = await generateFinalOrderId(order.createdAt);
+      await order.save();
+
+      try {
+        await autoCreateShipmentForPaidOrder(order);
+      } catch (err) {
+        logger.error("createOrder", "Demo shipping creation failed", err);
+      }
+
+      return sendSuccess(
+        res,
+        {
+          orderId: order._id,
+          tempOrderId: order.temp_id || null,
+          finalOrderId: order.final_id || null,
+          paymentProvider: PAYMENT_PROVIDERS.TEST,
+          gatewayPayableAmount: payableAmount,
+          totals: {
+            originalSubtotal: round2(Number(pricing.originalAmount || 0)),
+            subtotal: round2(Number(taxData.taxableAmount || 0)),
+            discount: round2(Number(pricing.displayDiscount || 0)),
+            taxableDiscount: round2(Number(totalDiscount || 0)),
+            tax: round2(Number(taxData.tax || 0)),
+            shipping: round2(Number(shippingCharge || 0)),
+            finalAmount: round2(Number(computedFinalAmount || 0)),
+            roundedAmount,
+            roundOff,
+          },
+          paymentUrl: `/orders/${order._id}`,
+        },
+        "Demo order created and marked as paid successfully",
         201,
       );
     }

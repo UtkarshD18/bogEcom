@@ -132,12 +132,12 @@ const PaymentUnavailableModal = ({
                 {isCreatingDemoOrder ? (
                   <span className="flex items-center gap-2">
                     <span className="animate-spin">⏳</span>
-                    Creating Demo Influencer Order...
+                    Processing Demo Payment...
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
-                    <MdBugReport size={20} />
-                    Demo Influencer Order (No Shipping)
+                    <MdPayment size={20} />
+                    Proceed with Demo Payment
                   </span>
                 )}
               </Button>
