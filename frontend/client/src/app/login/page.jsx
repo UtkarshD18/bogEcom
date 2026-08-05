@@ -353,6 +353,47 @@ const LoginForm = () => {
     }
   };
 
+  const handleContinueAsDemoCustomer = (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    clearStoredSession();
+    cookies.remove("actionType");
+
+    const demoFields = {
+      email: "customer@buyonegram.com",
+      password: "customer123",
+    };
+
+    postData("/api/user/login", demoFields)
+      .then((res) => {
+        if (res?.error !== true) {
+          const persisted = persistSession(res?.data, demoFields.email);
+          if (!persisted) {
+            context?.alertBox("error", "Demo login response is missing token.");
+            setIsLoading(false);
+            return;
+          }
+          context?.setIsLogin(true);
+          context?.setUser({
+            name: res?.data?.userName || "Demo Customer",
+            email: res?.data?.userEmail || demoFields.email,
+          });
+          context?.alertBox("success", "Running in Demo Mode: logged in as Demo Customer");
+          setTimeout(() => {
+            window.dispatchEvent(new Event("loginSuccess"));
+            router.push(redirectUrl);
+          }, 100);
+        } else {
+          context?.alertBox("error", res?.message);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        context?.alertBox("error", "Network error. Please try again.");
+        setIsLoading(false);
+      });
+  };
+
   return (
     <section className="min-h-screen w-full bg-gray-100 flex items-center justify-center relative overflow-hidden py-10">
       <div className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-md border border-gray-100 mx-4">
@@ -434,23 +475,35 @@ const LoginForm = () => {
           or continue with social account
         </div>
 
-        <Button
-          loading={googleLoading}
-          loadingPosition="start"
-          startIcon={googleLoading ? null : <FcGoogle />}
-          variant="outlined"
-          size="large"
-          disabled={googleLoading || !auth}
-          title={
-            !auth
-              ? "Google Sign-In not configured. Add Firebase credentials to .env.local"
-              : "Sign in with Google"
-          }
-          className="w-full btn-outline !bg-bg-primary !text-text-primary !border-border-medium hover:!bg-bg-secondary !py-3 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={signInWithGoogle}
-        >
-          {googleLoading ? "Signing in with Google..." : "Sign in with Google"}
-        </Button>
+        {!auth ? (
+          <div className="w-full space-y-4">
+            <div className="text-center p-3 rounded-lg bg-amber-50 text-amber-800 text-xs border border-amber-200">
+              <span className="font-semibold text-amber-900 block mb-1">Google Sign-In</span>
+              Unavailable in Demo Mode (Firebase is not configured)
+            </div>
+            <Button
+              type="button"
+              variant="contained"
+              className="w-full btn-secondary !py-3 shadow-sm"
+              onClick={handleContinueAsDemoCustomer}
+            >
+              Continue as Demo Customer
+            </Button>
+          </div>
+        ) : (
+          <Button
+            loading={googleLoading}
+            loadingPosition="start"
+            startIcon={googleLoading ? null : <FcGoogle />}
+            variant="outlined"
+            size="large"
+            disabled={googleLoading}
+            className="w-full btn-outline !bg-bg-primary !text-text-primary !border-border-medium hover:!bg-bg-secondary !py-3 shadow-sm"
+            onClick={signInWithGoogle}
+          >
+            {googleLoading ? "Signing in with Google..." : "Sign in with Google"}
+          </Button>
+        )}
       </div>
     </section>
   );

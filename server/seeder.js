@@ -838,6 +838,16 @@ const seedManagerUser = async () => {
   });
 };
 
+const seedCustomerUser = async () => {
+  await seedPrivilegedUser({
+    name: "Demo Customer",
+    email: "customer@buyonegram.com",
+    password: "customer123",
+    role: "User",
+    managerPermissions: null,
+  });
+};
+
 // Main seed function
 const seedDatabase = async () => {
   try {
@@ -852,6 +862,7 @@ const seedDatabase = async () => {
     await seedBanners();
     await seedAdminUser();
     await seedManagerUser();
+    await seedCustomerUser();
 
     console.log("\n✨ Database seeded successfully!\n");
     process.exit(0);

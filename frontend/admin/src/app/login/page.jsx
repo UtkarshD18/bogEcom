@@ -185,6 +185,22 @@ const Login = () => {
     setGoogleLoading(false);
   };
 
+  const handleContinueAsDemoAdmin = async (e) => {
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
+
+    const result = await login("admin@buyonegram.com", "admin123", { rememberMe });
+
+    if (result.error) {
+      setError(result.message);
+    } else {
+      router.push("/");
+    }
+
+    setIsLoading(false);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-orange-100">
@@ -239,19 +255,36 @@ const Login = () => {
           </div>
         )}
 
-        {/* Google Sign In */}
-        <Button
-          onClick={signInWithGoogle}
-          disabled={googleLoading}
-          className="w-full max-w-[420px] btn-outline !bg-bg-primary !text-text-primary !border-border-medium hover:!bg-bg-secondary !py-3 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {googleLoading ? (
-            <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-gray-600"></div>
-          ) : (
-            <FcGoogle size={20} />
-          )}
-          {googleLoading ? "Signing in..." : "Sign In With Google"}
-        </Button>
+        {/* Google Sign In / Demo Admin */}
+        {!auth ? (
+          <div className="w-full max-w-[420px] space-y-4">
+            <div className="text-center p-3 rounded-lg bg-amber-50 text-amber-800 text-xs border border-amber-200">
+              <span className="font-semibold text-amber-900 block mb-1">Google Sign-In</span>
+              Unavailable in Demo Mode (Firebase is not configured)
+            </div>
+            <Button
+              type="button"
+              variant="contained"
+              className="w-full btn-secondary !py-3 shadow-sm"
+              onClick={handleContinueAsDemoAdmin}
+            >
+              Continue as Demo Admin
+            </Button>
+          </div>
+        ) : (
+          <Button
+            onClick={signInWithGoogle}
+            disabled={googleLoading}
+            className="w-full max-w-[420px] btn-outline !bg-bg-primary !text-text-primary !border-border-medium hover:!bg-bg-secondary !py-3 shadow-sm"
+          >
+            {googleLoading ? (
+              <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-gray-600"></div>
+            ) : (
+              <FcGoogle size={20} className="mr-2" />
+            )}
+            {googleLoading ? "Signing in..." : "Sign In With Google"}
+          </Button>
+        )}
 
         {/* Divider */}
         <div className="flex items-center gap-3 mt-8 mb-4">

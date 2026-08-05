@@ -13,6 +13,22 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
+const isPlaceholder = (val) => {
+  if (!val) return true;
+  const lower = String(val).toLowerCase();
+  return (
+    lower.includes("placeholder") ||
+    lower.includes("your-project") ||
+    lower.includes("your_firebase") ||
+    lower.includes("your-project-id") ||
+    lower.includes("your_vapid") ||
+    lower.includes("your_") ||
+    lower === "123456789" ||
+    lower === "1:123456789:web:abcdef" ||
+    lower.includes("g-xxxxxxxxxx")
+  );
+};
+
 const requiredFirebaseKeys = [
   firebaseConfig.apiKey,
   firebaseConfig.authDomain,
@@ -20,6 +36,7 @@ const requiredFirebaseKeys = [
   firebaseConfig.messagingSenderId,
   firebaseConfig.appId,
 ];
+const isFirebaseConfigured = requiredFirebaseKeys.every((key) => key && !isPlaceholder(key));
 
 if (process.env.NODE_ENV === "development") {
   console.log("Firebase Config Loaded:", {
@@ -30,6 +47,6 @@ if (process.env.NODE_ENV === "development") {
   });
 }
 
-export const firebaseApp = requiredFirebaseKeys.every(Boolean)
+export const firebaseApp = isFirebaseConfigured
   ? getApps()[0] || initializeApp(firebaseConfig)
   : null;
