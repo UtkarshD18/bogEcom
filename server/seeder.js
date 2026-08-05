@@ -10,6 +10,7 @@ import ComboItemModel from "./models/comboItem.model.js";
 import HomeSlideModel from "./models/homeSlide.model.js";
 import ProductModel from "./models/product.model.js";
 import UserModel from "./models/user.model.js";
+import OrderModel from "./models/order.model.js";
 import {
   DEFAULT_BANNER_IMAGE_PATHS,
   DEFAULT_HOME_SLIDE_IMAGE_PATHS,
@@ -848,6 +849,93 @@ const seedCustomerUser = async () => {
   });
 };
 
+const seedOrders = async (products) => {
+  console.log("🌱 Seeding historical orders...");
+  await OrderModel.deleteMany({});
+
+  const statuses = ["accepted", "confirmed", "shipped", "delivered", "completed"];
+  const paymentMethods = ["PHONEPE", "PAYTM", "TEST"];
+
+  const ordersToCreate = [];
+  const now = new Date();
+
+  for (let i = 0; i < 55; i++) {
+    const orderDate = new Date();
+    const daysAgo = Math.floor(Math.random() * 365);
+    orderDate.setDate(now.getDate() - daysAgo);
+
+    const numProducts = Math.floor(Math.random() * 3) + 1;
+    const orderProducts = [];
+    let subtotal = 0;
+
+    for (let p = 0; p < numProducts; p++) {
+      const randProd = products[Math.floor(Math.random() * products.length)];
+      const qty = Math.floor(Math.random() * 2) + 1;
+      const price = randProd.price || 299;
+      const itemSubtotal = price * qty;
+      subtotal += itemSubtotal;
+
+      orderProducts.push({
+        productId: String(randProd._id),
+        productTitle: randProd.name,
+        price,
+        quantity: qty,
+        subTotal: itemSubtotal,
+        originalPrice: randProd.oldPrice || price,
+        originalSubTotal: (randProd.oldPrice || price) * qty,
+        image: randProd.images?.[0] || "",
+      });
+    }
+
+    const finalAmount = subtotal;
+    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    const paymentMethod = paymentMethods[Math.floor(Math.random() * paymentMethods.length)];
+    const displayNum = `BOG-SEED${String(i).padStart(4, "0")}`;
+
+    ordersToCreate.push({
+      orderNumber: displayNum,
+      displayOrderId: displayNum,
+      temp_id: `TMP-SEED${String(i).padStart(3, "0")}`,
+      final_id: displayNum,
+      products: orderProducts,
+      totalAmt: finalAmount,
+      finalAmount: finalAmount,
+      total: finalAmount,
+      subtotal: finalAmount,
+      tax: finalAmount * 0.05,
+      shipping: 0,
+      paymentMethod,
+      payment_status: "paid",
+      order_status: status,
+      status: status,
+      deliveryAddressSnapshot: {
+        order_name: "Demo Customer",
+        order_mobile: "919999999999",
+        address_line1: "123 Seed Street",
+        order_city: "Jaipur",
+        order_state: "Rajasthan",
+        order_pincode: "302001",
+        full_address: "123 Seed Street, Jaipur, Rajasthan - 302001",
+        email: "customer@buyonegram.com",
+      },
+      billingDetails: {
+        fullName: "Demo Customer",
+        email: "customer@buyonegram.com",
+        phone: "919999999999",
+        address: "123 Seed Street, Jaipur, Rajasthan",
+        pincode: "302001",
+        state: "Rajasthan",
+        city: "Jaipur",
+      },
+      createdAt: orderDate,
+      updatedAt: orderDate,
+    });
+  }
+
+  await OrderModel.insertMany(ordersToCreate);
+  console.log(`✅ ${ordersToCreate.length} historical orders seeded!`);
+};
+
 // Main seed function
 const seedDatabase = async () => {
   try {
@@ -863,6 +951,7 @@ const seedDatabase = async () => {
     await seedAdminUser();
     await seedManagerUser();
     await seedCustomerUser();
+    await seedOrders(createdProducts);
 
     console.log("\n✨ Database seeded successfully!\n");
     process.exit(0);
