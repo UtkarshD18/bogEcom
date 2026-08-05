@@ -141,6 +141,40 @@ export const getImageUrl = (
   }
 
   const normalizedPath = normalizedValue.replace(/\\/g, "/");
+
+  const decodedPath = (() => {
+    try {
+      return decodeURIComponent(normalizedPath);
+    } catch {
+      return normalizedPath;
+    }
+  })();
+
+  const CLIENT_BASE_URL = STORE_PUBLIC_BASE_URL || "http://localhost:3000";
+
+  // Intercept system default image paths and map to local self-contained storefront demo assets
+  if (decodedPath.includes("buyonegram/system/product-default.webp") || decodedPath.includes("product_placeholder.png")) {
+    return `${CLIENT_BASE_URL}/demo/products/default.webp`;
+  }
+  if (decodedPath.includes("buyonegram/system/home-slide-default-1.webp")) {
+    return `${CLIENT_BASE_URL}/demo/hero/slide-1.webp`;
+  }
+  if (decodedPath.includes("buyonegram/system/home-slide-default-2.webp")) {
+    return `${CLIENT_BASE_URL}/demo/hero/slide-2.webp`;
+  }
+  if (decodedPath.includes("buyonegram/system/home-slide-default-3.webp")) {
+    return `${CLIENT_BASE_URL}/demo/hero/slide-3.webp`;
+  }
+  if (decodedPath.includes("buyonegram/system/banner-default-1.webp")) {
+    return `${CLIENT_BASE_URL}/demo/banners/banner-1.webp`;
+  }
+  if (decodedPath.includes("buyonegram/system/banner-default-2.webp")) {
+    return `${CLIENT_BASE_URL}/demo/banners/banner-2.webp`;
+  }
+  if (decodedPath.includes("buyonegram/system/banner-default-3.webp")) {
+    return `${CLIENT_BASE_URL}/demo/banners/banner-3.webp`;
+  }
+
   const resolvedLegacyMedia = resolveLegacyLocalMedia(normalizedPath);
   if (resolvedLegacyMedia) {
     return resolveFallbackMediaUrl(resolvedLegacyMedia);
