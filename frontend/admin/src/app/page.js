@@ -280,64 +280,64 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
+    <div className="min-h-screen bg-[var(--color-bg-secondary)]">
       {/* Main Content */}
-      <main className="w-full max-w-none px-4 sm:px-6 lg:px-8 pt-4 pb-8">
+      <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12">
         {/* Welcome Card */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white mb-8">
+        <div className="bg-gradient-to-r from-[var(--color-primary-dark)] via-[var(--color-primary)] to-[var(--color-primary-light)] rounded-2xl p-8 text-white mb-8 shadow-[var(--shadow-md)]">
           <h1 className="text-3xl font-bold mb-2">
             Welcome back, {admin?.name || admin?.userName || "Admin"}!
           </h1>
-          <p className="text-blue-100">
+          <p className="text-[var(--color-bg-secondary)] opacity-90">
             Manage your BuyOneGram store from here.
           </p>
         </div>
 
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-8">
+        <div className="bg-[var(--color-bg-primary)] rounded-xl p-5 shadow-[var(--shadow-sm)] border border-[var(--color-bg-tertiary)] mb-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-gray-800">
+              <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
                 Live Activity
               </h2>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-[var(--color-text-light)]">
                 Real-time updates from guest and logged-in visitors.
               </p>
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-[var(--color-text-light)]">
               Last event: {lastEventLabel}
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Events/min</div>
-              <div className="text-xl font-bold text-gray-900">
+            <div className="rounded-lg border border-[var(--color-bg-tertiary)] bg-[var(--color-bg-secondary)] p-3">
+              <div className="text-xs text-[var(--color-text-light)]">Events/min</div>
+              <div className="text-xl font-bold text-[var(--color-text-primary)]">
                 {livePulse.eventsPerMinute}
               </div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Sessions/min</div>
-              <div className="text-xl font-bold text-gray-900">
+            <div className="rounded-lg border border-[var(--color-bg-tertiary)] bg-[var(--color-bg-secondary)] p-3">
+              <div className="text-xs text-[var(--color-text-light)]">Sessions/min</div>
+              <div className="text-xl font-bold text-[var(--color-text-primary)]">
                 {livePulse.sessionsPerMinute}
               </div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Latest visitor</div>
-              <div className="text-xl font-bold text-gray-900">
+            <div className="rounded-lg border border-[var(--color-bg-tertiary)] bg-[var(--color-bg-secondary)] p-3">
+              <div className="text-xs text-[var(--color-text-light)]">Latest visitor</div>
+              <div className="text-xl font-bold text-[var(--color-text-primary)]">
                 {livePulse.lastUserType}
               </div>
             </div>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-gray-500">Live refresh</span>
+            <span className="text-xs text-[var(--color-text-light)]">Live refresh</span>
             {refreshOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => setIntervalMs(option.value)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none ${
                   intervalMs === option.value
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-white text-gray-600 border-gray-300"
+                    ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]"
+                    : "bg-white text-[var(--color-text-secondary)] border-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-secondary)]"
                 }`}
               >
                 {option.label}
@@ -346,41 +346,41 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-8">
+        <div className="bg-[var(--color-bg-primary)] rounded-xl p-5 shadow-[var(--shadow-sm)] border border-[var(--color-bg-tertiary)] mb-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-gray-800">
+              <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
                 Live Activity Feed
               </h2>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-[var(--color-text-light)]">
                 Latest {MAX_FEED_ITEMS} events from guests and logged-in users.
               </p>
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-[var(--color-text-light)]">
               Refresh: {Math.round(intervalMs / 1000)}s
             </div>
           </div>
-          <div className="mt-4 max-h-80 overflow-auto divide-y divide-gray-100">
+          <div className="mt-4 max-h-80 overflow-auto divide-y divide-[var(--color-bg-tertiary)] pr-2 scrollbar-thin scrollbar-thumb-[var(--color-bg-tertiary)]">
             {liveFeed.length === 0 ? (
-              <div className="text-sm text-gray-500 py-6 text-center">
+              <div className="text-sm text-[var(--color-text-light)] py-6 text-center">
                 Waiting for live events...
               </div>
             ) : (
               liveFeed.map((event) => (
                 <div
                   key={event.id}
-                  className="py-3 flex flex-wrap items-center gap-3 text-sm text-gray-700"
+                  className="py-3 flex flex-wrap items-center gap-3 text-sm text-[var(--color-text-secondary)]"
                 >
-                  <span className="text-xs text-gray-400 min-w-[90px]">
+                  <span className="text-xs text-[var(--color-text-light)] min-w-[90px]">
                     {new Date(event.timestamp).toLocaleTimeString()}
                   </span>
-                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                  <span className="px-2 py-0.5 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-primary)] text-xs font-semibold border border-[var(--color-bg-tertiary)]">
                     {event.eventType}
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-[var(--color-text-muted)]">
                     {event.userType}
                   </span>
-                  <span className="text-xs text-gray-500 truncate max-w-[340px]">
+                  <span className="text-xs text-[var(--color-text-muted)] truncate max-w-[340px]">
                     {event.page}
                   </span>
                 </div>
@@ -389,151 +389,22 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
-          <div className="bg-white rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <FiPackage className="text-blue-600 text-xl" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-800">
-                  {loadingStats ? "..." : stats.totalProducts}
-                </p>
-                <p className="text-sm text-gray-500">Products</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                <FiGrid className="text-green-600 text-xl" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-800">
-                  {loadingStats ? "..." : stats.totalCategories}
-                </p>
-                <p className="text-sm text-gray-500">Categories</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center">
-                <FiUsers className="text-cyan-600 text-xl" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-800">
-                  {loadingStats ? "..." : stats.totalUsers}
-                </p>
-                <p className="text-sm text-gray-500">Users</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
-                <RiVipCrownLine className="text-amber-600 text-xl" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-800">
-                  {loadingStats ? "..." : membershipStats.activeMembers}
-                </p>
-                <p className="text-sm text-gray-500">Active Members</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Order Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-          <Link href="/orders" className="block">
-            <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center">
-                  <FiShoppingCart className="text-pink-600 text-xl" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-800">
-                    {loadingStats ? "..." : stats.totalOrders}
-                  </p>
-                  <p className="text-sm text-gray-500">Total Orders</p>
-                </div>
-              </div>
-            </div>
-          </Link>
-          <Link href="/orders?status=pending" className="block">
-            <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
-                  <FiClock className="text-amber-600 text-xl" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-800">
-                    {loadingStats ? "..." : stats.pendingOrders}
-                  </p>
-                  <p className="text-sm text-gray-500">Pending Orders</p>
-                </div>
-              </div>
-            </div>
-          </Link>
-          <Link href="/orders?status=successful" className="block">
-            <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
-                  <FiCheckCircle className="text-emerald-600 text-xl" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-800">
-                    {loadingStats ? "..." : stats.successfulOrders}
-                  </p>
-                  <p className="text-sm text-gray-500">Successful Orders</p>
-                </div>
-              </div>
-            </div>
-          </Link>
-          <Link href="/orders?status=failed" className="block">
-            <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-rose-100 rounded-lg flex items-center justify-center">
-                  <FiXCircle className="text-rose-600 text-xl" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-800">
-                    {loadingStats ? "..." : stats.failedOrders}
-                  </p>
-                  <p className="text-sm text-gray-500">Failed Orders</p>
-                </div>
-              </div>
-            </div>
-          </Link>
-        </div>
-
-        <div className="mb-8 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-          <p className="font-semibold">Status logic</p>
-          <p className="mt-1">
-            Pending = pending, pending_payment, in_warehouse. Successful =
-            accepted, confirmed, shipped, out_for_delivery, delivered,
-            completed. Failed = cancelled, rto, rto_completed.
-          </p>
-        </div>
-
         {/* Production Dashboard with Charts & Real Data */}
         <div className="mb-8">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">
+          <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-4">
             Analytics & Reports
           </h2>
           <AdminDashboardComponent refreshKey={refreshKey} />
         </div>
 
         {/* Menu Grid */}
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Quick Actions</h2>
+        <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-4 font-heading">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {menuItems.map((item) => (
             <Link
               key={item.name}
               href={item.href}
-              className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all hover:-translate-y-1 group"
+              className="bg-[var(--color-bg-primary)] rounded-xl p-6 shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] border border-[var(--color-bg-tertiary)] transition-all duration-300 hover:-translate-y-1 group focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none"
             >
               <div className="flex items-start gap-4">
                 <div
@@ -542,10 +413,10 @@ export default function AdminDashboard() {
                   <item.icon className="text-xl" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-gray-800 mb-1">
+                  <h3 className="font-semibold text-[var(--color-text-primary)] mb-1">
                     {item.name}
                   </h3>
-                  <p className="text-sm text-gray-500">{item.description}</p>
+                  <p className="text-sm text-[var(--color-text-light)]">{item.description}</p>
                 </div>
               </div>
             </Link>
