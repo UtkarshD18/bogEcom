@@ -65,9 +65,15 @@ jobs:
         run: node server/scripts/verify-seed-data.mjs
 
       - name: Build client production bundle
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080/api
+          NEXT_PUBLIC_LOCAL_API_URL: http://localhost:8080
         run: npm run build:client
 
       - name: Build admin production bundle
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080/api
+          NEXT_PUBLIC_LOCAL_API_URL: http://localhost:8080
         run: npm run build:admin
 
       - name: Install Playwright browsers with system dependencies
