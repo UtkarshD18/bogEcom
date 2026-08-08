@@ -13,6 +13,13 @@ jobs:
   quality-gate:
     name: 🛡️ Quality Gate
     runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -47,7 +54,14 @@ jobs:
       - name: Run server backend unit tests
         run: npm run test:server
 
+      - name: Run database seeder (Local)
+        env:
+          MONGO_URI: mongodb://localhost:27017/BuyOneGram
+        run: node server/seeder.js
+
       - name: Run database seeder validation check (Local)
+        env:
+          MONGO_URI: mongodb://localhost:27017/BuyOneGram
         run: node server/scripts/verify-seed-data.mjs
 
       - name: Build client production bundle
@@ -61,9 +75,8 @@ jobs:
 
       - name: Run Playwright E2E E-Commerce tests (Local sandbox)
         run: |
-          # Start local MongoDB memory server / mock env and run local E2E suite
-          # We set PORT to 8080 and run server in background, then run playwright tests
-          PORT=8080 MOCK_MEDIA=true npm --prefix server start &
+          # Start local API server against our test MongoDB database
+          PORT=8080 MOCK_MEDIA=true MONGO_URI=mongodb://localhost:27017/BuyOneGram npm --prefix server start &
           # Wait for server startup
           sleep 5
           PLAYWRIGHT_SKIP_WEBSERVER=true PLAYWRIGHT_TEST_BASE_URL=http://localhost:3000 PLAYWRIGHT_API_BASE=http://localhost:8080 npm --prefix frontend/client run test:playwright

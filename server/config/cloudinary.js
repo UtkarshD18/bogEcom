@@ -165,6 +165,40 @@ const getGcsPublicUrl = (objectPath) => {
   return `https://storage.googleapis.com/${gcsMediaBucketName}/${encodedPath}`;
 };
 
+export const resolveFirebaseMediaSignedUrl = async (value = "") => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+
+  if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+    return normalized;
+  }
+
+  // Intercept system defaults to guarantee beautiful peanut butter images instead of vegetable/placeholder placeholders
+  const filename = normalized.split("/").pop();
+  const PEANUT_BUTTER_IMAGES = {
+    "product-default.webp": "https://images.unsplash.com/photo-1590080875515-8a3a8dc5735e?auto=format&fit=crop&w=600&q=80",
+    "banner-default-1.webp": "https://images.unsplash.com/photo-1541832676-9b763b0239ab?auto=format&fit=crop&w=600&q=80",
+    "banner-default-2.webp": "https://images.unsplash.com/photo-1607301413143-e2d22a287902?auto=format&fit=crop&w=600&q=80",
+    "banner-default-3.webp": "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=600&q=80",
+    "home-slide-default-1.webp": "https://images.unsplash.com/photo-1541832676-9b763b0239ab?auto=format&fit=crop&w=1200&q=80",
+    "home-slide-default-2.webp": "https://images.unsplash.com/photo-1590080875515-8a3a8dc5735e?auto=format&fit=crop&w=1200&q=80",
+    "home-slide-default-3.webp": "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=1200&q=80"
+  };
+
+  if (PEANUT_BUTTER_IMAGES[filename]) {
+    return PEANUT_BUTTER_IMAGES[filename];
+  }
+
+  try {
+    if (!gcsStorage) {
+      throw new Error("Firebase Storage client not initialized");
+    }
+    return await createSignedGcsMediaReadUrl(normalized);
+  } catch (error) {
+    return null;
+  }
+};
+
 const extractGcsObjectPath = (value = "") => {
   const normalized = String(value || "").trim();
   if (!normalized) return "";
@@ -295,6 +329,22 @@ export const createSignedGcsMediaReadUrl = async (objectPath = "") => {
 export const normalizeStoredMediaUrl = (value = "") => {
   const normalized = String(value || "").trim();
   if (!normalized) return normalized;
+
+  // Intercept system defaults to guarantee beautiful peanut butter images instead of vegetable/placeholder placeholders
+  const filename = normalized.split("/").pop();
+  const PEANUT_BUTTER_IMAGES = {
+    "product-default.webp": "https://images.unsplash.com/photo-1590080875515-8a3a8dc5735e?auto=format&fit=crop&w=600&q=80",
+    "banner-default-1.webp": "https://images.unsplash.com/photo-1541832676-9b763b0239ab?auto=format&fit=crop&w=600&q=80",
+    "banner-default-2.webp": "https://images.unsplash.com/photo-1607301413143-e2d22a287902?auto=format&fit=crop&w=600&q=80",
+    "banner-default-3.webp": "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=600&q=80",
+    "home-slide-default-1.webp": "https://images.unsplash.com/photo-1541832676-9b763b0239ab?auto=format&fit=crop&w=1200&q=80",
+    "home-slide-default-2.webp": "https://images.unsplash.com/photo-1590080875515-8a3a8dc5735e?auto=format&fit=crop&w=1200&q=80",
+    "home-slide-default-3.webp": "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=1200&q=80"
+  };
+
+  if (PEANUT_BUTTER_IMAGES[filename]) {
+    return PEANUT_BUTTER_IMAGES[filename];
+  }
 
   const objectPath = extractGcsObjectPath(normalized);
   if (objectPath) {
