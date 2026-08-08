@@ -85,7 +85,7 @@ jobs:
           PORT=8080 MOCK_MEDIA=true CORS_ORIGINS=http://127.0.0.1:3100,http://localhost:3100 MONGO_URI=mongodb://localhost:27017/BuyOneGram JWT_SECRET=test-secret-key-1234567890123456 REFRESH_TOKEN_SECRET=test-refresh-secret-key-1234567890123456 npm --prefix server start &
           # Wait for server startup
           sleep 5
-          PLAYWRIGHT_API_BASE=http://127.0.0.1:8080 NEXT_PUBLIC_API_URL=http://127.0.0.1:8080/api npm --prefix frontend/client run test:playwright
+          PLAYWRIGHT_API_BASE=http://127.0.0.1:8080 NEXT_PUBLIC_API_URL=http://127.0.0.1:8080/api NEXT_PUBLIC_LOCAL_API_URL=http://127.0.0.1:8080 NEXT_PUBLIC_APP_API_URL=http://127.0.0.1:8080/api npm --prefix frontend/client run test:playwright
 
   deploy-staging:
     name: 🚀 Deploy Staging

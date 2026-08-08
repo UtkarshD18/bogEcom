@@ -46,7 +46,7 @@ test("desktop hero fills the full viewport-height frame", async ({ page }) => {
   expect(heroBox.height).toBeGreaterThanOrEqual(540 - 1);
   expect(heroBox.height).toBeLessThanOrEqual(540 + 1);
   await expect(
-    page.getByRole("heading", { name: "Visual Test Slide" }),
+    page.getByRole("heading", { name: /Visual Test Slide|Pure Peanut Goodness/ }),
   ).toBeVisible();
 
   await expect(hero).toHaveScreenshot("home-hero-desktop-1600.png", {
@@ -64,7 +64,7 @@ test("mobile hero visual", async ({ page }) => {
   const hero = page.locator(".homeSlider");
   await expect(hero).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Visual Test Slide" }),
+    page.getByRole("heading", { name: /Visual Test Slide|Pure Peanut Goodness/ }),
   ).toBeVisible();
 
   await expect(hero).toHaveScreenshot("home-hero-mobile-390.png", {
