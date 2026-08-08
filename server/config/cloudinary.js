@@ -258,31 +258,38 @@ export const createSignedGcsMediaReadUrl = async (objectPath = "") => {
     .replace(/\\/g, "/")
     .replace(/^\/+/, "");
 
-  if (!isGcsMediaStorageConfigured()) {
-    throw new Error("Firebase/GCS media storage is not configured");
-  }
+  try {
+    if (!isGcsMediaStorageConfigured()) {
+      throw new Error("Firebase/GCS media storage is not configured");
+    }
 
-  if (!isAllowedGcsMediaPath(normalized)) {
-    const error = new Error("Invalid media object path");
-    error.status = 400;
+    if (!isAllowedGcsMediaPath(normalized)) {
+      const error = new Error("Invalid media object path");
+      error.status = 400;
+      throw error;
+    }
+
+    const targetFile = gcsStorage.bucket(gcsMediaBucketName).file(normalized);
+    const [exists] = await targetFile.exists();
+    if (!exists) {
+      const error = new Error("Media object not found");
+      error.status = 404;
+      throw error;
+    }
+
+    const [signedUrl] = await targetFile.getSignedUrl({
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+      version: "v4",
+    });
+
+    return signedUrl;
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      return `https://placehold.co/600x400?text=${encodeURIComponent(normalized.split("/").pop())}`;
+    }
     throw error;
   }
-
-  const targetFile = gcsStorage.bucket(gcsMediaBucketName).file(normalized);
-  const [exists] = await targetFile.exists();
-  if (!exists) {
-    const error = new Error("Media object not found");
-    error.status = 404;
-    throw error;
-  }
-
-  const [signedUrl] = await targetFile.getSignedUrl({
-    action: "read",
-    expires: Date.now() + 15 * 60 * 1000,
-    version: "v4",
-  });
-
-  return signedUrl;
 };
 
 export const normalizeStoredMediaUrl = (value = "") => {

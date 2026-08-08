@@ -1401,40 +1401,9 @@ const Checkout = () => {
       });
     }
 
-    const selectedAddrObj = addresses.find((a) => a._id === selectedAddress);
-    if (selectedAddrObj) {
-      const savedForm = mapAddressResponseToForm(selectedAddrObj);
-      return {
-        fullName:
-          selectedAddrObj.full_name ||
-          selectedAddrObj.name ||
-          savedForm.fullName,
-        phone:
-          selectedAddrObj.mobile_number ||
-          selectedAddrObj.mobile ||
-          savedForm.mobileNumber,
-        address:
-          selectedAddrObj.address_line1 ||
-          composeAddressLine1(savedForm),
-        pincode: selectedAddrObj.pincode || savedForm.pincode,
-        state: selectedAddrObj.state || savedForm.state,
-        city: selectedAddrObj.city || savedForm.city,
-        flat_house: savedForm.flatHouse,
-        area_street_sector: savedForm.areaStreetSector,
-        landmark: savedForm.landmark,
-        district: savedForm.district,
-        country: "India",
-        email: selectedAddrObj.email || guestDetails.email || "",
-        gst: gstNumber || gstSavedValue || "",
-      };
-    }
-
-    if (gstNumber) {
-      return {
-        gst: gstNumber,
-      };
-    }
-    return {};
+    return {
+      gst: gstNumber || gstSavedValue || "",
+    };
   };
 
   const buildCheckoutPreviewPayload = (sourceItems = cartItems) => {

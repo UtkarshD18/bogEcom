@@ -31,6 +31,7 @@ import {
 } from "./middlewares/rateLimiter.js";
 import slowRequestLogger from "./middlewares/slowRequestLogger.js";
 import { UPLOAD_ROOT } from "./middlewares/upload.js";
+import mongoose from "mongoose";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -546,20 +547,32 @@ app.get("/healthz", (_req, res) => {
 
 app.get("/health", (_req, res) => {
   res.set("Cache-Control", "no-store, max-age=0");
-  res.type("text/plain");
-  res.status(200).send("ok");
+  const isHealthy = mongoose.connection.readyState === 1;
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? "HEALTHY" : "UNHEALTHY",
+    db: isHealthy,
+    version: "1.0.0",
+  });
 });
 
 app.get("/api/healthz", (_req, res) => {
   res.set("Cache-Control", "no-store, max-age=0");
-  res.type("text/plain");
-  res.status(200).send("ok");
+  const isHealthy = mongoose.connection.readyState === 1;
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? "HEALTHY" : "UNHEALTHY",
+    db: isHealthy,
+    version: "1.0.0",
+  });
 });
 
 app.get("/api/health", (_req, res) => {
   res.set("Cache-Control", "no-store, max-age=0");
-  res.type("text/plain");
-  res.status(200).send("ok");
+  const isHealthy = mongoose.connection.readyState === 1;
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? "ok" : "error",
+    db: isHealthy,
+    version: "1.0.0",
+  });
 });
 
 app.get("/", (_req, res) => {

@@ -10,7 +10,9 @@
     "checks:await": "node scripts/await-required-checks.mjs",
     "smoke:production": "node scripts/production-smoke-check.mjs",
     "start:analytics-worker": "npm --prefix analytics-worker start",
-    "generate:email-catalog": "npm --prefix scripts/email-catalog start -- --doc EMAILS.docx"
+    "generate:email-catalog": "npm --prefix scripts/email-catalog start -- --doc EMAILS.docx",
+    "verify": "npm run validate:env && npm run scan:secrets && npm --prefix frontend/client run lint --if-present && npm --prefix frontend/admin run lint --if-present && node server/scripts/verify-seed-data.mjs && npm --prefix frontend/client run test:playwright",
+    "verify-live": "node scripts/production-smoke-check.mjs --backend-url \"$BACKEND_URL\" --origin \"$FRONTEND_URL\" --origin \"$ADMIN_URL\" && PLAYWRIGHT_SKIP_WEBSERVER=true PLAYWRIGHT_API_BASE=\"$BACKEND_URL\" PLAYWRIGHT_TEST_BASE_URL=\"$FRONTEND_URL\" npm --prefix frontend/client run test:playwright"
   },
   "dependencies": {
     "node-fetch": "^2.7.0"

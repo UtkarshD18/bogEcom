@@ -11,6 +11,7 @@ import HomeSlideModel from "./models/homeSlide.model.js";
 import ProductModel from "./models/product.model.js";
 import UserModel from "./models/user.model.js";
 import OrderModel from "./models/order.model.js";
+import ReviewModel from "./models/review.model.js";
 import {
   DEFAULT_BANNER_IMAGE_PATHS,
   DEFAULT_HOME_SLIDE_IMAGE_PATHS,
@@ -200,7 +201,7 @@ const products = [
     brand: "Buy One Gram",
     price: 549,
     originalPrice: 749,
-    stock: 80,
+    stock: 0,
     rating: 4.9,
     numReviews: 67,
     isFeatured: false,
@@ -279,7 +280,7 @@ const products = [
     brand: "Buy One Gram",
     price: 449,
     originalPrice: 599,
-    stock: 50,
+    stock: 2,
     rating: 4.4,
     numReviews: 45,
     isFeatured: false,
@@ -936,6 +937,81 @@ const seedOrders = async (products) => {
   console.log(`✅ ${ordersToCreate.length} historical orders seeded!`);
 };
 
+const seedReviews = async (createdProducts, demoUser) => {
+  console.log("🌱 Seeding reviews...");
+  await ReviewModel.deleteMany({});
+
+  const createdOrders = await OrderModel.find({}).lean();
+  const reviewsToCreate = [];
+
+  const reviewComments = [
+    { rating: 5, comment: "Absolutely delicious! Rich peanut flavor and no extra oils." },
+    { rating: 4, comment: "Good quality, but a bit too thick for my taste. Still very healthy!" },
+    { rating: 5, comment: "The best peanut butter I have ever had. Highly recommend." },
+    { rating: 5, comment: "Perfect for high-protein diet. Smooth texture and great value." },
+    { rating: 4, comment: "Tasty and creamy, child loves it." },
+    { rating: 5, comment: "I use this daily in my oats and shakes. Excellent product." },
+    { rating: 5, comment: "Amazing dark chocolate flavor. Not too sweet, which I love!" },
+    { rating: 3, comment: "It is okay, but I prefer unsweetened versions." },
+    { rating: 5, comment: "Healthy and pure. Will buy again." },
+    { rating: 5, comment: "Authentic taste. Creamy texture is perfect." },
+  ];
+
+  for (const product of createdProducts) {
+    const matchingOrders = createdOrders.filter(order =>
+      order.products && order.products.some(item => String(item.productId) === String(product._id))
+    );
+
+    if (matchingOrders.length === 0) continue;
+
+    let reviewCount = 0;
+    const rand = Math.random();
+    if (rand < 0.2) {
+      reviewCount = 0;
+    } else if (rand < 0.6) {
+      reviewCount = Math.floor(Math.random() * 3) + 1;
+    } else {
+      reviewCount = Math.floor(Math.random() * 5) + 3;
+    }
+
+    const ordersToReview = matchingOrders.slice(0, reviewCount);
+    let totalRating = 0;
+
+    for (let i = 0; i < ordersToReview.length; i++) {
+      const order = ordersToReview[i];
+      const reviewTemplate = reviewComments[(product.name.length + i) % reviewComments.length];
+      
+      reviewsToCreate.push({
+        productId: product._id,
+        orderId: order._id,
+        userId: demoUser._id,
+        userName: demoUser.name,
+        userEmail: demoUser.email,
+        city: order.billingDetails?.city || "Jaipur",
+        rating: reviewTemplate.rating,
+        comment: reviewTemplate.comment,
+        source: "order",
+        visibility: "visible",
+        isVerifiedPurchase: true,
+      });
+
+      totalRating += reviewTemplate.rating;
+    }
+
+    const avgRating = ordersToReview.length > 0 ? Number((totalRating / ordersToReview.length).toFixed(1)) : 0;
+    await ProductModel.findByIdAndUpdate(product._id, {
+      rating: avgRating,
+      numReviews: ordersToReview.length,
+      reviewCount: ordersToReview.length,
+    });
+  }
+
+  if (reviewsToCreate.length > 0) {
+    await ReviewModel.insertMany(reviewsToCreate);
+    console.log(`✅ ${reviewsToCreate.length} reviews seeded!`);
+  }
+};
+
 // Main seed function
 const seedDatabase = async () => {
   try {
@@ -952,6 +1028,12 @@ const seedDatabase = async () => {
     await seedManagerUser();
     await seedCustomerUser();
     await seedOrders(createdProducts);
+
+    // Retrieve created customer for reviews
+    const demoUser = await UserModel.findOne({ email: "customer@buyonegram.com" });
+    if (demoUser) {
+      await seedReviews(createdProducts, demoUser);
+    }
 
     console.log("\n✨ Database seeded successfully!\n");
     process.exit(0);
