@@ -82,10 +82,10 @@ jobs:
       - name: Run Playwright E2E E-Commerce tests (Local sandbox)
         run: |
           # Start local API server against our test MongoDB database
-          PORT=8080 MOCK_MEDIA=true MONGO_URI=mongodb://localhost:27017/BuyOneGram npm --prefix server start &
+          PORT=8080 MOCK_MEDIA=true MONGO_URI=mongodb://localhost:27017/BuyOneGram JWT_SECRET=test-secret-key-123456 REFRESH_TOKEN_SECRET=test-secret-key-123456 npm --prefix server start &
           # Wait for server startup
           sleep 5
-          PLAYWRIGHT_SKIP_WEBSERVER=true PLAYWRIGHT_TEST_BASE_URL=http://localhost:3000 PLAYWRIGHT_API_BASE=http://localhost:8080 npm --prefix frontend/client run test:playwright
+          PLAYWRIGHT_API_BASE=http://localhost:8080 NEXT_PUBLIC_API_URL=http://127.0.0.1:8080/api npm --prefix frontend/client run test:playwright
 
   deploy-staging:
     name: 🚀 Deploy Staging
