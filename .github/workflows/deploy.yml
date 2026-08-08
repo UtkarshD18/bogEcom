@@ -1,0 +1,222 @@
+name: CI/CD Cloud Demo Deployment
+
+on:
+  push:
+    branches:
+      - demo-live
+
+concurrency:
+  group: demo-live-deployment-bogecom
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    name: 🛡️ Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root and sub-project dependencies
+        run: |
+          npm ci
+          npm --prefix server ci
+          npm --prefix frontend/client ci
+          npm --prefix frontend/admin ci
+
+      - name: Validate environment variables examples
+        run: npm run validate:env
+
+      - name: Scan for hardcoded secrets
+        run: npm run scan:secrets
+
+      - name: Dependency security audit (Exclude dev)
+        run: npm audit --omit=dev
+
+      - name: Lint client and admin codebases
+        run: |
+          npm --prefix frontend/client run lint --if-present || echo "Client lint warnings ignored"
+          npm --prefix frontend/admin run lint --if-present || echo "Admin lint warnings ignored"
+
+      - name: Run server backend unit tests
+        run: npm run test:server
+
+      - name: Run database seeder validation check (Local)
+        run: node server/scripts/verify-seed-data.mjs
+
+      - name: Build client production bundle
+        run: npm run build:client
+
+      - name: Build admin production bundle
+        run: npm run build:admin
+
+      - name: Install Playwright browsers with system dependencies
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright E2E E-Commerce tests (Local sandbox)
+        run: |
+          # Start local MongoDB memory server / mock env and run local E2E suite
+          # We set PORT to 8080 and run server in background, then run playwright tests
+          PORT=8080 MOCK_MEDIA=true npm --prefix server start &
+          # Wait for server startup
+          sleep 5
+          PLAYWRIGHT_SKIP_WEBSERVER=true PLAYWRIGHT_TEST_BASE_URL=http://localhost:3000 PLAYWRIGHT_API_BASE=http://localhost:8080 npm --prefix frontend/client run test:playwright
+
+  deploy-staging:
+    name: 🚀 Deploy Staging
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy & Poll Staging Backend API
+        env:
+          RENDER_DEPLOY_WEBHOOK_URL: ${{ secrets.RENDER_API_DEPLOY_WEBHOOK_URL_STAGING }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/deploy-to-render.mjs
+
+      - name: Deploy & Poll Staging Client
+        env:
+          RENDER_DEPLOY_WEBHOOK_URL: ${{ secrets.RENDER_CLIENT_DEPLOY_WEBHOOK_URL_STAGING }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/deploy-to-render.mjs
+
+      - name: Deploy & Poll Staging Admin
+        env:
+          RENDER_DEPLOY_WEBHOOK_URL: ${{ secrets.RENDER_ADMIN_DEPLOY_WEBHOOK_URL_STAGING }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/deploy-to-render.mjs
+
+  staging-verify:
+    name: 🧪 Verify Staging
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix frontend/client ci
+
+      - name: Install Playwright browsers with system dependencies
+        run: npx playwright install --with-deps
+
+      - name: Run verify-live tests against Staging Services (Read-only)
+        env:
+          BACKEND_URL: ${{ secrets.STAGING_BACKEND_URL }}
+          FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
+          ADMIN_URL: ${{ secrets.STAGING_ADMIN_URL }}
+        run: npm run verify-live
+
+  deploy-demo:
+    name: 🚀 Deploy Recruiter Demo
+    needs: staging-verify
+    runs-on: ubuntu-latest
+    environment: demo-production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy & Poll Demo Backend API
+        env:
+          RENDER_DEPLOY_WEBHOOK_URL: ${{ secrets.RENDER_API_DEPLOY_WEBHOOK_URL_DEMO }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/deploy-to-render.mjs
+
+      - name: Deploy & Poll Demo Client
+        env:
+          RENDER_DEPLOY_WEBHOOK_URL: ${{ secrets.RENDER_CLIENT_DEPLOY_WEBHOOK_URL_DEMO }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/deploy-to-render.mjs
+
+      - name: Deploy & Poll Demo Admin
+        env:
+          RENDER_DEPLOY_WEBHOOK_URL: ${{ secrets.RENDER_ADMIN_DEPLOY_WEBHOOK_URL_DEMO }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/deploy-to-render.mjs
+
+  demo-verify:
+    name: 🧪 Verify Recruiter Demo
+    needs: deploy-demo
+    runs-on: ubuntu-latest
+    environment: demo-production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix frontend/client ci
+
+      - name: Install Playwright browsers with system dependencies
+        run: npx playwright install --with-deps
+
+      - name: Run verify-live tests against Demo Services (Read-only)
+        env:
+          BACKEND_URL: ${{ secrets.DEMO_BACKEND_URL }}
+          FRONTEND_URL: ${{ secrets.DEMO_FRONTEND_URL }}
+          ADMIN_URL: ${{ secrets.DEMO_ADMIN_URL }}
+        run: npm run verify-live
+
+  release-manifest:
+    name: 📦 Generate Release Manifest
+    needs: demo-verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create manifest JSON
+        run: |
+          echo "{" > release_manifest.json
+          echo "  \"release\": \"v1.0.0-demo\"," >> release_manifest.json
+          echo "  \"service\": \"bogEcom\"," >> release_manifest.json
+          echo "  \"sha\": \"${{ github.sha }}\"," >> release_manifest.json
+          echo "  \"node_version\": \"20.x\"," >> release_manifest.json
+          echo "  \"deployment_time\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"," >> release_manifest.json
+          echo "  \"staging_verified\": true," >> release_manifest.json
+          echo "  \"demo_verified\": true" >> release_manifest.json
+          echo "}" >> release_manifest.json
+
+      - name: Upload release manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bogEcom-release-manifest
+          path: release_manifest.json
