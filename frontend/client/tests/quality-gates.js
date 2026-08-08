@@ -150,7 +150,14 @@ async function checkNavigationHealth(page) {
 
 // 7. Visual Portfolio Screenshot Automation
 async function capturePortfolioScreenshot(page, project, viewportName, pageName) {
-  const targetDir = path.join("/home/shadow/projects/screenshots", project, viewportName);
+  let baseDir = "/home/shadow/projects/screenshots";
+  try {
+    fs.mkdirSync(baseDir, { recursive: true });
+  } catch (e) {
+    const workspaceRoot = process.env.GITHUB_WORKSPACE || process.cwd();
+    baseDir = path.join(workspaceRoot, "screenshots");
+  }
+  const targetDir = path.join(baseDir, project, viewportName);
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
   }
