@@ -172,6 +172,10 @@ export default function RootLayout({ children }) {
           name="b1gcrm-verification"
           content="b1gcrm_verify_jiij3ncs2pk"
         />
+        <script
+          async
+          src="https://omnicrms-api.onrender.com/api/website/widget/script?uid=local-user-uid&domain=bog-ecom-client.vercel.app"
+        />
       </head>
       <body className={`${inter.variable} ${poppins.variable} ${inter.className}`}>
         <Script
@@ -184,11 +188,6 @@ export default function RootLayout({ children }) {
             <ClientLayout inter={inter}>{children}</ClientLayout>
           </ThemeProvider>
         </FlavorThemeProvider>
-        <Script
-          id="b1gcrm-chat-widget"
-          strategy="afterInteractive"
-          src="https://omnicrms-api.onrender.com/api/website/widget/script?uid=local-user-uid&domain=bog-ecom-client.vercel.app"
-        />
       </body>
     </html>
   );
