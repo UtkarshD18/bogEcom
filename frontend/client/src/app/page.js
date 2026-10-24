@@ -48,8 +48,8 @@ const removeApiSuffix = (value) => String(value || "").replace(/\/api$/i, "");
 const API_BASE_URL = sanitizeBaseUrl(
   removeApiSuffix(
     process.env.NEXT_PUBLIC_APP_API_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
-      "https://healthyonegram-api-v2-xb7znoco6a-uc.a.run.app/api",
+    process.env.NEXT_PUBLIC_API_URL ||
+    "https://healthyonegram-api-v2-xb7znoco6a-uc.a.run.app/api",
   ),
 );
 const LOCAL_DEV_API_BASE_URL = sanitizeBaseUrl(
@@ -99,7 +99,7 @@ const getRequestOrigin = async () => {
 
     const proto = String(
       headerStore.get("x-forwarded-proto") ||
-        (process.env.NODE_ENV === "production" ? "https" : "http"),
+      (process.env.NODE_ENV === "production" ? "https" : "http"),
     ).trim();
 
     return sanitizeOrigin(`${proto}://${host}`);

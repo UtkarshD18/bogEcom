@@ -63,6 +63,9 @@ const buildDefaultMetadata = (siteUrl) => ({
     index: true,
     follow: true,
   },
+  other: {
+    "b1gcrm-verification": "b1gcrm_verify_xpmj2w7072",
+  },
 });
 
 const normalizeApiBase = (value) =>
@@ -150,6 +153,7 @@ export async function generateMetadata({ request }) {
             description: page.metaDescription || defaultMetadata.openGraph.description,
           },
           robots: { index: Boolean(page.indexable !== false), follow: true },
+          other: defaultMetadata.other,
         };
       }
     }
@@ -163,6 +167,12 @@ export async function generateMetadata({ request }) {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta
+          name="b1gcrm-verification"
+          content="b1gcrm_verify_xpmj2w7072"
+        />
+      </head>
       <body className={`${inter.variable} ${poppins.variable} ${inter.className}`}>
         <Script
           id="header-bg-bootstrap"
