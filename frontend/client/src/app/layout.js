@@ -64,7 +64,7 @@ const buildDefaultMetadata = (siteUrl) => ({
     follow: true,
   },
   other: {
-    "b1gcrm-verification": "b1gcrm_verify_xpmj2w7072",
+    "b1gcrm-verification": "b1gcrm_verify_jiij3ncs2pk",
   },
 });
 
@@ -170,7 +170,7 @@ export default function RootLayout({ children }) {
       <head>
         <meta
           name="b1gcrm-verification"
-          content="b1gcrm_verify_xpmj2w7072"
+          content="b1gcrm_verify_jiij3ncs2pk"
         />
       </head>
       <body className={`${inter.variable} ${poppins.variable} ${inter.className}`}>
@@ -184,6 +184,11 @@ export default function RootLayout({ children }) {
             <ClientLayout inter={inter}>{children}</ClientLayout>
           </ThemeProvider>
         </FlavorThemeProvider>
+        <Script
+          id="b1gcrm-chat-widget"
+          strategy="afterInteractive"
+          src="https://omnicrms-api.onrender.com/api/website/widget/script?uid=local-user-uid&domain=bog-ecom-client.vercel.app"
+        />
       </body>
     </html>
   );
