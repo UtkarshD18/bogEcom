@@ -4,6 +4,7 @@ import { resolvePublicSiteUrl } from "@/utils/siteUrl";
 import { Inter, Poppins } from "next/font/google";
 import Script from "next/script";
 import ClientLayout from "./ClientLayout.jsx";
+import WhatsCrmWidget from "@/components/WhatsCrmWidget";
 import "./globals.css";
 import "../styles/themes.css";
 
@@ -172,10 +173,6 @@ export default function RootLayout({ children }) {
           name="b1gcrm-verification"
           content="b1gcrm_verify_jiij3ncs2pk"
         />
-        <script
-          async
-          src="https://omnicrms-api.onrender.com/api/website/widget/script?uid=local-user-uid&domain=bog-ecom-client.vercel.app"
-        />
       </head>
       <body className={`${inter.variable} ${poppins.variable} ${inter.className}`}>
         <Script
@@ -188,6 +185,7 @@ export default function RootLayout({ children }) {
             <ClientLayout inter={inter}>{children}</ClientLayout>
           </ThemeProvider>
         </FlavorThemeProvider>
+        <WhatsCrmWidget />
       </body>
     </html>
   );

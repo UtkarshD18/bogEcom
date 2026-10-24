@@ -242,7 +242,6 @@ export default async function Home() {
           <MembershipCTA />
         </div>
       </div>
-      <WhatsAppFloatingButton />
     </main>
   );
 }
